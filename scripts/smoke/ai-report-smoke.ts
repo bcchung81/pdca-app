@@ -10,7 +10,10 @@
 //   --dry — 위 짜임의 구성안 요청 글 크기·짜임 절 글만(AI 호출 없음, 여러 안이면 안마다)
 //  앱 흐름 그대로(2026-10-21 모델 비교 — scripts/eval/model-compare-run.ts가 부름): --app
 //   「구성안 다시 만들기」(--outline과 같음) → 그 구성안 그대로 승인(판면 자동 줄이기 fitComposition 없음 — 화면에서도 사람이 누를 때만) → 집필(판면 맞추기·자동 고치기 포함, 검증은 서버 writeDraft와 같은 인자)
-//   --app이면 초안 옆에 <HTML>.meta.json도 씀: 앱이 저장할 경고(card_report_drafts.warnings·unknown_numbers와 같은 목록)·구성안 경고(outline_warnings)·틀·판·시간·토큰·모델
+//   --app이면 초안 옆에 <HTML>.meta.json도 씀: 앱이 저장할 경고(card_report_drafts.warnings·unknown_numbers와 같은 목록)·구성안 경고(outline_warnings)·틀·판·시간·토큰·모델·요청 글 크기(구성안·집필 1차)
+//  공통 지식 선별 방식 병행 비교(2026-10-26 — 지식공급 하이브리드 선별 계획 7단계, model-compare-run.ts 팔 sel이 부름): --select-dir <폴더>
+//   그 폴더의 선별 결과(selection.json·rules/*.md — scripts/lib/select-dir.ts)를 출처로 꽂음. 선별 방식은 환경변수 KNOWLEDGE_SELECT에 report가 있어야 켜짐(자식 환경에서 줌).
+//   선별되지 못해 통째로 넣기로 가면 경고를 찍고 meta.json select.fellBack = true
 import { followupBasis } from "../../lib/ai/followup.ts";
 import { readResult } from "../../lib/inspections/model.ts";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -18,13 +21,13 @@ import { basename } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { readAttachment } from "../../lib/ai/attachments.ts";
 import { MATERIAL_COLS, type MaterialDoc, type MaterialRow, materialState } from "../../lib/ai/material-text.ts";
-import { aiProvider, callReportOutline, callReportSectionFitted, modelLabel, outlineSystem, reportOutlineAsk } from "../../lib/ai/run.ts";
+import { aiProvider, callReportOutline, callReportSectionFitted, modelLabel, outlineSystem, reportOutlineAsk, reportSystem } from "../../lib/ai/run.ts";
 import { listText, sharedTexts } from "../../lib/knowledge/bundle.ts";
 import { reportOutlinePrompts } from "../../lib/prompts/sets.ts";
 import { isStory } from "../../lib/reports/frameworks.ts";
 import { patternOf } from "../../lib/reports/framework-patterns.ts";
 import { type FrameChoice, type FrameInput, altContext, altSignature, cleanAltChoices, cleanFrameChoice, exampleOf, frameLabel, framePrompt, isEmptyFrame, markDuplicateAlts } from "../../lib/reports/framework-pick.ts";
-import { type Composition, type SplitDraftRow, applyPlanLayout, blockBudgets, cleanComposition, compositionFit, compositionIssues, extraBlocks, fitComposition, outlineSiblingLayout, planAdherence, readComposition, splitSiblingsOf } from "../../lib/reports/composition.ts";
+import { type Composition, type SplitDraftRow, applyPlanLayout, planPrompt, blockBudgets, cleanComposition, compositionFit, compositionIssues, extraBlocks, fitComposition, outlineSiblingLayout, planAdherence, readComposition, splitSiblingsOf } from "../../lib/reports/composition.ts";
 import { splitSiblingIssues } from "../../lib/reports/split-axes.ts";
 import { sectionDocument } from "../../lib/reports/section-html.ts";
 import { pickPrior, priorLabel, toPriorSection } from "../../lib/reports/prior.ts";
@@ -34,12 +37,13 @@ import { LENS_LABEL } from "../../lib/reports/lens.ts";
 import { yearActuals } from "../../lib/reports/actuals.ts";
 import { isoDay } from "../../lib/format.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
-import { loadCardBundle } from "../../lib/ai/context.ts";
+import { loadCardBundle, setSelectionSource } from "../../lib/ai/context.ts";
+import { selectionFromDir } from "../lib/select-dir.ts";
 import { relevantRefs } from "../../lib/knowledge/bundle.ts";
 import { type SiblingCard, type SiblingLayout, draftEvidence, evidenceOf, readSection, sectionContext, sectionHints, sectionPrompt, siblingLayout, verifySection } from "../../lib/reports/section.ts";
 
 // 위치 인자 = 옵션(--…)과 값을 받는 옵션의 값을 뺀 것: 카드 id · HTML 경로 · 첨부 파일…
-const VALUED = new Set(["--sib", "--story", "--pattern", "--example", "--request", "--alts"]);
+const VALUED = new Set(["--sib", "--story", "--pattern", "--example", "--request", "--alts", "--select-dir"]);
 const argv = process.argv.slice(2);
 const positional = argv.filter((a, i) => !a.startsWith("--") && !VALUED.has(argv[i - 1]));
 const flag = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
@@ -47,6 +51,9 @@ const id = positional[0] || "주요사업1/1-가";
 // 앱 흐름 그대로(--app): 구성안 → 그대로 승인 → 집필, 경고·시간·토큰을 <HTML>.meta.json으로
 const app = argv.includes("--app");
 const out = positional[1] || "report-draft.html";
+// 선별 방식 실험 출처(--select-dir) — 묶음·평가 근거를 읽기 전에 꽂음
+const selectDir = flag("--select-dir");
+if (selectDir) setSelectionSource(selectionFromDir(selectDir));
 const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
 const { data: card, error } = await db.from("cards").select("id, eval_unit_id, team_id, data").eq("id", id).single();
 if (error || !card) throw new Error(`카드를 읽지 못함: ${error?.message}`);
@@ -99,6 +106,12 @@ console.log("전년 절:", prior.map((p) => `${priorLabel(p.section)} · ${p.sco
 const lens = process.argv.includes("--no-lens") ? [] : await loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data });
 // 공통 지식 규칙 범위 전부(앱과 같게 — 참고자료 설계 2단계, 서버 draft-prepare와 같은 「report」 목적 — 경평 작성 방법론 자료 포함, 2026-10-14). --no-kb면 빼고 만들어 전후 비교
 const kb = process.argv.includes("--no-kb") ? undefined : await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "report");
+// 선별 방식을 요청했는데 이 카드가 선별되지 못하면 통째로 넣기로 감(비교가 무의미 — meta에 남김)
+const fellBack = Boolean(selectDir) && Boolean(kb) && !kb!.select;
+if (selectDir) console.log(fellBack ? `경고: 선별 방식(--select-dir ${selectDir})인데 이 카드는 선별되지 못해 통째로 넣기로 감(fellBack — KNOWLEDGE_SELECT에 report가 없거나 선별 결과·규칙 문서 없음)` : `공통 지식: 선별 방식 — 고른 조각 ${kb!.select!.picked.length}개 · 제목만 ${kb!.select!.unpicked.length}개`);
+// 요청 글 크기(구성안·집필 1차 — reportStructured와 같은 조각: 공통 지식 덩이는 요청 앞에 따로, 요청 글 = 목록표 + 자료 블록)
+const kbp = reportDraftPrompts().prompts;
+const requestSize = (system: string, ask: string) => ({ systemChars: system.length, sharedChars: kb ? sharedTexts(kbp, kb).map((t) => t.length) : [], listChars: kb ? listText(kbp, kb).length : 0, promptChars: kb ? listText(kbp, kb).length + 2 + ask.length : ask.length });
 console.log("평가 근거:", lens.map((x) => `${LENS_LABEL[x.group]} · ${x.title}`).join(" ‖ ") || "없음");
 // 올해 실적 재료(앱과 같게 — 이 카드가 속한 보고서의 부서 계량 실적 입력 포함)
 const { data: report } = await db.from("reports").select("inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", 2026).maybeSingle();
@@ -109,7 +122,7 @@ const { known: extraText, quoteOnly, past, current } = draftEvidence(files, prio
 let plan: Composition | undefined;
 let outlineSec = 0;
 let outlineMs = 0;
-let outlineMeta: { warnings: string[]; version: string; model: string; usage: unknown } | null = null;
+let outlineMeta: { warnings: string[]; version: string; model: string; usage: unknown; request: ReturnType<typeof requestSize> } | null = null;
 // 짜임 고르기(--story·--pattern·--example·--request)·여러 안(--alts) — 서버와 같은 검증(cleanFrameChoice·cleanAltChoices)과 요청 글 재료(예시 절은 공통 지식 조각, 근거 글에는 안 넣음)
 const frameInput = async (f: FrameChoice): Promise<FrameInput> => {
   if (!f.example) return { pattern: f.pattern ? patternOf(f.pattern) : null };
@@ -176,7 +189,8 @@ if (process.argv.includes("--outline") || app) {
   const { data: ins } = await db.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
   const inspection = followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
   console.log("월간 점검 보완 요청:", inspection ? `${inspection.period} 미흡 ${inspection.rows.length}${inspection.focus ? "(집중보완)" : ""}` : "없음");
-  const oc = await callReportOutline({ card: card.data, ctx, year: 2026, files, prior, siblings: layouts, lens, actuals, kb, inspection, memo: request, story: single.story && isStory(single.story) ? single.story : undefined, frame: isEmptyFrame(single) ? undefined : await frameInput(single), splitSiblings });
+  const outlineInput = { card: card.data, ctx, year: 2026, files, prior, siblings: layouts, lens, actuals, kb, inspection, memo: request, story: single.story && isStory(single.story) ? single.story : undefined, frame: isEmptyFrame(single) ? undefined : await frameInput(single), splitSiblings };
+  const oc = await callReportOutline(outlineInput);
   outlineMs = Date.now() - t1;
   outlineSec = Math.round(outlineMs / 1000);
   const { hayKey, known } = evidenceOf(card.data, extraText, quoteOnly);
@@ -213,7 +227,13 @@ if (process.argv.includes("--outline") || app) {
   writeFileSync(`${out}.outline.json`, JSON.stringify(composition, null, 1));
   plan = composition;
   // 서버 bizComposition의 outline_warnings와 같은 목록(재료 경고 + 형제 갈래 + 짜임 문제)
-  outlineMeta = { warnings: [...cleaned.warnings, ...splitSiblingIssues(composition.split, splitSiblings), ...compositionIssues(composition, ctx.module, ctx.head)], version: oc.promptVersion, model: modelLabel(oc), usage: oc.usage };
+  outlineMeta = {
+    warnings: [...cleaned.warnings, ...splitSiblingIssues(composition.split, splitSiblings), ...compositionIssues(composition, ctx.module, ctx.head)],
+    version: oc.promptVersion,
+    model: modelLabel(oc),
+    usage: oc.usage,
+    request: requestSize(outlineSystem(reportOutlinePrompts().prompts), reportOutlineAsk(outlineInput)(files.map((d) => ({ name: d.name, text: d.text })))),
+  };
 }
 const prompts = reportDraftPrompts().prompts;
 const prompt = sectionPrompt(prompts, card.data, ctx, 2026, files, prior, layouts, lens, actuals);
@@ -255,6 +275,9 @@ if (app) {
     outlineVersion: outlineMeta?.version ?? null,
     timings: { outlineMs, draftMs, firstMs: trace.firstMs, fixMs: trace.fixMs ?? null, fitPasses: passes, fixSkipped: trace.skipped ?? null },
     usage: { outline: outlineMeta?.usage ?? null, draft: usage },
+    // 요청 글 크기(글자) — 집필은 1차 요청(자동 고치기는 같은 글 끝에 고칠 점이 붙음)
+    request: { outline: outlineMeta?.request ?? null, draft: requestSize(reportSystem(prompts), `${prompt}${plan ? `\n\n${planPrompt(prompts, plan, ctx.module, ctx.head)}` : ""}`) },
+    select: selectDir ? { dir: selectDir, fellBack } : null,
     model: modelLabel(call),
     outlineModel: outlineMeta?.model ?? null,
     provider: aiProvider(),

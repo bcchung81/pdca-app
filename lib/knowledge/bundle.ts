@@ -37,6 +37,9 @@ export const BUNDLE_COLS = "chunk_key, doc_id, seq, unit_type, track, business, 
 export type LayerId = "institution" | "common" | "business";
 export const LAYER_ORDER: LayerId[] = ["institution", "common", "business"];
 
+/** 공통 규칙 문서 조각(기준류 원문을 요약한 글 — 지식공급 하이브리드 선별 계획 5단계)의 unit_type */
+export const RULES_DIGEST_UNIT = "rules_digest";
+
 /** 공통지표 평가단위 */
 export const COMMON_KPI_UNIT = "BZ-4";
 /** 붙임2 유관기관 사례는 지침 09·14대로 B+·B0 사업만(KCA 행 제외) */
@@ -48,6 +51,7 @@ export const DOC_ORDER = ["plan-2607", "goal30-2605", "ceo24-2605", "ax26-2605",
 export type BundlePurpose = "card" | "report";
 /** 조각이 어느 공유 층인지(범위 밖이면 null). 과제 목록 행은 과제 고유라 층에 넣지 않음 */
 export function layerOf(c: BundleChunk, unit: string, purpose: BundlePurpose = "card"): LayerId | null {
+  if (c.unit_type === RULES_DIGEST_UNIT) return null; // 공통 규칙 문서는 통째로 넣기의 층에 섞지 않음 — 선별 방식(lib/knowledge/select.ts)만 따로 씀
   if (c.meta?.search_only === true) return null; // 화면 검색에만 나오는 일반 문서(5단계 「검색 전용」) — AI 근거·매칭·닮은 순에 안 넣음
   if (c.meta?.usage === REPORT_METHOD_USAGE) return purpose === "report" ? "institution" : null; // 경평 초안 작성 방법론 — 경평 초안에서만, 사업과 상관없이 모든 과제에 같은 글
   if (!trackSpecOfUnit(unit).knowledgeTracks.includes(c.track) || c.unit_type === "task_list_row") return null; // 이 평가단위 트랙의 조각만(주요사업 과제에는 경영관리 트랙이 범위 밖)
@@ -94,14 +98,37 @@ export interface BundleList {
 /** 「닮은 순」 전체 목록에 싣는 건수 — 정답 조각의 88%가 상위 30건 안(55장 실측, 2026-09-30 `scripts/eval/rank-recall.ts`) */
 export const SIMILAR_MAX = 30;
 
+/**
+ * 선별 방식(실험, 기본 꺼짐 — lib/knowledge/select.ts applySelection)으로 바꾼 묶음의 덧붙임. 이것이 있으면 layers에는 기준류·사례류를 뺀 나머지 원문만 있고,
+ * 기준류는 규칙 문서(digest), 사례류는 고른 원문(picked) + 제목 목록(unpicked)으로 들어감. 인용·숫자 대조는 all(원래 층 원문 전부)로 함
+ */
+export interface BundleSelect {
+  /** 이 카드에 고른 사례류 조각 원문(순서 = 순위) */
+  picked: KnowledgeRef[];
+  /** 범위 안이지만 원문을 넣지 않은 사례류 조각 — 제목만 */
+  unpicked: Array<{ key: string; title: string; unitType: string }>;
+  /** 선별 전 층의 조각 전부(인용·숫자 대조용 원문) */
+  all: KnowledgeRef[];
+  /** 선별 전 「이 과제 해당」(과제 연결) — 경평 숫자 근거(relevantRefs)를 통째로 넣기와 같은 기준으로 두려고 */
+  relevant: string[];
+  /** 공통 규칙 문서 글: track = 트랙 공통(①② 기준류 대신), unit = 평가단위(③ 기준류 대신) */
+  digest: { track: string; unit: string };
+}
+
 export interface KnowledgeBundle {
   unit: string;
   layers: KnowledgeLayer[];
   list: BundleList;
+  /** 선별 방식일 때만 — 없으면 통째로 넣기(모든 함수 출력이 예전과 같음) */
+  select?: BundleSelect;
 }
 
-/** 묶음 중 이 과제에 연결된 조각(목록표 「이 과제 해당」 — 자동·확정) — 경평 초안 숫자 근거(lib/reports/section.ts draftEvidence) */
+/** 묶음 중 이 과제에 연결된 조각(목록표 「이 과제 해당」 — 자동·확정) — 경평 초안 숫자 근거(lib/reports/section.ts draftEvidence). 선별 방식이면 선별 전 원문·연결 기준 */
 export function relevantRefs(b: KnowledgeBundle): KnowledgeRef[] {
+  if (b.select) {
+    const rel = new Set(b.select.relevant);
+    return b.select.all.filter((r) => rel.has(r.key));
+  }
   const rel = new Set(b.list.relevant);
   return b.layers.flatMap((l) => l.refs).filter((r) => rel.has(r.key));
 }
@@ -148,9 +175,9 @@ export function buildBundle(chunks: BundleChunk[], card: { evalUnitId: string; k
   };
 }
 
-/** 인용 대조에 쓰는 근거 전부(공유 층 + 과제 목록 행) */
+/** 인용 대조에 쓰는 근거 전부(공유 층 + 과제 목록 행). 선별 방식이면 선별 전 층의 원문 전부(인용은 원문으로 대조) */
 export function bundleRefs(b: KnowledgeBundle): KnowledgeRef[] {
-  return [...b.layers.flatMap((l) => l.refs), ...(b.list.taskRow ? [b.list.taskRow] : [])];
+  return [...(b.select ? b.select.all : b.layers.flatMap((l) => l.refs)), ...(b.list.taskRow ? [b.list.taskRow] : [])];
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +197,7 @@ const unitName = (unit: string) => {
  * API는 덩이마다 캐시 표지를 둡니다. 카드에 따라 달라지는 것은 넣지 않음(목록표는 listText)
  */
 export function sharedTexts(p: PromptSet, b: KnowledgeBundle): string[] {
+  if (b.select) return selectedTexts(p, b, b.select);
   const blocks = layerBlocks(b.layers);
   const text = (l: KnowledgeLayer) => (l.refs.length ? `${fillFrom(p, "request", `kb.${l.id}`, { count: l.refs.length, business: unitName(b.unit) })}\n${blocks[l.id]}` : "");
   const [institution, common, business] = LAYER_ORDER.map((id) => b.layers.find((l) => l.id === id) ?? { id, refs: [] });
@@ -187,10 +215,41 @@ export function layerBlocks(layers: KnowledgeLayer[]): Record<LayerId, string> {
   };
 }
 
-/** 요청 글에 넣는 이 과제 기준 목록(이 과제 해당·닮은 순·과제 목록 행) */
+/** 요청 글에 넣는 이 과제 기준 목록(이 과제 해당·닮은 순·과제 목록 행). 선별 방식이면 목록 머리가 선별 방식 설명이고 끝에 고르지 않은 조각 제목 목록 */
 export function listText(p: PromptSet, b: KnowledgeBundle): string {
   const ids = (xs: string[]) => (xs.length ? xs.join(", ") : fillFrom(p, "request", "kb.none"));
-  const out = [fillFrom(p, "request", "kb.list", { relevant: ids(b.list.relevant), peers: ids(b.list.peers), prior: ids(b.list.prior), similar: ids(b.list.similar), similarMax: SIMILAR_MAX })];
+  const out = [fillFrom(p, "request", b.select ? "kb.select.list" : "kb.list", { relevant: ids(b.list.relevant), peers: ids(b.list.peers), prior: ids(b.list.prior), similar: ids(b.list.similar), similarMax: SIMILAR_MAX })];
   if (b.list.taskRow) out.push(fillFrom(p, "request", "kb.taskRow"), knowledgeBlock([b.list.taskRow]));
+  if (b.select?.unpicked.length) out.push(fillFrom(p, "request", "kb.select.unpicked", { count: b.select.unpicked.length }), unpickedLines(b.select.unpicked));
   return out.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// 선별 방식(실험, 기본 꺼짐) — 묶음은 lib/knowledge/select.ts applySelection이 만듦
+
+/**
+ * 선별 방식의 요청 앞 덩이 셋: [트랙 공통 규칙 문서 + ①② 남은 원문, 평가단위 규칙 문서 + ③ 남은 원문, 이 카드에 고른 사례류 원문].
+ * 앞 둘은 카드와 상관없이 같은 사업이면 같은 글(캐시 공유), 셋째만 카드별. 빈 덩이는 뺌
+ */
+function selectedTexts(p: PromptSet, b: KnowledgeBundle, s: BundleSelect): string[] {
+  const blocks = layerBlocks(b.layers);
+  const business = unitName(b.unit);
+  const rest = (id: LayerId) => {
+    const n = b.layers.find((l) => l.id === id)?.refs.length ?? 0;
+    return n ? `${fillFrom(p, "request", `kb.select.${id}`, { count: n, business })}\n${blocks[id]}` : "";
+  };
+  const digest = (key: string, text: string) => (text.trim() ? `${fillFrom(p, "request", key, { business })}\n${text}` : "");
+  const picked = s.picked.length ? `${fillFrom(p, "request", "kb.select.picked", { count: s.picked.length })}\n${sharedBlock(s.picked, { tag: "D", pool: s.picked })}` : "";
+  const join = (xs: string[]) => xs.filter(Boolean).join("\n\n");
+  return [join([digest("kb.select.digestTrack", s.digest.track), rest("institution"), rest("common")]), join([digest("kb.select.digestUnit", s.digest.unit), rest("business")]), picked].filter(Boolean);
+}
+
+/** 고르지 않은 조각 제목 목록 — 문서별(조각 키의 첫 마디 = 문서 id) 한 줄씩 「key · 제목」 */
+function unpickedLines(xs: BundleSelect["unpicked"]): string {
+  const byDoc = new Map<string, string[]>();
+  for (const x of xs) {
+    const doc = x.key.split("/")[0];
+    byDoc.set(doc, [...(byDoc.get(doc) ?? []), `${x.key} · ${x.title}`]);
+  }
+  return [...byDoc.entries()].map(([doc, items]) => `- ${doc}(${items.length}건): ${items.join(" | ")}`).join("\n");
 }

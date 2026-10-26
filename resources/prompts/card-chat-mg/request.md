@@ -45,3 +45,27 @@ AI: {{text}}
 
 <!-- @kb.none -->
 {{> _shared/knowledge-mg.md#none}}
+
+<!-- @kb.select.digestTrack -->
+{{> _shared/knowledge-mg.md#select.digestTrack}}
+
+<!-- @kb.select.digestUnit -->
+{{> _shared/knowledge-mg.md#select.digestUnit}}
+
+<!-- @kb.select.institution -->
+{{> _shared/knowledge-mg.md#select.institution}}
+
+<!-- @kb.select.common -->
+{{> _shared/knowledge-mg.md#select.common}}
+
+<!-- @kb.select.business -->
+{{> _shared/knowledge-mg.md#select.business}}
+
+<!-- @kb.select.picked -->
+{{> _shared/knowledge-mg.md#select.picked}}
+
+<!-- @kb.select.list -->
+{{> _shared/knowledge-mg.md#select.list}}
+
+<!-- @kb.select.unpicked -->
+{{> _shared/knowledge-mg.md#select.unpicked}}

@@ -14,6 +14,7 @@ import { REPORT_PROMPT_SPEC, sectionOutputSchema } from "../reports/section.ts";
 import { MG_DRAFT_PROMPT_SPEC, mgDraftOutSchema } from "../reports/mg-draft.ts";
 import { MG_OUTLINE_PROMPT_SPEC, mgOutlineOutSchema } from "../reports/mg-outline.ts";
 import { UNIT_AI_PROMPT_SPEC, unitAiOutSchema } from "../reports/unit-parts-ai.ts";
+import { RULES_DIGEST_PROMPT_SPEC, rulesDigestSchema } from "../knowledge/rules-digest.ts";
 import { cachedPrompt, readPromptSet } from "./load.ts";
 import type { PromptSet, PromptSpec } from "./template.ts";
 
@@ -39,6 +40,8 @@ export const PROMPT_FEATURES: Record<string, PromptSpec> = {
   "report-unit-mg": UNIT_AI_PROMPT_SPEC,
   "match-knowledge": MATCH_PROMPT_SPEC,
   "describe-image": DESCRIBE_PROMPT_SPEC,
+  // 공통 규칙 문서(기준류 조각 → 근거 메모, 로컬 CLI 스크립트 scripts/knowledge/rules-digest.ts만 — 지식공급 하이브리드 선별 계획 5단계)
+  "rules-digest": RULES_DIGEST_PROMPT_SPEC,
 };
 
 function set<S>(feature: string, schema: (p: PromptSet) => S): () => { prompts: PromptSet; schema: S } {
@@ -84,3 +87,6 @@ export const matchPrompts = set("match-knowledge", (p) => matchResultSchema(p.sc
 
 /** 첨부 그림 설명(이미지·스캔 PDF를 글로 옮김 — 올릴 때·요청 때 API 경로, light 모델) */
 export const describePrompts = set("describe-image", (p) => describeResultSchema(p.schema));
+
+/** 공통 규칙 문서(기준류 공통 지식 → 근거 메모 — 로컬 CLI 스크립트만, 앱 요청 경로에서는 아직 안 씀) */
+export const rulesDigestPrompts = set("rules-digest", (p) => rulesDigestSchema(p.schema));

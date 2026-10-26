@@ -18,6 +18,7 @@
 | `report-unit-mg/` | 경영관리 지표 단위 부분(카드 밖 표 — 지적사항 조치실적·전년 대비·성과분석 및 환류)의 「AI로 문장 채우기」(지표당 1회 — 코드가 정한 행 열쇠·칸만 채움, 2026-10-16 R5c) | `lib/reports/unit-parts-ai.ts`·`lib/ai/run.ts callReportUnitMg` | report-harness 문체 기준·집필 규칙(경평 초안과 같은 고르기) — 문체는 `report-draft/style.md#style`을 끼우고 표 칸 불릿 규칙만 쓰라고 적음 |
 | `match-knowledge/` | 백그라운드 「과제 대응」 매칭(카드 × 공통 지식 조각 → 이 과제 해당 조각 — 화면에 「이 과제 해당」으로 표시하는 참고 초안, 확정하지 않아도 AI는 규칙 범위 전부를 봄, light 모델) | `lib/ai/match.ts`·`lib/prep/handlers/match-knowledge.ts` | 없음 |
 | `describe-image/` | 첨부 그림 설명(이미지 첨부·글 없는 스캔 PDF → 보이는 글자·수치·장면을 글로, API 전용·light 모델) | `lib/ai/describe.ts`·`lib/ai/read-attachment.ts` | 없음 |
+| `rules-digest/` | 공통 규칙 문서(기준류 공통 지식 조각 → 원 조각 key가 달린 근거 메모 — 트랙 공통·평가단위별, 로컬 CLI 스크립트 `scripts/knowledge/rules-digest.ts`만, 앱 요청 경로에서는 아직 안 씀). `request.md`의 `doc.*`는 만든 규칙 문서의 머리 표지·부록 문구 | `lib/knowledge/rules-digest.ts` | 없음 |
 | `_shared/` | 여러 기능이 함께 쓰는 조각(`card.md`·`knowledge.md` — 과제원장 3종, `card-mg.md`·`knowledge-mg.md` — 경영관리 3종, `files.md` — 첨부 자료 머리, `skeleton.md` — 경평 구성안 골격 판정) | 끼움으로 | — |
 
 기능 폴더마다 세 파일이 있습니다.

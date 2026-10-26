@@ -2,7 +2,10 @@
 // 앱에서 사용자가 한 흐름과 같게 「구성안 다시 만들기」(짜임 지정·요청 메모 없음, 근거는 앱 기본 — 카드 + 카드 전용 자료 저장본 + 전년 절 + 평가 근거 + 공통 지식)
 // → 그 구성안 그대로 승인 → 구성안대로 집필(판면 맞추기·자동 고치기 포함)을 하고, 초안 HTML·spec·경고를 <evalDir>/drafts에, 묶음 기록을 <evalDir>/manifest.json에 씀.
 // DB는 읽기만 함(smoke가 저장하지 않음). Claude API는 부르지 않음 — claude 팔은 AI_PROVIDER=cli, 나머지는 AI_PROVIDER=codex이고 자식에는 ANTHROPIC_API_KEY를 빈 값으로 넘김.
-// 실행: node --env-file-if-exists=.env.local scripts/eval/model-compare-run.ts --out <evalDir> --cards <id,id,…> [--arms claude,sol,luna] [--runs 2] [--concurrency 2] [--dry]
+// 실행: node --env-file-if-exists=.env.local scripts/eval/model-compare-run.ts --out <evalDir> --cards <id,id,…> [--arms claude,sol,luna,sel] [--runs 2] [--concurrency 2] [--select-dir <폴더>] [--dry]
+//  경영관리 카드(경영관리N/N-M)는 scripts/smoke/ai-report-mg-smoke.ts --app(구성안 → 그대로 승인 → 집필, 서버 runReportOutlineMg·writeMgDraft와 같음)을 부름 — 산출 파일 이름·모양은 같음.
+//  팔 sel(2026-10-26 — 지식공급 하이브리드 선별 계획 7단계): claude 팔과 같고 공통 지식만 선별 방식(자식 환경 KNOWLEDGE_SELECT=report, 자식 인자 --select-dir <폴더> — selection.json·rules/*.md,
+//   scripts/lib/select-dir.ts). 나머지 팔은 KNOWLEDGE_SELECT를 비워 통째로 넣기. 선별되지 못한 카드는 .html.meta.json·manifest의 fellBack: true(비교에서 뺄 것)
 //  --dry: 할 일 목록(순서·이미 있는 초안)만 찍고 아무것도 부르지 않음.
 //  이어 하기: <이름>.html·.html.json이 이미 있으면 건너뜀(기록은 manifest의 앞 항목 또는 .html.meta.json에서 다시 채움). 실패한 건은 한 번 더 돌리고, 그래도 실패하면 ok:false로 남기고 다음으로.
 //  진행 줄은 <evalDir>/run.txt, 자식 출력은 <evalDir>/logs/<이름>.log.
@@ -14,6 +17,9 @@ import { HEAVY_CLI_MODEL_DEFAULT, HEAVY_MODEL_DEFAULT, specForFeature } from "..
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const SMOKE = join(ROOT, "scripts/smoke/ai-report-smoke.ts");
+const SMOKE_MG = join(ROOT, "scripts/smoke/ai-report-mg-smoke.ts");
+/** 카드 id로 부를 연기 시험(경영관리 카드는 구성안·집필 흐름이 달라 따로) */
+const smokeOf = (card: string) => (card.startsWith("경영관리") ? SMOKE_MG : SMOKE);
 /** 한 건(구성안 + 집필 + 고치기) 제한 — smoke 안의 호출마다 제한(구성안·집필 10분)이 따로 있고, 이것은 자식이 멈췄을 때의 안전판 */
 const CHILD_TIMEOUT_MS = 60 * 60_000;
 /** Codex 팔의 추론 수준(사용자 결정 2026-10-21 — lib/ai/codex-cli.ts 기본값과 같음, 자식에 CODEX_EFFORT로 명시) */
@@ -27,13 +33,14 @@ const flag = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) + 
 const outArg = flag("--out");
 const cards = (flag("--cards") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 if (!outArg || !cards.length) {
-  console.error("usage: node --env-file-if-exists=.env.local scripts/eval/model-compare-run.ts --out <evalDir> --cards <id,id,…> [--arms claude,sol,luna] [--runs 2] [--concurrency 2] [--dry]");
+  console.error("usage: node --env-file-if-exists=.env.local scripts/eval/model-compare-run.ts --out <evalDir> --cards <id,id,…> [--arms claude,sol,luna,sel] [--runs 2] [--concurrency 2] [--select-dir <폴더>] [--dry]");
   process.exit(1);
 }
 const outDir = resolve(outArg);
 const runs = Math.max(1, Number(flag("--runs") ?? 1) || 1);
 const concurrency = Math.max(1, Number(flag("--concurrency") ?? 2) || 2);
 const dry = argv.includes("--dry");
+const selectDir = flag("--select-dir");
 
 interface Arm {
   id: string;
@@ -42,6 +49,8 @@ interface Arm {
   model: string;
   effort: string;
   env: Record<string, string>;
+  /** 자식 인자 덧붙임(sel 팔의 --select-dir) */
+  args?: string[];
 }
 
 // claude 팔은 앱 설정(경평 구성안·집필·고치기 — 세 기능이 같은 등급·effort) 그대로
@@ -59,11 +68,17 @@ const ARMS: Record<string, Arm> = {
   claude: { id: "claude", label: `Claude ${claudeName} (Claude Code CLI, effort ${claudeSpec.effort})`, provider: "cli", model: claudeSpec.cliModel, effort: claudeSpec.effort, env: { AI_PROVIDER: "cli" } },
   sol: codexArm("sol", "gpt-6-sol"),
   luna: codexArm("luna", "gpt-6-luna"),
+  // claude 팔과 같고 공통 지식만 선별 방식(경평 구성안·집필 — KNOWLEDGE_SELECT=report)
+  sel: { id: "sel", label: `Claude ${claudeName} (Claude Code CLI, effort ${claudeSpec.effort}) + 공통 지식 선별`, provider: "cli", model: claudeSpec.cliModel, effort: claudeSpec.effort, env: { AI_PROVIDER: "cli", KNOWLEDGE_SELECT: "report" }, args: selectDir ? ["--select-dir", resolve(selectDir)] : [] },
 };
 const armIds = (flag("--arms") ?? "claude,sol,luna").split(",").map((s) => s.trim()).filter(Boolean);
 const unknownArm = armIds.find((a) => !ARMS[a]);
 if (unknownArm) {
-  console.error(`모르는 팔: ${unknownArm} (claude·sol·luna)`);
+  console.error(`모르는 팔: ${unknownArm} (claude·sol·luna·sel)`);
+  process.exit(1);
+}
+if (armIds.includes("sel") && !selectDir) {
+  console.error("팔 sel에는 --select-dir <폴더>(selection.json·rules/*.md)가 필요합니다.");
   process.exit(1);
 }
 const arms = armIds.map((a) => ARMS[a]);
@@ -103,6 +118,14 @@ interface Usage3 {
   output: number;
   cached: number;
 }
+/** smoke 사용량 그대로(토큰 다섯 — 구성안 + 집필 합) */
+interface Usage5 {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cacheWrite1h: number;
+}
 interface DraftEntry {
   name: string;
   arm: string;
@@ -120,14 +143,22 @@ interface DraftEntry {
   unknownNumbers: string[];
   outlineWarnings: string[];
   model: string | null;
+  /** 토큰 다섯(구성안 + 집필 합 — usage는 예전 셋 묶음) */
+  tokens: Usage5;
+  /** 요청 글 크기(글자 — smoke meta.request: 구성안·집필 1차) */
+  request: unknown;
+  /** sel 팔인데 선별되지 못해 통째로 넣기로 감(다른 팔은 null) */
+  fellBack: boolean | null;
 }
 
 /** smoke 사용량(Usage) → 기록 셋: input = 캐시 밖 입력(캐시 쓰기 포함), cached = 캐시 읽기 */
 const usage3 = (u: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null | undefined): Usage3 => ({ input: (u?.input ?? 0) + (u?.cacheWrite ?? 0), output: u?.output ?? 0, cached: u?.cacheRead ?? 0 });
 const addUsage = (a: Usage3, b: Usage3): Usage3 => ({ input: a.input + b.input, output: a.output + b.output, cached: a.cached + b.cached });
+const usage5 = (u: Partial<Usage5> | null | undefined): Usage5 => ({ input: u?.input ?? 0, output: u?.output ?? 0, cacheRead: u?.cacheRead ?? 0, cacheWrite: u?.cacheWrite ?? 0, cacheWrite1h: u?.cacheWrite1h ?? 0 });
+const addUsage5 = (a: Usage5, b: Usage5): Usage5 => ({ input: a.input + b.input, output: a.output + b.output, cacheRead: a.cacheRead + b.cacheRead, cacheWrite: a.cacheWrite + b.cacheWrite, cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h });
 
 /** .html.meta.json → 기록 칸(없으면 null) */
-function readMeta(t: Task): Pick<DraftEntry, "outlineMs" | "draftMs" | "usage" | "warnings" | "unknownNumbers" | "outlineWarnings" | "model"> | null {
+function readMeta(t: Task): Pick<DraftEntry, "outlineMs" | "draftMs" | "usage" | "warnings" | "unknownNumbers" | "outlineWarnings" | "model" | "tokens" | "request" | "fellBack"> | null {
   const f = `${htmlOf(t)}.meta.json`;
   if (!existsSync(f)) return null;
   const m = JSON.parse(readFileSync(f, "utf8"));
@@ -139,19 +170,22 @@ function readMeta(t: Task): Pick<DraftEntry, "outlineMs" | "draftMs" | "usage" |
     unknownNumbers: m.unknownNumbers ?? [],
     outlineWarnings: m.outlineWarnings ?? [],
     model: m.model ?? null,
+    tokens: addUsage5(usage5(m.usage?.outline), usage5(m.usage?.draft)),
+    request: m.request ?? null,
+    fellBack: m.select ? Boolean(m.select.fellBack) : null,
   };
 }
 
 const manifestFile = join(outDir, "manifest.json");
 const prev: DraftEntry[] = existsSync(manifestFile) ? (JSON.parse(readFileSync(manifestFile, "utf8")).drafts ?? []) : [];
 const entries = new Map<string, DraftEntry>(prev.map((d) => [d.name, d]));
-const empty = (t: Task): DraftEntry => ({ name: t.name, arm: t.arm.id, card: t.card, run: t.run, ok: false, error: null, durationMs: 0, outlineMs: 0, draftMs: 0, usage: { input: 0, output: 0, cached: 0 }, retries: 0, warnings: [], unknownNumbers: [], outlineWarnings: [], model: null });
+const empty = (t: Task): DraftEntry => ({ name: t.name, arm: t.arm.id, card: t.card, run: t.run, ok: false, error: null, durationMs: 0, outlineMs: 0, draftMs: 0, usage: { input: 0, output: 0, cached: 0 }, retries: 0, warnings: [], unknownNumbers: [], outlineWarnings: [], model: null, tokens: usage5(null), request: null, fellBack: null });
 
 if (dry) {
   console.log(`round ${basename(resolve(outDir))} · 팔 ${arms.length} · 카드 ${cards.length} · 회차 ${runs} · 동시 ${concurrency} · 할 일 ${tasks.length}건(이미 있음 ${tasks.filter(done).length})`);
   for (const a of arms) console.log(`  팔 ${a.id}: ${a.label} · env ${Object.entries(a.env).map(([k, v]) => `${k}=${v}`).join(" ")}`);
   for (const [i, t] of tasks.entries()) console.log(`  ${String(i + 1).padStart(3)}. ${t.name}${done(t) ? " (있음 — 건너뜀)" : ""}`);
-  console.log(`자식: node --conditions=react-server --env-file=.env.local scripts/smoke/ai-report-smoke.ts <카드> ${join(draftsDir, "<이름>.html")} --app`);
+  console.log(`자식: node --conditions=react-server --env-file=.env.local scripts/smoke/ai-report-smoke.ts(경영관리 카드는 ai-report-mg-smoke.ts) <카드> ${join(draftsDir, "<이름>.html")} --app [팔 인자]`);
   process.exit(0);
 }
 
@@ -172,9 +206,10 @@ function runChild(t: Task): Promise<string | null> {
   return new Promise((res) => {
     const log = createWriteStream(join(logsDir, `${t.name}.log`), { flags: "a" });
     log.write(`\n=== ${new Date().toISOString()} ${t.arm.label} · ${t.card} · ${t.run}회\n`);
-    const env: Record<string, string | undefined> = { ...process.env, ...t.arm.env, ANTHROPIC_API_KEY: "" };
+    // 선별 방식은 sel 팔만(나머지는 KNOWLEDGE_SELECT를 비워 통째로 넣기 — 환경 값이 --env-file보다 앞섬)
+    const env: Record<string, string | undefined> = { ...process.env, KNOWLEDGE_SELECT: "", ...t.arm.env, ANTHROPIC_API_KEY: "" };
     delete env.VERCEL;
-    const child = spawn(process.execPath, ["--conditions=react-server", "--env-file=.env.local", SMOKE, t.card, htmlOf(t), "--app"], { cwd: ROOT, env: env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, ["--conditions=react-server", "--env-file=.env.local", smokeOf(t.card), t.card, htmlOf(t), "--app", ...(t.arm.args ?? [])], { cwd: ROOT, env: env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"] });
     let tail = "";
     const keep = (s: Buffer) => {
       log.write(s);
@@ -217,7 +252,7 @@ await runPool(tasks, concurrency, async (t, i) => {
   const meta = error ? null : readMeta(t);
   entries.set(t.name, { ...empty(t), ...(meta ?? {}), ok: !error, error, durationMs: Date.now() - t0, retries });
   const e = entries.get(t.name)!;
-  progress(`${i + 1}/${tasks.length} ${e.ok ? "끝" : "실패로 남김"} ${t.name} · ${Math.round(e.durationMs / 1000)}초${e.ok ? ` · 경고 ${e.warnings.length} · 없는 숫자 ${e.unknownNumbers.length} · 토큰 입력 ${e.usage.input}+캐시 ${e.usage.cached}/출력 ${e.usage.output}` : ""}`);
+  progress(`${i + 1}/${tasks.length} ${e.ok ? "끝" : "실패로 남김"} ${t.name} · ${Math.round(e.durationMs / 1000)}초${e.ok ? ` · 경고 ${e.warnings.length} · 없는 숫자 ${e.unknownNumbers.length} · 토큰 입력 ${e.usage.input}+캐시 ${e.usage.cached}/출력 ${e.usage.output}${e.fellBack ? " · 경고: 선별되지 못해 통째로 넣기(fellBack)" : ""}` : ""}`);
   saveManifest();
 });
 progress(`끝 · 성공 ${[...entries.values()].filter((d) => d.ok).length}/${tasks.length}`);

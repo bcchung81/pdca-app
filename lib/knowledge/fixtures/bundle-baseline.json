@@ -1,0 +1,378 @@
+{
+  "biz-card": {
+    "sharedTexts": [
+      "[① 6건]\n<source key=\"plan-2607/narr/I/1\" title=\"제목 plan-2607/narr/I/1\">\n관리계획 서술 하나\n</source>\n<source key=\"plan-2607/narr/II/1\" title=\"제목 plan-2607/narr/II/1\">\n관리계획 서술 둘\n</source>\n<source key=\"goal30-2605/1\" title=\"제목 goal30-2605/1\">\n중장기 목표지표 하나\n</source>\n<source key=\"peer25-biz/bplus-ship\" title=\"붙임2 · 기관나 — 선박 안전(B+)\">\n선박 탑승 예측\n</source>\n<source key=\"peer25-biz/b0-radio\" title=\"붙임2 · 기관가 — 전파 안테나 판독(B0)\">\n안테나 판독 자동화\n</source>\n<source key=\"up-x/1\" title=\"제목 up-x/1\">\n일반 문서 한 쪽\n</source>\n\n[② 2건]\n<source key=\"plan-2607/handbook26/BZ-4\" title=\"제목 plan-2607/handbook26/BZ-4\">\n공통지표 편람\n</source>\n<source key=\"att3-2604/qa/bonus/1\" title=\"제목 att3-2604/qa/bonus/1\">\n가점 질의\n</source>",
+      "[③ 주요사업1 전파이용 기회 확대 12건]\n<위치 약칭 — 아래 where 속 「§…」는 이 표의 뜻을 줄인 것입니다>\n§C1 = 합성 평가보고서 사업 의견 첫째 묶음\n</위치 약칭>\n<source key=\"plan-2607/handbook26/BZ-1/k1\" title=\"제목 plan-2607/handbook26/BZ-1/k1\" where=\"'26 편람 · 주요사업1\">\n편람 지표 정의와 배점\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e1/p01\" title=\"제목 plan-2607/eval25/BZ-1/e1/p01\" where=\"§C1 · 1\">\n평가위원은 성과지표의 목표 설정 근거가 부족하고 전년 대비 개선 정도를 객관적으로 보이기 어렵다고 지적하였으며 산출 지표 중심에서 결과 지표 중심으로 바꾸라고 권고하였다 이에 따라 보완이 필요하다 또한 성과 확산 계획과 지속성 확보 방안이 구체적이지 않아 다음 연도 계획에 반영할 것을 요청하였다 아울러 수혜자 만족도 조사 결과를 성과 해석에 연결하고 외부 전문가 검증 절차를 거치도록 권고하였다\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e1/p02\" title=\"제목 plan-2607/eval25/BZ-1/e1/p02\" where=\"§C1 · 2\">\n안테나 판독 확산 실적을 정량으로 제시할 것\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e2/p01\" title=\"제목 plan-2607/eval25/BZ-1/e2/p01\" where=\"§C1 · 3\">\n선박 안전 관리 체계 보완\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e2/p02\" title=\"제목 plan-2607/eval25/BZ-1/e2/p02\" where=\"§C1 · 4\">\n도서 통신품질 측정 범위 확대\n</source>\n<source key=\"att3-2604/qa/BZ-1/1\" title=\"제목 att3-2604/qa/BZ-1/1\">\n안테나 자동판독 질의와 답\n</source>\n<source key=\"att3-2604/qa/BZ-1/2\" title=\"제목 att3-2604/qa/BZ-1/2\">\n통신품질 측정 질의와 답\n</source>\n<source key=\"att3-2604/BZ-4/Q1\" title=\"제목 att3-2604/BZ-4/Q1\">\n공통지표 질의\n</source>\n<source key=\"mid25-biz/BZ-1/r1\" title=\"제목 mid25-biz/BZ-1/r1\" note=\"본문 전체가 key=plan-2607/eval25/BZ-1/e1/p01 조각 안에 그대로 있어 생략\"/>\n<source key=\"pool25-biz/BZ-1/1\" title=\"제목 pool25-biz/BZ-1/1\">\n성과지표 Pool 하나\n</source>\n<source key=\"rpt25-biz/BZ-1/a\" title=\"2025 보고서 1-1 가. 안테나 판독\">\nAI 안테나 자동판독 전국 확산 120건\n</source>\n<source key=\"rpt25-biz/BZ-1/b\" title=\"2025 보고서 1-2 나. 도서 통신품질\">\n도서 지역 통신품질 측정 35곳\n</source>"
+    ],
+    "listText": "[목록] 해당: att3-2604/qa/BZ-1/1, plan-2607/eval25/BZ-1/e1/p02 / 사례: peer25-biz/b0-radio, peer25-biz/bplus-ship / 전년: rpt25-biz/BZ-1/a, rpt25-biz/BZ-1/b / 닮은 30: rpt25-biz/BZ-1/a, att3-2604/qa/BZ-1/1, plan-2607/eval25/BZ-1/e1/p02, plan-2607/eval25/BZ-1/e1/p01, mid25-biz/BZ-1/r1, up-x/1, att3-2604/qa/bonus/1, plan-2607/eval25/BZ-1/e2/p01, plan-2607/eval25/BZ-1/e2/p02, att3-2604/qa/BZ-1/2, att3-2604/BZ-4/Q1, pool25-biz/BZ-1/1, rpt25-biz/BZ-1/b\n[과제 행]\n<source key=\"plan/task/1-1\" title=\"제목 plan/task/1-1\">\n과제 목록 행 1-1\n</source>",
+    "bundleRefs": [
+      {
+        "key": "plan-2607/narr/I/1",
+        "title": "제목 plan-2607/narr/I/1",
+        "unitType": "plan_section",
+        "text": "관리계획 서술 하나"
+      },
+      {
+        "key": "plan-2607/narr/II/1",
+        "title": "제목 plan-2607/narr/II/1",
+        "unitType": "plan_section",
+        "text": "관리계획 서술 둘"
+      },
+      {
+        "key": "goal30-2605/1",
+        "title": "제목 goal30-2605/1",
+        "unitType": "goal_indicator",
+        "text": "중장기 목표지표 하나"
+      },
+      {
+        "key": "peer25-biz/bplus-ship",
+        "title": "붙임2 · 기관나 — 선박 안전(B+)",
+        "unitType": "peer_case",
+        "text": "선박 탑승 예측",
+        "meta": {
+          "grade": "B+"
+        }
+      },
+      {
+        "key": "peer25-biz/b0-radio",
+        "title": "붙임2 · 기관가 — 전파 안테나 판독(B0)",
+        "unitType": "peer_case",
+        "text": "안테나 판독 자동화",
+        "meta": {
+          "grade": "B0"
+        }
+      },
+      {
+        "key": "up-x/1",
+        "title": "제목 up-x/1",
+        "unitType": "generic_section",
+        "text": "일반 문서 한 쪽"
+      },
+      {
+        "key": "plan-2607/handbook26/BZ-4",
+        "title": "제목 plan-2607/handbook26/BZ-4",
+        "unitType": "handbook_indicator",
+        "text": "공통지표 편람"
+      },
+      {
+        "key": "att3-2604/qa/bonus/1",
+        "title": "제목 att3-2604/qa/bonus/1",
+        "unitType": "qa_pair",
+        "text": "가점 질의"
+      },
+      {
+        "key": "plan-2607/handbook26/BZ-1/k1",
+        "title": "제목 plan-2607/handbook26/BZ-1/k1",
+        "unitType": "handbook_indicator",
+        "text": "편람 지표 정의와 배점",
+        "where": "'26 편람 · 주요사업1"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e1/p01",
+        "title": "제목 plan-2607/eval25/BZ-1/e1/p01",
+        "unitType": "evaluator_comment",
+        "text": "평가위원은 성과지표의 목표 설정 근거가 부족하고 전년 대비 개선 정도를 객관적으로 보이기 어렵다고 지적하였으며 산출 지표 중심에서 결과 지표 중심으로 바꾸라고 권고하였다 이에 따라 보완이 필요하다 또한 성과 확산 계획과 지속성 확보 방안이 구체적이지 않아 다음 연도 계획에 반영할 것을 요청하였다 아울러 수혜자 만족도 조사 결과를 성과 해석에 연결하고 외부 전문가 검증 절차를 거치도록 권고하였다",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 1"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e1/p02",
+        "title": "제목 plan-2607/eval25/BZ-1/e1/p02",
+        "unitType": "evaluator_comment",
+        "text": "안테나 판독 확산 실적을 정량으로 제시할 것",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 2"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e2/p01",
+        "title": "제목 plan-2607/eval25/BZ-1/e2/p01",
+        "unitType": "evaluator_comment",
+        "text": "선박 안전 관리 체계 보완",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 3"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e2/p02",
+        "title": "제목 plan-2607/eval25/BZ-1/e2/p02",
+        "unitType": "evaluator_comment",
+        "text": "도서 통신품질 측정 범위 확대",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 4"
+      },
+      {
+        "key": "att3-2604/qa/BZ-1/1",
+        "title": "제목 att3-2604/qa/BZ-1/1",
+        "unitType": "qa_pair",
+        "text": "안테나 자동판독 질의와 답"
+      },
+      {
+        "key": "att3-2604/qa/BZ-1/2",
+        "title": "제목 att3-2604/qa/BZ-1/2",
+        "unitType": "qa_pair",
+        "text": "통신품질 측정 질의와 답"
+      },
+      {
+        "key": "att3-2604/BZ-4/Q1",
+        "title": "제목 att3-2604/BZ-4/Q1",
+        "unitType": "qa_pair",
+        "text": "공통지표 질의"
+      },
+      {
+        "key": "mid25-biz/BZ-1/r1",
+        "title": "제목 mid25-biz/BZ-1/r1",
+        "unitType": "finding_row",
+        "text": "평가위원은 성과지표의 목표 설정 근거가 부족하고 전년 대비 개선 정도를 객관적으로 보이기 어렵다고 지적하였으며 산출 지표 중심에서 결과 지표 중심으로 바꾸라고 권고하였다 이에 따라 보완이 필요하다 또한 성과 확산 계획과 지속성 확보 방안이 구체적이지 않아 다음 연도 계획에 반영할 것을 요청하였다 아울러 수혜자 만족도 조사 결과를 성과 해석에 연결하고 외부 전문가 검증 절차를 거치도록 권고하였다"
+      },
+      {
+        "key": "pool25-biz/BZ-1/1",
+        "title": "제목 pool25-biz/BZ-1/1",
+        "unitType": "pool_indicator",
+        "text": "성과지표 Pool 하나"
+      },
+      {
+        "key": "rpt25-biz/BZ-1/a",
+        "title": "2025 보고서 1-1 가. 안테나 판독",
+        "unitType": "report_section",
+        "text": "AI 안테나 자동판독 전국 확산 120건"
+      },
+      {
+        "key": "rpt25-biz/BZ-1/b",
+        "title": "2025 보고서 1-2 나. 도서 통신품질",
+        "unitType": "report_section",
+        "text": "도서 지역 통신품질 측정 35곳"
+      },
+      {
+        "key": "plan/task/1-1",
+        "title": "제목 plan/task/1-1",
+        "unitType": "task_list_row",
+        "text": "과제 목록 행 1-1"
+      }
+    ],
+    "relevantRefs": [
+      {
+        "key": "plan-2607/eval25/BZ-1/e1/p02",
+        "title": "제목 plan-2607/eval25/BZ-1/e1/p02",
+        "unitType": "evaluator_comment",
+        "text": "안테나 판독 확산 실적을 정량으로 제시할 것",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 2"
+      },
+      {
+        "key": "att3-2604/qa/BZ-1/1",
+        "title": "제목 att3-2604/qa/BZ-1/1",
+        "unitType": "qa_pair",
+        "text": "안테나 자동판독 질의와 답"
+      }
+    ]
+  },
+  "biz-report": {
+    "sharedTexts": [
+      "[① 7건]\n<source key=\"plan-2607/narr/I/1\" title=\"제목 plan-2607/narr/I/1\">\n관리계획 서술 하나\n</source>\n<source key=\"plan-2607/narr/II/1\" title=\"제목 plan-2607/narr/II/1\">\n관리계획 서술 둘\n</source>\n<source key=\"goal30-2605/1\" title=\"제목 goal30-2605/1\">\n중장기 목표지표 하나\n</source>\n<source key=\"peer25-biz/bplus-ship\" title=\"붙임2 · 기관나 — 선박 안전(B+)\">\n선박 탑승 예측\n</source>\n<source key=\"peer25-biz/b0-radio\" title=\"붙임2 · 기관가 — 전파 안테나 판독(B0)\">\n안테나 판독 자동화\n</source>\n<source key=\"up-m/1\" title=\"제목 up-m/1\" where=\"※ 작성 방법론 자료 — 보고서를 어떻게 쓰고 무엇을 앞세울지의 참고이며 사실·숫자·사례의 근거가 아님\">\n작성 방법론 한 쪽\n</source>\n<source key=\"up-x/1\" title=\"제목 up-x/1\">\n일반 문서 한 쪽\n</source>\n\n[② 2건]\n<source key=\"plan-2607/handbook26/BZ-4\" title=\"제목 plan-2607/handbook26/BZ-4\">\n공통지표 편람\n</source>\n<source key=\"att3-2604/qa/bonus/1\" title=\"제목 att3-2604/qa/bonus/1\">\n가점 질의\n</source>",
+      "[③ 주요사업1 전파이용 기회 확대 12건]\n<위치 약칭 — 아래 where 속 「§…」는 이 표의 뜻을 줄인 것입니다>\n§C1 = 합성 평가보고서 사업 의견 첫째 묶음\n</위치 약칭>\n<source key=\"plan-2607/handbook26/BZ-1/k1\" title=\"제목 plan-2607/handbook26/BZ-1/k1\" where=\"'26 편람 · 주요사업1\">\n편람 지표 정의와 배점\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e1/p01\" title=\"제목 plan-2607/eval25/BZ-1/e1/p01\" where=\"§C1 · 1\">\n평가위원은 성과지표의 목표 설정 근거가 부족하고 전년 대비 개선 정도를 객관적으로 보이기 어렵다고 지적하였으며 산출 지표 중심에서 결과 지표 중심으로 바꾸라고 권고하였다 이에 따라 보완이 필요하다 또한 성과 확산 계획과 지속성 확보 방안이 구체적이지 않아 다음 연도 계획에 반영할 것을 요청하였다 아울러 수혜자 만족도 조사 결과를 성과 해석에 연결하고 외부 전문가 검증 절차를 거치도록 권고하였다\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e1/p02\" title=\"제목 plan-2607/eval25/BZ-1/e1/p02\" where=\"§C1 · 2\">\n안테나 판독 확산 실적을 정량으로 제시할 것\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e2/p01\" title=\"제목 plan-2607/eval25/BZ-1/e2/p01\" where=\"§C1 · 3\">\n선박 안전 관리 체계 보완\n</source>\n<source key=\"plan-2607/eval25/BZ-1/e2/p02\" title=\"제목 plan-2607/eval25/BZ-1/e2/p02\" where=\"§C1 · 4\">\n도서 통신품질 측정 범위 확대\n</source>\n<source key=\"att3-2604/qa/BZ-1/1\" title=\"제목 att3-2604/qa/BZ-1/1\">\n안테나 자동판독 질의와 답\n</source>\n<source key=\"att3-2604/qa/BZ-1/2\" title=\"제목 att3-2604/qa/BZ-1/2\">\n통신품질 측정 질의와 답\n</source>\n<source key=\"att3-2604/BZ-4/Q1\" title=\"제목 att3-2604/BZ-4/Q1\">\n공통지표 질의\n</source>\n<source key=\"mid25-biz/BZ-1/r1\" title=\"제목 mid25-biz/BZ-1/r1\" note=\"본문 전체가 key=plan-2607/eval25/BZ-1/e1/p01 조각 안에 그대로 있어 생략\"/>\n<source key=\"pool25-biz/BZ-1/1\" title=\"제목 pool25-biz/BZ-1/1\">\n성과지표 Pool 하나\n</source>\n<source key=\"rpt25-biz/BZ-1/a\" title=\"2025 보고서 1-1 가. 안테나 판독\">\nAI 안테나 자동판독 전국 확산 120건\n</source>\n<source key=\"rpt25-biz/BZ-1/b\" title=\"2025 보고서 1-2 나. 도서 통신품질\">\n도서 지역 통신품질 측정 35곳\n</source>"
+    ],
+    "listText": "[목록] 해당: att3-2604/qa/BZ-1/1, plan-2607/eval25/BZ-1/e1/p02 / 사례: peer25-biz/b0-radio, peer25-biz/bplus-ship / 전년: rpt25-biz/BZ-1/a, rpt25-biz/BZ-1/b / 닮은 30: rpt25-biz/BZ-1/a, att3-2604/qa/BZ-1/1, plan-2607/eval25/BZ-1/e1/p02, plan-2607/eval25/BZ-1/e1/p01, mid25-biz/BZ-1/r1, up-m/1, up-x/1, att3-2604/qa/bonus/1, plan-2607/eval25/BZ-1/e2/p01, plan-2607/eval25/BZ-1/e2/p02, att3-2604/qa/BZ-1/2, att3-2604/BZ-4/Q1, pool25-biz/BZ-1/1, rpt25-biz/BZ-1/b",
+    "bundleRefs": [
+      {
+        "key": "plan-2607/narr/I/1",
+        "title": "제목 plan-2607/narr/I/1",
+        "unitType": "plan_section",
+        "text": "관리계획 서술 하나"
+      },
+      {
+        "key": "plan-2607/narr/II/1",
+        "title": "제목 plan-2607/narr/II/1",
+        "unitType": "plan_section",
+        "text": "관리계획 서술 둘"
+      },
+      {
+        "key": "goal30-2605/1",
+        "title": "제목 goal30-2605/1",
+        "unitType": "goal_indicator",
+        "text": "중장기 목표지표 하나"
+      },
+      {
+        "key": "peer25-biz/bplus-ship",
+        "title": "붙임2 · 기관나 — 선박 안전(B+)",
+        "unitType": "peer_case",
+        "text": "선박 탑승 예측",
+        "meta": {
+          "grade": "B+"
+        }
+      },
+      {
+        "key": "peer25-biz/b0-radio",
+        "title": "붙임2 · 기관가 — 전파 안테나 판독(B0)",
+        "unitType": "peer_case",
+        "text": "안테나 판독 자동화",
+        "meta": {
+          "grade": "B0"
+        }
+      },
+      {
+        "key": "up-m/1",
+        "title": "제목 up-m/1",
+        "unitType": "generic_section",
+        "text": "작성 방법론 한 쪽",
+        "where": "※ 작성 방법론 자료 — 보고서를 어떻게 쓰고 무엇을 앞세울지의 참고이며 사실·숫자·사례의 근거가 아님"
+      },
+      {
+        "key": "up-x/1",
+        "title": "제목 up-x/1",
+        "unitType": "generic_section",
+        "text": "일반 문서 한 쪽"
+      },
+      {
+        "key": "plan-2607/handbook26/BZ-4",
+        "title": "제목 plan-2607/handbook26/BZ-4",
+        "unitType": "handbook_indicator",
+        "text": "공통지표 편람"
+      },
+      {
+        "key": "att3-2604/qa/bonus/1",
+        "title": "제목 att3-2604/qa/bonus/1",
+        "unitType": "qa_pair",
+        "text": "가점 질의"
+      },
+      {
+        "key": "plan-2607/handbook26/BZ-1/k1",
+        "title": "제목 plan-2607/handbook26/BZ-1/k1",
+        "unitType": "handbook_indicator",
+        "text": "편람 지표 정의와 배점",
+        "where": "'26 편람 · 주요사업1"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e1/p01",
+        "title": "제목 plan-2607/eval25/BZ-1/e1/p01",
+        "unitType": "evaluator_comment",
+        "text": "평가위원은 성과지표의 목표 설정 근거가 부족하고 전년 대비 개선 정도를 객관적으로 보이기 어렵다고 지적하였으며 산출 지표 중심에서 결과 지표 중심으로 바꾸라고 권고하였다 이에 따라 보완이 필요하다 또한 성과 확산 계획과 지속성 확보 방안이 구체적이지 않아 다음 연도 계획에 반영할 것을 요청하였다 아울러 수혜자 만족도 조사 결과를 성과 해석에 연결하고 외부 전문가 검증 절차를 거치도록 권고하였다",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 1"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e1/p02",
+        "title": "제목 plan-2607/eval25/BZ-1/e1/p02",
+        "unitType": "evaluator_comment",
+        "text": "안테나 판독 확산 실적을 정량으로 제시할 것",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 2"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e2/p01",
+        "title": "제목 plan-2607/eval25/BZ-1/e2/p01",
+        "unitType": "evaluator_comment",
+        "text": "선박 안전 관리 체계 보완",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 3"
+      },
+      {
+        "key": "plan-2607/eval25/BZ-1/e2/p02",
+        "title": "제목 plan-2607/eval25/BZ-1/e2/p02",
+        "unitType": "evaluator_comment",
+        "text": "도서 통신품질 측정 범위 확대",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 4"
+      },
+      {
+        "key": "att3-2604/qa/BZ-1/1",
+        "title": "제목 att3-2604/qa/BZ-1/1",
+        "unitType": "qa_pair",
+        "text": "안테나 자동판독 질의와 답"
+      },
+      {
+        "key": "att3-2604/qa/BZ-1/2",
+        "title": "제목 att3-2604/qa/BZ-1/2",
+        "unitType": "qa_pair",
+        "text": "통신품질 측정 질의와 답"
+      },
+      {
+        "key": "att3-2604/BZ-4/Q1",
+        "title": "제목 att3-2604/BZ-4/Q1",
+        "unitType": "qa_pair",
+        "text": "공통지표 질의"
+      },
+      {
+        "key": "mid25-biz/BZ-1/r1",
+        "title": "제목 mid25-biz/BZ-1/r1",
+        "unitType": "finding_row",
+        "text": "평가위원은 성과지표의 목표 설정 근거가 부족하고 전년 대비 개선 정도를 객관적으로 보이기 어렵다고 지적하였으며 산출 지표 중심에서 결과 지표 중심으로 바꾸라고 권고하였다 이에 따라 보완이 필요하다 또한 성과 확산 계획과 지속성 확보 방안이 구체적이지 않아 다음 연도 계획에 반영할 것을 요청하였다 아울러 수혜자 만족도 조사 결과를 성과 해석에 연결하고 외부 전문가 검증 절차를 거치도록 권고하였다"
+      },
+      {
+        "key": "pool25-biz/BZ-1/1",
+        "title": "제목 pool25-biz/BZ-1/1",
+        "unitType": "pool_indicator",
+        "text": "성과지표 Pool 하나"
+      },
+      {
+        "key": "rpt25-biz/BZ-1/a",
+        "title": "2025 보고서 1-1 가. 안테나 판독",
+        "unitType": "report_section",
+        "text": "AI 안테나 자동판독 전국 확산 120건"
+      },
+      {
+        "key": "rpt25-biz/BZ-1/b",
+        "title": "2025 보고서 1-2 나. 도서 통신품질",
+        "unitType": "report_section",
+        "text": "도서 지역 통신품질 측정 35곳"
+      }
+    ],
+    "relevantRefs": [
+      {
+        "key": "plan-2607/eval25/BZ-1/e1/p02",
+        "title": "제목 plan-2607/eval25/BZ-1/e1/p02",
+        "unitType": "evaluator_comment",
+        "text": "안테나 판독 확산 실적을 정량으로 제시할 것",
+        "where": "합성 평가보고서 사업 의견 첫째 묶음 · 2"
+      },
+      {
+        "key": "att3-2604/qa/BZ-1/1",
+        "title": "제목 att3-2604/qa/BZ-1/1",
+        "unitType": "qa_pair",
+        "text": "안테나 자동판독 질의와 답"
+      }
+    ]
+  },
+  "mg-card": {
+    "sharedTexts": [
+      "[① 1건]\n<source key=\"mg/plan/inst\" title=\"제목 mg/plan/inst\">\n경영관리 공통 서술\n</source>\n\n[② 1건]\n<source key=\"att3-2604/qa/bonus/1\" title=\"제목 att3-2604/qa/bonus/1\">\n가점 질의\n</source>",
+      "[③ 경영관리 지표3 일자리 및 균등한 기회 4건]\n<source key=\"mg/handbook/MG-3\" title=\"제목 mg/handbook/MG-3\">\n지표3 편람\n</source>\n<source key=\"mg/eval/MG-3/1\" title=\"제목 mg/eval/MG-3/1\">\n지표3 평가위원 의견\n</source>\n<source key=\"mg/core/MG-3\" title=\"제목 mg/core/MG-3\">\n지표3 핵심공통항목 실적 표\n</source>\n<source key=\"rpt25-mg-03/1\" title=\"제목 rpt25-mg-03/1\">\n지표3 전년 보고서 장\n</source>"
+    ],
+    "listText": "[목록] 해당: mg/eval/MG-3/1 / 사례: 없음 / 전년: 없음 / 닮은 30: att3-2604/qa/bonus/1, mg/eval/MG-3/1",
+    "bundleRefs": [
+      {
+        "key": "mg/plan/inst",
+        "title": "제목 mg/plan/inst",
+        "unitType": "plan_section",
+        "text": "경영관리 공통 서술"
+      },
+      {
+        "key": "att3-2604/qa/bonus/1",
+        "title": "제목 att3-2604/qa/bonus/1",
+        "unitType": "qa_pair",
+        "text": "가점 질의"
+      },
+      {
+        "key": "mg/handbook/MG-3",
+        "title": "제목 mg/handbook/MG-3",
+        "unitType": "handbook_indicator",
+        "text": "지표3 편람"
+      },
+      {
+        "key": "mg/eval/MG-3/1",
+        "title": "제목 mg/eval/MG-3/1",
+        "unitType": "evaluator_comment",
+        "text": "지표3 평가위원 의견"
+      },
+      {
+        "key": "mg/core/MG-3",
+        "title": "제목 mg/core/MG-3",
+        "unitType": "core_item",
+        "text": "지표3 핵심공통항목 실적 표"
+      },
+      {
+        "key": "rpt25-mg-03/1",
+        "title": "제목 rpt25-mg-03/1",
+        "unitType": "report_chapter",
+        "text": "지표3 전년 보고서 장"
+      }
+    ],
+    "relevantRefs": [
+      {
+        "key": "mg/eval/MG-3/1",
+        "title": "제목 mg/eval/MG-3/1",
+        "unitType": "evaluator_comment",
+        "text": "지표3 평가위원 의견"
+      }
+    ]
+  }
+}

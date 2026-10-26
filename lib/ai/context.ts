@@ -1,10 +1,11 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { BUNDLE_COLS, type BundleChunk, type BundlePurpose, type KnowledgeBundle, buildBundle } from "../knowledge/bundle.ts";
+import { BUNDLE_COLS, type BundleChunk, type BundlePurpose, type KnowledgeBundle, RULES_DIGEST_UNIT, buildBundle } from "../knowledge/bundle.ts";
 import { cachedChunks, storeChunks } from "../knowledge/chunk-cache.ts";
 import { MGMT_COMMON_NARRATIVE_KEYS } from "../knowledge/common-narrative.ts";
 import { whereWithNote } from "../knowledge/revision-note.ts";
+import { type CardSelection, applySelection, digestCovers, rolesOf, selectPurposes } from "../knowledge/select.ts";
 import { type BizLedgerCard, bizTaskId } from "../inspections/biz-links.ts";
 import { mgCardAsOf } from "../reports/mg-draft.ts";
 import { DEFAULT_TRACK, type TrackId, type TrackSpec, trackSpecOfUnit } from "../tracks/index.ts";
@@ -50,7 +51,57 @@ export async function loadCardBundle(supabase: SupabaseClient, card: { id: strin
     loadScopeKeys(supabase, card.id),
     supabase.from("task_map").select("plan_task_key").eq("card_id", card.id).maybeSingle(),
   ]);
-  return buildBundle(chunks, card, linked, task?.plan_task_key ?? null, purpose);
+  const b = buildBundle(chunks, card, linked, task?.plan_task_key ?? null, purpose);
+  const sel = await loadCardSelection(supabase, card, purpose, { chunks, linked });
+  return sel ? applySelection(b, sel, rolesOf(chunks)) : b;
+}
+
+// ---------------------------------------------------------------------------
+// 선별 방식(실험, 기본 꺼짐 — lib/knowledge/select.ts, 환경변수 KNOWLEDGE_SELECT)
+
+/** 카드 하나의 선별 결과를 주는 출처 — unit = 공통 지식 ③을 읽는 평가단위(경영관리는 지표 MG-n) */
+export type SelectionSource = (card: { id: string; evalUnitId: string; unit: string }) => Promise<CardSelection | null>;
+
+let selectionSource: SelectionSource | null = null;
+
+/**
+ * 선별 출처를 꽂음(null이면 기본 DB 출처로 돌아감). 앱 코드는 부르지 않습니다 — 실험 스크립트만(금기 1: 앱 실행 경로에서 로컬 파일을 읽지 않으므로
+ * 파일에서 읽는 출처는 앱 코드에 두지 않음)
+ */
+export function setSelectionSource(src: SelectionSource | null): void {
+  selectionSource = src;
+}
+
+/** 기본 출처(DB): 고른 키 = 과제 대응표(자동·확정), 규칙 문서 = 같은 트랙의 rules_digest 조각(트랙 공통은 사업 없음, 평가단위는 사업 = unit). 규칙 문서가 하나도 없으면 null */
+function dbSelection(chunks: BundleChunk[], evalUnitId: string, unit: string, linked: string[]): CardSelection | null {
+  const track = trackSpecOfUnit(evalUnitId).id;
+  const text = (business: string | null) =>
+    chunks
+      .filter((c) => c.unit_type === RULES_DIGEST_UNIT && c.track === track && c.business === business)
+      .sort((a, b) => a.seq - b.seq || a.chunk_key.localeCompare(b.chunk_key))
+      .map((c) => String(c.text ?? ""))
+      .join("\n\n");
+  const digest = { track: text(null), unit: text(unit) };
+  return digest.track.trim() || digest.unit.trim() ? { keys: linked, digest } : null;
+}
+
+/**
+ * 이 요청을 선별 방식으로 할 때의 선별 결과(아니면 null — 통째로 넣기). 용도가 KNOWLEDGE_SELECT에 들고, 출처(꽂힌 것 우선, 없으면 DB)가 결과를 주고,
+ * 규칙 문서가 이 평가단위의 기준류 자리를 모두 대신할 때만(digestCovers — 반쪽 선별 안 함). pre = 이미 읽은 조각·대응표 키(다시 읽지 않게)
+ */
+export async function loadCardSelection(
+  supabase: SupabaseClient,
+  card: { id: string; evalUnitId: string; knowledgeUnit?: string },
+  purpose: BundlePurpose,
+  pre: { chunks?: BundleChunk[]; linked?: string[] } = {},
+): Promise<CardSelection | null> {
+  if (!selectPurposes(process.env.KNOWLEDGE_SELECT).has(purpose)) return null;
+  const unit = card.knowledgeUnit ?? card.evalUnitId;
+  const chunks = pre.chunks ?? (await loadBundleChunks(supabase, trackSpecOfUnit(card.evalUnitId)));
+  const sel = selectionSource
+    ? await selectionSource({ id: card.id, evalUnitId: card.evalUnitId, unit })
+    : dbSelection(chunks, card.evalUnitId, unit, pre.linked ?? (await loadScopeKeys(supabase, card.id)));
+  return sel && digestCovers(chunks, unit, purpose, sel) ? sel : null;
 }
 
 /**

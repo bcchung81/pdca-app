@@ -19,7 +19,7 @@ import { OUTLINE_SKELETON, pickHeadings } from "../harness/rules.ts";
 import { blockAreaMm } from "../reports/fit.ts";
 import { SectionOutputSchema, moduleGuide, sectionContext, sectionPrompt } from "../reports/section.ts";
 import { PROMPT_FILES, PROMPT_ROOT } from "./load.ts";
-import { PROMPT_FEATURES, assistPrompts, assistPromptsMg, chatPrompts, chatPromptsMg, commentPrompts, commentPromptsMg, describePrompts, inspectPrompts, inspectPromptsMg, matchPrompts, reportBlockPrompts, reportBlockPromptsMg, reportDraftPrompts, reportDraftPromptsMg, reportOutlinePrompts, reportOutlinePromptsMg, reportUnitPromptsMg } from "./sets.ts";
+import { PROMPT_FEATURES, assistPrompts, assistPromptsMg, chatPrompts, chatPromptsMg, commentPrompts, commentPromptsMg, describePrompts, inspectPrompts, inspectPromptsMg, matchPrompts, reportBlockPrompts, reportBlockPromptsMg, reportDraftPrompts, reportDraftPromptsMg, reportOutlinePrompts, reportOutlinePromptsMg, reportUnitPromptsMg, rulesDigestPrompts } from "./sets.ts";
 import { type PromptSet, fill, fillFrom, parseSections, requireSections } from "./template.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 
@@ -28,7 +28,7 @@ const seed = { cards: seedCards<Record<string, any>>() };
 const group = (g: string) => seed.cards.filter((c) => c.group === g).map((c) => ({ id: c.id, taskNo: c.taskNo, targetBusiness: c.targetBusiness, executionTaskNo: c.executionTaskNo, executionTask: c.executionTask }));
 const card = seed.cards.find((c) => c.id === "주요사업1/1-가")!;
 const raw = (feature: string, f: string) => readFileSync(join(ROOT, PROMPT_ROOT, feature, `${f}.md`), "utf8");
-const SETS: Record<string, () => { prompts: PromptSet }> = { "card-assist": assistPrompts, "card-chat": chatPrompts, "card-comment": commentPrompts, "card-assist-mg": assistPromptsMg, "card-chat-mg": chatPromptsMg, "card-comment-mg": commentPromptsMg, inspection: inspectPrompts, "inspection-mg": inspectPromptsMg, "report-draft": reportDraftPrompts, "report-outline": reportOutlinePrompts, "report-draft-mg": reportDraftPromptsMg, "report-outline-mg": reportOutlinePromptsMg, "report-unit-mg": reportUnitPromptsMg, "match-knowledge": matchPrompts, "describe-image": describePrompts };
+const SETS: Record<string, () => { prompts: PromptSet }> = { "card-assist": assistPrompts, "card-chat": chatPrompts, "card-comment": commentPrompts, "card-assist-mg": assistPromptsMg, "card-chat-mg": chatPromptsMg, "card-comment-mg": commentPromptsMg, inspection: inspectPrompts, "inspection-mg": inspectPromptsMg, "report-draft": reportDraftPrompts, "report-outline": reportOutlinePrompts, "report-draft-mg": reportDraftPromptsMg, "report-outline-mg": reportOutlinePromptsMg, "report-unit-mg": reportUnitPromptsMg, "match-knowledge": matchPrompts, "describe-image": describePrompts, "rules-digest": rulesDigestPrompts };
 // report-block은 답 스키마가 edit·ask·shapes 셋(단일 ZodType이 아님)이라 SETS(모델용 답 스키마 설명 대조 테스트)에는 안 넣고, 절 목록·판 해시 테스트에만 더함(PROMPTS_ONLY)
 const PROMPTS_ONLY: Record<string, () => { prompts: PromptSet }> = { ...SETS, "report-block": reportBlockPrompts, "report-block-mg": reportBlockPromptsMg };
 const placeholders = (s: string) => [...new Set([...s.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]))];
@@ -273,7 +273,8 @@ test("수치 띠 실적 규칙(2026-10-15 후속 6): 주요사업 집필 요청 
   assert.match(reportDraftPrompts().prompts.request["diagram.guide"], rule);
   assert.doesNotMatch(JSON.stringify(reportDraftPromptsMg().prompts), /올해 실적 값이 2개 이상일 때만/);
   // 2026-10-17 서사 순서(S — 여는 블록·핵심 메시지는 이 과제의 가치에서, 지적은 해소 블록 하나로)로 앞 둘의 판 바뀜(@309828eb → @845bc269, @913804d5 → @b1183426)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@845bc269");
+  // 2026-10-26 공통 지식 선별 방식(실험) 절 kb.select.*를 request.md에 더해 집필 판만 바뀜(@845bc269 → @02ce64ac) — 통째로 넣기 절 글은 그대로
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@02ce64ac");
   assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@b1183426");
   assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@db2b1b11");
 });
