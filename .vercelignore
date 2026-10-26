@@ -1,0 +1,33 @@
+# Vercel CLI 배포(vercel deploy)에 올릴 파일 — 운영(빌드·실행)에 필요한 것만 허용하는 목록(2026-10-12)
+# CLI는 .gitignore를 읽지 않으므로 여기서 따로 정함. 기본 제외(.git·.next·.vercel·node_modules·.env.local 등)는 Vercel이 함
+# 실행 중 읽는 파일은 resources/harness·resources/prompts뿐(next.config.ts outputFileTracingIncludes) — 기관 원본(data/·resources/knowledge/)은
+# 실행에 안 쓰고 내용은 운영 Supabase(DB·저장소)에 있음(CLAUDE.md 「저장소 경계」·금기 1)
+
+# 루트의 모든 것을 막고
+/*
+
+# 빌드·실행에 필요한 것만 허용
+!/app
+!/components
+!/lib
+!/public
+!/resources
+!/package.json
+!/pnpm-lock.yaml
+!/pnpm-workspace.yaml
+!/tsconfig.json
+!/next.config.ts
+!/postcss.config.mjs
+!/proxy.ts
+!/instrumentation.ts
+!/vercel.json
+
+# 허용한 폴더 안에서도 실행에 안 쓰는 것은 막음
+/resources/knowledge/
+**/*.test.ts
+**/*.test.tsx
+/lib/reports/fixtures/
+
+# 비밀(허용 폴더 안에 실수로 들어가도)
+.env*
+*.pem

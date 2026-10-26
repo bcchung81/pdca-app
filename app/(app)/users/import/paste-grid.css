@@ -1,0 +1,188 @@
+/*
+ * 붙여넣기 등록 격자(Jspreadsheet CE)를 엑셀 기본 모양으로: 눈금선·머리 회색, 활성 칸 초록 테두리, 「좋음/나쁨/보통」 셀 스타일 색.
+ * 색은 Office(엑셀 365) 기본값 — 눈금선 #D4D4D4, 머리 #E6E6E6, 초록 #217346, 좋음 #C6EFCE/#006100, 나쁨 #FFC7CE/#9C0006, 보통 #FFEB9C/#9C5700.
+ * 카드 외곽·둥근 모서리·그림자는 두지 않음(눈금선만).
+ */
+.paste-grid {
+  --xl-grid: #d4d4d4;
+  --xl-head-bg: #e6e6e6;
+  --xl-head-line: #c8c8c8;
+  --xl-head-fg: #444444;
+  --xl-head-sel-bg: #d2d2d2;
+  --xl-green: #217346;
+  --xl-range: rgba(33, 115, 70, 0.1);
+}
+
+.paste-grid .jss_container,
+.paste-grid .jss_content,
+.paste-grid .jss_worksheet {
+  font-family: Calibri, "맑은 고딕", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+}
+.paste-grid .jss_container {
+  padding-right: 0;
+}
+.paste-grid .jss_content {
+  box-shadow: none !important; /* 라이브러리 기본의 카드식 그림자 제거 */
+  background-color: #fff;
+  padding: 0 10px 10px 0;
+  scrollbar-color: #c1c1c1 #f1f1f1;
+}
+.paste-grid .jss_content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+.paste-grid .jss_content::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+}
+
+/* 본문 칸: 엑셀 기본 글자 11pt 안팎, 줄 높이 20px, 눈금선 */
+.paste-grid .jss_worksheet {
+  font-size: 14px;
+  color: #000;
+  background-color: #fff;
+}
+.paste-grid .jss_worksheet > tbody > tr > td {
+  height: 20px;
+  padding: 0 4px;
+  line-height: 18px; /* 위·아래 눈금선 1px씩 포함해 줄 높이 20px */
+  color: #000;
+  background-color: #fff;
+  border-top: 1px solid var(--xl-grid);
+  border-left: 1px solid var(--xl-grid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.paste-grid .jss_worksheet > tbody > tr > td.readonly {
+  color: #000;
+}
+
+.paste-grid .jss_worksheet > tbody > tr > td > input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  vertical-align: middle;
+  accent-color: var(--xl-green);
+}
+
+/* 머리(열 이름 줄·글자 줄)와 줄 번호 */
+.paste-grid .jss_worksheet > thead > tr > td,
+.paste-grid .jss_worksheet > tbody > tr > td:first-child {
+  height: 20px;
+  padding: 0 4px;
+  line-height: 18px; /* 위·아래 눈금선 1px씩 포함해 줄 높이 20px */
+  font-weight: 400;
+  text-align: center;
+  color: var(--xl-head-fg);
+  background-color: var(--xl-head-bg);
+  border-top: 1px solid var(--xl-head-line);
+  border-left: 1px solid var(--xl-head-line);
+}
+.paste-grid .jss_worksheet > thead > tr > td.selected,
+.paste-grid .jss_worksheet > tbody > tr.selected > td:first-child {
+  color: var(--xl-green);
+  font-weight: 700;
+  background-color: var(--xl-head-sel-bg);
+}
+.paste-grid .jss_worksheet > thead > tr > td.selected {
+  box-shadow: inset 0 -2px 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet > tbody > tr.selected > td:first-child {
+  box-shadow: inset -2px 0 0 var(--xl-green);
+}
+
+/* 선택 영역: 연한 초록 덮개 + 활성 테두리는 엑셀처럼 초록 2px(칸 크기가 안 변하게 안쪽 그림자로) */
+.paste-grid .jss_worksheet .highlight {
+  background-color: transparent;
+  background-image: linear-gradient(var(--xl-range), var(--xl-range));
+}
+.paste-grid .jss_worksheet .highlight-selected {
+  background-image: none;
+}
+.paste-grid .jss_worksheet .highlight-top {
+  border-top: 1px solid var(--xl-green);
+  box-shadow: inset 0 1px 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet .highlight-left {
+  border-left: 1px solid var(--xl-green);
+  box-shadow: inset 1px 0 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet .highlight-right {
+  border-right: 1px solid var(--xl-green);
+  box-shadow: inset -1px 0 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet .highlight-bottom {
+  border-bottom: 1px solid var(--xl-green);
+  box-shadow: inset 0 -1px 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet .highlight-top.highlight-left {
+  box-shadow: inset 1px 1px 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet .highlight-top.highlight-right {
+  box-shadow: inset -1px 1px 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet .highlight-bottom.highlight-left {
+  box-shadow: inset 1px -1px 0 var(--xl-green);
+}
+.paste-grid .jss_worksheet .highlight-bottom.highlight-right {
+  box-shadow: inset -1px -1px 0 var(--xl-green);
+}
+/* 복사한 영역의 점선(엑셀의 움직이는 점선 자리) */
+.paste-grid .jss_worksheet .selection {
+  background-color: transparent;
+}
+.paste-grid .jss_worksheet .selection-left {
+  border-left: 1px dashed var(--xl-green);
+}
+.paste-grid .jss_worksheet .selection-right {
+  border-right: 1px dashed var(--xl-green);
+}
+.paste-grid .jss_worksheet .selection-top {
+  border-top: 1px dashed var(--xl-green);
+}
+.paste-grid .jss_worksheet .selection-bottom {
+  border-bottom: 1px dashed var(--xl-green);
+}
+.paste-grid .jss_corner {
+  background-color: var(--xl-green);
+  border-color: #fff;
+}
+
+/* 칸 색: 엑셀 셀 스타일 「좋음 / 보통 / 나쁨」 + 회색(건너뜀). 화면이 칸마다 data-tone을 달아 줌 */
+.paste-grid .jss_worksheet > tbody > tr > td[data-tone="ok"] {
+  color: #006100;
+  background-color: #c6efce;
+}
+.paste-grid .jss_worksheet > tbody > tr > td[data-tone="warn"] {
+  color: #9c5700;
+  background-color: #ffeb9c;
+}
+.paste-grid .jss_worksheet > tbody > tr > td[data-tone="err"] {
+  color: #9c0006;
+  background-color: #ffc7ce;
+}
+.paste-grid .jss_worksheet > tbody > tr > td[data-tone="info"] {
+  color: #1f4e78;
+  background-color: #ddebf7;
+}
+.paste-grid .jss_worksheet > tbody > tr > td[data-tone="skip"] {
+  color: #7f7f7f;
+  background-color: #f2f2f2;
+}
+
+/* 격자 바로 아래 붙는 엑셀 상태 표시줄(카드 외곽 없이 눈금선 색 윗줄 하나) */
+.paste-status {
+  padding: 5px 8px;
+  font-size: 13px;
+  color: #262626;
+  background-color: #f3f3f3;
+  border-top: 1px solid #d4d4d4;
+  border-bottom: 1px solid #d4d4d4;
+}
+
+/* 비어 있는 줄은 엑셀의 빈 칸처럼: 체크박스·드롭다운 화살표를 그리지 않음 */
+.paste-grid .jss_worksheet > tbody > tr > td[data-blank="1"] > input[type="checkbox"] {
+  visibility: hidden;
+}
+.paste-grid .jss_worksheet > tbody > tr > td.jss_dropdown[data-blank="1"] {
+  background-image: none;
+}

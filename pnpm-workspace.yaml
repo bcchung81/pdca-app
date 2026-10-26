@@ -1,0 +1,8 @@
+allowBuilds:
+  # kordoc의 선택 의존성(OCR). 앱은 OCR을 쓰지 않아 설치 스크립트를 돌리지 않음
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
+  unrs-resolver: false
+minimumReleaseAgeExclude:
+  - kordoc@4.15.3

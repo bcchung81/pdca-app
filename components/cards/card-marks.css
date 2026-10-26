@@ -1,0 +1,68 @@
+/* 과제관리카드 원본 위 표시 규칙(편집·읽기·잠금·코멘트·AI 변경). lib/cards/card.css 다음에 import 되어 그 위에 덧씀(app/(app)/layout.tsx) */
+/* 과제관리카드 원본 양식 위 직접 편집(card.css는 그대로 두고 편집 표시만 덧씀) */
+.card-editing .kca-card [data-p] {
+  cursor: text;
+  border-radius: 2px;
+}
+.card-editing .kca-card [data-p]:hover {
+  outline: 1px dashed var(--accent);
+  outline-offset: 1px;
+}
+.card-editing .kca-card [data-p]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  background: var(--edit-focus-bg);
+}
+.card-editing .kca-card [data-toggle] {
+  cursor: pointer;
+}
+.card-editing .kca-card [data-empty]:empty::before {
+  content: "여기에 입력";
+  color: var(--placeholder);
+}
+.card-reading .kca-card [data-p] {
+  cursor: pointer;
+  border-radius: 2px;
+}
+.card-reading .kca-card [data-p]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  background: var(--info-bg);
+}
+
+/* 확정된 고정 영역(주요사업 Act·Plan·계량지표, 경영관리 전년도 환류·지적 및 개선방안·계량지표): 부서 작성본에서 고를 수만 있고 고칠 수 없음 */
+.card-editing .kca-card [data-locked] {
+  cursor: default;
+  background: var(--locked-bg);
+}
+.card-editing .kca-card [data-locked]:hover {
+  outline: none;
+}
+.card-editing .kca-card [data-locked]:focus {
+  outline: 2px solid var(--field-line);
+  outline-offset: 1px;
+  background: var(--locked-focus-bg);
+}
+
+/* 카드 리뷰어: 코멘트가 걸린 칸 · 메모에 마우스를 올린 칸 · AI가 바꾼 칸(잠깐 노랗게).
+   코멘트 쓰는 동안 고른 글은 CSS Custom Highlight(::highlight(kc-pick))로 칠함 — 규칙은 pick-highlight.ts(CSS 파서 경고 때문에 파일 밖) */
+.kca-card .kc-anchor {
+  box-shadow: inset 0 -2px 0 var(--hl-anchor);
+}
+.kca-card .kc-anchor-hot {
+  outline: 2px solid var(--hl-hot);
+  outline-offset: 2px;
+}
+/* 카드(.kca-card)와 경평 검토 보드(.rv-doc)가 같이 씀 — 선택자를 .kc-flash로 넓힘 */
+.kc-flash {
+  animation: kc-flash 2.4s ease-out;
+}
+@keyframes kc-flash {
+  0%,
+  45% {
+    background: var(--hl-flash);
+  }
+  100% {
+    background: transparent;
+  }
+}

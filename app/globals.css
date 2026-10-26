@@ -1,0 +1,212 @@
+@import "tailwindcss";
+
+/* 이 파일에 두는 것: 토큰(:root·@theme), body·base 레이어, 전역 상태(reduced-motion), 여러 화면이 같이 쓰는 옆 창 표면(.peek-sheet).
+   두지 않는 것: 기능 CSS는 그 기능 옆 파일에(카드 원본 위 표시는 components/cards/card-marks.css) */
+
+/* C3 「교정쇄 스튜디오」 기본 토큰 — 화면 디자인: 설계 캔버스 v2 역할별 화면 */
+:root {
+  --desk: #eceae4;
+  --paper: #ffffff;
+  --ink: #2a2a33;
+  --navy: #1b1760;
+  --brand-ink: #1b1760; /* 로고 봉우리·워드마크: UI의 남색과 통일 */
+  --brand-accent: #2563eb; /* 로고 길·별: 블루, 흰 배경 대비 5.17:1 */
+  --link: #00699e;
+  --accent: #0080c0; /* 비텍스트 전용(진행 막대 등) */
+  --line: #d9d4c7;
+  --line-strong: #cfcac0; /* 머리띠·메뉴 경계 */
+  --row-line: #e6e2d8; /* 표 행 경계 */
+  --thead: #f7f5f0;
+  --nav: #e4e1d9;
+  --field: #f6f4ee;
+  --field-line: #bdb7ab;
+  --muted: #55515c;
+  --muted-2: #4a4652;
+  --warn: #9a4508; /* 마감·작성 필요(글자 대비 4.5:1 이상) */
+  --warn-bg: #f7ebdd;
+  /* 상태 톤 5개 — idle 시작 전 · doing 진행(우리 차례) · handoff 넘겨짐(상대 차례) · done 끝 · alert 막힘·예외만 */
+  --st-idle: var(--line);
+  --st-doing: var(--accent); /* 비텍스트 */
+  --st-doing-text: var(--link);
+  --st-handoff: #5b56a0; /* 흰 바탕 6.40:1 */
+  --st-done: var(--navy);
+  --st-alert: var(--warn);
+  --st-alert-bg: var(--warn-bg);
+  --row-hover: #f4f1ea;
+  --info-bg: #eef6fb; /* 안내·확정·드롭 바탕 */
+  /* 오류: Tailwind 기본 red-700·800·50·200과 같은 값(tailwindcss/theme.css) */
+  --error: oklch(50.5% 0.213 27.518);
+  --error-strong: oklch(44.4% 0.177 26.899);
+  --error-bg: oklch(97.1% 0.013 17.38);
+  --error-line: oklch(88.5% 0.062 18.334);
+  /* 리뷰(카드 리뷰어·경평 초안 고치기) 상태색 */
+  --ok: #1d6b3f; /* 반영·좋음 */
+  --ok-bg: #e8f6ee;
+  --ai: #5b3cc4; /* 질문·AI 답 */
+  --ai-bg: #f3edff;
+  --quote-ink: #6b4f00; /* 고른 글 인용 */
+  --quote-bg: #fff1c2;
+  --target-bg: #e8ecfb; /* 코멘트 대상 칩 */
+  --revise-bg: #eaf5fb; /* 수정 요청 칩 */
+  --sending: #8a5a00; /* 전송 중 */
+  /* 카드 원본 위 편집 표시 */
+  --edit-focus-bg: #fffbe6;
+  --locked-bg: #f4f2ec;
+  --locked-focus-bg: #eeebe3;
+  --placeholder: #6e6a75; /* 흰 바탕 5.27:1 */
+  --sel: #dcd9ee; /* 글자 선택 바탕 */
+  /* 강조: 코멘트 걸린 칸 밑줄 · 메모에 올린 칸 · AI가 바꾼 칸 깜박임 · 코멘트 쓰는 동안 고른 글 */
+  --hl-anchor: rgba(245, 180, 0, 0.55);
+  --hl-hot: rgba(27, 23, 96, 0.35);
+  --hl-flash: rgba(255, 214, 90, 0.6);
+  --hl-pick: rgba(255, 205, 64, 0.55);
+  /* 겹침 층: sticky 고정 머리 · pop 패널 안 겹침 · bar 떠 있는 도구줄 · menu 머리띠·드롭다운 · peek 옆 창 · float 몸 밖 메뉴 · skip 건너뛰기 링크 */
+  --z-sticky: 10;
+  --z-pop: 20;
+  --z-bar: 30;
+  --z-menu: 40;
+  --z-peek: 50;
+  --z-float: 70;
+  --z-skip: 80;
+}
+
+/* 반경·그림자는 Tailwind 테마 이름(--radius-*·--shadow-*)과 토큰 이름이 같아 값을 여기 직접 둡니다 */
+@theme {
+  --radius-chip: 3px;
+  --radius-bubble: 12px;
+  --shadow-pop: 0 12px 40px rgba(27, 23, 96, 0.18); /* 가운데 대화상자 */
+  --shadow-menu: 0 6px 20px rgba(27, 23, 96, 0.14); /* 드롭다운 메뉴 */
+  --shadow-note: 0 6px 18px rgba(30, 28, 20, 0.1); /* 펼친 메모 말풍선 */
+  --shadow-peek: -12px 0 32px rgba(27, 23, 96, 0.14); /* 오른쪽 옆 창 */
+  --shadow-focus: 0 0 0 2px rgba(0, 128, 192, 0.25); /* 입력창 초점 */
+  /* 글자 7단계(12px 미만 금지): 12 text-xs 표 머리·메타 · 13 text-ui 보조·작은 컨트롤 · 14 text-sm 본문 · 16 text-base 패널 제목 · 18 text-lg 상세 제목 · 22 text-title 화면 제목 · 28 text-figure 큰 숫자.
+     새 단계는 줄 높이를 정하지 않음(--text-*--line-height 없음 → 물려받거나 leading-*) — 시험 lib/design/style-guard.test.ts */
+  --text-ui: 13px;
+  --text-title: 22px;
+  --text-figure: 28px;
+}
+
+@theme inline {
+  --color-desk: var(--desk);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-navy: var(--navy);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-accent: var(--brand-accent);
+  --color-link: var(--link);
+  --color-accent: var(--accent);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-row-line: var(--row-line);
+  --color-thead: var(--thead);
+  --color-nav: var(--nav);
+  --color-field: var(--field);
+  --color-field-line: var(--field-line);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-st-idle: var(--st-idle);
+  --color-st-doing: var(--st-doing);
+  --color-st-doing-text: var(--st-doing-text);
+  --color-st-handoff: var(--st-handoff);
+  --color-st-done: var(--st-done);
+  --color-st-alert: var(--st-alert);
+  --color-st-alert-bg: var(--st-alert-bg);
+  --color-row-hover: var(--row-hover);
+  --color-info-bg: var(--info-bg);
+  --color-error: var(--error);
+  --color-error-strong: var(--error-strong);
+  --color-error-bg: var(--error-bg);
+  --color-error-line: var(--error-line);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-ai: var(--ai);
+  --color-ai-bg: var(--ai-bg);
+  --color-quote-ink: var(--quote-ink);
+  --color-quote-bg: var(--quote-bg);
+  --color-target-bg: var(--target-bg);
+  --color-revise-bg: var(--revise-bg);
+  --color-sending: var(--sending);
+  --color-edit-focus-bg: var(--edit-focus-bg);
+  --color-locked-bg: var(--locked-bg);
+  --color-locked-focus-bg: var(--locked-focus-bg);
+  --color-placeholder: var(--placeholder);
+  --color-hl-anchor: var(--hl-anchor);
+  --color-hl-hot: var(--hl-hot);
+  --color-hl-flash: var(--hl-flash);
+  --color-hl-pick: var(--hl-pick);
+  --z-index-sticky: var(--z-sticky);
+  --z-index-pop: var(--z-pop);
+  --z-index-bar: var(--z-bar);
+  --z-index-menu: var(--z-menu);
+  --z-index-peek: var(--z-peek);
+  --z-index-float: var(--z-float);
+  --z-index-skip: var(--z-skip);
+  --font-sans: "Pretendard GOV Variable", "Pretendard GOV", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-serif: var(--font-hahmlet), "Apple SD Gothic Neo", serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+body {
+  background: var(--desk);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 기본 링크 색은 base 레이어에 둡니다(레이어 밖에 두면 Tailwind 유틸리티 text-* 를 이겨 버튼·제목 색이 덮임) */
+@layer base {
+  a {
+    color: var(--link);
+  }
+  /* 키보드 초점 링: 2px로 두껍게(작은 막대·버튼에서도 보이게). 레이어 안이라 outline-none 유틸리티가 이김 */
+  :focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
+  ::placeholder {
+    color: var(--placeholder);
+    opacity: 1;
+  }
+  ::selection {
+    background: var(--sel);
+    color: var(--ink);
+  }
+}
+
+/* 동작 줄이기: 전환과 「움직임」(이동·회전)만 끄고, 색·투명도가 바뀌는 상태 피드백(kc-flash·animate-pulse)은 남김 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .peek-sheet,
+  .animate-spin,
+  .animate-bounce,
+  .animate-ping {
+    animation: none !important;
+  }
+}
+
+/* 옆 창(오른쪽에서 밀려 나오는 리뷰·편집 창): 머리띠까지 덮는 전체 높이로 창 위에 겹쳐 뜸(뒤 목록 폭은 그대로).
+   z-index(--z-peek)는 머리띠·목록 드롭다운(--z-menu)보다 위, 과제 빠른 찾기(⌘K, 네이티브 dialog 최상위 층)보다는 아래 */
+.peek-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-peek);
+  animation: peek-in 0.18s ease-out;
+}
+@keyframes peek-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}

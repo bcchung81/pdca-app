@@ -1,0 +1,75 @@
+{
+  "note": "report-harness 고정 사본. 손으로 고치지 말고 원본을 고친 뒤 `pnpm harness:sync report-harness`로 다시 들여옵니다.",
+  "repository": "https://github.com/bcchung81/report-harness",
+  "commit": "e5d327299a1053ed27dadb7e3fe256e31018a96f",
+  "commit_date": "2026-09-25T15:39:14+09:00",
+  "commit_subject": "0.5.4 — 코드 리뷰 #4 반영(＊ 위첨자 글자 손실·줄 맞춤 기준 크기·nbSpace 서식·제목 따옴표·점검 도구)",
+  "files": [
+    {
+      "dest": "rules.md",
+      "src": "webapp/kca-report-hwpx/references/rules.md",
+      "bytes": 79187,
+      "sha256": "0d553b0f23e06dea68ac6696c4ef25216c3b8be5be7bd84b395aef9685f6cb90"
+    },
+    {
+      "dest": "style-guide.md",
+      "src": "skills/report-pipeline/references/style-guide.md",
+      "bytes": 13575,
+      "sha256": "b0489151f40b5b11bdf001f84f1461f7ac4e623a3b9beddbb9b99e3005ad219d"
+    },
+    {
+      "dest": "md-profile.md",
+      "src": "skills/report-pipeline/references/md-profile.md",
+      "bytes": 22587,
+      "sha256": "406e467c4ce1d9984c681a6db34be4999b8346e25a12e12ee70e804178c9f1e8"
+    },
+    {
+      "dest": "table-pool.md",
+      "src": "skills/report-pipeline/references/table-pool.md",
+      "bytes": 22955,
+      "sha256": "07a121b00a7054722c9af27a8cd09a5f29d191ee9bc2fdc544a22409964947d9"
+    },
+    {
+      "dest": "diagram-pool.md",
+      "src": "skills/report-pipeline/references/diagram-pool.md",
+      "bytes": 17478,
+      "sha256": "ec02552b3130629ab1371bb4f85b3f338674478180df7e99a11c465b2b10a21a"
+    },
+    {
+      "dest": "factcheck.md",
+      "src": "skills/report-pipeline/references/factcheck.md",
+      "bytes": 4588,
+      "sha256": "3a0aa29449bcc1071563ae1006fa7d9eb5c3e8c3a233528e1296b833465d9008"
+    },
+    {
+      "dest": "hwpx-recipe.md",
+      "src": "skills/report-pipeline/references/hwpx-recipe.md",
+      "bytes": 45795,
+      "sha256": "902bf5d1ab66529894bf1d01441365aa7b710ece5c711e47210e7b5faaff9760"
+    },
+    {
+      "dest": "format-profile.kca.md",
+      "src": "skills/report-pipeline/references/format-profile.kca.md",
+      "bytes": 15310,
+      "sha256": "db8d254d94255aa748fdca1d80b0ec0be550f2cb30e0c17710063538497dbd01"
+    },
+    {
+      "dest": "report-craft.md",
+      "src": "skills/report-pipeline/references/report-craft.md",
+      "bytes": 9650,
+      "sha256": "4e2b317dedffc4db589a18586b7f585b1ef0f0161f6787476849b5a2d001907b"
+    },
+    {
+      "dest": "kca-report-hwpx.SKILL.md",
+      "src": "webapp/kca-report-hwpx/SKILL.md",
+      "bytes": 13945,
+      "sha256": "65bceb0cffa222886f3a9b0edc4ceea0038d0475d366cc0630dffa8d5d25a8aa"
+    },
+    {
+      "dest": "LICENSE",
+      "src": "LICENSE",
+      "bytes": 1272,
+      "sha256": "9cfe4fcd9be58389c3fab47103c77ea5356d91eb933b245f7022d1b505dcee40"
+    }
+  ]
+}

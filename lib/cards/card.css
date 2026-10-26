@@ -1,0 +1,112 @@
+/* KCA 과제관리카드 정적 조각 스타일 — 모든 선택자는 .kca-card 아래로 한정한다.
+   글꼴은 바깥 쪽에서 'Noto Sans KR' 을 불러오면 쓰고, 없으면 시스템 한글 글꼴로 대신한다. */
+.kca-card{
+  --kc-ink:#111;--kc-line:#000;--kc-hdr:#c7e6e9;--kc-hdr2:#d8eff3;
+  --kc-act:#d8ebef;--kc-plan:#c5e3e5;--kc-do:#b2d9e0;--kc-check:#9fd0d7;
+  --kc-blue:#1d3fbf;--kc-pdca-blue:#1f5fc9;--kc-hl:#ffff00;--kc-axlab:#e7e6e6;--kc-axbadge:#dbe7f5;--kc-month:#1515e6;
+  display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;margin:0;padding:0;
+  color:var(--kc-ink);background:#fff;text-align:left;
+  font-family:"Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  font-size:13.5px;line-height:1.55;word-break:keep-all;overflow-wrap:anywhere;
+}
+.kca-card *,.kca-card *::before,.kca-card *::after{box-sizing:border-box;word-break:keep-all;overflow-wrap:anywhere}
+.kca-card p{margin:0}
+.kca-card b{font-weight:700}
+.kca-card img{max-width:100%;height:auto}
+.kca-card table{border-collapse:collapse;border-spacing:0;table-layout:fixed;width:100%;max-width:100%}
+.kca-card th,.kca-card td{min-width:0}
+
+/* 머리: 과제명 / 부서 / 관리자 */
+.kca-card .kc-hdr{margin-bottom:6px}
+.kca-card .kc-hdr td{padding:4px 6px;vertical-align:middle;text-align:center}
+.kca-card .kc-hdr .kc-k{background:#000;color:#fff;font-weight:700;line-height:1.45;padding:4px 2px}
+.kca-card .kc-hdr .kc-t{border:2.5px solid #000;text-align:left;padding:6px 8px;line-height:1.7}
+.kca-card .kc-hdr .kc-tt{background:var(--kc-hl);font-weight:700;font-size:14.5px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.kca-card .kc-hdr .kc-tno{color:var(--kc-blue)}
+.kca-card .kc-hdr .kc-l{background:var(--kc-hdr);font-weight:700;border-top:1px dashed #666;border-bottom:1px dashed #666;padding:4px 3px;font-size:13px}
+.kca-card .kc-hdr .kc-l small{font-weight:400;font-size:12px}
+.kca-card .kc-hdr .kc-v{background:var(--kc-hdr);border:1px dashed #666;border-right:1px solid #666}
+
+/* 구역: 왼쪽 표지 + 오른쪽 본문 */
+.kca-card .kc-sec{display:grid;grid-template-columns:84px minmax(0,1fr);column-gap:9px;margin-top:6px}
+.kca-card .kc-lab{border:1px solid var(--kc-line);display:flex;align-items:center;justify-content:center;text-align:center;font-weight:700;padding:6px 2px;line-height:1.45;min-width:0}
+.kca-card .kc-lab.kc-pdca{border:0;padding:16px 2px;clip-path:polygon(0 0,50% 9px,100% 0,100% calc(100% - 11px),50% 100%,0 calc(100% - 11px))}
+.kca-card .kc-lab.kc-pdca.kc-first{padding-top:8px;clip-path:polygon(0 0,100% 0,100% calc(100% - 11px),50% 100%,0 calc(100% - 11px))}
+.kca-card .kc-lab.kc-act{background:var(--kc-act)}
+.kca-card .kc-lab.kc-plan{background:var(--kc-plan)}
+.kca-card .kc-lab.kc-do{background:var(--kc-do)}
+.kca-card .kc-lab.kc-check{background:var(--kc-check)}
+.kca-card .kc-lab .kc-pl{display:block;font-weight:500}
+.kca-card .kc-lab .kc-pl i{font-style:normal;color:var(--kc-pdca-blue);font-weight:700}
+.kca-card .kc-body{border:1px solid var(--kc-line);min-width:0}
+.kca-card .kc-body.kc-pad{padding:6px 10px}
+
+/* 양식 표 */
+.kca-card .kc-frm td,.kca-card .kc-frm th{border:1px solid #000;padding:3px 6px;vertical-align:middle}
+.kca-card .kc-frm tr:first-child>*{border-top:0}
+.kca-card .kc-frm tr:last-child>*{border-bottom:0}
+.kca-card .kc-frm tr>*:first-child{border-left:0}
+.kca-card .kc-frm tr>*:last-child{border-right:0}
+.kca-card .kc-frm thead tr:first-child>*{border-top:0}
+.kca-card .kc-frm tbody tr:first-child>*{border-top:1px solid #000}
+.kca-card .kc-frm th{background:var(--kc-hdr);font-weight:500;text-align:center}
+.kca-card .kc-frm .kc-c{text-align:center}
+.kca-card .kc-frm td.kc-top{vertical-align:top}
+.kca-card .kc-ov tbody tr:first-child>*{border-top:0}
+.kca-card .kc-cb{font-family:"Segoe UI Symbol","Apple Symbols","Noto Sans Symbols 2","Noto Sans KR",sans-serif;margin-right:3px}
+.kca-card sup.kc-tiny{font-size:9px;vertical-align:5px;line-height:0;margin-right:1px;font-weight:400}
+.kca-card .kc-cats{display:flex;justify-content:space-between;flex-wrap:wrap;gap:2px 14px;padding:3px 8px;border-bottom:1px solid #000}
+.kca-card .kc-kpi th,.kca-card .kc-kpi td{text-align:center}
+.kca-card .kc-kpi td{padding:4px 6px}
+.kca-card .kc-kpinote{border-top:1px solid #000;padding:4px 8px}
+.kca-card .kc-badge{display:inline-block;border:1px solid #333;border-radius:2px;padding:0 5px;font-weight:700;font-size:12.5px;line-height:1.35;margin-right:6px;background:#fff;box-shadow:1px 1px 0 #999;max-width:100%}
+.kca-card .kc-agenda p{margin:1px 0}
+.kca-card .kc-hl{background:var(--kc-hl)}
+
+/* 글줄: 글머리별 내어쓰기 */
+.kca-card .kc-lines .kc-ln{margin:1px 0}
+.kca-card .kc-ln.kc-b1{padding-left:1.05em;text-indent:-1.05em;margin-top:3px}
+.kca-card .kc-ln.kc-b2{padding-left:2.05em;text-indent:-1em}
+.kca-card .kc-ln.kc-b3{padding-left:3em;text-indent:-.9em}
+.kca-card .kc-ln.kc-b2k{padding-left:2.4em;text-indent:-1.4em}
+.kca-card .kc-ln.kc-note{padding-left:2.2em;text-indent:-1.1em;font-size:12.5px}
+.kca-card .kc-ln.kc-arr{padding-left:1.3em;text-indent:-1.3em}
+.kca-card .kc-ln.kc-star{margin-top:4px;padding-left:1.2em;text-indent:-1.2em}
+.kca-card .kc-ln.kc-star .kc-sl{color:var(--kc-blue);font-weight:700}
+.kca-card .kc-ln.kc-chk{padding-left:1.3em;text-indent:-1.3em}
+.kca-card .kc-ln.kc-num{font-weight:700;margin-top:5px}
+.kca-card .kc-ln.kc-center{text-align:center}
+.kca-card .kc-lines>.kc-ln:first-child{margin-top:0}
+
+/* 중첩 표·글상자·그림 */
+.kca-card .kc-nt{margin:5px 0;font-size:12.5px;line-height:1.45}
+.kca-card .kc-nt td,.kca-card .kc-nt th{border:1px solid #555;padding:3px 5px;vertical-align:middle;text-align:left}
+.kca-card .kc-nt th{background:var(--kc-hdr2);font-weight:700;text-align:center}
+.kca-card .kc-nt .kc-ln.kc-b1,.kca-card .kc-nt .kc-ln.kc-b2{margin-top:0}
+.kca-card .kc-ntbox{border:1px dashed #555;padding:4px 10px;margin:5px 0;font-size:12.5px}
+.kca-card .kc-fig{display:block;max-width:100%;height:auto;margin:6px auto}
+.kca-card .kc-sgrid td{border:1px solid #777;padding:4px 6px;vertical-align:middle}
+
+/* [Do] 월별 실적 파란 상자 */
+.kca-card .kc-monthly{display:grid;grid-template-columns:46px minmax(0,1fr);column-gap:6px;border:2px solid var(--kc-month);margin:8px 0 2px;padding:6px 8px 6px 4px}
+.kca-card .kc-monthly+.kc-monthly{margin-top:6px}
+.kca-card .kc-period{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:0}
+.kca-card .kc-period .kc-mb{border:1px solid #333;background:#fff;font-size:11.5px;font-weight:700;padding:0 3px;line-height:1.4;box-shadow:1px 1px 0 #888;max-width:100%;text-align:center}
+.kca-card .kc-period .kc-tl{font-size:12px;line-height:1}
+.kca-card .kc-mitems{min-width:0}
+
+/* AX 연계과제 붙임 */
+.kca-card .kc-axsec{margin-top:26px}
+.kca-card .kc-axhead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;border-bottom:2px solid var(--kc-blue);padding-bottom:3px;margin-bottom:12px}
+.kca-card .kc-axbadge{border:2px solid var(--kc-blue);background:var(--kc-axbadge);font-weight:900;font-size:17px;padding:2px 10px;flex:none}
+.kca-card .kc-axtitle{font-weight:900;font-size:18px;line-height:1.35;flex:1 1 240px;min-width:0}
+.kca-card .kc-axt th{background:var(--kc-axlab);font-weight:700;text-align:center;border:1px solid #000;padding:5px}
+.kca-card .kc-axt td{border:1px solid #000;padding:5px 9px;vertical-align:middle}
+.kca-card .kc-axt tr.kc-cl th,.kca-card .kc-axt tr.kc-cl td{border:2px solid var(--kc-blue)}
+.kca-card .kc-axnote{font-size:12.5px;margin-top:6px}
+
+@media print{
+  .kca-card{break-after:page}
+  .kca-card,.kca-card *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .kca-card .kc-monthly,.kca-card .kc-nt tr,.kca-card .kc-frm tr,.kca-card .kc-axt tr{break-inside:avoid}
+}
