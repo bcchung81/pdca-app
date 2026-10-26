@@ -101,7 +101,8 @@ function DraftTable({ rows, teamQs, from, preview }: { rows: CardSubmitRow[]; te
                   {h}
                 </th>
               ))}
-              <th scope="col" className={T.th}>
+              {/* relative: sr-only(absolute)가 스크롤 상자 안에 머물게 */}
+              <th scope="col" className={`${T.th} relative`}>
                 <span className="sr-only">행동</span>
               </th>
             </tr>

@@ -41,7 +41,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const sections = navSectionsFor(user.role);
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-desk text-ink">
+    // 앱 틀은 한 화면(h-screen) 안에서 각 화면이 스스로 스크롤함 — 문서 전체는 스크롤하지 않음. relative + overflow-hidden은 위치 기준이
+    // 없는 absolute 요소(sr-only 등)가 문서를 늘려 내용 없는 스크롤이 생기는 것을 막음(2026-10-26, /my/report 표 머리 sr-only가 최대 5,000px)
+    <div className="relative flex h-screen min-h-0 flex-col overflow-hidden bg-desk text-ink">
       {/* 키보드 사용자용: 초점이 오면 머리띠 위 왼쪽 위에 보임 */}
       <a href="#content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-skip rounded-md border border-navy bg-paper px-3 py-2 text-ui font-semibold text-navy">
         본문으로 건너뛰기
