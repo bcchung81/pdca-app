@@ -30,7 +30,7 @@ export async function sendMagicLink(_prev: LoginState, formData: FormData): Prom
     };
   }
   if (error) {
-    // Supabase 기본 메일 발송은 조직 구성원 주소에만, 시간당 몇 통만 보냅니다(운영은 기관 SMTP 연결 필요).
+    // 운영은 Supabase 사용자 지정 SMTP(Gmail, 시간당 60통)로 보냅니다 — docs/ops/운영-전환.md §2. 한도를 넘으면 429
     const message =
       error.status === 429 || /rate limit/i.test(error.message)
         ? "메일을 너무 자주 요청했습니다. 잠시 뒤 다시 시도해 주세요."
