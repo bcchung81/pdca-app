@@ -5,21 +5,86 @@
 
 import { type BundleChunk, type BundlePurpose, type KnowledgeBundle, layerOf } from "./bundle.ts";
 import { type ChunkRole, DIGEST_ROLES, SELECTABLE_ROLES, chunkRole } from "./chunk-role.ts";
+import { chunkHash } from "./rules-digest.ts";
 
-/** 선별 방식을 켜는 환경변수 — 쉼표 목록 "card,report"(비면 모두 통째로 넣기) */
+/** 선별 방식을 켜는 환경변수 — 쉼표 목록, 용도(card·report) 또는 card 용도 안의 기능(writer·chat·comment). 비면 모두 통째로 넣기 */
 export const SELECT_ENV_KEY = "KNOWLEDGE_SELECT";
 
 const PURPOSES: readonly BundlePurpose[] = ["card", "report"];
 
-/** 환경변수 값 → 선별 방식으로 할 용도. 비거나 모르는 값은 무시 */
-export function selectPurposes(env: string | undefined): Set<BundlePurpose> {
-  const out = new Set<BundlePurpose>();
+/** card 용도 안의 기능 — 작성지원(요청 종류 넷·보완 점검)·질문·리뷰어 코멘트. 문자열 유니온(열거형 아님) */
+export type SelectFeature = "writer" | "chat" | "comment";
+export const SELECT_FEATURES: readonly SelectFeature[] = ["writer", "chat", "comment"];
+
+/** 쉼표 목록에서 고를 수 있는 값만(소문자·앞뒤 공백 무시) */
+function pick<T extends string>(env: string | undefined, allowed: readonly T[]): Set<T> {
+  const out = new Set<T>();
   for (const raw of (env ?? "").split(",")) {
     const v = raw.trim().toLowerCase();
-    const hit = PURPOSES.find((p) => p === v);
+    const hit = allowed.find((p) => p === v);
     if (hit) out.add(hit);
   }
   return out;
+}
+
+/** 환경변수 값 → 선별 방식으로 할 용도. 비거나 모르는 값은 무시 */
+export const selectPurposes = (env: string | undefined): Set<BundlePurpose> => pick(env, PURPOSES);
+
+/** 환경변수 값 → 선별 방식으로 할 card 용도 기능. 비거나 모르는 값은 무시 */
+export const selectFeatures = (env: string | undefined): Set<SelectFeature> => pick(env, SELECT_FEATURES);
+
+/** 이 요청을 선별 방식으로 할지 — 용도가 켜졌거나, card 용도이고 그 기능이 켜졌으면. 기능을 모르면(안 넘김) 용도로만 판정(하위 호환) */
+export function selectOn(env: string | undefined, purpose: BundlePurpose, feature?: SelectFeature): boolean {
+  if (selectPurposes(env).has(purpose)) return true;
+  return purpose === "card" && feature !== undefined && selectFeatures(env).has(feature);
+}
+
+/**
+ * 선별 방식을 켤 트랙(쉼표 목록, 예: 주요사업). 비면 모든 트랙(실험 하위 호환). DB 출처(lib/ai/context.ts dbSelection)에만 씀 —
+ * 다른 트랙에 규칙 문서를 올려도 그 트랙이 저절로 선별 방식이 되지 않게(꽂은 실험 출처는 그대로)
+ */
+export const SELECT_TRACKS_ENV_KEY = "KNOWLEDGE_SELECT_TRACKS";
+
+/** 이 트랙이 선별 방식 대상인지 — 목록이 비면 모든 트랙 */
+export function selectTrackOn(env: string | undefined, track: string): boolean {
+  const list = (env ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return !list.length || list.includes(track);
+}
+
+/** DB 선별 결과(card_knowledge_select)에서 대응표 rejected를 뺀 뒤 이보다 적으면 통째로 넣기 — 주요사업 59장 Jev 선별 실측 하위 10% 경계(1~4건만 고른 카드는 근거가 거의 사라짐) */
+export const SELECT_MIN_KEYS = 5;
+
+/**
+ * 규칙 문서 조각이 지금 원문과 맞는지 — 조각마다 meta.sources(원문 조각 key·글 해시, rules-digest.ts chunkHash)가 모두 지금 조각과 같아야 함.
+ * sources 기록이 없거나, 원문 조각이 사라졌거나, 해시가 다르면 낡음(false). chunks = 이 트랙 조각 전부
+ */
+export function digestFresh(digests: BundleChunk[], chunks: BundleChunk[]): boolean {
+  const now = new Map(chunks.map((c) => [c.chunk_key, c]));
+  return digests.every((d) => {
+    const sources = d.meta?.sources;
+    if (!Array.isArray(sources)) return false;
+    return sources.every((s: { key?: unknown; hash?: unknown } | null) => {
+      const c = now.get(String(s?.key ?? ""));
+      return c !== undefined && chunkHash(c) === s?.hash;
+    });
+  });
+}
+
+/**
+ * 규칙 문서(한 범위의 조각들)가 그 범위의 지금 입력과 같은지 — 모든 조각의 meta.sources key 합집합이 지금 범위(scope = digestChunks 결과)의 key 집합과 같고 해시도 같아야 함.
+ * 새 기준류 조각이 범위에 들어왔거나 빠졌거나 바뀌었으면 낡음(false). digests가 비면 이 범위 규칙 문서가 없는 것이라 판단하지 않음(true — 빈 자리는 digestCovers가 막음).
+ * sources가 빈 목록이어도 범위가 비어 있지 않으면 낡음
+ */
+export function digestScopeFresh(digests: BundleChunk[], scope: BundleChunk[]): boolean {
+  if (!digests.length) return true;
+  const recorded = new Map<string, unknown>();
+  for (const d of digests) {
+    const sources = d.meta?.sources;
+    if (!Array.isArray(sources)) return false;
+    for (const s of sources as ({ key?: unknown; hash?: unknown } | null)[]) recorded.set(String(s?.key ?? ""), s?.hash);
+  }
+  if (recorded.size !== scope.length) return false;
+  return scope.every((c) => recorded.has(c.chunk_key) && recorded.get(c.chunk_key) === chunkHash(c));
 }
 
 /** 한 카드의 선별 결과 — keys = 고른 사례류 조각 키(순서 = 순위), digest = 공통 규칙 문서 글(track = 트랙 공통 ①②, unit = 평가단위 ③) */

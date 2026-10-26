@@ -13,7 +13,7 @@ const key = process.argv[3] || "improve";
 const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
 const { data: card, error } = await db.from("cards").select("id, eval_unit_id, data").eq("id", id).single();
 if (error || !card) throw new Error(`카드를 읽지 못함: ${error?.message}`);
-const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data });
+const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "card", "chat");
 const q = QUICK_PROMPTS.find((p) => p.key === key)?.text ?? key;
 const req = { question: q, history: [], periodLabel: "2026년 9월", inspection: inspectionBrief(null) };
 const prompt = chatPrompt(chatPrompts().prompts, card.data, listText(chatPrompts().prompts, kb), req);

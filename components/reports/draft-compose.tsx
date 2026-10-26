@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { finishCardMaterialUpload, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
-import { runReportSectionDraft } from "../../app/(app)/reports/cards/actions";
+import { getReportSelectPreview, runReportSectionDraft } from "../../app/(app)/reports/cards/actions";
 import { runReportOutline } from "../../app/(app)/reports/cards/outline-actions";
 import { type DraftRunKind, OUTLINE_RUNS, draftExpect, draftProgress, rangeText } from "../../lib/ai/progress.ts";
 import { ATTACH_ACCEPT, ATTACH_LABEL, isAttachableName } from "../../lib/ai/writer.ts";
@@ -165,13 +165,20 @@ export function DraftCompose(props: {
       .slice(0, 2);
   const namesOf = (files: SourceFile[], ids: string[]) => ids.map((id) => files.find((f) => f.id === id)?.fileName).filter((x): x is string => Boolean(x));
   const src = props.outlineSources;
+  // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(서버가 요청 때와 같은 묶음으로 셈, null이면 통째로 넣기). 요청을 보낼 수 없으면 안 물음
+  const [selected, setSelected] = useState<number | null>(null);
+  useEffect(() => {
+    if (!props.canWrite) return;
+    void getReportSelectPreview(props.uid).then(setSelected);
+  }, [props.uid, props.canWrite]);
+  const picked = selected ?? undefined;
   const spec =
     run &&
     draftProgress(
       run.kind,
       run.kind === "outline" || run.kind === "draft"
-        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, frame: run.own && run.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
-        : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, frame: run.own ? undefined : (props.outlineRun.frame ?? undefined) },
+        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: run.own && run.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
+        : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: run.own ? undefined : (props.outlineRun.frame ?? undefined) },
     );
 
   // 스크롤(2026-09-29 사용자 결정): 요청을 보내면 진행 줄로, 끝나면 결과로 — 구성안을 만든 요청이 잘 끝나면 구성안 머리(맨 위), 초안·오류면 결과 알림.

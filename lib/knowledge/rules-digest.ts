@@ -19,7 +19,7 @@ import { flattenHtmlTables } from "./rich-text.ts";
 /** 프롬프트 파일(resources/prompts/rules-digest)에 있어야 하는 절 */
 export const RULES_DIGEST_PROMPT_SPEC: PromptSpec = {
   system: ["system"],
-  request: ["prompt", "chunks.head", "retry", "doc.head", "doc.omitted"],
+  request: ["prompt", "chunks.head", "retry", "repair", "doc.head", "doc.omitted"],
   schema: ["rules", "rules.section", "rules.text", "rules.refs", "rules.quotes", "omitted", "omitted.key", "omitted.reason"],
 };
 
@@ -118,6 +118,26 @@ export function digestPrompt(p: PromptSet, target: DigestTarget, chunks: BundleC
   const out = [fillFrom(p, "request", "chunks.head", vars), digestBlock(chunks), "", fillFrom(p, "request", "prompt", vars)];
   if (retry) out.push("", fillFrom(p, "request", "retry", { problems: retry.problems.map((x) => `- ${x}`).join("\n"), previous: JSON.stringify(retry.previous) }));
   return out.join("\n");
+}
+
+/** 교차 검증 지적(고쳐 만들기 요청에 붙음) */
+export interface RepairFindings {
+  /** 규칙 줄 지적(rule은 1부터) */
+  lines: Array<{ rule: number; verdict: string; reason: string; fix: string; wrongKeys: string[] }>;
+  docGaps: Array<{ keys: string[]; what: string; why: string; suggestion: string; severity: string }>;
+}
+
+/** 고쳐 만들기 요청 글: 조각 묶음 + 지적 + 앞 판. 지적 없는 줄은 그대로 두라는 지시는 프롬프트 파일에 있음 */
+export function repairPrompt(p: PromptSet, target: DigestTarget, chunks: BundleChunk[], previous: DigestAnswer, f: RepairFindings): string {
+  const vars = { title: target.title, count: chunks.length, chars: sourceChars(chunks), keys: chunks.map((c) => c.chunk_key).join(", ") };
+  const lineFindings = f.lines.length
+    ? f.lines
+        .map((x) => `- 규칙 ${x.rule}(「${(previous.rules[x.rule - 1]?.text ?? "").slice(0, 60)}…」) — ${x.verdict}\n  사유: ${x.reason}\n  제안: ${x.fix || "(없음)"}${x.wrongKeys.length ? `\n  맞는 key 후보: ${x.wrongKeys.join(", ")}` : ""}`)
+        .join("\n")
+    : "(없음)";
+  const docFindings = f.docGaps.length ? f.docGaps.map((g, i) => `${i + 1}. [${g.severity}] ${g.what}\n  원문 key: ${g.keys.join(", ")}\n  중요한 이유: ${g.why}\n  제안: ${g.suggestion}`).join("\n") : "(없음)";
+  const numbered = { ...previous, rules: previous.rules.map((r, i) => ({ n: i + 1, ...r })) };
+  return [fillFrom(p, "request", "chunks.head", vars), digestBlock(chunks), "", fillFrom(p, "request", "repair", { lineFindings, docFindings, previous: JSON.stringify(numbered) }), "", `입력 key 목록: ${vars.keys}`].join("\n");
 }
 
 // ---------------------------------------------------------------------------

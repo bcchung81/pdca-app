@@ -4,7 +4,10 @@
 // 산출: <out>/rules/<id>.md(요청에 붙는 글) + <out>/rules/<id>.json(답·검산·입력 조각 해시·모델·프롬프트 판·시각·글자 수). 기관 자료 요약이라 git 밖(docs/analysis/eval/)에만 둡니다.
 // 실행: node --conditions=react-server --env-file=.env.local scripts/knowledge/rules-digest.ts --out <폴더> [--units track-biz,track-mg,BZ-1,…] [--dry]
 //   --dry: 범위별 입력 조각 수·글자만(모델 안 부름)
-import { mkdir, writeFile } from "node:fs/promises";
+// 고쳐 만들기: ... --out <폴더> --units … --repair <rules-check 폴더> — 교차 검증 지적을 반영한 판을 같은 스키마로 만들고 검산(앞 판은 rules/_prev에 보관, 검산 실패면 앞 판 유지)
+// 올리기: ... --out <폴더> [--units …] (--dry-run | --write --yes) — 교차 검증(scripts/eval/rules-check.ts)을 통과한 단위만, 기본은 드라이런
+import { existsSync, readFileSync } from "node:fs";
+import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -12,9 +15,10 @@ import { runClaudeCli } from "../../lib/ai/cli.ts";
 import { loadBundleChunks } from "../../lib/ai/context.ts";
 import { runPool } from "../../lib/ai/pool.ts";
 import type { BundleChunk } from "../../lib/knowledge/bundle.ts";
-import { type DigestAnswer, type DigestCheck, RulesDigestSchema, checkDigest, checkProblems, digestChunks, digestInputs, digestMarkdown, digestPrompt, digestTarget, sourceChars } from "../../lib/knowledge/rules-digest.ts";
+import { type DigestAnswer, type DigestCheck, RulesDigestSchema, checkDigest, checkProblems, digestChunks, digestInputs, digestMarkdown, digestPrompt, digestTarget, repairPrompt, sourceChars } from "../../lib/knowledge/rules-digest.ts";
 import { rulesDigestPrompts } from "../../lib/prompts/sets.ts";
 import { fillFrom } from "../../lib/prompts/template.ts";
+import { findingsOf, type UnitResult } from "../eval/rules-check-core.ts";
 
 const MODEL = "opus";
 const EFFORT = "high";
@@ -25,6 +29,11 @@ const CONCURRENCY = 3;
 const DEFAULT_UNITS = ["track-biz", "track-mg", "BZ-1", "BZ-2", "BZ-3", "MG-1", "MG-3", "MG-4"];
 
 const args = process.argv.slice(2);
+// --write·--dry-run: 만든 규칙 문서를 운영 knowledge_chunks에 올리는 모드(모델 안 부름) — scripts/knowledge/rules-digest-store.ts
+if (args.includes("--write") || args.includes("--dry-run")) {
+  await import("./rules-digest-store.ts");
+  process.exit(process.exitCode ?? 0);
+}
 const value = (name: string) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
@@ -32,6 +41,8 @@ const value = (name: string) => {
 const out = value("--out");
 if (!out) throw new Error("--out <폴더>가 필요합니다.");
 const dry = args.includes("--dry");
+// --repair <rules-check 폴더>: 앞 판(rules/<id>.json) + 그 단위의 교차 검증 지적을 붙여 같은 스키마로 고친 판을 만듦. 앞 판은 rules/_prev/<id>.<시각>.json으로 보관
+const repairDir = value("--repair");
 const targets = (value("--units")?.split(",").filter(Boolean) ?? DEFAULT_UNITS).map(digestTarget);
 
 const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -76,6 +87,22 @@ async function call(prompt: string): Promise<{ answer: DigestAnswer; model: stri
   return { answer: parsed.data, model: run.model, usage: run.usage };
 }
 
+/** 고쳐 만들기 모드의 앞 판 답·지적(단위마다) */
+const repairOf = (id: string) => {
+  const prev = JSON.parse(readFileSync(join(dir, `${id}.json`), "utf8")) as { answer: DigestAnswer | null };
+  const checkFile = join(repairDir!, `${id}.json`);
+  if (!prev.answer) throw new Error(`${id}: 앞 판 답이 없습니다`);
+  if (!existsSync(checkFile)) throw new Error(`${id}: 교차 검증 결과가 없습니다(${checkFile})`);
+  return { previous: prev.answer, findings: findingsOf(JSON.parse(readFileSync(checkFile, "utf8")) as UnitResult) };
+};
+const repairs = new Map(repairDir ? targets.map((t) => [t.id, repairOf(t.id)] as const) : []);
+const promptFor = (t: (typeof targets)[number], input: BundleChunk[], retry?: Parameters<typeof digestPrompt>[3]) => {
+  const rep = repairs.get(t.id);
+  if (!rep) return digestPrompt(prompts, t, input, retry);
+  const base = repairPrompt(prompts, t, input, rep.previous, rep.findings);
+  return retry ? `${base}\n\n${fillFrom(prompts, "request", "retry", { problems: retry.problems.map((x) => `- ${x}`).join("\n"), previous: JSON.stringify(retry.previous) })}` : base;
+};
+
 const summary: Array<{ id: string; ok: boolean; attempts: number; sourceChars: number; digestChars: number; ms: number; note: string }> = [];
 
 await runPool(targets, CONCURRENCY, async (t) => {
@@ -87,7 +114,7 @@ await runPool(targets, CONCURRENCY, async (t) => {
   for (let n = 0; n < 2; n++) {
     const t0 = Date.now();
     try {
-      const r = await call(digestPrompt(prompts, t, input, retry));
+      const r = await call(promptFor(t, input, retry));
       const check = checkDigest(r.answer, input);
       attempts.push({ ok: check.ok, check, usage: r.usage, model: r.model, durationMs: Date.now() - t0 });
       best = { answer: r.answer, check, model: r.model };
@@ -122,6 +149,18 @@ await runPool(targets, CONCURRENCY, async (t) => {
     attempts,
     answer: best?.answer ?? null,
   };
+  if (repairs.has(t.id) && !best?.check.ok) {
+    // 고쳐 만들기가 검산을 못 넘으면 앞 판을 덮지 않음
+    console.log(`  ${t.id}: 고친 판이 검산을 통과하지 못해 앞 판을 그대로 둡니다`);
+    summary.push({ id: t.id, ok: false, attempts: attempts.length, sourceChars: json.sourceChars, digestChars: 0, ms, note: "고쳐 만들기 실패(앞 판 유지)" });
+    return;
+  }
+  if (repairs.has(t.id)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    await mkdir(join(dir, "_prev"), { recursive: true });
+    await copyFile(join(dir, `${t.id}.json`), join(dir, "_prev", `${t.id}.${stamp}.json`));
+    await copyFile(join(dir, `${t.id}.md`), join(dir, "_prev", `${t.id}.${stamp}.md`));
+  }
   if (best) {
     const md = digestMarkdown(prompts, t, best.answer);
     json.digestChars = md.length;

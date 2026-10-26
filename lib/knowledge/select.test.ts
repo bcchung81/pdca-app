@@ -7,7 +7,8 @@ import { assistPrompts, assistPromptsMg, chatPrompts, commentPromptsMg, reportDr
 import { type BundleChunk, type KnowledgeBundle, RULES_DIGEST_UNIT, buildBundle, bundleRefs, layerOf, listText, relevantRefs, sharedTexts } from "./bundle.ts";
 import { chunkRole } from "./chunk-role.ts";
 import { SYN_BIZ_CARD, SYN_BIZ_LINKED, SYN_CHUNKS, SYN_MG_CARD, SYN_MG_LINKED, SYN_PROMPTS } from "./fixtures/bundle-synthetic.ts";
-import { type CardSelection, applySelection, digestCovers, rolesOf, selectPurposes } from "./select.ts";
+import { chunkHash } from "./rules-digest.ts";
+import { type CardSelection, applySelection, digestCovers, digestFresh, digestScopeFresh, rolesOf, selectFeatures, selectOn, selectPurposes, selectTrackOn } from "./select.ts";
 
 const BASELINE = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures/bundle-baseline.json"), "utf8")) as Record<string, unknown>;
 const cases = (chunks: BundleChunk[]): Record<string, KnowledgeBundle> => ({
@@ -38,6 +39,22 @@ test("selectPurposes: 쉼표 목록에서 card·report만, 비거나 모르는 �
   assert.deepEqual([...selectPurposes("card")], ["card"]);
   assert.deepEqual([...selectPurposes(" Card , report ,writer,,")].sort(), ["card", "report"]);
   assert.deepEqual([...selectPurposes("on")], []);
+});
+
+test("selectFeatures·selectOn: 기능 단위 설정 — report,chat이면 경평·질문만, card는 card 용도 기능 전부, 기능을 안 넘기면 용도로만", () => {
+  assert.deepEqual([...selectFeatures(" Chat ,report,writer, x")].sort(), ["chat", "writer"]);
+  assert.deepEqual([...selectFeatures("card")], []);
+  const env = "report,chat";
+  assert.equal(selectOn(env, "report"), true);
+  assert.equal(selectOn(env, "card", "chat"), true);
+  assert.equal(selectOn(env, "card", "writer"), false, "작성지원은 통째로 넣기");
+  assert.equal(selectOn(env, "card", "comment"), false, "코멘트는 통째로 넣기");
+  assert.equal(selectOn(env, "card"), false, "기능을 모르면 용도(card)로만 — 꺼짐");
+  for (const f of ["writer", "chat", "comment"] as const) assert.equal(selectOn("card", "card", f), true, `card는 ${f}도`);
+  assert.equal(selectOn("card", "card"), true);
+  assert.equal(selectOn("card", "report"), false);
+  assert.equal(selectOn("chat", "report", "chat"), false, "기능은 card 용도 안에서만");
+  assert.equal(selectOn(undefined, "card", "chat"), false);
 });
 
 const roles = rolesOf(SYN_CHUNKS);
@@ -129,4 +146,39 @@ test("digestCovers: 이 평가단위 층에 기준류가 있는데 그 자리 �
   assert.equal(digestCovers(SYN_CHUNKS, "BZ-1", "card", sel([], { track: "", unit: "있음" })), false, "①② 서술·편람 자리가 빔");
   const noOwnRules = SYN_CHUNKS.filter((c) => !(c.business === "BZ-1" && chunkRole(c) === "rule"));
   assert.equal(digestCovers(noOwnRules, "BZ-1", "card", sel([], { track: "있음", unit: "" })), true, "③에 기준류가 없으면 평가단위 규칙 문서는 없어도 됨");
+});
+
+test("selectTrackOn: 쉼표 목록(앞뒤 공백 무시)에 든 트랙만, 비면 모든 트랙", () => {
+  for (const env of [undefined, "", " , "]) assert.ok(selectTrackOn(env, "경영관리"), String(env));
+  assert.ok(selectTrackOn("주요사업", "주요사업"));
+  assert.ok(!selectTrackOn("주요사업", "경영관리"));
+  assert.ok(selectTrackOn(" 경영관리 ,주요사업", "주요사업"));
+});
+
+test("digestFresh: meta.sources의 key·해시(chunkHash)가 모두 지금 조각과 같아야 함 — 해시 다름·조각 사라짐·기록 없음은 낡음, 빈 목록은 그대로", () => {
+  const src = SYN_CHUNKS[0];
+  const withSources = (sources: unknown) => ({ ...DIGESTS[0], meta: { usage: "rules_digest", sources } });
+  assert.ok(digestFresh([withSources([{ key: src.chunk_key, hash: chunkHash(src) }])], SYN_CHUNKS));
+  assert.ok(!digestFresh([withSources([{ key: src.chunk_key, hash: chunkHash(src) }])], SYN_CHUNKS.map((c) => (c === src ? { ...c, title: "바뀐 제목" } : c))), "제목이 바뀌어도 해시가 다름");
+  assert.ok(!digestFresh([withSources([{ key: src.chunk_key, hash: chunkHash(src) }])], SYN_CHUNKS.slice(1)), "원문 조각이 사라짐");
+  assert.ok(!digestFresh([DIGESTS[0]], SYN_CHUNKS), "meta 없음");
+  assert.ok(!digestFresh([withSources("x")], SYN_CHUNKS), "sources가 목록이 아님");
+  assert.ok(digestFresh([withSources([])], SYN_CHUNKS), "확인할 원문이 없으면 그대로");
+  assert.ok(digestFresh([], SYN_CHUNKS));
+});
+
+test("digestScopeFresh: 규칙 문서 sources가 지금 입력 범위와 key 집합·해시 모두 같아야 최신 — 새 조각·삭제·해시 변경·빈 sources 처리", () => {
+  const scope = SYN_CHUNKS.slice(0, 3);
+  const rec = (cs: BundleChunk[]) => cs.map((c) => ({ key: c.chunk_key, hash: chunkHash(c) }));
+  const doc = (sources: unknown) => [{ ...DIGESTS[0], meta: { usage: "rules_digest", sources } }];
+  assert.ok(digestScopeFresh(doc(rec(scope)), scope), "같음");
+  assert.ok(!digestScopeFresh(doc(rec(scope)), [...scope, SYN_CHUNKS[3]]), "범위에 새 조각");
+  assert.ok(!digestScopeFresh(doc(rec(scope)), scope.slice(1)), "범위에서 조각이 빠짐");
+  assert.ok(!digestScopeFresh(doc(rec(scope)), scope.map((c, i) => (i === 0 ? { ...c, title: "바뀜" } : c))), "해시 변경");
+  assert.ok(digestScopeFresh(doc([]), []), "빈 sources + 빈 범위");
+  assert.ok(!digestScopeFresh(doc([]), scope), "빈 sources + 범위 있음");
+  assert.ok(!digestScopeFresh(doc(undefined), []), "sources 기록 없음");
+  assert.ok(digestScopeFresh([], scope), "규칙 문서가 없으면 판단 안 함");
+  const [a, b] = [DIGESTS[0], DIGESTS[1]].map((d, i) => ({ ...d, meta: { sources: rec(scope.slice(i * 2, i * 2 + 2 - i)) } }));
+  assert.ok(digestScopeFresh([a, b], scope), "조각이 여러 개면 sources 합집합");
 });

@@ -13,7 +13,7 @@ const TABLE: [string, string, ChunkRole][] = [
   ["pool25-biz", "pool_indicator", "rule"],
   ["goal30-2605", "goal_indicator", "rule"],
   ["ceo24-2605", "ceo_indicator", "rule"],
-  ["ax26-2605", "ax_task", "rule"],
+  ["ax26-2605", "ax_task", "evidence"],
   ["plan-2607", "evaluator_comment", "critique"],
   ["mid25-biz", "finding_row", "critique"],
   ["mid25-mg", "finding_row", "critique"],

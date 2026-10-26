@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ASSIST_EXPECT, INSPECT_EXPECT, OUTLINE_RUNS, assistProgress, draftExpect, draftProgress, expectLabel, fmtElapsed, overdue, rangeText } from "./progress.ts";
+import { ASSIST_EXPECT, INSPECT_EXPECT, OUTLINE_RUNS, assistProgress, blockShapesProgress, draftExpect, draftProgress, expectLabel, fmtElapsed, overdue, rangeText } from "./progress.ts";
 
 test("경과 시간 m:ss, 보통 걸리는 시간 글, 넘겼는지", () => {
   assert.equal(fmtElapsed(0), "0:00");
@@ -31,6 +31,16 @@ test("과제원장 진행 줄: 요청 종류와 상관없이 같은 규칙 범�
   assert.deepEqual(labels(chat), ["카드", "공통 지식", "최종 점검표", "앞 대화 4차례"], "앞 대화는 서버가 받는 최근 4차례까지");
   assert.ok(chat.sources.at(-1)!.detail.includes("2.4만 자"));
   assert.ok(!labels(assistProgress("chat", { files: [], history: 0 })).some((l) => l.startsWith("앞 대화")), "첫 질문이면 앞 대화 없음");
+});
+
+test("과제원장 진행 줄: 선별 방식이 적용되는 요청만 「공통 규칙 문서 + 고른 자료 N건 + 제목 목록」, 아니면 규칙 범위 전부 그대로", () => {
+  const knowledge = (s: ReturnType<typeof assistProgress>) => s.sources.find((x) => x.label === "공통 지식")!.detail;
+  const sel = knowledge(assistProgress("chat", { files: [], history: 2, selected: 3 }));
+  assert.ok(sel.includes("공통 규칙 문서") && sel.includes("고른 자료 3건") && sel.includes("제목 목록"));
+  assert.ok(!sel.includes("규칙 범위 전부"), "선별이면 전부라고 적지 않음");
+  assert.equal(knowledge(assistProgress("chat", { files: [] })), knowledge(assistProgress("improve", { files: [] })), "적용 안 되면 예전 문구");
+  assert.ok(knowledge(assistProgress("improve", { files: [] })).startsWith("규칙 범위 전부"));
+  assert.deepEqual(assistProgress("improve", { files: ["a.pdf"], selected: 0 }).sources.map((x) => x.label), ["카드", "첨부 1건", "공통 지식"], "라벨·순서는 그대로");
 });
 
 test("경평 초안 진행 줄: 카드·올해 실적(늘) + 고른 첨부·전년 절·평가 근거, 요청마다 보통 걸리는 시간", () => {
@@ -91,4 +101,23 @@ test("경평 초안 짜임 고르기·여러 안 진행 줄(2026-10-12): 고른 
   assert.match(alts.sources.find((s) => s.label === "3안")?.detail ?? "", /동시에.*저장하지 않고/);
   assert.ok(alts.sources.some((s) => s.label === "월간 점검 보완 요청"));
   assert.ok(!OUTLINE_RUNS.has("alts"), "여러 안은 저장하지 않아 구성안 머리로 옮기지 않음");
+});
+
+test("경평 초안·다른 모양으로 진행 줄: 선별 방식이 적용되면(selected) 「공통 지식」을 선별 문구로, 아니면 「공통 지식 전체」 그대로", () => {
+  const last = (s: { sources: Array<{ label: string; detail: string }> }) => s.sources.at(-1)!;
+  for (const kind of ["outline", "plan", "draft", "alts"] as const) {
+    const off = last(draftProgress(kind, { files: [], prior: [], lens: 0 }));
+    assert.equal(off.label, "공통 지식 전체");
+    assert.ok(off.detail.startsWith("규칙 범위 전부") && off.detail.includes("작성 방법론"));
+    const on = last(draftProgress(kind, { files: [], prior: [], lens: 0, selected: 7 }));
+    assert.equal(on.label, "공통 지식");
+    assert.ok(on.detail.includes("공통 규칙 문서") && on.detail.includes("고른 자료 7건") && on.detail.includes("작성 방법론"), kind);
+    assert.ok(!on.detail.includes("규칙 범위 전부"), "선별이면 전부라고 적지 않음");
+  }
+  const shapesOff = last(blockShapesProgress({ blockNo: 2, want: null }));
+  assert.equal(shapesOff.label, "공통 지식 전체");
+  assert.ok(shapesOff.detail.endsWith("경평 초안 작성 방법론(특강·강의 — 글 쓰는 방식의 참고)"), "예전 문구 그대로");
+  const shapesOn = last(blockShapesProgress({ blockNo: 2, want: null, selected: 0 }));
+  assert.equal(shapesOn.label, "공통 지식");
+  assert.ok(shapesOn.detail.includes("고른 자료 0건"));
 });

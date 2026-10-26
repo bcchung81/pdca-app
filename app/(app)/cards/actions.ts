@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { CHAT_LIMITS, cleanHistory, inspectionBrief } from "../../../lib/ai/chat.ts";
-import { loadCardBundle } from "../../../lib/ai/context.ts";
+import { cardSelectPreview, loadCardBundle } from "../../../lib/ai/context.ts";
 import { bundleRefs } from "../../../lib/knowledge/bundle.ts";
+import type { SelectFeature } from "../../../lib/knowledge/select.ts";
 import { loadMaterialTexts } from "../../../lib/ai/attachments.ts";
 import { MATERIAL_COLS, type MaterialDoc, type MaterialRow, fileRefs } from "../../../lib/ai/material-text.ts";
 import { type VerifiedComment, readCommentInput, verifyComments } from "../../../lib/ai/comments.ts";
@@ -201,8 +202,8 @@ export async function runCardAssist(_prev: AssistState, formData: FormData): Pro
   } else if (me.role === "dept_user") {
     working = (await openVersion(supabase, card.id))?.data ?? card.data;
   }
-  // 공통 지식: 규칙 범위 전부(참고자료 설계 2단계 — 요청 종류와 상관없이 같은 묶음, 요청 종류별 쓰임은 프롬프트가 정함)
-  const kb = await loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working });
+  // 공통 지식: 규칙 범위 전부(참고자료 설계 2단계 — 요청 종류와 상관없이 같은 묶음, 요청 종류별 쓰임은 프롬프트가 정함). KNOWLEDGE_SELECT에 card·writer가 있으면 선별 방식
+  const kb = await loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, "card", "writer");
   // 남용 방지·호출 기록: 진행 중 호출도 세는 1분 5회·동시 실행 제한(lib/ai/request-log.ts — 다른 AI 기능과 합산)
   const ai = await startAiRequest(supabase, { userId: me.id, cardId: card.id, feature: "card_assist", mode });
   if (!ai.ok) return { status: "error", message: ai.message };
@@ -257,7 +258,7 @@ export async function runCardChat(uid: string, question: string, history: unknow
     working = (await openVersion(supabase, card.id))?.data ?? card.data;
   }
   const [kb, { data: ins }] = await Promise.all([
-    loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }),
+    loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, "card", "chat"),
     // 최종 점검표: 보낸·확인한 것 중 점검월이 가장 늦은 1건(초안은 최종이 아님)
     supabase.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle(),
   ]);
@@ -284,6 +285,17 @@ export async function runCardChat(uid: string, question: string, history: unknow
     await ai.finish({ status: "error", error: message });
     return { ok: false, message };
   }
+}
+
+/**
+ * AI 작성지원 진행 줄의 「공통 지식」을 실제와 같게(lib/ai/progress.ts assistProgress): 이 카드에 선별 방식이 적용되는 기능(작성지원·질문·코멘트) → 고른 원문 수.
+ * 키가 없는 기능은 통째로 넣기. 읽기만 하는 조회라 부서 화면 보기에서도 막지 않음
+ */
+export async function getCardSelectPreview(uid: string): Promise<Partial<Record<SelectFeature, number>>> {
+  await requireUser("/cards");
+  const supabase = await createClient();
+  const { data: card } = await supabase.from("cards").select("id, eval_unit_id, data").eq("uid", uid).maybeSingle();
+  return card ? cardSelectPreview(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }) : {};
 }
 
 export type CommentRunResult = { ok: true; comments: VerifiedComment[]; model: string } | { ok: false; message: string };
@@ -323,7 +335,7 @@ export async function runCardComments(uid: string, payload: string): Promise<Com
     .map(([k, n]) => `${k}:${n}`)
     .join(",");
   // 근거: 공통 지식 규칙 범위 전부 + 이 카드의 카드 전용 자료 전부(참고자료 설계 1·2단계 — 「첨부 기준으로 수치 고쳐 줘」 같은 코멘트도 근거로 처리)
-  const [kb, loaded] = await Promise.all([loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }), loadCardFiles(supabase, card.id, [])]);
+  const [kb, loaded] = await Promise.all([loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, "card", "comment"), loadCardFiles(supabase, card.id, [])]);
   // 남용 방지·호출 기록(AI 작성지원과 합산 — lib/ai/request-log.ts)
   const ai = await startAiRequest(supabase, { userId: me.id, cardId: card.id, feature: "card_comment", mode });
   if (!ai.ok) return { ok: false, message: ai.message };

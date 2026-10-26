@@ -193,7 +193,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 
 ### 선별 방식(실험, 기본 꺼짐 — 2026-10-26)
 
-지식공급 하이브리드 선별 계획(`docs/plan/지식공급-하이브리드선별-계획.md` §4.1·6단계)의 앱 코드 경로입니다. **기본은 통째로 넣기 그대로**이고, 환경변수 `KNOWLEDGE_SELECT`(쉼표 목록 `card`·`report`)에 든 용도만 선별 방식이 됩니다. 운영 적용은 병행 비교(계획 §6.3)를 통과한 기능만.
+지식공급 하이브리드 선별 계획(`docs/plan/지식공급-하이브리드선별-계획.md` §4.1·6단계)의 앱 코드 경로입니다. **기본은 통째로 넣기 그대로**이고, 환경변수 `KNOWLEDGE_SELECT`(쉼표 목록)에 든 것만 선별 방식이 됩니다 — 용도 `report`(경평 구성안·집필·블록 고치기 전부)·`card`(작성지원·질문·코멘트 전부 — 실험 스크립트가 씀), 또는 card 용도 안의 한 기능 `writer`(작성지원 요청 종류 넷·보완 점검)·`chat`(질문)·`comment`(리뷰어 코멘트). 판정은 `selectOn(env, 용도, 기능)` — 용도가 켜졌거나 그 기능이 켜졌으면 선별, 기능을 안 넘긴 호출은 용도로만(하위 호환). 예: `KNOWLEDGE_SELECT=report,chat`이면 경평과 질문만 선별이고 작성지원·코멘트는 통째로 넣기(2026-10-26 사용자 결정 — 결과 `docs/plan/지식공급-하이브리드선별-결과.md` §9). 운영 적용은 병행 비교(계획 §6.3)를 통과한 기능만. 트랙은 `KNOWLEDGE_SELECT_TRACKS`(쉼표 목록, 예: `주요사업`; 비면 모든 트랙 — 실험 하위 호환)로 따로 켭니다 — DB 출처에만 적용해, 나중에 경영관리 규칙 문서를 올려도 경영관리가 저절로 선별 방식이 되지 않게 합니다(2026-10-26 사용자 결정: 주요사업 경평·질문, 로컬 앱에서 먼저).
 
 | 곳 | 하는 일 |
 |---|---|
@@ -202,12 +202,17 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `bundle.ts` `listText` | 목록 머리가 선별 방식 설명(`kb.select.list`)이고 끝에 고르지 않은 조각을 문서별 「key · 제목」으로 — 그 목록에만 있는 근거는 「자료 확인 필요: <key>」 |
 | `bundleRefs`·`relevantRefs` | 선별 전 원문 전부(`select.all`)와 선별 전 과제 연결(`select.relevant`)로 — 인용·숫자 대조는 통째로 넣기와 같은 기준 |
 | `layerOf` | `unit_type = rules_digest`(공통 규칙 문서)는 늘 범위 밖 — 통째로 넣기·크기 보호에 안 섞임 |
-| `lib/ai/context.ts` `loadCardSelection` | 출처: 꽂은 출처(`setSelectionSource` — **실험 스크립트만** 부름, 금기 1 때문에 파일 출처는 앱 코드에 두지 않음) → 없으면 DB(고른 키 = 대응표 auto·confirmed, 규칙 문서 = 같은 트랙 `rules_digest` 조각, 사업 없음 = 트랙 공통·사업 = 평가단위). 출처가 null이거나 이 평가단위 층의 기준류 자리를 규칙 문서가 다 못 대신하면(`digestCovers`) 통째로 넣기 — 반쪽 선별 안 함 |
+| `lib/ai/context.ts` `loadCardBundle(…, 용도, 기능?)`·`loadCardSelection` | 기능은 `app/(app)/cards/actions.ts`가 넘김(`runCardAssist` writer·`runCardChat` chat·`runCardComments` comment, 스모크 `ai-chat-smoke` chat·`ai-comment-smoke` comment). 출처: 꽂은 출처(`setSelectionSource` — **실험 스크립트만** 부름, 금기 1 때문에 파일 출처는 앱 코드에 두지 않음) → 없으면 DB(`dbSelection`). 출처가 null이거나 이 평가단위 층의 기준류 자리를 규칙 문서가 다 못 대신하면(`digestCovers`) 통째로 넣기 — 반쪽 선별 안 함 |
+| `dbSelection`(DB 출처) | 고른 키 = 선별 결과 표 `card_knowledge_select`(아래)의 그 카드 행을 순위 순으로, 대응표 `rejected` 조각은 빼고(대응표 auto·confirmed는 `applySelection`이 늘 넣음). 규칙 문서 = 같은 트랙 `rules_digest` 조각(사업 없음 = 트랙 공통, 사업 = 평가단위 — 적재 모양: `doc_id = rules-biz`, `meta = { usage: rules_digest, sources: [{ key, hash }], promptVersion, model, generatedAt, reviewedAt? }`). **통째로 넣기로 돌아가는 경우**: 트랙이 `KNOWLEDGE_SELECT_TRACKS`에 없음 · 규칙 문서가 하나도 없음 · 규칙 문서가 낡음(`digestFresh` — 조각마다 `meta.sources`의 원문 key·해시(`rules-digest.ts chunkHash`)가 지금 조각과 다르거나 원문 조각이 사라졌거나 sources 기록이 없음 · 범위 변화(`digestScopeFresh` — `digestChunks`로 지금 계산한 입력 범위(트랙 공통 = ①② rule 조각, 평가단위 = ③ rule 조각)의 key 집합이 sources의 key 집합과 같고 해시도 같아야 함: 새 기준류 조각이 범위에 들어오거나 빠지면 낡음, sources가 `[]`이어도 범위가 비어 있지 않으면 낡음, 범위를 계산 못 하면 낡음. 꽂은 출처에는 안 씀)) · rejected를 뺀 고른 키가 `SELECT_MIN_KEYS`(5 — 주요사업 59장 Jev 선별 실측 하위 10% 경계, 1~4건만 고른 카드는 근거가 거의 사라짐) 미만(0개 포함). 표 읽기 오류는 행 없음과 같게(`loadScopeKeys`와 같은 결). 트랙·최소 개수는 꽂은 실험 출처에는 안 씀 |
+| `card_knowledge_select`(마이그레이션 `20261026100000`) | 과제 × 조각 선별 결과: `rank`(1부터, 작을수록 앞)·`score`(판정 확률)·`judge`(예: `jev-1.14.0:strict:p>=0.2`)·`created_at`. 카드·조각이 지워지면 연쇄 삭제. RLS: 읽기는 대응표와 같이 카드를 볼 수 있는 사람(`can_read_card` — 부서 담당자는 지정된 과제만), 쓰기는 성과관리팀·관리자(`is_staff`), 채우는 스크립트는 서비스 키 |
 | `lib/reports/lens-queries.ts` | 경평이 선별 대상이고 선별이 있으면 평가 관점의 검색 순(`searched`)을 고른 지적·실사 조각 순서로 |
+| 진행 줄 `lib/ai/progress.ts` `assistProgress(…, { selected })` | 카드 AI 작성지원 옆 창이 열릴 때 서버 액션 `getCardSelectPreview`(`cardSelectPreview` — 요청 때와 같은 `loadCardBundle`로 셈, 꺼져 있으면 아무것도 안 읽음)가 선별이 실제로 적용되는 기능 → 고른 원문 수를 알려 주고, 그 기능의 진행 줄 「공통 지식」을 「공통 규칙 문서 + 이 과제에 고른 자료 N건 + 나머지 제목 목록」으로 적음. 적용 안 되는 기능(꺼짐·규칙 문서 없음·반쪽)은 예전 「규칙 범위 전부」 그대로 |
+| 진행 줄 `draftProgress`·`blockShapesProgress(…, { selected })` | 경평 「AI 초안」 탭(`components/reports/draft-compose.tsx` — 구성안 만들기·다시 만들기·짜임 바꾸기·구성안대로 집필·바로 만들기)과 「다른 모양으로」(`block-shapes.tsx`)가 열릴 때 서버 액션 `getReportSelectPreview`(`app/(app)/reports/cards/actions.ts` → `reportSelectPreview` — 요청 때와 같은 `loadCardBundle(…, "report")`로 셈, report가 꺼져 있으면 아무것도 안 읽음)로 고른 수를 받아, 선별이 적용되면 「공통 지식」을 선별 문구로(작성 방법론은 선별 대상이 아니라 그대로 적음), 아니면(null) 「공통 지식 전체」 예전 문구 그대로. 요청을 보낼 수 없는 「AI 초안」 탭(`canWrite` 아님)은 안 물음 |
 
 - 프롬프트 절은 `_shared/knowledge.md`·`knowledge-mg.md`의 `select.*`(기능 request.md의 `kb.select.*`). 통째로 넣기 절의 글은 그대로라 요청 글이 바뀌지 않음 — 시스템 프롬프트의 `rules`(「규칙으로 넓게 넣은 전부」)는 고치지 않고 선별 방식의 목록 머리가 「이 요청에는 맞지 않음」이라고 알림
 - 월간 점검(`gatherInspectionKnowledge`)·카드 전용 자료는 선별 대상이 아님
-- 시험: `lib/knowledge/select.test.ts`(선별 없는 묶음 출력이 `fixtures/bundle-baseline.json`과 바이트까지 같음 — 합성 조각), `lib/ai/context-select.test.ts`(설정·출처·반쪽 선별 방지·평가 관점)
+- 시험: `lib/knowledge/select.test.ts`(선별 없는 묶음 출력이 `fixtures/bundle-baseline.json`과 바이트까지 같음 — 합성 조각, 설정 값 파싱, 트랙 설정, 규칙 문서 낡음 판정), `lib/ai/context-select.test.ts`(설정·기능 단위 판정·출처·반쪽 선별 방지·선별 결과 표·rejected·최소 개수·규칙 문서 낡음·트랙·평가 관점·진행 줄 미리 보기 둘), `lib/ai/progress.test.ts`(선별 적용 때 진행 줄 문구 — 카드·경평), `lib/db/migrations.test.ts`(`card_knowledge_select` 역할별 RLS)
+- **남은 일**: 경평 「여러 안」 진행 줄(`components/reports/draft-workspace.tsx`의 `draftProgress("alts", …)`)은 아직 `selected`를 넘기지 않아 선별이 적용돼도 「공통 지식 전체」로 적음 — `getReportSelectPreview` 결과를 넘기면 됨(2026-10-26 다른 작업과 같은 파일이라 미룸). 규칙 문서 낡음 판정은 sources에 있던 조각의 변경·삭제만 보고, 그 범위에 **새로 들어온** 기준류 조각(예: 새 편람 문서)은 보지 않음
 
 ## 경영관리 지식 적재(2026-10-07 — 묶음 B 뒤 2단계)
 

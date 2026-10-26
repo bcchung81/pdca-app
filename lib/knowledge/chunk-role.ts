@@ -35,7 +35,8 @@ const ROLE_OF_UNIT: Record<string, ChunkRole> = {
   pool_indicator: "rule",
   goal_indicator: "rule",
   ceo_indicator: "rule",
-  ax_task: "rule",
+  // AX 검토 과제는 과제마다 사실(목적·기대효과·개인정보·일정)이 촘촘한 목록이라 요약하면 줄마다 뜻이 어긋남 — 요약하지 않고 원문으로 넣음(2026-10-26 사용자 결정, 규칙 문서 교차 검증에서 요약 줄이 계속 걸림)
+  ax_task: "evidence",
   evaluator_comment: "critique",
   finding_row: "critique",
   corrective_action: "critique",

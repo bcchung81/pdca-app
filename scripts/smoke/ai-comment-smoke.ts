@@ -35,7 +35,7 @@ const comments: CommentInput[] = [
 ];
 console.log(`대상 칸: c1=${pathLabel(pick1.path, card.data)} 「${quote(pick1.text)}」 · c2=${pathLabel(pick2.path, card.data)} 「${quote(pick2.text)}」`);
 
-const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data });
+const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "card", "comment");
 const period = currentPeriod();
 const req: CommentRequest = { periodLabel: `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`, comments, keeps: [] };
 const prompt = commentPrompt(commentPrompts().prompts, card.data, targets, listText(commentPrompts().prompts, kb), req);

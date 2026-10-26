@@ -1001,6 +1001,47 @@ test("과제 대응표(3단계): 카드를 볼 수 있는 사람만 읽고, 확�
   });
 });
 
+test("공통 지식 선별 결과(card_knowledge_select): 부서 담당자는 지정된 카드 행만 읽고 쓰지 못함, 성과관리팀·관리자는 읽고 씀, 순위는 1부터, 익명 차단, 조각이 지워지면 함께", { skip: NO_SEED_CARDS }, async () => {
+  const own = (await firstCard("검사기획팀")).id;
+  const other = (await firstCard("자격기획팀")).id;
+  await withKnowledgeFixture(async () => {
+    await db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, score, judge) values ($1, 'prep-test/1', 1, 0.9, 'test'), ($2, 'prep-test/1', 1, 0.8, 'test')", [own, other]);
+    const seen = (u: keyof typeof users) => as(u, () => count("select 1 from public.card_knowledge_select where chunk_key = 'prep-test/1'"));
+    assert.equal(await seen("inspector"), 1, "부서 담당자는 지정된 자기 카드 행만");
+    assert.equal(await seen("license"), 1);
+    assert.equal(await seen("pmo"), 2);
+    assert.equal(await seen("admin"), 2);
+    // 같은 팀이어도 지정을 빼면 안 보임
+    await db.query("delete from public.card_assignees where user_id = $1 and card_id = $2", [users.inspector, own]);
+    try {
+      assert.equal(await seen("inspector"), 0, "지정 안 된 카드는 안 보임");
+    } finally {
+      await assignTeams();
+    }
+    // 부서 담당자는 쓰지 못함
+    await rejects(() => as("inspector", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [own])), /row-level security/);
+    assert.equal((await as("inspector", () => db.query("update public.card_knowledge_select set rank = 5 where card_id = $1", [own]))).affectedRows, 0, "담당자는 못 고침");
+    assert.equal((await as("inspector", () => db.query("delete from public.card_knowledge_select where card_id = $1", [own]))).affectedRows, 0, "담당자는 못 지움");
+    // 성과관리팀·관리자는 넣고 고치고 지움
+    await as("pmo", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [own]));
+    assert.equal((await as("pmo", () => db.query("update public.card_knowledge_select set rank = 3 where card_id = $1 and chunk_key = 'prep-test/2'", [own]))).affectedRows, 1);
+    assert.equal((await as("admin", () => db.query("delete from public.card_knowledge_select where card_id = $1 and chunk_key = 'prep-test/2'", [own]))).affectedRows, 1);
+    await as("admin", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [other]));
+    await rejects(() => as("admin", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 0, 'x')", [own])), /check/);
+    await rejects(() => as("admin", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank) values ($1, 'prep-test/2', 1)", [own])), /null/);
+    await db.exec("set role anon");
+    try {
+      await rejects(() => db.query("select 1 from public.card_knowledge_select"), /permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
+    // 조각이 지워지면 그 행도
+    await db.query("delete from public.knowledge_chunks where chunk_key = 'prep-test/2'");
+    assert.equal(await count("select 1 from public.card_knowledge_select where chunk_key = 'prep-test/2'"), 0);
+  });
+  assert.equal(await count("select 1 from public.card_knowledge_select where chunk_key like 'prep-test/%'"), 0, "문서를 지우면 조각과 함께 지워짐");
+});
+
 test("일반 문서(5단계 범용 조각기): generic_section 유형·검색 전용 표지가 제약 없이 들어가고, 성과관리팀만 문서를 지우며, 지우면 조각과 과제 대응표 행(사람이 확정한 행 포함)이 함께 지워진다", { skip: NO_SEED_CARDS }, async () => {
   const own = (await firstCard("검사기획팀")).id;
   await as("pmo", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name, status) values ('up-gen', 't', 't.pdf', 'ingest')"));

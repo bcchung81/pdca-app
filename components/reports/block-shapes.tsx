@@ -4,6 +4,7 @@ import { RefreshCw, X } from "lucide-react";
 import { T } from "../ui/kit";
 import { useEffect, useId, useRef, useState } from "react";
 import { type BlockShapeOption, type BlockShapesResult, type DraftBlockResult, applyBlockShape, previewBlockShapes } from "../../app/(app)/reports/cards/edit-actions";
+import { getReportSelectPreview } from "../../app/(app)/reports/cards/actions";
 import { blockShapesProgress, rangeText } from "../../lib/ai/progress.ts";
 import type { ShapeMenuItem } from "../../lib/reports/block-shape.ts";
 import { AiProgress } from "../workspace/ai-progress";
@@ -80,6 +81,13 @@ export function BlockShapes(props: {
       alive.current = false;
     };
   }, []);
+  // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(서버 getReportSelectPreview, null이면 통째로 넣기)
+  const [selected, setSelected] = useState<number | null>(null);
+  useEffect(() => {
+    void getReportSelectPreview(props.uid).then((n) => {
+      if (alive.current) setSelected(n);
+    });
+  }, [props.uid]);
 
   const choices = props.menu.filter((m) => m.code !== props.currentCode);
   const current = props.menu.find((m) => m.code === props.currentCode);
@@ -179,7 +187,7 @@ export function BlockShapes(props: {
             </div>
           </div>
         )}
-        {run && <AiProgress spec={blockShapesProgress({ blockNo: props.blockIndex + 1, want: run.want })} startedAt={run.at} />}
+        {run && <AiProgress spec={blockShapesProgress({ blockNo: props.blockIndex + 1, want: run.want, selected: selected ?? undefined })} startedAt={run.at} />}
 
         {error && (
           <div role="alert" className="flex min-w-0 flex-col gap-1.5 rounded-md bg-warn-bg px-3 py-2 text-xs break-keep text-warn">

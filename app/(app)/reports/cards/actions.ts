@@ -1,5 +1,6 @@
 "use server";
 
+import { reportSelectPreview } from "../../../../lib/ai/context.ts";
 import { requireUser } from "../../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../../lib/auth/preview.ts";
 import { currentPeriod } from "../../../../lib/cards/view.ts";
@@ -48,3 +49,13 @@ export async function runReportSectionDraft(uid: string, sources?: DraftSources)
   return r;
 }
 
+/**
+ * 경평 초안 진행 줄의 「공통 지식」을 실제와 같게(lib/ai/progress.ts draftProgress·blockShapesProgress): 이 카드에 선별 방식이 적용되면 고른 원문 수, 아니면 null(통째로 넣기).
+ * 읽기만 하는 조회라 부서 화면 보기에서도 막지 않음(카드는 RLS로 읽음)
+ */
+export async function getReportSelectPreview(uid: string): Promise<number | null> {
+  await requireUser("/reports/cards");
+  const supabase = await createClient();
+  const { data: card } = await supabase.from("cards").select("id, eval_unit_id, data").eq("uid", uid).maybeSingle();
+  return card ? reportSelectPreview(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }) : null;
+}

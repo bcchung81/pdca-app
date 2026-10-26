@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronUp, Info } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { runCardAssist, runCardChat } from "../../app/(app)/cards/actions";
+import { getCardSelectPreview, runCardAssist, runCardChat } from "../../app/(app)/cards/actions";
 import { type CardMaterial, finishCardMaterialUpload, listCardMaterials, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
 import { ASK_CLIP, type AssistTurn, CHAT_MODE, type TurnMode, askLines, assistKey, chatHistory, fromChatMessages, legacyChatKey, modeLabel, patchTurn, pushTurn, readTurns, threadMarkdown, turnHeadline, turnMarkdown } from "../../lib/ai/assist-thread.ts";
 import { CHAT_LIMITS } from "../../lib/ai/chat.ts";
@@ -178,6 +178,12 @@ export function AiAssist(props: {
   useEffect(() => {
     void loadDocs();
   }, [loadDocs]);
+  // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되는 기능 → 고른 원문 수(서버가 요청 때와 같은 묶음으로 셈, 없으면 통째로 넣기). 요청을 보낼 수 없는 화면에서는 안 물음
+  const [selected, setSelected] = useState<Awaited<ReturnType<typeof getCardSelectPreview>>>({});
+  useEffect(() => {
+    if (props.preview || props.unavailable) return;
+    void getCardSelectPreview(uid).then(setSelected);
+  }, [uid, props.preview, props.unavailable]);
   const upload = props.canUpload !== false && canEdit;
   // 근거로 들어가는 자료: 카드 자료 전부에서 화면에서 뺀 것과 AI가 못 읽는 것만 제외
   const includedDocs = docs.filter((d) => !off.has(d.id) && d.parseStatus !== "failed");
@@ -424,7 +430,7 @@ export function AiAssist(props: {
                 </div>
                 {t.status === "pending" && (
                   // 진행 줄: 경과 시간 · 넣은 근거(누르면 펼침). 질문의 「앞 대화」는 이 차례 전에 받은 답 수
-                  <AiProgress spec={assistProgress(progressMode(t.mode), { files: t.files ?? [], history: turns.slice(0, idx).filter((x) => x.status === "ok").length })} startedAt={Date.parse(t.at)} />
+                  <AiProgress spec={assistProgress(progressMode(t.mode), { files: t.files ?? [], history: turns.slice(0, idx).filter((x) => x.status === "ok").length, selected: selected[progressMode(t.mode) === "chat" ? "chat" : "writer"] })} startedAt={Date.parse(t.at)} />
                 )}
                 {t.status === "error" && (
                   <p role="alert" className="rounded-md border border-error-line bg-error-bg px-3 py-2 text-ui text-error-strong">
