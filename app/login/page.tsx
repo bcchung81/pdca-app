@@ -6,7 +6,7 @@ import { signOut } from "./actions";
 import { AuthCard } from "./auth-card";
 import { LoginForm } from "./login-form";
 
-export const metadata: Metadata = { title: "로그인 · 경영AI비서" };
+export const metadata: Metadata = { title: "로그인 · 경평AI비서" };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const sp = await searchParams;

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PageHeader, Panel, Screen, T, Tag } from "../../../components/ui/kit";
 import { ROLE_LABEL, requireUser } from "../../../lib/auth/dal.ts";
 
-export const metadata: Metadata = { title: "도움말 · 경영AI비서" };
+export const metadata: Metadata = { title: "도움말 · 경평AI비서" };
 
 type Mark = "쓰기" | "보기" | "—";
 // 메뉴 › 탭(한 메뉴에 묶은 화면은 화면 위 탭으로 옮겨 다님). 성과관리팀·관리자에게 부서 담당자 화면은 「부서 화면 보기」

@@ -12,7 +12,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
 import { TRACK_SPECS } from "../../../../lib/tracks/index.ts";
 
-export const metadata: Metadata = { title: "월간 점검 취합 보고 · 경영AI비서" };
+export const metadata: Metadata = { title: "월간 점검 취합 보고 · 경평AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 

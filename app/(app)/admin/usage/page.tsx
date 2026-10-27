@@ -67,7 +67,7 @@ async function loadUsageRows(supabase: Awaited<ReturnType<typeof createClient>>,
   return { rows: data ?? [], error: error?.message ?? null };
 }
 
-export const metadata: Metadata = { title: "AI 사용량 · 경영AI비서" };
+export const metadata: Metadata = { title: "AI 사용량 · 경평AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const MODE_LABEL: Record<string, string> = {

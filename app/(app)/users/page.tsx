@@ -9,7 +9,7 @@ import { listUsers } from "../../../lib/users/queries.ts";
 import { assignmentView } from "../../../lib/users/service.ts";
 import { ActiveToggle, AssignmentEditor, InviteForm, UserEditForm } from "./user-forms";
 
-export const metadata: Metadata = { title: "사용자·담당 과제 · 경영AI비서" };
+export const metadata: Metadata = { title: "사용자·담당 과제 · 경평AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const fmt = (iso: string | null) =>

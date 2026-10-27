@@ -18,7 +18,7 @@ import { ReportCheck } from "./report-card-check";
 import { ReportCardPreview } from "./report-card-preview";
 import { ReportToolbar, ReportToolbarEnd } from "./report-card-toolbar";
 
-export const metadata: Metadata = { title: "과제별 초안 · 경평 초안 · 경영AI비서" };
+export const metadata: Metadata = { title: "과제별 초안 · 경평 초안 · 경평AI비서" };
 // Vercel Pro 최대 800초 — 과제별 초안은 판면 맞추기 두 번까지 돌면 300초에 가까움, Hobby 플랜(최대 300초)에서는 배포가 거절되므로 운영은 Pro
 export const maxDuration = 800;
 

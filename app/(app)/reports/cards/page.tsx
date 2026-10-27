@@ -10,7 +10,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
 import type { LooseJson } from "../../../../lib/loose-json.ts";
 
-export const metadata: Metadata = { title: "과제별 초안 · 경평 초안 · 경영AI비서" };
+export const metadata: Metadata = { title: "과제별 초안 · 경평 초안 · 경평AI비서" };
 
 
 /** 이 화면이 읽는 활성 카드(select 열 그대로) */

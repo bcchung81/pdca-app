@@ -9,7 +9,7 @@ import { withReturn } from "../../../lib/nav/return-to.ts";
 import { SCOPE_GROUPS } from "../../../lib/prep/scope.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 
-export const metadata: Metadata = { title: "지적·과제 연결 · 경영AI비서" };
+export const metadata: Metadata = { title: "지적·과제 연결 · 경평AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const first = <X,>(v: X | X[] | null): X | null => (Array.isArray(v) ? (v[0] ?? null) : v);

@@ -3,7 +3,7 @@ import { safeNext } from "../../../lib/auth/redirect.ts";
 import { AuthCard } from "../../login/auth-card";
 import { ConfirmForm } from "./confirm-form";
 
-export const metadata: Metadata = { title: "로그인 확인 · 경영AI비서" };
+export const metadata: Metadata = { title: "로그인 확인 · 경평AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 

@@ -51,7 +51,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line-strong pr-6 pl-5">
         <div className="flex min-w-0 items-center gap-3.5">
           {/* 로고(심볼 + 글자) = 홈(역할별 첫 화면 — 부서 담당자는 내 과제, 성과관리팀·관리자는 현황) */}
-          <Link href={homeFor(user.role)} title="홈으로" aria-label="경영AI비서 — 홈으로" className="flex shrink-0 items-center no-underline hover:opacity-80">
+          <Link href={homeFor(user.role)} title="홈으로" aria-label="경평AI비서 — 홈으로" className="flex shrink-0 items-center no-underline hover:opacity-80">
             <BrandLogo />
           </Link>
           {tracks.has("경영관리") && tracks.has("주요사업") && <TrackSwitch track={track} />}

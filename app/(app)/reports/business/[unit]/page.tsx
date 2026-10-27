@@ -18,7 +18,7 @@ import { unitPartChapterHtml } from "../../../../../lib/reports/unit-parts-html.
 import { createClient } from "../../../../../lib/supabase/server.ts";
 import { loadUnitParts } from "./parts/actions";
 
-export const metadata: Metadata = { title: "사업 조판 · 경평 초안 · 경영AI비서" };
+export const metadata: Metadata = { title: "사업 조판 · 경평 초안 · 경평AI비서" };
 
 const first = <X,>(v: X | X[] | null): X | null => (Array.isArray(v) ? (v[0] ?? null) : v);
 const pagesLabel = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1)}쪽`;

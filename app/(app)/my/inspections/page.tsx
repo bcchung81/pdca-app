@@ -14,7 +14,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { trackOfUnit } from "../../../../lib/tracks/index.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
 
-export const metadata: Metadata = { title: "점검 결과 · 경영AI비서" };
+export const metadata: Metadata = { title: "점검 결과 · 경평AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 

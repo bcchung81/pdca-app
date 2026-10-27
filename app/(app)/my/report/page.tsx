@@ -23,7 +23,7 @@ import { buildTodoBoard } from "../../../../lib/reports/todo-board.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
 
-export const metadata: Metadata = { title: "경평 초안 · 경영AI비서" };
+export const metadata: Metadata = { title: "경평 초안 · 경평AI비서" };
 
 const DRAFT_TONE: Record<DraftState, Tone> = { none: "muted", outline: "warn", draft: "navy", stale: "warnSolid" };
 /** 판면 칸(판정은 lib/reports/fit.ts fitVerdict 하나 — 뜻을 먼저, %는 뒤에) */

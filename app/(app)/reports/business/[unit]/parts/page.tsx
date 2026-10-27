@@ -14,7 +14,7 @@ import { kpiRate, unitPartsNeeds } from "../../../../../../lib/reports/unit-part
 import { createClient } from "../../../../../../lib/supabase/server.ts";
 import { loadUnitParts } from "./actions";
 
-export const metadata: Metadata = { title: "카드 밖 부분 · 경평 초안 · 경영AI비서" };
+export const metadata: Metadata = { title: "카드 밖 부분 · 경평 초안 · 경평AI비서" };
 
 const PART_NAME = { cover: "표지", findings: "지적", prior: "전년 대비", outcome: "성과분석" } as const;
 

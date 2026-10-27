@@ -35,11 +35,11 @@ LLM이 코딩할 때 흔히 하는 실수를 줄이기 위한 지침입니다. �
 
 ## 이 저장소가 무엇인가
 
-KCA 경영평가 PDCA 운영(claude.ai Project 4종 + Notion DB 4개)을 대체하는 **독립 웹앱(운영)** **「경영AI비서」**(옛 이름 「경영평가 Sherpa」·「진짜최종」)입니다. 과제관리카드 원장, 작성지원 AI, 종합점검 AI, 12월 경영실적보고서(HWPX) 작성. Vercel(Next.js 16)·Supabase(Postgres·Auth·Storage)·Claude API.
+KCA 경영평가 PDCA 운영(claude.ai Project 4종 + Notion DB 4개)을 대체하는 **독립 웹앱(운영)** **「경평AI비서」**(옛 이름 「경영평가 Sherpa」·「진짜최종」)입니다. 과제관리카드 원장, 작성지원 AI, 종합점검 AI, 12월 경영실적보고서(HWPX) 작성. Vercel(Next.js 16)·Supabase(Postgres·Auth·Storage)·Claude API.
 
 - 역할은 셋뿐입니다: 부서 담당자(`dept_user`) · 성과관리팀(`pmo`) · 관리자(`admin`). **윗 역할은 아랫 역할의 화면을 모두 봅니다**(`lib/auth/access.ts`의 `atLeast`)
 - 범위: **주요사업**(카드 59장)과 **경영관리**(카드 43장 — 카드 원장·한글 현행화·공통 지식·AI 작성지원(지침 08)·월간 점검(지침 13)·경평 초안). 확장 설계 `docs/plan/경영관리-트랙확장-설계.md`
-- 「경영AI비서」는 탭 제목·README 제목·머리띠·로그인 카드 로고(`BrandLogo`, 부제 없음)의 이름입니다. 저장소 이름 `pdca-app`, 산출물 제목, AI 프롬프트의 「KCA 경영평가 성과관리 웹앱」 설명 문구는 이름이 아니라 기능 설명이라 그대로 둡니다(프롬프트를 바꾸면 판 해시가 바뀜)
+- 「경평AI비서」는 탭 제목·README 제목·머리띠·로그인 카드 로고(`BrandLogo`, 부제 없음)의 이름입니다. 저장소 이름 `pdca-app`, 산출물 제목, AI 프롬프트의 「KCA 경영평가 성과관리 웹앱」 설명 문구는 이름이 아니라 기능 설명이라 그대로 둡니다(프롬프트를 바꾸면 판 해시가 바뀜)
 
 **실행 의존 금지.** 앱은 실행 중에 report-harness, 로컬 파이썬, Claude Code, `../` 경로를 쓰지 않습니다. 필요한 기준은 이 저장소 안의 고정 사본으로, 필요한 도구는 npm 의존성으로만 씁니다.
 

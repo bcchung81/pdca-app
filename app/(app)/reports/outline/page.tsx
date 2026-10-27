@@ -14,7 +14,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { DEFAULT_TRACK } from "../../../../lib/tracks/index.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
 
-export const metadata: Metadata = { title: "목차·쪽 배정 · 경영AI비서" };
+export const metadata: Metadata = { title: "목차·쪽 배정 · 경평AI비서" };
 
 /** report_outline select 한 행(card·team 조인은 객체로도 배열로도 옴) */
 interface OutlineDbRow {
