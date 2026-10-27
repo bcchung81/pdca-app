@@ -42,7 +42,7 @@ export interface DraftSources {
 }
 
 /** 부서 잠금 안내(최종 판정은 DB 트리거 guard_card_report_draft) — 제출·승인 중 부서는 과제별 초안·구성안·블록 고치기·BP를 못 바꿈 */
-export const DRAFT_LOCKED_MSG = "제출한 보고서의 과제입니다 — 고치려면 「경평 초안」에서 제출을 취소해 주세요.";
+export const DRAFT_LOCKED_MSG = "확정(승인)·제출한 보고서의 과제입니다 — 고치려면 「경평 초안」에서 확정(또는 제출)을 취소해 주세요.";
 
 export const refresh = (uid: string) => {
   revalidatePath(`/reports/cards/${uid}`);

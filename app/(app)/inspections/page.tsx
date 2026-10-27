@@ -141,7 +141,7 @@ export default async function InspectionsPage({ searchParams }: PageProps<"/insp
           title: ({ acknowledged: "부서가 확인", sent: "부서 확인 대기", draft: "보내기 전", none: "점검표 없음" } as const)[s],
         }))}
         metrics={[
-          { label: "작성본 제출·확정", value: submitted, sub: `/${rows.length}`, bar: { n: submitted, of: rows.length }, title: `${rows.length - submitted}개 아직` },
+          { label: "작성본 확정", value: submitted, sub: `/${rows.length}`, bar: { n: submitted, of: rows.length }, title: `${rows.length - submitted}개 아직` },
           { label: "집중보완", value: focusCount, tone: focusCount ? "warn" : undefined, sub: "과제", title: "★핵심 3항목 중 2개 이상 미흡" },
         ]}
       />

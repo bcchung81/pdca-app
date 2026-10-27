@@ -16,7 +16,7 @@ import { withReturn } from "../../../../lib/nav/return-to.ts";
 import { FIT_RANGE_TEXT, fitVerdict } from "../../../../lib/reports/fit.ts";
 import { buildMaterialRequests } from "../../../../lib/reports/material-requests.ts";
 import { type HubSteps, hubSteps } from "../../../../lib/reports/hub-steps.ts";
-import { REPORT_STATUS_LABEL, kpiKey, kpiRowsOf } from "../../../../lib/reports/model.ts";
+import { REPORT_STATUS_LABEL, kpiKeyedRows } from "../../../../lib/reports/model.ts";
 import { listMaterials, listReports, loadSubmitCards, openCommentCounts, submitKey } from "../../../../lib/reports/queries.ts";
 import { DRAFT_STATE_LABEL, SUBMIT_OVER, type CardSubmitRow, type DraftState, type SubmitCard, submitBlockedReason, submitReadiness } from "../../../../lib/reports/submission.ts";
 import { buildTodoBoard } from "../../../../lib/reports/todo-board.ts";
@@ -41,7 +41,7 @@ function StepNo({ n }: { n: number }) {
   return <span className="shrink-0 font-mono text-ui font-semibold text-muted">{n}</span>;
 }
 
-/** 번호 붙은 단계 절(10-13 시안 section.step — 과제별 초안·제출): 머리(번호 + 제목 + 상태) + 본문 */
+/** 번호 붙은 단계 절(10-13 시안 section.step — 과제별 초안·확정): 머리(번호 + 제목 + 상태) + 본문 */
 function Step({ n, title, id, aside, children }: { n: number; title: string; id?: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section id={id} className="flex min-w-0 flex-col gap-3 border-b border-line px-5 py-4 last:border-b-0">
@@ -60,7 +60,7 @@ function Step({ n, title, id, aside, children }: { n: number; title: string; id?
 /** 과제별 초안 주소(부서 화면 보기면 그 부서로 읽기 전용 — team 쿼리) */
 const draftHref = (uid: string, teamQs: string, from: string) => withReturn(`/reports/cards/${uid}${teamQs ? `?${teamQs.slice(0, -1)}` : ""}`, from);
 
-/** 사업마다 단계 띠(패널 머리 아래 인셋) — 셈은 lib/reports/hub-steps.ts, 주 행동은 그 패널의 근거·제출 절 앵커 또는 첫 초안 없는 과제 */
+/** 사업마다 단계 띠(패널 머리 아래 인셋) — 셈은 lib/reports/hub-steps.ts, 주 행동은 그 패널의 근거·확정 절 앵커 또는 첫 초안 없는 과제 */
 function HubBand({ label, hub, anchor, teamQs, from }: { label: string; hub: HubSteps; anchor: string; teamQs: string; from: string }) {
   const a = hub.action;
   const action = !a ? null : { label: a.label, href: a.step === "draft" ? draftHref(a.uid, teamQs, from) : `#${anchor}-${a.step}` };
@@ -223,7 +223,7 @@ function OutlineContext({ rows, lead, unitWord }: { rows: OutlineCtxRow[]; lead:
   );
 }
 
-/** 부서 담당자 · 경평 초안 허브: 사업마다 근거 넣기 → 과제별 초안 → 제출, 성과관리팀 검토 메모·미해결 코멘트·사업 목차에서 내 자리 */
+/** 부서 담당자 · 경평 초안 허브: 사업마다 근거 넣기 → 과제별 초안 → 확정(바로 승인 상태 — 2026-10-27), 성과관리팀 검토 메모·미해결 코멘트·사업 목차에서 내 자리 */
 export default async function MyReportPage({ searchParams }: PageProps<"/my/report">) {
   const user = await requireUser("/my/report");
   // 트랙(2026-10-09 R3): 머리띠에서 고른 트랙의 보고서·과제만(주요사업 사업 · 경영관리 지표)
@@ -313,7 +313,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
         const readiness = submitReadiness(cs);
         const rows = readiness.rows;
         const label = track === "경영관리" ? unit.name : `${unit.card_group ?? unit.id} · ${unit.name}`;
-        // 보고서 준비 전: 근거(계량 실적·추가자료)·제출은 보고서에 붙어 준비 뒤 — 띠는 과제별 초안만 지금 단계가 될 수 있음
+        // 보고서 준비 전: 근거(계량 실적·추가자료)·확정은 보고서에 붙어 준비 뒤 — 띠는 과제별 초안만 지금 단계가 될 수 있음
         const hub = hubSteps({ status: null, returned: false, readiness, kpiTotal: 0, kpiMissing: 0, materials: 0, preview: scope.preview });
         return (
           <Panel key={unit.id} title={label} aside={<Tag>보고서 준비 전</Tag>}>
@@ -331,7 +331,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
         const readiness = submitReadiness(cs);
         const kpiRows = ((cards ?? []) as HubCardRow[])
           .filter((c) => c.eval_unit_id === r.evalUnitId)
-          .flatMap((c) => kpiRowsOf(c.kpi).map((k) => ({ key: kpiKey(c.id, k.i), card: c.task_no, name: k.name, unit: k.unit, target: k.target, prev: k.prev })));
+          .flatMap((c) => kpiKeyedRows(c.id, c.kpi).map((k) => ({ key: k.key, card: c.task_no, name: k.name, unit: k.unit, target: k.target, prev: k.prev })));
         const lead = r.leadTeamId === r.teamId;
         const canEdit = !scope.preview && r.status !== "approved" && r.status !== "submitted";
         const openN = openComments.get(r.id) ?? 0;
@@ -340,12 +340,13 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
         const kpiMissing = kpiRows.filter((k) => !((r.inputs?.kpi as Record<string, string> | undefined)?.[k.key] ?? "").trim()).length;
         // 경영관리는 지표명만(묶음 id 경영관리N은 식별자라 화면 글자로 쓰지 않음)
         const label = track === "경영관리" ? r.unitName : `${r.cardGroup ?? r.evalUnitId} · ${r.unitName}`;
-        const returned = r.status !== "approved" && !!r.reviewNote;
+        // 돌려받음: 승인이 아니고 검토 메모가 마지막으로 낸(확정·제출) 뒤에 남았을 때 — 부서가 스스로 확정을 취소한 것은 돌려받음이 아님(lib/nav-badges.ts와 같은 판정)
+        const returned = r.status !== "approved" && !!r.reviewNote && (!r.submittedAt || (r.reviewedAt ?? "") >= r.submittedAt);
         const hub = hubSteps({ status: r.status, returned, readiness, kpiTotal: kpiRows.length, kpiMissing, materials: matCount, preview: scope.preview });
         const anchor = `report-${r.id}`;
         const closed = r.status === "submitted" || r.status === "approved";
-        // 제출할 수 없는 까닭(제출 단추 옆 글) — 서버 제출 검사와 같은 문구(submitBlockedReason). 「자료 준비」는 제출 전이가 없음(canMove)
-        const why = submitBlockedReason(readiness) ?? (r.status === "preparing" ? "보고서가 「자료 준비」 상태라 아직 제출할 수 없습니다 — 과제별 초안이 저장되면 「초안 작성」으로 바뀝니다" : !scope.preview && readiness.checks.length ? "확인할 것은 제출을 막지 않습니다 — 제출하면 확인 창에 한 번 더 보입니다" : null);
+        // 확정할 수 없는 까닭(확정 단추 옆 글) — 서버 확정 검사와 같은 문구(submitBlockedReason). 「자료 준비」는 확정 전이가 없음(canMove)
+        const why = submitBlockedReason(readiness) ?? (r.status === "preparing" ? "보고서가 「자료 준비」 상태라 아직 확정할 수 없습니다 — 과제별 초안이 저장되면 「초안 작성」으로 바뀝니다" : !scope.preview && readiness.checks.length ? "확인할 것은 확정을 막지 않습니다 — 확정하면 확인 창에 한 번 더 보입니다" : null);
         const previewLink = (
           <Link href={withReturn(`/reports/${r.id}${teamQs ? `?${teamQs.slice(0, -1)}` : ""}`, selfHref)} className={`${T.btnQuiet} ml-auto`} title="제출물 미리보기·성과관리팀 코멘트 보기">
             제출물 미리보기
@@ -382,9 +383,9 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
           >
             <HubBand label={label} hub={hub} anchor={anchor} teamQs={teamQs} from={selfHref} />
             {r.reviewNote && (
-              <div className={`m-5 mb-0 flex min-w-0 flex-col gap-1 rounded-md border px-3 py-2 text-ui leading-6 ${r.status === "approved" ? "border-link/40 bg-info-bg text-ink" : "border-warn bg-warn-bg text-warn"}`}>
+              <div className={`m-5 mb-0 flex min-w-0 flex-col gap-1 rounded-md border px-3 py-2 text-ui leading-6 ${!returned ? "border-link/40 bg-info-bg text-ink" : "border-warn bg-warn-bg text-warn"}`}>
                 <span>
-                  <b>{r.status === "approved" ? "성과관리팀 검토 메모" : "돌려보냄"}</b>: {r.reviewNote}
+                  <b>{!returned ? "성과관리팀 검토 메모" : "돌려보냄"}</b>: {r.reviewNote}
                 </span>
                 {r.reviewedAt && <span className="text-xs text-muted-2">{fmtDateTime(r.reviewedAt)}</span>}
               </div>
@@ -413,23 +414,23 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
             <Step n={2} title="과제별 초안" aside={`${cs.length}개 · 초안 있음 ${readiness.drafted}/${readiness.total}`}>
               {readiness.rows.length ? <DraftTable rows={readiness.rows} teamQs={teamQs} from={selfHref} preview={scope.preview} /> : <p className="text-ui text-muted">연결된 과제가 없습니다.</p>}
             </Step>
-            <Step n={3} title="제출" id={`${anchor}-submit`}>
+            <Step n={3} title="확정" id={`${anchor}-submit`}>
               <p className="text-ui text-muted-2">
-                {scope.team?.name} · {r.unitName} 보고서 전체를 제출합니다 · 성과관리팀이 검토하고 승인합니다
+                {scope.team?.name} · {r.unitName} 보고서 전체를 확정합니다 · 확정하면 바로 승인 상태가 되고 잠깁니다(고치려면 「확정 취소」) · 성과관리팀은 필요하면 메모와 함께 승인을 풉니다
               </p>
               {closed ? (
-                // 제출함·승인: 조건 목록 대신 상태 한 줄(+ 제출 취소는 기존 상태 단추)
+                // 확정(승인)·남은 제출: 조건 목록 대신 상태 한 줄(+ 확정 취소·제출 취소는 상태 단추)
                 <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
                   <span className="flex items-center gap-2 text-ui font-semibold text-ink">
                     <StatusMark tone={hub.steps[2].tone} />
                     {hub.steps[2].state}
                   </span>
-                  {r.status === "submitted" && statusButtons}
+                  {statusButtons}
                   {previewLink}
                 </div>
               ) : (
                 <>
-                  <ul aria-label={`${label} 제출 조건`} className="m-0 flex list-none flex-col gap-1.5 p-0">
+                  <ul aria-label={`${label} 확정 조건`} className="m-0 flex list-none flex-col gap-1.5 p-0">
                     <li className="flex min-w-0 items-center gap-2.5 text-ui leading-5 text-ink">
                       <span className="w-[92px] shrink-0 text-xs font-semibold text-muted">필수</span>
                       <StatusMark tone={readiness.ready ? "done" : "alert"} />
@@ -442,7 +443,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
                     </li>
                     {readiness.checks.map((c) => (
                       <li key={c} className="flex min-w-0 items-center gap-2.5 text-ui leading-5 text-ink">
-                        <span className="w-[92px] shrink-0 text-xs font-semibold text-muted" title="제출을 막지 않음">
+                        <span className="w-[92px] shrink-0 text-xs font-semibold text-muted" title="확정을 막지 않음">
                           확인할 것
                         </span>
                         <StatusMark tone="idle" />
@@ -453,11 +454,11 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
                     ))}
                   </ul>
                   <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-                    {/* 「자료 준비」는 상태 단추가 제출 단추를 그리지 않음(canMove) — 같은 자리에 끈 단추(T.off 모양)만 */}
+                    {/* 「자료 준비」는 상태 단추가 확정 단추를 그리지 않음(canMove) — 같은 자리에 끈 단추(T.off 모양)만 */}
                     {!scope.preview &&
                       (r.status === "preparing" ? (
                         <button type="button" disabled className={T.btnPrimary} aria-describedby={`${anchor}-why`}>
-                          성과관리팀에 제출
+                          확정
                         </button>
                       ) : (
                         statusButtons

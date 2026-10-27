@@ -3,6 +3,7 @@ import "server-only";
 import { createClient } from "../supabase/server.ts";
 import { type CardLayout, layoutImageKeys } from "../hwp/layout.ts";
 import { cardImageRefs } from "./original-html.ts";
+import { renderCard } from "./render.ts";
 import { type FinalInspectionView, type JudgeStatus, finalInspection, finalInspectionView, isVerdict, judgeStatus, readResult } from "../inspections/model.ts";
 import { compareTaskNo, compareUnitId, currentPeriod } from "./view.ts";
 import { DEFAULT_TRACK, type TrackId } from "../tracks/index.ts";
@@ -139,6 +140,15 @@ export async function signedImageUrls(uid: string, html: string, layoutKeys: str
 
 const isUid = (uid: string) => /^[0-9a-f-]{36}$/i.test(uid);
 
+/** 카드 JSON을 원본 양식으로(그리지 못하면 빈 글 — 그림 서명만 빠짐) */
+function htmlOrEmpty(card: Record<string, unknown>): string {
+  try {
+    return renderCard(card);
+  } catch {
+    return "";
+  }
+}
+
 /** 편집용: 카드 JSON + 운영 값 + 그림 서명 URL */
 export async function getCardForEdit(uid: string) {
   if (!isUid(uid)) return null;
@@ -150,7 +160,9 @@ export async function getCardForEdit(uid: string) {
     .maybeSingle();
   if (!data) return null;
   const layout = (data.layout as CardLayout | null) ?? null;
-  const urls = await signedImageUrls(data.uid, data.original_html ?? "", layoutImageKeys(layout));
+  // 그림 서명 주소는 원본 양식 조각의 그림 자리에서. 조각이 비었으면(부서 확정이 원장을 바꾸면 DB 트리거가 비움 — 낡음 표시,
+  // 부서가 HTML을 넣지 못하게) 같은 렌더러로 지금 카드 JSON에서 그린 결과를 씀(글은 이스케이프 — render.ts esc)
+  const urls = await signedImageUrls(data.uid, data.original_html ?? htmlOrEmpty(data.data as Record<string, unknown>), layoutImageKeys(layout));
   return {
     id: data.id as string,
     uid: data.uid as string,

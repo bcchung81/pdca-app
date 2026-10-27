@@ -2,6 +2,7 @@
 // 숫자는 행선 화면과 같은 셈 — 점검은 /my/inspections 「확인할 것」(고른 트랙의 받은 점검), 초안은 /my/report 제출 조건(submitReadiness의 missing).
 // 우선순위(UI-UX 핸드오프 2026-10-21 6.1): 돌려받은 작성본 → 확인할 점검 → 초안 없는 과제 → 그 달 작성본 시작 전 → 작성 중(아직 안 냄)인 작성본.
 // 톤: 보낸 점검표 「확인 필요」는 부서 입장의 우리 차례라 doing(docs/design/screen-frame.md 상태 톤), 제출한 작성본은 성과관리팀 차례라 handoff.
+// 작성본은 부서가 직접 확정(원장 반영 — 2026-10-27). 「제출」은 그 전에 낸 작성본에만 남음.
 
 import { monthLabel } from "../format.ts";
 import type { InspectionStatus } from "../inspections/model.ts";
@@ -83,12 +84,12 @@ export function myTodo(input: MyTodoInput): MyTodo {
   steps.push({ key: "reflect", tone: progress(n - started, n), label: `${month} 실적 반영`, state: `${n}개 중 ${started}개` });
   steps.push(
     submitted
-      ? { key: "submit", tone: "handoff", label: "작성본 제출", state: `${submitted}건 · 성과관리팀 확인 대기` }
+      ? { key: "submit", tone: "handoff", label: "작성본 확정", state: `${submitted}건 · 성과관리팀 확인 대기` }
       : writing.length
-        ? { key: "submit", tone: "doing", label: "작성본 제출", state: `작성 중 ${writing.length}건 · 제출 전` }
+        ? { key: "submit", tone: "doing", label: "작성본 확정", state: `작성 중 ${writing.length}건 · 확정 전` }
         : n && confirmed === n
-        ? { key: "submit", tone: "done", label: "작성본 제출", state: "모두 확정" }
-        : { key: "submit", tone: "idle", label: "작성본 제출", state: "반영한 뒤 · 성과관리팀이 확정" },
+        ? { key: "submit", tone: "done", label: "작성본 확정", state: "모두 확정" }
+        : { key: "submit", tone: "idle", label: "작성본 확정", state: "반영한 뒤 · 확정(원장 반영)" },
   );
   if (received.length) steps.push({ key: "inspect", tone: toAck ? "doing" : "done", label: "점검 결과 확인", state: toAck ? `받은 ${received.length}건 중 ${toAck}건 확인 필요` : "모두 확인함" });
   if (readiness.total) steps.push({ key: "draft", tone: progress(missing, readiness.total), label: "경평 초안", state: missing ? `초안 없는 과제 ${missing}건` : "과제별 초안 모두 있음" });

@@ -12,7 +12,8 @@ import { renderCard } from "./render.ts";
 import { currentPeriod } from "./view.ts";
 import type { LooseJson } from "../loose-json.ts";
 
-// 월별 작성본(card_versions): 부서 담당자가 이달 실적을 카드에 반영해 제출 → 성과관리팀이 비교하고 확정(원장 반영).
+// 월별 작성본(card_versions): 부서 담당자가 이달 실적을 카드에 반영하고 직접 확정(원장 반영 — 2026-10-27, app/(app)/my/actions.ts confirmMyDraft).
+// 성과관리팀은 원장 이력에서 보고 필요하면 원장을 고침. 「제출」(submitted)은 그 전에 낸 작성본에만 남음(성과관리팀이 비교하고 확정·돌려보내기).
 
 export type VersionStatus = "draft" | "submitted" | "confirmed";
 
@@ -162,7 +163,7 @@ export async function workspaceData(user: CurrentUser, uid: string, opts: { prev
     openRev = open?.rev ?? 0;
   } else if (staff && !opts.preview) {
     const open = await openVersion(supabase, card.id);
-    if (open?.status === "draft") notice = `부서가 ${monthLabel(open.period)} 작성본을 작성 중입니다(제출 전${open.note ? " · 돌려보낸 뒤 고치는 중" : ""}). 원장에서 같은 구역을 고치면 확정 때 충돌로 표시됩니다.`;
+    if (open?.status === "draft") notice = `부서가 ${monthLabel(open.period)} 작성본을 작성 중입니다(확정 전${open.note ? " · 돌려보낸 뒤 고치는 중" : ""}). 원장에서 같은 구역을 고쳐도 부서가 확정하면 그 구역은 작성본 내용으로 바뀝니다(다른 구역은 그대로).`;
     if (open?.status === "submitted") {
       const { data: author } = open.createdBy ? await supabase.from("profiles").select("display_name, email").eq("id", open.createdBy).maybeSingle() : { data: null };
       const { merged, conflicts } = mergeDraft(card.data, open.base, card.fixedLockedAt ? withFixedFrom(open.data, card.data) : open.data);
@@ -190,7 +191,7 @@ export async function workspaceData(user: CurrentUser, uid: string, opts: { prev
   // 편집기 기준 번호: 부서 작성본 편집이면 작성본 개정 번호, 그 밖엔 원장 개정 번호
   const draftEditing = Boolean(draft) && !opts.preview && !otherTeam;
   const rev = draftEditing ? openRev : card.dataRev;
-  // 편집기를 새로 그릴 때: 작성본 단계가 바뀔 때(제출·제출 취소·돌려받음·확정). 작성 시작(없음→작성 중)은 입력 중이라 제외
+  // 편집기를 새로 그릴 때: 작성본 단계가 바뀔 때(확정·남은 제출의 제출 취소·돌려받음). 작성 시작(없음→작성 중)은 입력 중이라 제외
   const stage = !draft ? "ledger" : draft.status === "submitted" ? "sub" : draft.status === "confirmed" ? "done" : "edit";
   const mountKey = `${card.uid}:${stage}${card.retired ? ":retired" : ""}`;
   if (card.retired) notice = `보관한(삭제한) 과제입니다${card.retiredReason ? ` — ${card.retiredReason}` : ""}. 읽기 전용이며 「과제 원장 → 보관함」에서 되살릴 수 있습니다.`;

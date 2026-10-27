@@ -14,6 +14,7 @@ import {
   buildFindingsPart,
   buildOutcomePart,
   buildPriorPart,
+  kpiNameKey,
   mgUnitPartKeys,
   outcomeWarnings,
 } from "./unit-parts-mg.ts";
@@ -104,13 +105,32 @@ function pairFindingRows<R extends AnyRow>(saved: R[], fresh: R[]): Map<R, R> {
 }
 
 /**
+ * 계량 행 짝: ① 같은 id(카드 id#지표 이름) ② 같은 카드·같은 지표 이름(옛 id 「카드 id#순번」 — 2026-10-27 전 저장분 — 의 이행,
+ * 같은 이름이 여럿이면 나온 차례대로). 짝이 된 행은 fresh의 새 id로 저장됨. 이름이 바뀐 지표는 짝이 없는 새 행(엉뚱한 지표에 안 붙음)
+ */
+function pairKpiRows<R extends AnyRow>(saved: R[], fresh: R[]): Map<R, R> {
+  const out = pairById(saved, fresh);
+  const used = new Set(out.values());
+  const nameKey = (r: AnyRow) => `${r.code.cardId}\u0000${kpiNameKey(String(r.code.name ?? ""))}`;
+  for (const r of fresh) {
+    if (out.has(r)) continue;
+    const s = saved.find((x) => !used.has(x) && nameKey(x) === nameKey(r));
+    if (s) {
+      out.set(r, s);
+      used.add(s);
+    }
+  }
+  return out;
+}
+
+/**
  * 행 병합: 행 목록·순서·code 칸·id는 새로 만든 것(fresh), 짝(지적은 pairFindingRows, 나머지는 같은 id)인 행은 저장된 ai·human 칸을 남김(새 코어에 생긴 칸은 출발값으로 채움).
  * saved가 없으면(처음 채우기) 경고 없음. 새 행·사라진 행·짝인데 정체 글이 바뀐 행은 경고
  */
 function mergeRows<R extends AnyRow>(saved: R[] | null, fresh: R[], kind: keyof typeof ROW_KIND, warn: string[]): R[] {
   if (!saved) return fresh;
   const { label, identity } = ROW_KIND[kind];
-  const pairs = kind === "findings" ? pairFindingRows(saved, fresh) : pairById(saved, fresh);
+  const pairs = kind === "findings" ? pairFindingRows(saved, fresh) : kind === "kpi" ? pairKpiRows(saved, fresh) : pairById(saved, fresh);
   const out = fresh.map((r) => {
     const s = pairs.get(r);
     if (!s) {
@@ -120,11 +140,11 @@ function mergeRows<R extends AnyRow>(saved: R[] | null, fresh: R[], kind: keyof 
     if (identity(s) !== identity(r)) warn.push(`행 글이 바뀜: ${label(r)} — 남긴 칸(AI·사람이 쓴 글)이 새 행 글과 맞는지 확인`);
     return { ...r, ...(r.human ? { human: { ...r.human, ...(s.human ?? {}) } } : {}), ...(r.ai ? { ai: { ...r.ai, ...(s.ai ?? {}) } } : {}) };
   });
-  // 사라진 행: 지적은 짝이 안 된 저장 행, 나머지는 예전처럼 새 목록에 같은 id가 없는 저장 행
+  // 사라진 행: 지적·계량은 짝이 안 된 저장 행, 나머지는 예전처럼 새 목록에 같은 id가 없는 저장 행
   const kept = new Set(pairs.values());
   const ids = new Set(fresh.map((r) => r.id));
   for (const s of saved) {
-    if (kind === "findings" ? kept.has(s) : ids.has(s.id)) continue;
+    if (kind === "findings" || kind === "kpi" ? kept.has(s) : ids.has(s.id)) continue;
     const n = written(s);
     warn.push(`사라진 행: ${label(s)} — 재료에서 빠짐${n ? `(쓴 글 ${n}줄이 함께 빠짐)` : ""}`);
   }
@@ -139,7 +159,7 @@ export function refreshOutcomeWarnings(warnings: string[], before: OutcomePart, 
 
 /**
  * 「재료로 다시 채우기」: fresh(재료로 새로 만든 부분)의 code 칸으로 바꾸되 saved(저장된 부분)의 human 칸(사람이 줄이거나 고른 값 — ’25까지 글·계량 행 고르기·극성·구분·담당자 표)과
- * ai 칸(AI·사람이 쓴 문장)은 남김. 행은 정체(지적 = 카드 id#지적 글 열쇠 — 옛 「카드 id#행 번호」는 같은 글로 이행, 전년 대비·비계량·개선계획 = 평가내용 번호, 계량 = kpiKey)로 짝지음.
+ * ai 칸(AI·사람이 쓴 문장)은 남김. 행은 정체(지적 = 카드 id#지적 글 열쇠 — 옛 「카드 id#행 번호」는 같은 글로 이행, 전년 대비·비계량·개선계획 = 평가내용 번호, 계량 = kpiKeyedRows 열쇠)로 짝지음.
  * 경고 = 부분 경고(계량 표 경고는 병합 뒤 행으로 다시 셈) + 병합 경고(새 행·사라진 행·행 글이 바뀜)
  */
 export function mergeUnitPart(saved: UnitPart | null, fresh: { part: UnitPart; warnings: string[] }): { part: UnitPart; warnings: string[] } {

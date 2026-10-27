@@ -195,7 +195,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 도식은 「이 과제만의 요소」(근거가 있어야 씀, 신호는 카드·첨부 글로만)와 「기본 도식」으로 나눠 고르고 시각 블록 하나 이상은 이 과제만의 요소 후보에서. 지적 인용은 1칸까지, 전후 비교 괄호 표기는 두 값이 모두 근거에 있을 때만
 - **코드가 이미 정한 값(이야기 틀 등)은 답 스키마에서 literal/한 값 enum으로 묶지 않음**(구조화 출력 파싱이 통째로 실패) — 문자열로 받아 코드가 덮어 씀(`withPlanStory`·`withFixedStory`)
 - 자동 고치기(`shouldFix`·`draftScore`, `lib/ai/fix-policy.ts`): 문장 문제만이면 안 고침. Vercel에서만 `FIX_DEADLINE_MS` 690초 안일 때(`fixDeadlineMs`·`canFixAgain`), 1차 먼저 저장(`onFirst`), 키 `report_fix`. 상자 채움 경고(`hollowBoxes`)는 고치기 사유가 아님
-- **쓰기·상태**: 초안·구성안 쓰기는 `saveDraftRow`(`lib/reports/draft-store.ts`, `updated_at` 조건)로만. 보고서 상태는 전이 표 `canMove`(`lib/reports/model.ts`)만이고 DB `report_transition_ok`(`20261010110000`)가 같은 표
+- **쓰기·상태**: 초안·구성안 쓰기는 `saveDraftRow`(`lib/reports/draft-store.ts`, `updated_at` 조건)로만. 보고서 상태는 전이 표 `canMove`(`lib/reports/model.ts`)만이고 DB `report_transition_ok`가 같은 표
 - 구성안 승인 뒤 근거 없는 이 과제만의 요소는 화면·서버 둘 다 막힘. 사람이 쓴 라벨·메모는 집필 지시일 뿐 근거가 아님
 - 블록 고치기는 고른 글이 든 블록 하나만 다시 씀(이력 `report_draft_edits`; 추진성과 상자 `block_index` -1). 모양 바꾸기는 `previewBlockShapes`(저장 안 함) → 고른 안만 `applyBlockShape`(`lib/reports/block-shape.ts`). 직접 고침은 `data-t`·`data-raw`와 `saveDraftTexts`(`lib/reports/draft-text.ts`)
 - 배치 필드는 구성안이 정하고 `applyPlanLayout`이 옮기며 폭·판면 어림은 `layoutGroups`(`lib/reports/layout.ts`) 하나만 씀. **배치 필드·제목 앞 칩이 없으면 출력·높이는 예전과 바이트까지 같아야 함**
@@ -228,7 +228,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 
 - 스키마는 `supabase/migrations/`에만 씀(대시보드 직접 변경 금지). **모든 테이블에 RLS**, 판정은 `private` 함수(`can_read_card` 등), 새 테이블·정책은 `lib/db/migrations.test.ts`에 역할별 사례. 저장소 키에 한글 금지(카드는 `uid`)
 - `SUPABASE_SECRET_KEY`는 서버·스크립트만(`NEXT_PUBLIC_*` 금지). 서비스 키(`lib/supabase/admin.ts`)는 Auth 관리 API 때만 `requireRole` 뒤에, 데이터 수정은 사용자 권한(RLS)
-- 업무 규칙은 서버 액션과 DB 트리거 둘 다에(보고서 전이 표·점검표 잠금 `20261010110000`, 작성본 식별 칸·마지막 활성 관리자 `20261010120000`). 새 코드가 의존하는 마이그레이션은 코드보다 먼저 `pnpm db:push`
+- 업무 규칙은 서버 액션과 DB 트리거 둘 다에(전이 표·점검표 잠금 `20261010110000`·`20261027100000`, 작성본·마지막 관리자 `20261010120000`, 부서 확정(원장 내용만) `20261027110000`). 운영 반영 순서는 마이그레이션 머리 주석대로
 - 검색 질의는 반드시 `lib/knowledge/search-query.ts`의 `buildSearchQuery`로(전체 정규화하면 `OR`가 낱말 `or`가 됨). PGroonga는 `pnpm db:check-search`. DB 연결은 Session pooler(직접 연결은 IPv6 전용)
 
 ### 로그인(Supabase 매직링크)

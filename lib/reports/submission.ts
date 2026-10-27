@@ -116,9 +116,9 @@ export function submitReadiness(cards: SubmitCard[]): SubmitReadiness {
   return { ready: inc.length > 0 && missing.length === 0, total: inc.length, drafted: drafted.length, missing, checks, rows };
 }
 
-/** 제출을 막는 까닭 한 줄(서버 액션·화면 단추 title) */
+/** 확정(·남은 제출)을 막는 까닭 한 줄(서버 액션·화면 단추 title) — 2026-10-27부터 부서는 제출 대신 확정 */
 export function submitBlockedReason(r: SubmitReadiness): string | null {
   if (r.ready) return null;
-  if (!r.total) return "제출할 과제가 없습니다(목차에서 모두 빠짐).";
-  return `과제별 초안이 없는 과제 ${r.missing.length}건이 있어 제출할 수 없습니다: ${r.missing.map((m) => `${m.taskNo}${m.state === "outline" ? "(구성안만)" : ""}`).join("·")}`;
+  if (!r.total) return "확정할 과제가 없습니다(목차에서 모두 빠짐).";
+  return `과제별 초안이 없는 과제 ${r.missing.length}건이 있어 확정할 수 없습니다: ${r.missing.map((m) => `${m.taskNo}${m.state === "outline" ? "(구성안만)" : ""}`).join("·")}`;
 }

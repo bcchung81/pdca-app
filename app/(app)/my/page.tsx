@@ -29,7 +29,7 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 
 /**
  * 내 과제. 보이는 과제는 역할이 정함 — 부서 담당자는 자기에게 지정된 과제(card_assignees)만, 성과관리팀·관리자는 모든 과제(읽기 전용, ?team=으로 부서를 좁힘).
- * 부서 담당자는 카드를 열어 이달 실적을 반영(작성본)하고 성과관리팀에 제출
+ * 부서 담당자는 카드를 열어 이달 실적을 반영(작성본)하고 직접 확정(원장 반영)
  */
 export default async function MyTasksPage({ searchParams }: PageProps<"/my">) {
   const user = await requireUser("/my");

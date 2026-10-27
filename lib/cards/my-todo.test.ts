@@ -42,7 +42,7 @@ test("모두 시작 전: 과제번호 순 첫 과제 「실적 반영하기」, 
     t.steps.map((s) => [s.key, s.tone, s.label, s.state]),
     [
       ["reflect", "idle", "10월 실적 반영", "3개 중 0개"],
-      ["submit", "idle", "작성본 제출", "반영한 뒤 · 성과관리팀이 확정"],
+      ["submit", "idle", "작성본 확정", "반영한 뒤 · 확정(원장 반영)"],
     ],
   );
   assert.deepEqual(nowKeys(t), ["reflect"]);
@@ -98,7 +98,7 @@ test("할 일 없음: 주 행동 없음(모두 시작함·점검 모두 확인·
   );
 });
 
-test("숫자: 작성 중·돌려받음·제출·확정이 섞이면 반영 m은 넷 모두, 제출은 제출만 세고 handoff", () => {
+test("숫자: 작성 중·돌려받음·제출·확정이 섞이면 반영 m은 넷 모두, 남은 제출(2026-10-27 전)은 제출만 세고 handoff", () => {
   const rows = [...ROWS, row("c4", "3-가"), row("c5", "3-나")];
   const t = myTodo(
     input({
@@ -114,7 +114,7 @@ test("숫자: 작성 중·돌려받음·제출·확정이 섞이면 반영 m은 
   );
   assert.equal(stepOf(t, "reflect")?.state, "5개 중 4개");
   assert.equal(stepOf(t, "reflect")?.tone, "doing");
-  assert.deepEqual(stepOf(t, "submit"), { key: "submit", tone: "handoff", label: "작성본 제출", state: "1건 · 성과관리팀 확인 대기", now: false });
+  assert.deepEqual(stepOf(t, "submit"), { key: "submit", tone: "handoff", label: "작성본 확정", state: "1건 · 성과관리팀 확인 대기", now: false });
   assert.equal(stepOf(t, "returned")?.state, "1건 보완 필요");
 });
 
@@ -147,7 +147,7 @@ test("과제가 없으면 반영 단계는 0개 중 0개이고 주 행동 없음
   assert.equal(stepOf(t, "reflect")?.state, "0개 중 0개");
 });
 
-test("우선순위 5: 모두 시작했고 작성 중(아직 안 냄)만 남으면 첫 과제 「이어서 작성」, 작성본 제출 단계가 지금", () => {
+test("우선순위 5: 모두 시작했고 작성 중(아직 확정 안 함)만 남으면 첫 과제 「이어서 작성」, 작성본 확정 단계가 지금", () => {
   const t = myTodo(
     input({
       versions: new Map([
@@ -158,6 +158,6 @@ test("우선순위 5: 모두 시작했고 작성 중(아직 안 냄)만 남으�
     }),
   );
   assert.deepEqual(t.action, { kind: "continue", label: "1-나 이어서 작성", uid: "u-c2", taskNo: "1-나" });
-  assert.deepEqual([stepOf(t, "submit")?.tone, stepOf(t, "submit")?.state], ["doing", "작성 중 2건 · 제출 전"]);
+  assert.deepEqual([stepOf(t, "submit")?.tone, stepOf(t, "submit")?.state], ["doing", "작성 중 2건 · 확정 전"]);
   assert.deepEqual(nowKeys(t), ["submit"]);
 });

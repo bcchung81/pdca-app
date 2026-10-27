@@ -1,5 +1,5 @@
 // 지표 단위 부분 병합·칸 고치기(lib/reports/unit-parts-edit.ts — R5b 뒷단) 시험.
-// 지키는 것: 다시 채우기는 code 칸만 새 값·ai·human 칸은 남김 · 행 정체로 짝(지적 = 카드 id#지적 글 열쇠 — 옛 카드 id#행 번호도 같은 글로 이행, 평가내용 = 번호, 계량 = kpiKey) · 새 행·사라진 행·행 글 바뀜 경고 ·
+// 지키는 것: 다시 채우기는 code 칸만 새 값·ai·human 칸은 남김 · 행 정체로 짝(지적 = 카드 id#지적 글 열쇠 — 옛 카드 id#행 번호도 같은 글로 이행, 평가내용 = 번호, 계량 = kpiKeyedRows 열쇠) · 새 행·사라진 행·행 글 바뀜 경고 ·
 // 계량 표 경고는 사람이 고른 행으로 다시 셈 · 칸 고치기는 허용 경로(ai·human)만·code 칸 거절·형식 검사·하나라도 틀리면 아무것도 안 바꿈 ·
 // 트리거 문구 = 서버 문구(마이그레이션 글과 대조).
 
@@ -147,7 +147,7 @@ test("다시 채우기(전년 대비·성과분석): human 칸(’25까지 글·
   o0.kpi[1].ai.analysis = ["성과 분석 문장"];
   o0.qual[0].human.label = "재무구조";
   o0.plan[1].ai.plan = ["’27 개선방안"];
-  const fresh = freshUnitPart(materials({ kpiInputs: [{ "경영관리8/8-1#1": "1.1%" }] }), "outcome")!;
+  const fresh = freshUnitPart(materials({ kpiInputs: [{ "경영관리8/8-1#영업이익률": "1.1%" }] }), "outcome")!;
   assert.ok(fresh.warnings.includes("계량 표: 고른 행이 없음 — 2025 표와 이름이 같은 카드 계량 행이 없어 미리 체크하지 못함(행을 골라 주세요)"));
   const { part, warnings } = mergeUnitPart(o0, fresh);
   const o = part as OutcomePart;
@@ -211,7 +211,7 @@ test("칸 고치기: ai·human 칸만(허용 경로), code 칸은 거절, 값 �
 });
 
 test("계량 표 경고 갈아 끼우기: 사람이 행을 고르거나 극성을 바꾸면 계량 표 경고만 다시 셈", () => {
-  const o = freshUnitPart(materials({ kpiInputs: [{ "경영관리8/8-1#0": "9" }] }), "outcome")!;
+  const o = freshUnitPart(materials({ kpiInputs: [{ "경영관리8/8-1#부채비율": "9" }] }), "outcome")!;
   const before = o.part as OutcomePart;
   const r = applyUnitPartEdits(before, [{ path: "kpi.0.human.checked", value: true }, { path: "kpi.1.human.checked", value: true }]);
   assert.ok(r.ok);
@@ -223,4 +223,35 @@ test("트리거 문구 = 서버 문구(마이그레이션 글에 같은 문장)"
   const sql = readFileSync(resolve(import.meta.dirname, "../../supabase/migrations/20261016100000_unit_report_parts.sql"), "utf8");
   assert.ok(sql.includes(UNIT_PART_CONFIRM_MSG));
   assert.ok(sql.includes(UNIT_PART_KEY_MSG));
+});
+
+test("다시 채우기(계량): 옛 id(카드 id#순번)로 저장된 행도 같은 카드·같은 이름으로 짝지어 새 id로 바꿈", () => {
+  const m = materials({ cards: [card("8-1", kpi("부채비율", "영업이익률", "부채비율")), card("8-2", kpi("영업이익률"))] });
+  const o0 = freshUnitPart(m, "outcome")!.part as OutcomePart;
+  // 옛 저장분 흉내: id를 순번 열쇠로
+  o0.kpi.forEach((k) => (k.id = `${k.code.cardId}#${k.code.index}`));
+  o0.kpi[0].ai.analysis = ["첫 부채비율"];
+  o0.kpi[1].human = { checked: true, polarity: "down" };
+  o0.kpi[2].ai.analysis = ["둘째 부채비율"];
+  o0.kpi[3].ai.analysis = ["8-2 영업이익률"];
+  const { part, warnings } = mergeUnitPart(o0, freshUnitPart(m, "outcome")!);
+  const o = part as OutcomePart;
+  assert.deepEqual(o.kpi.map((k) => k.id), ["경영관리8/8-1#부채비율", "경영관리8/8-1#영업이익률", "경영관리8/8-1#부채비율#2", "경영관리8/8-2#영업이익률"], "새 열쇠로 바뀜");
+  assert.deepEqual(o.kpi.map((k) => k.ai.analysis), [["첫 부채비율"], [], ["둘째 부채비율"], ["8-2 영업이익률"]], "같은 이름은 나온 차례로");
+  assert.deepEqual(o.kpi[1].human, { checked: true, polarity: "down" });
+  assert.deepEqual(warnings.filter((w) => w.startsWith("새 행") || w.startsWith("사라진 행")), []);
+});
+
+test("다시 채우기(계량): 이름이 바뀐 지표는 새 행이고 엉뚱한 지표에 안 붙음", () => {
+  const m1 = materials({ cards: [card("8-1", kpi("부채비율", "영업이익률"))] });
+  const o0 = freshUnitPart(m1, "outcome")!.part as OutcomePart;
+  o0.kpi.forEach((k) => (k.id = `${k.code.cardId}#${k.code.index}`));
+  o0.kpi[0].ai.analysis = ["부채 분석"];
+  o0.kpi[1].ai.analysis = ["이익 분석"];
+  const m2 = materials({ cards: [card("8-1", kpi("부채비율", "당기순이익률"))] });
+  const { part, warnings } = mergeUnitPart(o0, freshUnitPart(m2, "outcome")!);
+  const o = part as OutcomePart;
+  assert.deepEqual(o.kpi.map((k) => k.ai.analysis), [["부채 분석"], []]);
+  assert.ok(warnings.some((w) => w.startsWith("새 행: 계량") && w.includes("당기순이익률")));
+  assert.ok(warnings.some((w) => w.startsWith("사라진 행: 계량") && w.includes("영업이익률") && w.includes("1줄")));
 });

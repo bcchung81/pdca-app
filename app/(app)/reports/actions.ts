@@ -19,7 +19,7 @@ import { getTrack } from "../../../lib/tracks/current.ts";
 import { DEFAULT_TRACK } from "../../../lib/tracks/index.ts";
 
 type Result = { ok: boolean; message?: string };
-const LOCKED_MSG = "제출·승인된 보고서는 고칠 수 없습니다(부서는 제출 취소 뒤 고침).";
+const LOCKED_MSG = "확정(승인)·제출된 보고서는 고칠 수 없습니다(부서는 「확정 취소」·「제출 취소」 뒤 고침).";
 /** 부서는 자료 준비·초안 작성 단계에서만 내용·자료를 바꿈(DB 정책·트리거도 같은 판정) */
 const contentLocked = (role: string, status: string) => role === "dept_user" && (status === "submitted" || status === "approved");
 const refresh = (id?: number) => {
@@ -87,8 +87,9 @@ export async function setLeadTeam(unitId: string, teamId: number | null): Promis
 }
 
 /**
- * 보고서 상태: 부서는 제출·제출 취소, 성과관리팀은 승인·돌려보내기까지.
- * 제출 조건 = 목차에 든 과제 모두 과제별 초안 있음(submitReadiness — 예전에는 원고 블록 수만 봤음). 나머지 확인할 것은 화면 확인 창에서만.
+ * 보고서 상태: 부서는 확정(작성 중 → 승인 — 2026-10-27 사용자 결정, 성과관리팀 검토 단계 없이 바로 승인 상태)·확정 취소(메모 없음),
+ * 성과관리팀은 승인 풀기(메모 필수)와 남은 제출 행의 승인·돌려보내기까지.
+ * 확정(·예전 제출) 조건 = 목차에 든 과제 모두 과제별 초안 있음(submitReadiness — 예전에는 원고 블록 수만 봤음). 나머지 확인할 것은 화면 확인 창에서만.
  * 성과관리팀이 제출된 보고서를 돌려보낼 때(제출 → 초안 작성)·승인을 풀 때(승인 → 작성 중)는 메모 필수 — 부서 화면에 보임(review_note)
  */
 export async function setReportStatus(id: number, to: ReportStatus, note?: string): Promise<Result> {
@@ -100,7 +101,9 @@ export async function setReportStatus(id: number, to: ReportStatus, note?: strin
   const staff = me.role !== "dept_user";
   // 전이 표 한 곳(lib/reports/model.ts canMove — DB 트리거와 같은 목록): 성과관리팀도 표 밖 전이(준비 → 승인 등)는 안 됨
   if (!canMove(me.role, report.status, to)) return { ok: false, message: "이 단계로 바꿀 수 없습니다." };
-  if (to === "submitted") {
+  // 확정 = 작성 중에서 바로 승인(부서 — 성과관리팀도 표에 있음). 남은 제출 행의 승인(제출 → 승인)은 제출 때 이미 확인함
+  const confirming = to === "approved" && report.status === "drafting";
+  if (to === "submitted" || confirming) {
     const cards = (await loadSubmitCards(supabase, report.year, { evalUnitId: report.evalUnitId, teamId: report.teamId })).get(submitKey(report.evalUnitId, report.teamId)) ?? [];
     const why = submitBlockedReason(submitReadiness(cards));
     if (why) return { ok: false, message: why };
@@ -110,9 +113,11 @@ export async function setReportStatus(id: number, to: ReportStatus, note?: strin
   if (returning && !memo) return { ok: false, message: "돌려보내거나 승인을 풀 때는 부서가 고칠 점을 메모로 적어 주세요." };
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { status: to };
-  if (to === "submitted") Object.assign(patch, { submitted_at: now, submitted_by: me.id });
+  // 확정도 「부서가 낸 때」로 submitted_at을 남김 — 돌려받음 판정(검토 메모가 마지막으로 낸 뒤인가 — lib/nav-badges.ts·부서 경평 초안 화면)이 이 시각을 씀
+  if (to === "submitted" || confirming) Object.assign(patch, { submitted_at: now, submitted_by: me.id });
   if (to === "approved") Object.assign(patch, { approved_at: now, approved_by: me.id });
-  if (to !== "approved" && staff) Object.assign(patch, { approved_at: null, approved_by: null });
+  // 승인을 벗어나면 승인 정보를 비움(부서 확정 취소도 — DB guard_report가 비운 것만 받음)
+  if (to !== "approved") Object.assign(patch, { approved_at: null, approved_by: null });
   // 성과관리팀 검토 메모: 돌려보내기·승인 풀기(필수)·승인(선택) 때 남김 — 부서는 못 바꿈(guard_report)
   if (staff && (returning || to === "approved")) Object.assign(patch, { review_note: memo, reviewed_at: now, reviewed_by: me.id });
   // 읽은 상태가 그대로일 때만(두 사람이 동시에 바꾸면 늦은 쪽은 0행)

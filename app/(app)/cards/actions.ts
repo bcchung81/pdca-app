@@ -17,9 +17,9 @@ import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/previe
 import { type CardChange, diffCards } from "../../../lib/cards/diff.ts";
 import { checkEditable, recomputeDerived } from "../../../lib/cards/edit.ts";
 import { canonicalJson, fixedSectionsOf } from "../../../lib/cards/fixed.ts";
-import { mergeDraft } from "../../../lib/cards/merge.ts";
+import { mergeIntoLedger } from "../../../lib/cards/confirm.ts";
 import { editTargets } from "../../../lib/cards/patch.ts";
-import { openVersion, withFixedFrom } from "../../../lib/cards/versions.ts";
+import { openVersion } from "../../../lib/cards/versions.ts";
 import { renderCard } from "../../../lib/cards/render.ts";
 import { type InspectionResult, readResult } from "../../../lib/inspections/model.ts";
 import { currentPeriod } from "../../../lib/cards/view.ts";
@@ -355,9 +355,9 @@ export async function runCardComments(uid: string, payload: string): Promise<Com
 }
 
 /**
- * 제출된 작성본 확정 — 성과관리팀·관리자.
+ * 제출된 작성본 확정 — 성과관리팀·관리자(2026-10-27부터 부서는 제출하지 않고 직접 확정 — app/(app)/my/actions.ts confirmMyDraft. 이 경로는 남은 제출 작성본용).
  * 1) 작성본을 먼저 「확정」으로 선점(제출 상태일 때만 — 그사이 부서가 제출을 취소했으면 멈춤)
- * 2) 작성본을 시작할 때의 원장(base)과 비교해 부서가 바꾼 구역만 지금 원장에 반영(성과관리팀의 다른 원장 변경은 지킴)
+ * 2) 작성본을 시작할 때의 원장(base)과 비교해 부서가 바꾼 구역만 지금 원장에 반영(성과관리팀의 다른 원장 변경은 지킴 — lib/cards/confirm.ts, 부서 확정과 같은 규칙)
  * 3) 원장 쓰기에 실패하면 작성본을 다시 제출 상태로 되돌림. 돌아온 값(data)으로 편집기가 원장을 새로 보여 줍니다.
  */
 export async function confirmDraft(versionId: number): Promise<{ ok: boolean; message?: string; data?: Record<string, unknown>; rev?: number }> {
@@ -374,48 +374,16 @@ export async function confirmDraft(versionId: number): Promise<{ ok: boolean; me
     .select("id, card_id, period, data, base")
     .maybeSingle();
   if (!claimed) return { ok: false, message: "제출 상태의 작성본이 아닙니다(부서가 제출을 취소했거나 이미 처리됨)." };
-  const release = async () => {
-    await supabase.from("card_versions").update({ status: "submitted", confirmed_by: null, confirmed_at: null }).eq("id", claimed.id);
-  };
-  const { data: row } = await supabase.from("cards").select("id, data, data_rev, fixed_locked_at, status").eq("id", claimed.card_id).maybeSingle();
-  if (!row || row.status !== "active") {
-    await release();
-    return { ok: false, message: row ? RETIRED : "카드를 찾을 수 없습니다." };
-  }
-  // 고정 영역이 잠겼으면 작성본·base 모두 원장 값으로 맞춰 그 영역은 원장 그대로
-  const draft = row.fixed_locked_at ? withFixedFrom(claimed.data, row.data) : claimed.data;
-  const base = row.fixed_locked_at && claimed.base ? withFixedFrom(claimed.base, row.data) : claimed.base;
-  const { merged } = mergeDraft(row.data, base, draft);
-  const after = recomputeDerived(merged);
-  const problem = checkEditable(row.data, after);
-  let html = "";
-  try {
-    html = problem ? "" : renderCard(after);
-  } catch {
-    html = "";
-  }
-  if (problem || !html) {
-    await release();
-    return { ok: false, message: problem ?? "원본 양식으로 그리지 못했습니다." };
-  }
-  // 읽은 뒤 원장이 바뀌었으면(다른 창 저장) 쓰지 않고 되돌림 — 다시 확정하면 최신 원장에 병합
-  const { data: updated, error } = await supabase
-    .from("cards")
-    .update({ data: after, title: String(after.title).trim(), original_html: html, data_rev: row.data_rev + 1, updated_by: me.id })
-    .eq("id", row.id)
-    .eq("data_rev", row.data_rev)
-    .select("id, data_rev");
-  if (error || !updated?.length) {
-    await release();
-    return { ok: false, message: error ? "원장에 반영하지 못했습니다." : "그사이 원장이 바뀌었습니다. 다시 확정해 주세요." };
-  }
   const month = `${Number(String(claimed.period).slice(5))}월`;
-  const { error: logError } = await supabase.from("card_edits").insert({ card_id: row.id, edited_by: me.id, before: row.data, after, summary: `${month} 작성본 확정` });
-  if (logError) console.error("confirmDraft history", logError.message);
-  await prepCardChanged(supabase, me.id, row.id, row.data, after);
+  const res = await mergeIntoLedger(supabase, { id: me.id, staff: true }, claimed.card_id, { data: claimed.data, base: claimed.base }, `${month} 작성본 확정`);
+  if (!res.ok) {
+    // 원장 쓰기에 실패하면 작성본을 다시 제출 상태로(선점 되돌림)
+    await supabase.from("card_versions").update({ status: "submitted", confirmed_by: null, confirmed_at: null }).eq("id", claimed.id);
+    return { ok: false, message: res.message };
+  }
   revalidatePath("/cards");
   revalidatePath("/inspections");
-  return { ok: true, data: after, rev: updated[0].data_rev as number };
+  return { ok: true, data: res.data, rev: res.rev };
 }
 
 /** 제출된 작성본 돌려보내기(메모와 함께 부서 작성 중으로) — 성과관리팀·관리자 */

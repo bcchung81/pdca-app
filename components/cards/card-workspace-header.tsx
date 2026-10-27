@@ -8,17 +8,18 @@ import { fmtDateTime } from "../../lib/format.ts";
 import { ListIconButton } from "../workspace/list-icon-button";
 import { ArchiveCardForm } from "./archive-controls";
 import type { WorkspaceProps } from "./card-workspace";
+import { useAsk } from "../ui/confirm-dialog";
 import { T } from "../ui/kit";
 import { ReviewBar } from "./card-workspace-bars";
 import type { CardWorkspaceState } from "./use-card-workspace";
 
 const DRAFT_LABEL: Record<DraftProps["status"], string> = { none: "원장과 같음", draft: "작성 중", submitted: "제출함 · 확인 대기", confirmed: "이달 확정됨" };
 
-/** 작성본 막대의 영향 범위 안내(상태별 — 「저장」과 「제출」이 다른 일임을 보임). none은 월을 붙임 */
+/** 작성본 막대의 영향 범위 안내(상태별 — 「저장」과 「확정」이 다른 일임을 보임). none은 월을 붙임. submitted는 2026-10-27 전에 낸 작성본뿐 */
 function draftScopeNote(draft: DraftProps): string {
   const month = draft.label.replace(/ 작성본$/, "");
   if (draft.status === "none") return `고치면 ${month} 작성본에 저장 · 원장은 그대로`;
-  if (draft.status === "draft") return "제출하면 성과관리팀이 확인한 뒤 원장에 반영";
+  if (draft.status === "draft") return "확정하면 바뀐 곳이 원장에 바로 반영";
   if (draft.status === "submitted") return "성과관리팀 차례 · 확인하면 원장에 반영";
   return "원장에 반영됨";
 }
@@ -60,7 +61,7 @@ function EditHint() {
   if (closed) return null;
   return (
     <div className="flex min-w-0 items-start gap-2 border-t border-line bg-field px-6 py-1.5 text-xs text-muted-2">
-      <p className="min-w-0 grow">카드의 글을 눌러 바로 고칩니다 · 자동 저장됩니다 · 원장은 성과관리팀이 확정할 때 바뀝니다</p>
+      <p className="min-w-0 grow">카드의 글을 눌러 바로 고칩니다 · 자동 저장됩니다 · 원장은 「확정(원장 반영)」을 누를 때 바뀝니다</p>
       <button type="button" aria-label="안내 닫기" title="안내 닫기" onClick={hintStore.close} className="-my-1 inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-row-hover hover:text-navy">
         <X size={14} aria-hidden />
       </button>
@@ -221,11 +222,13 @@ function MoreMenu({ props, ws }: HeaderProps) {
   );
 }
 
-/** 부서 작성본 막대: 이름·상태·저장 시각·돌려받은 메모 · 제출/취소 단추(부서 화면 보기는 읽기 전용 표시) */
+/** 부서 작성본 막대: 이름·상태·저장 시각·돌려받은 메모 · 확정(원장 반영) 단추 — 남은 제출 작성본은 제출 취소(부서 화면 보기는 읽기 전용 표시) */
 function DraftBar({ props, ws }: HeaderProps) {
   const draft = props.draft;
+  const { ask, dialog } = useAsk();
   if (!draft) return null;
   const { pending, draftMode, draftOp } = ws;
+  const month = draft.label.replace(/ 작성본$/, "");
   return (
     <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-6 py-2 text-ui ${draft.note && draft.status === "draft" ? "bg-warn-bg" : "bg-info-bg"}`}>
       <span className="shrink-0 font-semibold text-navy">{draft.label}</span>
@@ -244,10 +247,28 @@ function DraftBar({ props, ws }: HeaderProps) {
               제출 취소
             </button>
           ) : (
-            <button type="button" disabled={pending || draft.status === "none" || draft.status === "confirmed"} onClick={() => draftOp("submit")} className={T.btnPrimary} title={draft.status === "none" ? "카드를 고치면 제출할 수 있습니다" : undefined}>
-              성과관리팀에 제출
+            <button
+              type="button"
+              disabled={pending || draft.status === "none" || draft.status === "confirmed"}
+              onClick={() =>
+                ask(
+                  [
+                    {
+                      title: `${month} 작성본을 원장에 반영할까요?`,
+                      body: ["작성본에서 바꾼 곳이 과제 원장에 바로 반영됩니다(성과관리팀 확인 단계 없음). 성과관리팀은 수정 이력에서 보고, 필요하면 원장을 고칩니다.", "확정한 뒤 다시 고치면 새 작성본이 시작됩니다."],
+                      confirmLabel: "확정",
+                    },
+                  ],
+                  () => draftOp("confirm"),
+                )
+              }
+              className={T.btnPrimary}
+              title={draft.status === "none" ? "카드를 고치면 확정할 수 있습니다" : undefined}
+            >
+              확정(원장 반영)
             </button>
           )}
+          {dialog}
         </span>
       )}
       {props.preview && <span className="ml-auto shrink-0 text-xs text-muted">부서 화면 보기 · 읽기 전용</span>}

@@ -210,14 +210,14 @@ test("submitBlockedReason: 제출할 수 있으면 null", () => {
 
 test("submitBlockedReason: 과제가 하나도 없으면(목차에서 모두 빠짐)", () => {
   const r = submitReadiness([]);
-  assert.equal(submitBlockedReason(r), "제출할 과제가 없습니다(목차에서 모두 빠짐).");
+  assert.equal(submitBlockedReason(r), "확정할 과제가 없습니다(목차에서 모두 빠짐).");
 });
 
 test("submitBlockedReason: 초안이 없는 과제 목록(구성안만은 표시를 붙임)", () => {
   const none = card({ id: "1-가", uid: "1-가", taskNo: "1-가", draft: null });
   const outline = card({ id: "1-나", uid: "1-나", taskNo: "1-나", draft: { spec: null, sourceRev: null, unknownNumbers: [], outlineOnly: true } });
   const r = submitReadiness([none, outline]);
-  assert.equal(submitBlockedReason(r), "과제별 초안이 없는 과제 2건이 있어 제출할 수 없습니다: 1-가·1-나(구성안만)");
+  assert.equal(submitBlockedReason(r), "과제별 초안이 없는 과제 2건이 있어 확정할 수 없습니다: 1-가·1-나(구성안만)");
 });
 
 // ---------------------------------------------------------------------------

@@ -33,19 +33,21 @@ export function readBlocks(raw: unknown): ReportBlock[] {
     .map((b) => ({ id: b.id, type: b.type, level: Number(b.level) || undefined, text: typeof b.text === "string" ? b.text : undefined, rows: Array.isArray(b.rows) ? (b.rows as unknown[]).map((r) => (Array.isArray(r) ? r.map(String) : [])) : undefined }));
 }
 
-/** 부서가 넣는 계량 실적 칸 키: 카드 id + 지표 순번 */
-export const kpiKey = (cardId: string, i: number) => `${cardId}#${i}`;
 
 /** 부서 담당자가 바꿀 수 있는 상태 전환 */
 /** 보고서 상태 순서(화면 칩·전이 표) */
 export const REPORT_STATUSES: ReportStatus[] = ["preparing", "drafting", "submitted", "approved"];
 
-/** 부서 담당자도 하는 전이: 준비 → 작성 중(첫 과제별 초안이 생기면 DB 트리거가 바꿈, 초안이 보고서보다 먼저면 prepareReports가 바꿈), 작성 중 → 제출, 제출 → 작성 중(제출 취소·돌려보내기) */
-const DEPT_MOVES = new Set(["preparing>drafting", "drafting>submitted", "submitted>drafting"]);
-/** 성과관리팀·관리자만 하는 전이: 제출 → 승인, 승인 → 작성 중(승인 취소 — 다시 고치게 돌려보냄). 돌려보내기 메모는 서버가 따로 요구 */
-const STAFF_MOVES = new Set(["submitted>approved", "approved>drafting"]);
+/**
+ * 부서 담당자도 하는 전이: 준비 → 작성 중(첫 과제별 초안이 생기면 DB 트리거가 바꿈, 초안이 보고서보다 먼저면 prepareReports가 바꿈),
+ * 작성 중 → 승인(부서 「확정」 — 제출 조건은 서버가 확인, 2026-10-27 사용자 결정), 승인 → 작성 중(부서 「확정 취소」·성과관리팀 「승인 풀기」),
+ * 작성 중 → 제출·제출 → 작성 중(예전 제출 흐름 — 화면은 더 이상 제출을 권하지 않고 남은 제출 행의 제출 취소·돌려보내기만)
+ */
+const DEPT_MOVES = new Set(["preparing>drafting", "drafting>approved", "approved>drafting", "drafting>submitted", "submitted>drafting"]);
+/** 성과관리팀·관리자만 하는 전이: 남은 제출 행의 제출 → 승인. 돌려보내기·승인 풀기 메모는 서버가 따로 요구(needsReturnMemo) */
+const STAFF_MOVES = new Set(["submitted>approved"]);
 
-/** 「승인 풀기」 단추가 보내는 상태(승인 → 작성 중 — 전이 표 STAFF_MOVES. 화면 단추가 표 밖으로 보내지 않게 시험이 대조) */
+/** 「승인 풀기」(성과관리팀)·「확정 취소」(부서) 단추가 보내는 상태(승인 → 작성 중 — 전이 표 DEPT_MOVES. 화면 단추가 표 밖으로 보내지 않게 시험이 대조) */
 export const UNAPPROVE_TO: ReportStatus = "drafting";
 
 /**
@@ -57,7 +59,7 @@ export function canMove(role: "dept_user" | "pmo" | "admin", from: ReportStatus,
   return DEPT_MOVES.has(k) || (role !== "dept_user" && STAFF_MOVES.has(k));
 }
 
-/** 부서가 고칠 점 메모가 필수인 전이: 성과관리팀의 돌려보내기(제출 → 작성 중)·승인 풀기(승인 → 작성 중). 부서의 제출 취소는 메모 없음 */
+/** 부서가 고칠 점 메모가 필수인 전이: 성과관리팀의 돌려보내기(제출 → 작성 중)·승인 풀기(승인 → 작성 중). 부서의 제출 취소·확정 취소는 메모 없음 */
 export function needsReturnMemo(role: "dept_user" | "pmo" | "admin", from: ReportStatus, to: ReportStatus): boolean {
   return role !== "dept_user" && to === "drafting" && (from === "submitted" || from === "approved") && canMove(role, from, to);
 }
@@ -72,12 +74,28 @@ export function safeExt(name: string): string {
   return m ? `.${m[1].toLowerCase()}` : "";
 }
 
-/** 카드 계량지표 행 중 실제 지표만(원본 양식의 빈 자리표시 "-" 행 제외). i는 원래 순번(입력값 키) */
+/** 카드 계량지표 행 중 실제 지표만(원본 양식의 빈 자리표시 "-" 행 제외). i는 원래 행 위치(열쇠 아님 — 열쇠는 kpiKeyedRows) */
 export function kpiRowsOf(rows: unknown): Array<{ i: number; name: string; unit: string; target: string; prev: string }> {
   if (!Array.isArray(rows)) return [];
   return (rows as Array<Record<string, unknown> | null | undefined>)
     .map((k, i) => ({ i, name: String(k?.name ?? "").trim(), unit: String(k?.unit ?? "").trim(), target: String(k?.target ?? "").trim(), prev: String(k?.prev ?? "").trim() }))
     .filter((k) => k.name && !/^[-–—·]+$/.test(k.name));
+}
+
+/**
+ * 계량 실적 칸 열쇠(reports.inputs.kpi의 키)를 붙인 계량지표 행: `카드id#지표이름`.
+ * 이름은 앞뒤 공백 제거·연속 공백 하나로(NFC). 같은 카드에 같은 이름이 또 나오면 두 번째부터 `#2`·`#3`(나온 차례).
+ * 순번이 아니라 이름이 열쇠라 원장에서 행을 끼우거나 지우거나 순서를 바꿔도 값이 같은 지표에 붙고,
+ * 이름이 바뀐 지표는 값이 비어 보인다(다른 지표에 붙지 않음). 열쇠를 만드는 곳은 여기뿐.
+ */
+export function kpiKeyedRows(cardId: string, rows: unknown): Array<ReturnType<typeof kpiRowsOf>[number] & { key: string }> {
+  const seen = new Map<string, number>();
+  return kpiRowsOf(rows).map((k) => {
+    const name = k.name.normalize("NFC").replace(/\s+/g, " ");
+    const n = (seen.get(name) ?? 0) + 1;
+    seen.set(name, n);
+    return { ...k, key: `${cardId}#${name}${n > 1 ? `#${n}` : ""}` };
+  });
 }
 
 export const BLOCK_LIMITS = { blocks: 300, text: 5000, rows: 60, cols: 12 } as const;

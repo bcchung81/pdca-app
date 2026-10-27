@@ -22,7 +22,7 @@ const STATUSES: ReportStatus[] = ["preparing", "drafting", "submitted", "approve
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
-/** 성과관리팀 · 경평 초안 제출 관리판: 사업×부서 보고서마다 과제별 초안 진행·확인할 것·계량 실적·상태를 보고 검토 화면으로 들어갑니다 */
+/** 성과관리팀 · 경평 초안 관리판: 사업×부서 보고서마다 과제별 초안 진행·확인할 것·계량 실적·상태(부서 확정 = 승인)를 보고 검토 화면으로 들어갑니다 */
 export default async function ReportsPage({ searchParams }: PageProps<"/reports">) {
   const me = await requireAtLeast("pmo", "/reports");
   if (!me) return <NoAccess title="경평 초안" need="성과관리팀" />;
@@ -88,8 +88,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
             allHref="/reports"
             allOn={!status}
             segments={[
-              { label: "승인", n: count("approved"), tone: REPORT_STATUS_TONE.approved.seg, href: status === "approved" ? "/reports" : "/reports?status=approved", on: status === "approved", title: "검토 끝" },
-              { label: "제출 · 검토 중", n: count("submitted"), tone: REPORT_STATUS_TONE.submitted.seg, href: status === "submitted" ? "/reports" : "/reports?status=submitted", on: status === "submitted", title: "성과관리팀 리뷰" },
+              { label: "승인", n: count("approved"), tone: REPORT_STATUS_TONE.approved.seg, href: status === "approved" ? "/reports" : "/reports?status=approved", on: status === "approved", title: "부서가 확정(바로 승인 상태) — 필요하면 검토 화면에서 메모와 함께 승인을 풂" },
+              { label: "제출 · 검토 중", n: count("submitted"), tone: REPORT_STATUS_TONE.submitted.seg, href: status === "submitted" ? "/reports" : "/reports?status=submitted", on: status === "submitted", title: "2026-10-27 전에 제출된 보고서 — 승인하거나 돌려보냄(부서는 이제 제출 대신 확정)" },
               { label: "초안 작성", n: count("drafting"), tone: REPORT_STATUS_TONE.drafting.seg, href: status === "drafting" ? "/reports" : "/reports?status=drafting", on: status === "drafting", title: "부서가 과제별 초안을 쓰는 중" },
               { label: "자료 준비", n: count("preparing"), tone: REPORT_STATUS_TONE.preparing.seg, href: status === "preparing" ? "/reports" : "/reports?status=preparing", on: status === "preparing", title: "추가자료·계량 실적 입력" },
             ]}
@@ -128,7 +128,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                       </colgroup>
                       <thead>
                         <tr className={T.headRow}>
-                          {["부서", "과제", "과제별 초안", "확인할 것", "계량 실적", "추가자료", "상태", "제출일", "미해결 코멘트", "검토 메모", ""].map((h) => (
+                          {["부서", "과제", "과제별 초안", "확인할 것", "계량 실적", "추가자료", "상태", "확정일", "미해결 코멘트", "검토 메모", ""].map((h) => (
                             <th key={h} scope="col" className={T.th}>
                               {h}
                             </th>
@@ -170,7 +170,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                                 {/* 자료 준비(시작 전)는 빈칸 — 정제 언어 규칙 E */}
                                 {r.status === "preparing" ? null : <Tag tone={REPORT_STATUS_TONE[r.status].tag}>{REPORT_STATUS_LABEL[r.status]}</Tag>}
                               </td>
-                              <td className={`${T.td} font-mono text-xs text-muted`}>{r.submittedAt ? fmtDate(r.submittedAt) : "—"}</td>
+                              {/* 확정일 = 부서가 확정한(승인 상태가 된) 날, 남은 제출 행은 제출한 날 */}
+                              <td className={`${T.td} font-mono text-xs text-muted`}>{r.status === "approved" && r.approvedAt ? fmtDate(r.approvedAt) : r.status === "submitted" && r.submittedAt ? fmtDate(r.submittedAt) : "—"}</td>
                               <td className={`${T.td} font-mono text-ui ${open.get(r.id) ? "text-ink" : "text-muted"}`}>{open.get(r.id) ?? 0}</td>
                               <td className={T.td}>{r.reviewNote ? <Tag tone="warn" title={r.reviewNote}>있음</Tag> : <span className="text-muted">—</span>}</td>
                               <td className={T.td}>

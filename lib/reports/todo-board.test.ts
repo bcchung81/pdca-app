@@ -33,13 +33,13 @@ test("buildTodoBoard: 계량 행(빈 자리표시 제외)·입력 유무·【확
     { unitId: "U1", teamId: 1, kpi: kpi2, submit: sub("a", "1-가", { draft: drafted([`달성 【확인: ${long}】 입니다`, "【확인: 누적 건수】 건"], ["99%"]) }) },
     { unitId: "U1", teamId: 1, kpi: [], submit: sub("b", "1-나") }, // 초안 없음
   ];
-  const b = buildTodoBoard(input(cards, { reports: [{ id: 7, unitId: "U1", teamId: 1, inputs: { kpi: { "a#0": " 12 ", "a#1": "  " } } }] }));
+  const b = buildTodoBoard(input(cards, { reports: [{ id: 7, unitId: "U1", teamId: 1, inputs: { kpi: { "a#지표A": " 12 ", "a#지표B": "  " } } }] }));
   assert.equal(b.rows.length, 1);
   const r = b.rows[0];
   assert.equal(r.reportId, 7);
   assert.equal(r.cards, 2);
   assert.equal(r.kpiTotal, 2); // "-" 행은 지표가 아님
-  assert.equal(r.kpiMissing, 1); // a#0 입력, a#1 공백
+  assert.equal(r.kpiMissing, 1); // 지표A 입력, 지표B 공백
   assert.equal(r.needs, 2);
   assert.equal(r.noDraft, 1);
   assert.equal(r.unknown, 1);

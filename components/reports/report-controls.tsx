@@ -77,20 +77,21 @@ export function LeadTeamSelect({ unitId, value, teams }: { unitId: string; value
   );
 }
 
-/** 제출 준비 상태(submitReadiness를 화면용으로 줄인 것) — 부서 제출 버튼만 씀 */
+/** 확정 준비 상태(submitReadiness를 화면용으로 줄인 것) — 부서 확정 버튼만 씀 */
 export interface ReportReadiness {
   ready: boolean;
   total: number;
   drafted: number;
-  /** 초안이 없는 과제(제출을 막는 까닭) */
+  /** 초안이 없는 과제(확정을 막는 까닭) */
   missing: string[];
   /** 확인할 것(막지 않음) */
   checks: string[];
 }
 
 /**
- * 상태 버튼: 부서(제출 — 준비 상태를 확인 창에서 보이고 제출 · 제출 취소), 성과관리팀(돌려보내기·승인 풀기 — 메모 필수 · 승인 — 메모 선택).
- * readiness는 부서 제출 버튼에만 씀(제출 조건 재확인은 서버가 다시 함 — setReportStatus).
+ * 상태 버튼: 부서(확정 — 준비 상태를 확인 창에서 보이고 바로 승인 상태로 · 확정 취소 · 남은 제출 행의 제출 취소 — 2026-10-27 사용자 결정),
+ * 성과관리팀(승인 풀기 — 메모 필수 · 남은 제출 행의 돌려보내기(메모 필수)·승인(메모 선택)).
+ * readiness는 부서 확정 버튼에만 씀(확정 조건 재확인은 서버가 다시 함 — setReportStatus).
  */
 export function ReportStatusButtons({ id, status, staff, readiness }: { id: number; status: ReportStatus; staff: boolean; readiness?: ReportReadiness }) {
   const { pending, run, note } = useAction();
@@ -102,24 +103,25 @@ export function ReportStatusButtons({ id, status, staff, readiness }: { id: numb
   const [returnMemo, setReturnMemo] = useState("");
   const [approveMemo, setApproveMemo] = useState("");
   const ready = readiness?.ready ?? false;
-  const submitTitle = !readiness ? undefined : readiness.ready ? undefined : `과제별 초안이 없는 과제가 있어 제출할 수 없습니다: ${readiness.missing.join("·") || "—"}`;
+  const submitTitle = !readiness ? undefined : readiness.ready ? undefined : `과제별 초안이 없는 과제가 있어 확정할 수 없습니다: ${readiness.missing.join("·") || "—"}`;
   return (
     <span className="flex flex-wrap items-center gap-2">
       {note}
-      {/* 제출: 작성 중일 때(전이 표 canMove — 첫 과제별 초안이 생기면 DB 트리거가 준비 → 작성 중으로 바꿈) */}
-      {!staff && canMove("dept_user", status, "submitted") && (
+      {/* 확정: 작성 중일 때(전이 표 canMove — 첫 과제별 초안이 생기면 DB 트리거가 준비 → 작성 중으로 바꿈). 성과관리팀 검토 없이 바로 승인 상태 */}
+      {!staff && canMove("dept_user", status, "approved") && (
         <>
           <button type="button" disabled={pending || !ready} title={submitTitle} onClick={() => setSubmitOpen(true)} className={primary}>
-            성과관리팀에 제출
+            확정
           </button>
           {readiness && (
-            <ConfirmDialog label="제출 확인" title="성과관리팀에 제출할까요?" open={submitOpen} onOpenChange={setSubmitOpen} pending={pending} confirmLabel="제출" onConfirm={() => run(async () => { setSubmitOpen(false); return setReportStatus(id, "submitted"); }, "제출했습니다.")}>
+            <ConfirmDialog label="확정 확인" title="보고서를 확정할까요?" open={submitOpen} onOpenChange={setSubmitOpen} pending={pending} confirmLabel="확정" onConfirm={() => run(async () => { setSubmitOpen(false); return setReportStatus(id, "approved"); }, "확정했습니다 — 승인 상태입니다.")}>
               <p className="text-ui text-ink">
                 과제별 초안 <b>{readiness.drafted}/{readiness.total}</b>건
               </p>
+              <p className="text-ui leading-6 text-muted-2">확정하면 바로 승인 상태가 되고 내용·과제별 초안이 잠깁니다. 고치려면 「확정 취소」를 누릅니다. 성과관리팀은 필요하면 메모와 함께 승인을 풉니다.</p>
               {readiness.checks.length > 0 && (
                 <div className="flex flex-col gap-1">
-                  <p className="text-xs font-semibold text-muted">확인할 것(제출을 막지 않음)</p>
+                  <p className="text-xs font-semibold text-muted">확인할 것(확정을 막지 않음)</p>
                   <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-md border border-line bg-thead px-3 py-2 text-xs leading-5 text-muted-2">
                     {readiness.checks.map((c) => (
                       <li key={c}>{c}</li>
@@ -131,6 +133,12 @@ export function ReportStatusButtons({ id, status, staff, readiness }: { id: numb
           )}
         </>
       )}
+      {!staff && status === "approved" && (
+        <button type="button" disabled={pending} onClick={() => go(UNAPPROVE_TO, "확정을 취소했습니다 — 다시 고칠 수 있습니다.")} title="작성 중으로 되돌립니다 — 내용·과제별 초안을 다시 고칠 수 있습니다" className={plain}>
+          확정 취소
+        </button>
+      )}
+      {/* 2026-10-27 전에 낸 제출 행만 */}
       {!staff && status === "submitted" && (
         <button type="button" disabled={pending} onClick={() => go("drafting", "제출을 취소했습니다.")} className={plain}>
           제출 취소

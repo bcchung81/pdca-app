@@ -1,5 +1,5 @@
 // 실제 화면 조작 흐름(pnpm e2e:ui): 이 컴퓨터의 Chrome을 헤드리스로 띄워 부서 담당자·성과관리팀으로 로그인하고
-// 카드 칸 입력 → 자동 저장 → 제출 → 비교 → 확정 → 수정 이력, 보고서 준비 → 주관 부서 → 목차 → 리뷰 코멘트를 버튼으로 해 봅니다.
+// 카드 칸 입력 → 자동 저장 → 부서 확정(원장 반영) → 수정 이력, 보고서 준비 → 주관 부서 → 목차 → 리뷰 코멘트를 버튼으로 해 봅니다.
 // 단계마다 화면을 찍어 E2E_SHOTS(기본: 임시 폴더/pdca-e2e-shots)에 남기고, 끝나면 시험 계정·기록을 모두 되돌립니다.
 // 시험 카드·그 해 보고서·목차에 운영 기록이 있으면 아무것도 바꾸지 않고 멈춥니다. 실행: pnpm dev 를 띄운 뒤 pnpm e2e:ui
 import { chromium } from "playwright-core";
@@ -66,7 +66,7 @@ try {
   const d = await session(DEPT);
   const p = await session(PMO);
 
-  // ── 부서: 카드 칸에 입력 → 자동 저장 → 제출
+  // ── 부서: 카드 칸에 입력 → 자동 저장 → 확정(원장 반영)
   await d.goto(`${BASE}/my?peek=${own.uid}`, { waitUntil: "networkidle" });
   const line = d.locator('[data-p^="do.lines."][contenteditable]').first();
   await line.click();
@@ -96,30 +96,25 @@ try {
   await d.keyboard.press("Escape");
   await d.waitForTimeout(200);
   check("Esc는 도구줄만 닫음", !(await dBar.isVisible()) && (await d.locator("aside.peek-sheet").count()) === 1);
-  await d.getByRole("button", { name: "성과관리팀에 제출" }).click();
-  await d.waitForTimeout(2500);
+  // 확정(원장 반영 — 2026-10-27 부서 확정): 단추 → 확인 창 「확정」 → 원장에 바로 반영
+  await d.getByRole("button", { name: "확정(원장 반영)" }).click();
+  await d.getByRole("dialog").getByRole("button", { name: "확정", exact: true }).click();
+  await d.waitForTimeout(3500);
   const { data: v2 } = await admin.from("card_versions").select("status").eq("card_id", own.id).single();
-  check("제출 버튼 → 제출됨", v2.status === "submitted", v2.status);
-  check("제출 뒤 칸 잠김(읽기 전용)", (await d.locator('[data-p^="do.lines."][contenteditable]').count()) === 0);
-  await dragD('.kca-card [data-p^="do.lines."]');
-  check("읽기 전용: 도구줄은 질문만", (await dBar.getByRole("button").allInnerTexts()).map((t) => t.trim()).join(",") === "질문");
-  await shot(d, "21-dept-submitted");
-
-  // ── 성과관리팀: 비교 보기 → 확정
-  await p.goto(`${BASE}/cards?peek=${own.uid}`, { waitUntil: "networkidle" });
-  await p.getByRole("button", { name: "비교 보기" }).click();
-  await p.waitForTimeout(500);
-  check("비교에 입력한 칸", (await p.locator("ol li").filter({ hasText: "(UI 시험 입력)" }).count()) > 0);
-  await shot(p, "22-pmo-compare");
-  await p.getByRole("button", { name: "확정(원장 반영)" }).click();
-  await p.waitForTimeout(3000);
+  check("확정 단추 → 작성본 확정", v2.status === "confirmed", v2.status);
   const { data: led } = await admin.from("cards").select("data").eq("id", own.id).single();
   check("확정 → 원장 반영", JSON.stringify(led.data.do.lines).includes("(UI 시험 입력)"));
+  const shownDept = await d.locator('[data-p^="do.lines."]').allInnerTexts();
+  check("확정 뒤 부서 편집기가 원장 새 내용 표시", shownDept.some((t) => t.includes("(UI 시험 입력)")));
+  await shot(d, "21-dept-confirmed");
+
+  // ── 성과관리팀: 원장 옆 창에 반영된 내용 · 수정 이력에 부서 확정 기록(성과관리팀은 이력에서 보고 필요하면 원장을 고침)
+  await p.goto(`${BASE}/cards?peek=${own.uid}`, { waitUntil: "networkidle" });
   const shownLedger = await p.locator('[data-p^="do.lines."]').allInnerTexts();
-  check("확정 뒤 편집기가 원장 새 내용 표시", shownLedger.some((t) => t.includes("(UI 시험 입력)")));
+  check("성과관리팀 원장 편집기에 부서 확정 내용", shownLedger.some((t) => t.includes("(UI 시험 입력)")));
   await p.getByRole("button", { name: "수정 이력" }).click();
   await p.waitForTimeout(1500);
-  check("수정 이력 패널에 확정 기록", (await p.getByText("9월 작성본 확정").count()) > 0);
+  check("수정 이력 패널에 부서 확정 기록", (await p.getByText(/월 작성본 확정\(부서\)/).count()) > 0);
   await shot(p, "23-pmo-history");
   // ── 쪽 보기(인쇄 모양): 한글처럼 쪽을 나눠 그림(읽기 전용, 꼬리말에 원본 쪽 번호) → 이어 보기로 돌아오면 다시 편집
   await p.getByRole("button", { name: "쪽 보기" }).click();

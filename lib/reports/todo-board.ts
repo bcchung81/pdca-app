@@ -5,7 +5,7 @@
 
 import { needsIn } from "./actuals.ts";
 import { needRequestsOf } from "./material-requests.ts";
-import { kpiKey, kpiRowsOf } from "./model.ts";
+import { kpiKeyedRows } from "./model.ts";
 import { sectionText } from "./section.ts";
 import { type SubmitCard, cardSubmitRow } from "./submission.ts";
 
@@ -31,7 +31,7 @@ export interface TodoInput {
   units: Array<{ id: string; name: string; cardGroup: string | null }>;
   teams: Array<{ id: number; name: string }>;
   cards: TodoCard[];
-  /** 보고서 행(평가단위 × 부서) — inputs.kpi[카드 id#지표 순번] = 부서가 넣은 올해 실적 */
+  /** 보고서 행(평가단위 × 부서) — inputs.kpi[카드 id#지표 이름] = 부서가 넣은 올해 실적 */
   reports: Array<{ id: number; unitId: string; teamId: number; inputs: unknown }>;
   /** 지표 단위 카드 밖 부분 행(경영관리 — 없으면 빈 목록) */
   parts?: Array<{ unitId: string; part: string; spec: unknown }>;
@@ -125,9 +125,9 @@ export function buildTodoBoard(input: TodoInput): TodoBoard {
     let kpiMissing = 0;
     const samples: string[] = [];
     for (const c of cs) {
-      const rows2 = kpiRowsOf(c.kpi);
+      const rows2 = kpiKeyedRows(c.submit.id, c.kpi);
       kpiTotal += rows2.length;
-      kpiMissing += rows2.filter((r) => !filled(report?.inputs, kpiKey(c.submit.id, r.i))).length;
+      kpiMissing += rows2.filter((r) => !filled(report?.inputs, r.key)).length;
       if (!c.submit.included) continue; // 목차에서 뺀 과제는 초안·자리표시를 따지지 않음(제출 조건과 같음)
       requests += needRequestsOf(c.submit.draft?.outline).length;
       const row = cardSubmitRow(c.submit);

@@ -440,15 +440,10 @@ test("카드 원본 그림: 그 카드를 볼 수 있는 사람만 읽고, 담�
   await rejects(() => as("inspector", () => db.query("insert into storage.objects (bucket_id, name) values ('card-originals', $1)", [`${own}/x.png`])), /row-level security/);
 });
 
-test("카드 원장 수정: 성과관리팀만 고치고 이력을 남긴다", { skip: NO_SEED_CARDS }, async () => {
+test("카드 원장 수정: 성과관리팀은 운영 값까지 고치고 이력을 남긴다, 부서 담당자는 운영 값을 못 바꿈(내용만 — 부서 확정 시험은 아래)", { skip: NO_SEED_CARDS }, async () => {
   const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' limit 1")).rows[0].id;
-  // 담당자는 원장을 못 고침(행이 걸러져 0건)과 이력도 못 남김
-  const byDept = await as("inspector", () => db.query("update public.cards set progress = 50 where id = $1", [own]));
-  assert.equal(byDept.affectedRows, 0);
-  await rejects(
-    () => as("inspector", () => db.query("insert into public.card_edits (card_id, edited_by, before, after) values ($1, $2, '{}', '{}')", [own, users.inspector])),
-    /row-level security/,
-  );
+  // 담당자는 원장의 운영 값(PDCA 단계·진도율·상태)을 못 고침(2026-10-27 부서 확정 뒤 — 트리거 guard_card가 거절)
+  await rejects(() => as("inspector", () => db.query("update public.cards set progress = 50 where id = $1", [own])), /카드 내용만/);
   const byPmo = await as("pmo", () => db.query("update public.cards set progress = 50, stage = 'Do', work_status = '진행중' where id = $1", [own]));
   assert.equal(byPmo.affectedRows, 1);
   await as("pmo", () => db.query("insert into public.card_edits (card_id, edited_by, before, after) values ($1, $2, '{}', '{}')", [own, users.pmo]));
@@ -532,7 +527,9 @@ test("경평 초안: 부서는 자기 보고서만 쓰고, 주관 부서는 그 
   await rejects(() => as("inspector", () => db.query("update public.reports set status = 'submitted' where id = $1", [mine])), /바꿀 수 없는 상태/);
   await as("inspector", () => db.query("update public.reports set status = 'drafting' where id = $1", [mine]));
   await as("inspector", () => db.query("update public.reports set inputs = '{\"kpi\":{\"0\":\"12\"}}', status = 'submitted' where id = $1", [mine]));
-  await rejects(() => as("inspector", () => db.query("update public.reports set status = 'approved' where id = $1", [mine])), /승인/);
+  // 제출 → 승인은 성과관리팀만(남은 제출 행 — 부서 확정은 작성 중에서, 2026-10-27)
+  await rejects(() => as("inspector", () => db.query("update public.reports set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [mine, users.inspector])), /승인 정보/);
+  await rejects(() => as("inspector", () => db.query("update public.reports set status = 'approved' where id = $1", [mine])), /바꿀 수 없는 상태/);
   await rejects(() => as("inspector", () => db.query("update public.reports set team_id = $2 where id = $1", [mine, lic])), /식별/);
   const blocked = await as("inspector", () => db.query("update public.reports set inputs = '{}' where id = $1", [theirs]));
   assert.equal(blocked.affectedRows, 0, "남의 부서 보고서는 못 고침");
@@ -568,11 +565,10 @@ test("경평 초안: 부서는 자기 보고서만 쓰고, 주관 부서는 그 
   await as("inspector", () => db.query("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values ($1, $2, 'a.pdf', $3)", [mine, `${mine}/a.pdf`, users.inspector]));
   assert.equal(await as("license", () => count("select 1 from public.report_materials")), 0);
 
-  // 승인은 제출된 보고서에서만(상태 전이 표 — 2026-10-10 개선 계획 P1-1): 작성 중에서 바로 승인은 성과관리팀도 거절
-  await rejects(() => as("pmo", () => db.query("update public.reports set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [mine, users.pmo])), /바꿀 수 없는 상태/);
+  // 남은 제출 행의 승인(제출 → 승인)은 성과관리팀. 승인을 풀 때 부서는 승인 정보를 함께 비워야 함(부서 「확정 취소」 — 2026-10-27, 작성 중 → 승인 「확정」은 아래 부서 확정 시험)
   await as("inspector", () => db.query("update public.reports set status = 'submitted' where id = $1", [mine]));
   await as("pmo", () => db.query("update public.reports set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [mine, users.pmo]));
-  await rejects(() => as("inspector", () => db.query("update public.reports set status = 'drafting' where id = $1", [mine])), /승인/);
+  await rejects(() => as("inspector", () => db.query("update public.reports set status = 'drafting' where id = $1", [mine])), /승인 정보를 비웁니다/);
   // 승인 → 제출은 표 밖(승인 취소는 작성 중으로만)
   await rejects(() => as("pmo", () => db.query("update public.reports set status = 'submitted' where id = $1", [mine])), /바꿀 수 없는 상태/);
   // 준비 → 승인(제출 우회)은 성과관리팀도 거절, 서비스 키(적재·관리 스크립트)는 막지 않음
@@ -926,7 +922,8 @@ test("카드 현행화: 원장 반영 묶음은 성과관리팀만, 부서는 �
 test("카드 보관(삭제): 보관한 카드는 부서가 못 보고 못 씀, 성과관리팀은 보관함에서 봄", { skip: NO_SEED_CARDS }, async () => {
   const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' order by c.id limit 1 offset 1")).rows[0];
   const before = await as("inspector", () => count("select 1 from public.cards"));
-  await rejects(() => as("inspector", () => db.query("update public.cards set status = 'retired' where id = $1 returning id", [own.id]).then((r) => (r.rows.length ? r : Promise.reject(new Error("row-level security"))))), /row-level security/);
+  // 부서는 자기 카드를 고칠 수 있어도(2026-10-27 부서 확정) 보관(상태)은 못 바꿈 — 트리거 guard_card가 거절
+  await rejects(() => as("inspector", () => db.query("update public.cards set status = 'retired' where id = $1 returning id", [own.id])), /카드 내용만/);
   await as("pmo", () => db.query("update public.cards set status = 'retired', retired_at = now(), retired_by = $2, retired_reason = '과제 통합' where id = $1", [own.id, users.pmo]));
   assert.equal(await as("inspector", () => count("select 1 from public.cards")), before - 1);
   assert.equal(await as("pmo", () => count("select 1 from public.cards where status = 'retired'")), 1);
@@ -938,8 +935,8 @@ test("카드 보관(삭제): 보관한 카드는 부서가 못 보고 못 씀, �
 test("카드 원본 배치(layout): 성과관리팀만 쓰고, 배치만 바꾸면 수정일자는 그대로", { skip: NO_SEED_CARDS }, async () => {
   const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' limit 1")).rows[0].id;
   const layout = JSON.stringify({ v: 1, blocks: [] });
-  const byDept = await as("inspector", () => db.query("update public.cards set layout = $2::jsonb where id = $1", [own, layout]));
-  assert.equal(byDept.affectedRows, 0, "담당자는 배치를 못 씀");
+  // 담당자는 배치를 못 씀(트리거 guard_card)
+  await rejects(() => as("inspector", () => db.query("update public.cards set layout = $2::jsonb where id = $1", [own, layout])), /카드 내용만/);
   await db.query("update public.cards set updated_at = '2026-01-01T00:00:00Z' where id = $1", [own]);
   const byPmo = await as("pmo", () => db.query("update public.cards set layout = $2::jsonb where id = $1", [own, layout]));
   assert.equal(byPmo.affectedRows, 1);
@@ -1201,5 +1198,210 @@ test("지표 단위 부분(eval_unit_report_parts, R5b): 성과관리팀 쓰기�
     await db.query("delete from public.eval_unit_report_parts where eval_unit_id in ('MG-90', 'MG-91')");
     await db.query("delete from public.reports where eval_unit_id in ('MG-90', 'MG-91')");
     await db.query("delete from public.eval_units where id in ('MG-90', 'MG-91')");
+  }
+});
+
+// ── 부서 담당자 직접 확정(2026-10-27 사용자 결정 — 20261027110000_dept_confirm.sql) ─────────────────────────────────────────
+
+type LedgerRow = { id: string; eval_unit_id: string; data: Record<string, unknown> & { do?: { lines?: string[] }; plan?: object; kpi?: object }; data_rev: number; original_html: string | null; title: string; updated_by: string | null };
+/** 다른 시험과 겹치지 않는 그 팀의 세 번째 활성 카드 */
+const confirmCard = async (teamName: string) =>
+  (
+    await db.query<LedgerRow>(
+      "select c.id, c.eval_unit_id, c.data, c.data_rev, c.original_html, c.title, c.updated_by from public.cards c join public.teams t on t.id = c.team_id where t.name = $1 and c.status = 'active' order by c.id limit 1 offset 2",
+      [teamName],
+    )
+  ).rows[0];
+const withLine = (data: LedgerRow["data"], line: string) => ({ ...data, do: { ...(data.do ?? {}), lines: [...(data.do?.lines ?? []), line] } });
+
+test("부서 확정 · 원장: 부서는 지정된 활성 카드의 내용(data·title·data_rev+1·updated_by 본인)만 바꾸고 original_html은 비워짐(값은 못 넣음), 식별·상태·팀·배치·운영 값·잠긴 고정 영역은 거절, 남의·지정 안 된·보관 카드는 0행, 성과관리팀은 그대로", { skip: NO_SEED_CARDS }, async () => {
+  const own = await confirmCard("검사기획팀");
+  const other = await confirmCard("자격기획팀");
+  assert.ok(own.original_html, "시험 카드에 원본 양식 조각이 있어야 비워지는지 봄");
+  const changed = withLine(own.data, "∙ (시험) 부서 확정");
+  const upd = "update public.cards set data = $2::jsonb, title = $3, data_rev = $4, updated_by = $5 where id = $1";
+  const confirmOwn = () => as("inspector", () => db.query(upd, [own.id, JSON.stringify(changed), own.title, own.data_rev + 1, users.inspector]));
+  try {
+    // 쓸 수 없는 카드는 행이 걸러짐(0행): 남의 부서, 같은 팀이어도 지정 안 된 과제, 보관한 과제
+    assert.equal((await as("inspector", () => db.query(upd, [other.id, JSON.stringify(withLine(other.data, "x")), other.title, other.data_rev + 1, users.inspector]))).affectedRows, 0, "남의 부서 카드");
+    await db.query("delete from public.card_assignees where user_id = $1 and card_id = $2", [users.inspector, own.id]);
+    assert.equal((await confirmOwn()).affectedRows, 0, "지정 안 된 과제");
+    await assignTeams();
+    await db.query("update public.cards set status = 'retired' where id = $1", [own.id]);
+    assert.equal((await confirmOwn()).affectedRows, 0, "보관한 과제");
+    await db.query("update public.cards set status = 'active' where id = $1", [own.id]);
+
+    // 내용 말고 다른 열은 못 바꿈(식별·상태·팀·보관·잠금·배치·판·운영 값·시각)
+    const other_cols = [
+      "team_id = null",
+      "status = 'retired'",
+      "retired_reason = 'x'",
+      "eval_unit_id = 'BZ-2'",
+      "task_no = '9-9'",
+      "uid = gen_random_uuid()",
+      "edition = 'x'",
+      "hq = 'x'",
+      "fixed_locked_at = now()",
+      `fixed_locked_by = '${users.inspector}'`,
+      "layout = '{}'::jsonb",
+      "stage = 'Do'",
+      "work_status = '보류'",
+      "created_at = now()",
+      "updated_at = now()",
+    ];
+    for (const set of other_cols) await rejects(() => as("inspector", () => db.query(`update public.cards set ${set}, updated_by = $2 where id = $1`, [own.id, users.inspector])), /카드 내용만/);
+    // 카드 JSON 식별 칸·개정 번호·고친 사람
+    await rejects(() => as("inspector", () => db.query(upd, [own.id, JSON.stringify({ ...changed, taskNo: "9-9" }), own.title, own.data_rev + 1, users.inspector])), /식별 값/);
+    await rejects(() => as("inspector", () => db.query(upd, [own.id, JSON.stringify(changed), own.title, own.data_rev, users.inspector])), /data_rev/);
+    await rejects(() => as("inspector", () => db.query(upd, [own.id, JSON.stringify(changed), own.title, own.data_rev + 2, users.inspector])), /data_rev/);
+    await rejects(() => as("inspector", () => db.query(upd, [own.id, JSON.stringify(own.data), own.title, own.data_rev + 1, users.inspector])), /data_rev/);
+    await rejects(() => as("inspector", () => db.query(upd, [own.id, JSON.stringify(changed), own.title, own.data_rev + 1, users.pmo])), /updated_by/);
+    // 원본 양식 조각(화면에 HTML로 쓰일 수 있는 칸)에 값을 넣는 직접 호출은 거절 — 저장형 XSS 차단
+    await rejects(
+      () => as("inspector", () => db.query("update public.cards set data = $2::jsonb, data_rev = data_rev + 1, updated_by = $3, original_html = '<img src=x onerror=alert(1)>' where id = $1", [own.id, JSON.stringify(changed), users.inspector])),
+      /original_html/,
+    );
+    await rejects(() => as("inspector", () => db.query("update public.cards set original_html = '<script>1</script>', updated_by = $2 where id = $1", [own.id, users.inspector])), /original_html/);
+
+    // 됨: 내용·과제명·개정 번호 +1·고친 사람 본인 → 원본 양식 조각은 비워짐(낡음 — 화면은 data에서 그림)
+    const ok = await as("inspector", () => db.query(upd, [own.id, JSON.stringify(changed), `${own.title}(시험)`, own.data_rev + 1, users.inspector]));
+    assert.equal(ok.affectedRows, 1);
+    const after = (await db.query<LedgerRow>("select data, data_rev, original_html, title, updated_by from public.cards where id = $1", [own.id])).rows[0];
+    assert.equal(after.data.do?.lines?.at(-1), "∙ (시험) 부서 확정");
+    assert.equal(after.data_rev, own.data_rev + 1);
+    assert.equal(after.original_html, null, "부서 쓰기는 원본 양식 조각을 비움");
+    assert.equal(after.title, `${own.title}(시험)`);
+    assert.equal(after.updated_by, users.inspector);
+
+    // 성과관리팀은 예전 그대로(원본 양식 조각을 넣고 트리거가 비우지 않음, 운영 값도)
+    await as("pmo", () => db.query("update public.cards set data = $2::jsonb, original_html = $3, data_rev = data_rev + 1, updated_by = $4, progress = 10 where id = $1", [own.id, JSON.stringify(own.data), own.original_html, users.pmo]));
+    const byPmo = (await db.query<LedgerRow>("select original_html from public.cards where id = $1", [own.id])).rows[0];
+    assert.equal(byPmo.original_html, own.original_html, "성과관리팀이 저장하면 원본 양식 조각이 다시 채워짐");
+
+    // 고정 영역이 확정된 카드(주요사업 Act·Plan·계량지표): 그 영역은 못 바꾸고, 나머지(Do)는 바꿈
+    await db.query("update public.cards set fixed_locked_at = now() where id = $1", [own.id]);
+    const rev = (await db.query<{ data_rev: number }>("select data_rev from public.cards where id = $1", [own.id])).rows[0].data_rev;
+    for (const k of ["plan", "kpi", "act"]) {
+      const bad = { ...own.data, [k]: { lines: ["(시험) 잠긴 영역 고침"] } };
+      await rejects(() => as("inspector", () => db.query(upd, [own.id, JSON.stringify(bad), own.title, rev + 1, users.inspector])), /고정 영역/);
+    }
+    assert.equal((await as("inspector", () => db.query(upd, [own.id, JSON.stringify(withLine(own.data, "∙ (시험) 잠금 뒤 실적")), own.title, rev + 1, users.inspector]))).affectedRows, 1, "잠기지 않은 Do는 바꿈");
+
+    // 경영관리 카드: 전년도 환류·지적 및 개선방안·계량지표가 잠김(guard_card_version과 같은 규칙)
+    const mg = { id: own.data.id, group: "경영관리1", taskNo: own.data.taskNo, title: own.title, feedback: { rows: [{ self: ["자체평가"] }] }, findings: { rows: [{ finding: ["지적"] }] }, kpi: { rows: [{ name: "지표" }] }, do: { lines: ["추진"] } };
+    await db.query("update public.cards set data = $2::jsonb, data_rev = 100 where id = $1", [own.id, JSON.stringify(mg)]);
+    for (const k of ["feedback", "findings", "kpi"]) {
+      await rejects(() => as("inspector", () => db.query(upd, [own.id, JSON.stringify({ ...mg, [k]: { rows: [] } }), own.title, 101, users.inspector])), /고정 영역/);
+    }
+    assert.equal((await as("inspector", () => db.query(upd, [own.id, JSON.stringify({ ...mg, do: { lines: ["추진", "(시험) 실적"] }, plan: { lines: ["주요사업 키는 잠금 밖"] } }), own.title, 101, users.inspector]))).affectedRows, 1, "경영관리는 추진내용(·주요사업 키) 변경 됨");
+  } finally {
+    await db.query("update public.cards set data = $2::jsonb, data_rev = $3, original_html = $4, title = $5, updated_by = $6, fixed_locked_at = null, progress = null, status = 'active' where id = $1", [
+      own.id,
+      JSON.stringify(own.data),
+      own.data_rev,
+      own.original_html,
+      own.title,
+      own.updated_by,
+    ]);
+    await assignTeams();
+  }
+});
+
+test("부서 확정 · 작성본·이력: 부서는 자기 작성 중 작성본을 확정(확정자 본인·시각)하고 그 뒤로는 못 고침, 새 작성본을 확정으로·제출한 작성본·남의 이름 확정은 거절, 이력은 쓸 수 있는 카드에 본인 이름으로만", { skip: NO_SEED_CARDS }, async () => {
+  const own = await confirmCard("검사기획팀");
+  const other = await confirmCard("자격기획팀");
+  const insert = `insert into public.card_versions (card_id, period, version, status, data, base, created_by) values ($1, $2, 1, $3, ${DRAFT_IDS} || '{"memo":"x"}', ${DRAFT_IDS}, $4) returning id`;
+  try {
+    const id = (await as("inspector", () => db.query<{ id: number }>(insert, [own.id, "2027-02", "draft", users.inspector]))).rows[0].id;
+    // 확정자·확정 시각은 본인·채움으로만
+    await rejects(() => as("inspector", () => db.query("update public.card_versions set status = 'confirmed', confirmed_by = $2, confirmed_at = now() where id = $1", [id, users.pmo])), /확정자/);
+    await rejects(() => as("inspector", () => db.query("update public.card_versions set status = 'confirmed' where id = $1", [id])), /확정자/);
+    await rejects(() => as("inspector", () => db.query("update public.card_versions set confirmed_by = $2, confirmed_at = now() where id = $1", [id, users.inspector])), /확정 정보/);
+    await as("inspector", () => db.query("update public.card_versions set status = 'confirmed', confirmed_by = $2, confirmed_at = now() where id = $1", [id, users.inspector]));
+    const v = (await db.query<{ status: string; confirmed_by: string }>("select status, confirmed_by from public.card_versions where id = $1", [id])).rows[0];
+    assert.deepEqual([v.status, v.confirmed_by], ["confirmed", users.inspector]);
+    // 확정한 작성본은 부서가 못 고침(RLS card_versions_update — 0행)
+    assert.equal((await as("inspector", () => db.query(`update public.card_versions set data = data || '{"memo":"y"}' where id = $1`, [id]))).affectedRows, 0);
+    assert.equal((await as("inspector", () => db.query("update public.card_versions set status = 'draft', confirmed_by = null, confirmed_at = null where id = $1", [id]))).affectedRows, 0, "확정 되돌리기도 못 함");
+    // 새 작성본을 처음부터 확정으로, 제출한 작성본을 바로 확정은 거절(남은 제출 행은 성과관리팀이 확정)
+    const insertConfirmed = `insert into public.card_versions (card_id, period, version, status, data, created_by, confirmed_by, confirmed_at) values ($1, '2027-03', 1, 'confirmed', ${DRAFT_IDS}, $2, $2, now())`;
+    await rejects(() => as("inspector", () => db.query(insertConfirmed, [own.id, users.inspector])), /작성 중인 작성본/);
+    const sub = (await as("inspector", () => db.query<{ id: number }>(insert, [own.id, "2027-03", "submitted", users.inspector]))).rows[0].id;
+    await rejects(() => as("inspector", () => db.query("update public.card_versions set status = 'confirmed', confirmed_by = $2, confirmed_at = now() where id = $1", [sub, users.inspector])), /작성 중인 작성본/);
+    await as("pmo", () => db.query("update public.card_versions set status = 'confirmed', confirmed_by = $2, confirmed_at = now() where id = $1", [sub, users.pmo]));
+    // 남의 부서 카드 작성본은 만들지도 못함(예전 그대로)
+    await rejects(() => as("inspector", () => db.query(insert, [other.id, "2027-02", "draft", users.inspector])), /row-level security/);
+
+    // 수정 이력: 쓸 수 있는 카드에 본인 이름으로(부서 확정 기록), 남의 카드·남의 이름은 거절, 다른 부서는 못 읽음
+    const edit = "insert into public.card_edits (card_id, edited_by, before, after, summary) values ($1, $2, '{}', '{}', '2월 작성본 확정(부서)')";
+    await as("inspector", () => db.query(edit, [own.id, users.inspector]));
+    await rejects(() => as("inspector", () => db.query(edit, [other.id, users.inspector])), /row-level security/);
+    await rejects(() => as("inspector", () => db.query(edit, [own.id, users.pmo])), /row-level security/);
+    assert.equal(await as("inspector", () => count("select 1 from public.card_edits where card_id = $1 and edited_by = $2", [own.id, users.inspector])), 1);
+    assert.equal(await as("license", () => count("select 1 from public.card_edits where card_id = $1", [own.id])), 0);
+    assert.equal(await as("pmo", () => count("select 1 from public.card_edits where card_id = $1 and edited_by = $2", [own.id, users.inspector])), 1, "성과관리팀은 원장 이력에서 부서 확정을 봄");
+    // 부서는 자기 이력 행도 고치지 못함(자동 저장 병합은 성과관리팀 원장 저장만)
+    assert.equal((await as("inspector", () => db.query("update public.card_edits set summary = 'x' where card_id = $1 and edited_by = $2", [own.id, users.inspector]))).affectedRows, 0);
+    // 과제 매칭 작업 등록은 원래 쓸 수 있는 카드면 됨(can_enqueue_prep = can_write_card — 부서 확정 뒤 다시 매칭)
+    await as("inspector", () => db.query("insert into public.prep_jobs (kind, target, requested_by) values ('match_knowledge', $1, $2)", [own.id, users.inspector]));
+  } finally {
+    await db.query("delete from public.prep_jobs where target = $1", [own.id]);
+    await db.query("delete from public.card_edits where card_id = $1 and edited_by = $2", [own.id, users.inspector]);
+    await db.query("delete from public.card_versions where card_id = $1 and period in ('2027-02', '2027-03')", [own.id]);
+  }
+});
+
+test("부서 확정 · 보고서: 작성 중 → 승인(부서 확정, 승인자 본인·시각)과 승인 → 작성 중(확정 취소, 승인 정보 비움)은 부서도, 준비 → 승인은 누구도 안 됨, 확정한 보고서는 내용·과제별 초안·검토 정보를 부서가 못 바꿈, 성과관리팀 승인 풀기·작성 중 → 승인도 됨", { skip: NO_SEED_CARDS }, async () => {
+  const own = await firstCard("검사기획팀");
+  const insp = await teamId("검사기획팀");
+  const lic = await teamId("자격기획팀");
+  const year = 2038;
+  const insert = "insert into public.reports (eval_unit_id, year, team_id, created_by) values ($1, $2, $3, $4) returning id";
+  const mine = (await as("pmo", () => db.query<{ id: number }>(insert, [own.eval_unit_id, year, insp, users.pmo]))).rows[0].id;
+  const theirs = (await as("pmo", () => db.query<{ id: number }>(insert, [own.eval_unit_id, year, lic, users.pmo]))).rows[0].id;
+  const confirm = "update public.reports set status = 'approved', approved_by = $2, approved_at = now(), submitted_at = now(), submitted_by = $2 where id = $1";
+  const cancel = "update public.reports set status = 'drafting', approved_by = null, approved_at = null where id = $1";
+  const status = async (id: number) => (await db.query<{ status: string; approved_by: string | null }>("select status, approved_by from public.reports where id = $1", [id])).rows[0];
+  const spec = JSON.stringify({ version: 1, rows: [] });
+  const draft = "insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, $3::jsonb, 'm', 1) on conflict (card_id, year) do update set model = excluded.model";
+  try {
+    // 준비 → 승인은 표 밖(제출 조건 — 과제별 초안 — 을 건너뛰지 않게: 첫 초안이 생겨 작성 중이 된 뒤에만)
+    await rejects(() => as("inspector", () => db.query("update public.reports set status = 'approved' where id = $1", [mine])), /바꿀 수 없는 상태/);
+    await rejects(() => as("pmo", () => db.query("update public.reports set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [mine, users.pmo])), /바꿀 수 없는 상태/);
+    await as("inspector", () => db.query(draft, [own.id, year, spec])); // 첫 과제별 초안 → 작성 중(report_drafting_on_draft)
+    assert.equal((await status(mine)).status, "drafting");
+
+    // 확정은 승인자(본인)·승인 시각을 함께
+    await rejects(() => as("inspector", () => db.query("update public.reports set status = 'approved' where id = $1", [mine])), /승인자/);
+    await rejects(() => as("inspector", () => db.query(confirm, [mine, users.pmo])), /승인자/);
+    assert.equal((await as("inspector", () => db.query(confirm, [theirs, users.inspector]))).affectedRows, 0, "남의 부서 보고서는 행이 걸러짐");
+    await as("inspector", () => db.query(confirm, [mine, users.inspector]));
+    assert.deepEqual(await status(mine), { status: "approved", approved_by: users.inspector });
+
+    // 확정(승인)한 보고서: 부서는 내용·승인 정보·검토 정보를 못 바꾸고 과제별 초안도 잠김(성과관리팀은 그대로)
+    await rejects(() => as("inspector", () => db.query("update public.reports set inputs = '{\"kpi\":{\"a\":\"1\"}}' where id = $1", [mine])), /확정을 취소한 뒤/);
+    await rejects(() => as("inspector", () => db.query("update public.reports set approved_at = approved_at - interval '1 day' where id = $1", [mine])), /승인 정보/);
+    await rejects(() => as("inspector", () => db.query("update public.reports set review_note = '스스로 메모' where id = $1", [mine])), /검토 정보/);
+    await rejects(() => as("inspector", () => db.query(draft, [own.id, year, spec])), /제출한 보고서의 과제입니다/);
+    await as("pmo", () => db.query("update public.card_report_drafts set model = 'staff' where card_id = $1 and year = $2", [own.id, year]));
+
+    // 확정 취소(메모 없음): 승인 정보를 비워야 함 → 다시 고침
+    await rejects(() => as("inspector", () => db.query("update public.reports set status = 'drafting' where id = $1", [mine])), /승인 정보를 비웁니다/);
+    await as("inspector", () => db.query(cancel, [mine]));
+    assert.deepEqual(await status(mine), { status: "drafting", approved_by: null });
+    await as("inspector", () => db.query(draft, [own.id, year, spec]));
+    await as("inspector", () => db.query("update public.reports set inputs = '{\"kpi\":{}}' where id = $1", [mine]));
+
+    // 성과관리팀 승인 풀기(승인 → 작성 중 + 검토 메모 — 메모 필수는 서버 액션이 확인)도 그대로
+    await as("inspector", () => db.query(confirm, [mine, users.inspector]));
+    await as("pmo", () => db.query("update public.reports set status = 'drafting', approved_by = null, approved_at = null, review_note = '계량 실적을 고쳐 주세요', reviewed_at = now(), reviewed_by = $2 where id = $1", [mine, users.pmo]));
+    assert.equal((await status(mine)).status, "drafting");
+    // 전이 표는 모두에게 같은 목록 + 성과관리팀 몫: 성과관리팀도 작성 중 → 승인(제출 조건은 서버 액션이 확인), 승인 → 제출은 누구도 안 됨
+    await as("pmo", () => db.query("update public.reports set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [mine, users.pmo]));
+    await rejects(() => as("pmo", () => db.query("update public.reports set status = 'submitted' where id = $1", [mine])), /바꿀 수 없는 상태/);
+    await rejects(() => as("inspector", () => db.query("update public.reports set status = 'submitted', approved_by = null, approved_at = null where id = $1", [mine])), /승인 정보|바꿀 수 없는 상태/);
+  } finally {
+    await db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [own.id, year]);
+    await db.query("delete from public.reports where id in ($1, $2)", [mine, theirs]);
   }
 });

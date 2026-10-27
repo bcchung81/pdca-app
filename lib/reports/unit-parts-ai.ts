@@ -14,7 +14,7 @@ import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom
 import type { UnitPartKey } from "../tracks/index.ts";
 import { needsIn, stripNeeds } from "./actuals.ts";
 import { mgPartLabel } from "./mg-outline.ts";
-import { kpiKey, kpiRowsOf } from "./model.ts";
+import { kpiKeyedRows } from "./model.ts";
 import { knownNumbers, numberTokens } from "./section.ts";
 import { sectionMarkdown } from "./section-md.ts";
 import { type UnitAiBudgets, UNIT_BUDGET_ROOM_MM, UNIT_BUDGET_WARN, linesLen, unitAiBudgets } from "./unit-parts-budget.ts";
@@ -243,8 +243,8 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
   // 계량 실적 입력(그 지표 모든 부서 보고서 — 카드 계량 행 키)
   const inputs = kpiInputs(m);
   const kpiLines = cards.flatMap((c) =>
-    kpiRowsOf(c.data?.kpi?.rows).flatMap((k) => {
-      const v = inputs[kpiKey(c.id, k.i)];
+    kpiKeyedRows(c.id, c.data?.kpi?.rows).flatMap((k) => {
+      const v = inputs[k.key];
       return v ? [r("actuals.item", { taskNo: c.taskNo, name: k.name, actual: v })] : [];
     }),
   );

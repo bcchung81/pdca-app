@@ -3,6 +3,7 @@
 // 평가 세트 기준선(2026-09-27): 핵심 수치 띠 4개 중 올해 실적이 든 것 2개, 추진성과가 모두 예상·목표인 초안 2/8 — AI가 카드의 올해 월별 실적보다 전년·목표 수치를 앞세움.
 
 import type { LooseJson } from "../loose-json.ts";
+import { kpiKeyedRows } from "./model.ts";
 import { KPI_COVER_MIN, kpiKeyWords, wordCover } from "./kpi-cover.ts";
 
 type Json = LooseJson;
@@ -60,13 +61,14 @@ export interface YearActuals {
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 /**
- * 카드 + 부서 계량 실적 입력 → 올해 실적 재료. inputs 키는 lib/reports/model.ts kpiKey(카드 id#지표 순번).
+ * 카드 + 부서 계량 실적 입력 → 올해 실적 재료. inputs 키는 lib/reports/model.ts kpiKeyedRows(카드 id#지표 이름).
  * 계량지표는 원본 양식의 빈 자리표시("-") 행을 뺌(model.ts kpiRowsOf와 같은 규칙).
  */
 export function yearActuals(card: Json, inputs: Record<string, string> = {}, today = ""): YearActuals {
   const rows: Json[] = Array.isArray(card?.kpi?.rows) ? card.kpi.rows : [];
+  const keyOf = new Map(kpiKeyedRows(String(card?.id), rows).map((k) => [k.i, k.key]));
   const kpi: KpiActual[] = rows
-    .map((k, i) => ({ name: str(k?.name), unit: str(k?.unit), prev: str(k?.prev), target: str(k?.target), expected: str(k?.expected), input: str(inputs[`${card?.id}#${i}`]) }))
+    .map((k, i) => ({ name: str(k?.name), unit: str(k?.unit), prev: str(k?.prev), target: str(k?.target), expected: str(k?.expected), input: str(inputs[keyOf.get(i) ?? ""]) }))
     .filter((k) => k.name && !/^[-–—·]+$/.test(k.name));
   const monthly: YearActuals["monthly"] = [];
   for (const m of Array.isArray(card?.do?.monthly) ? card.do.monthly : []) {

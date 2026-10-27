@@ -197,7 +197,8 @@ try {
     }
   }
 
-  // ── 월별 작성본: 부서 작성 → 제출 → 돌려받음 → 다시 제출 → 성과관리팀 확정
+  // ── 월별 작성본: 부서 작성 → 부서 확정(원장 반영 — 2026-10-27, 제출·성과관리팀 확정 단계 없음) → 성과관리팀은 이력에서 봄
+  const deptId = (await admin.from("profiles").select("id").eq("email", DEPT).single()).data.id;
   const my = await d.get("/my");
   check("내 과제 = 자기 부서 카드", rowsOf(my.html) === ownCount, `${rowsOf(my.html)}/${ownCount}`);
   const peek = await d.get(`/my?peek=${own.uid}`);
@@ -212,39 +213,29 @@ try {
   check("원장 변경 없음", JSON.stringify(ledger1.data) === JSON.stringify(own.data));
   const pWriting = await p.get(`/cards?peek=${own.uid}`);
   check("성과관리팀 옆 창: 부서 작성 중 안내", text(pWriting.html).includes("작성본을 작성 중입니다"));
+  const dWriting = await d.get(`/my?peek=${own.uid}`);
+  check("담당자 옆 창: 「확정(원장 반영)」 단추(제출 단추 없음)", text(dWriting.html).includes("확정(원장 반영)") && !text(dWriting.html).includes("성과관리팀에 제출"));
   let r = await call(d, "/my", "setDraftStatus", [own.uid, "submit"]);
   let r2;
-  check("제출", r.ok === true, JSON.stringify(r));
-  edited.plan.lines = [...edited.plan.lines, "∙ (시험) 제출 뒤 고침"];
-  await d.post("/my", [...fields, ["payload", JSON.stringify({ data: edited })]]);
-  ({ data: v } = await admin.from("card_versions").select("id, status, data, note").eq("card_id", own.id).eq("period", period).maybeSingle());
-  check("제출한 작성본은 저장 거절", v.status === "submitted" && v.data.plan.lines.at(-1) === "∙ (시험) 이달 실적 반영");
-  const pl = await p.get(`/cards?peek=${own.uid}`);
-  check("성과관리팀 옆 창: 제출됨·바뀐 칸 1개", /작성본 제출됨/.test(text(pl.html)) && /바뀐 칸\s*1\s*개/.test(text(pl.html)), text(pl.html).match(/바뀐 칸\s*\d+\s*개/)?.[0]);
-  const plist = await p.get("/cards");
-  check("원장 목록: 제출 칩·확정 대기 안내", plist.html.includes(">제출<") && text(plist.html).includes("확정 대기"));
-  check("메뉴 배지: 과제 원장 할 일 1", plist.html.includes('title="과제 원장 · 할 일 1"'));
-  r = await call(p, "/cards", "returnDraft", [v.id, "시험 메모: 목표 대비 실적"]);
-  check("돌려보내기", r.ok === true, JSON.stringify(r));
-  const dp = await d.get(`/my?peek=${own.uid}`);
-  check("담당자에게 돌려받은 메모", text(dp.html).includes("돌려받음: 시험 메모"));
-  check("메뉴 배지: 내 과제 할 일 1(돌려받음)", dp.html.includes('title="내 과제 · 할 일 1"'));
-  r = await call(d, "/my", "setDraftStatus", [own.uid, "submit"]);
-  ({ data: v } = await admin.from("card_versions").select("id, status, note").eq("card_id", own.id).eq("period", period).maybeSingle());
-  check("다시 제출하면 메모 지움", r.ok === true && v.status === "submitted" && v.note === null);
-  r = await call(d, "/cards", "confirmDraft", [v.id]);
-  check("담당자는 확정 못 함", r.ok === false, JSON.stringify(r).slice(0, 120));
-  // 제출 뒤 성과관리팀이 원장의 다른 구역(계량지표)을 고쳐도 확정이 덮어쓰지 않아야 함(구역 병합)
+  check("부서 제출은 없어짐(확정으로 안내)", r.ok === false && /확정/.test(r.message ?? ""), JSON.stringify(r));
+  r = await call(p, "/my", "confirmMyDraft", [own.uid]);
+  check("성과관리팀은 부서 확정을 대신 못 함", r.ok === false, JSON.stringify(r).slice(0, 120));
+  // 작성 중에 성과관리팀이 원장의 다른 구역(계량지표)을 고쳐도 부서 확정이 덮어쓰지 않아야 함(구역 병합 — 성과관리팀 확정과 같은 규칙)
   const { data: ledgerNow } = await admin.from("cards").select("data").eq("id", own.id).single();
   const pmoEdit = structuredClone(ledgerNow.data);
   pmoEdit.kpi.rows[0].target = "45,500건(시험)";
   await admin.from("cards").update({ data: pmoEdit }).eq("id", own.id);
-  r = await call(p, "/cards", "confirmDraft", [v.id]);
-  const { data: after } = await admin.from("cards").select("data, original_html").eq("id", own.id).single();
-  check("확정은 부서가 바꾼 구역만 반영(원장의 계량지표 변경 유지)", after.data.kpi.rows[0].target === "45,500건(시험)" && after.data.plan.lines.at(-1) === "∙ (시험) 이달 실적 반영");
-  r2 = await call(p, "/cards", "confirmDraft", [v.id]);
+  r = await call(d, "/my", "confirmMyDraft", [own.uid]);
+  const { data: after } = await admin.from("cards").select("data, original_html, updated_by").eq("id", own.id).single();
+  check("부서 확정은 부서가 바꾼 구역만 반영(원장의 계량지표 변경 유지)", r.ok === true && after.data.kpi.rows[0].target === "45,500건(시험)" && after.data.plan.lines.at(-1) === "∙ (시험) 이달 실적 반영", JSON.stringify(r).slice(0, 200));
+  check("부서 확정 → 원본 양식 조각은 비움(화면은 카드 JSON에서 그림)·고친 사람 = 부서", after.original_html === null && after.updated_by === deptId, `${after.original_html === null} ${after.updated_by}`);
+  const pAfter = await p.get(`/cards?peek=${own.uid}`);
+  check("성과관리팀 원장 옆 창에 부서 확정 내용", text(pAfter.html).includes("(시험) 이달 실적 반영"));
+  r2 = await call(d, "/my", "confirmMyDraft", [own.uid]);
   check("같은 작성본은 두 번 확정 못 함", r2.ok === false, JSON.stringify(r2).slice(0, 100));
-  // 오래 열어 둔 창: 확정된 작성본 번호로 저장하면 거절(성과관리팀 수정을 옛 내용으로 되돌리지 않게)
+  r2 = await call(p, "/cards", "confirmDraft", [v.id]);
+  check("성과관리팀 확정 경로는 남은 제출 작성본만(확정된 작성본은 거절)", r2.ok === false, JSON.stringify(r2).slice(0, 100));
+  // 오래 열어 둔 창: 확정된 작성본 번호로 저장하면 거절(확정한 원장을 옛 내용으로 되돌리지 않게)
   const staleDraft = structuredClone(edited);
   staleDraft.plan.lines = [...staleDraft.plan.lines, "∙ (시험) 오래된 창"];
   await d.post("/my", [...fields, ["payload", JSON.stringify({ data: staleDraft, versionId: v.id })]]);
@@ -260,12 +251,12 @@ try {
   const { data: revAfter } = await admin.from("cards").select("data, data_rev").eq("id", own.id).single();
   check("옛 원장 개정 번호로 저장하면 거절", revAfter.data_rev === revRow.data_rev && !JSON.stringify(revAfter.data).includes("옛 원장"), `${revRow.data_rev}→${revAfter.data_rev}`);
   await p.post("/cards", [...ledgerFields, ["payload", JSON.stringify({ data: staleLedger, rev: revRow.data_rev, stage: "", progress: "", workStatus: "진행중" })]]);
-  const { data: revOk } = await admin.from("cards").select("data, data_rev").eq("id", own.id).single();
+  const { data: revOk } = await admin.from("cards").select("data, data_rev, original_html").eq("id", own.id).single();
   check("현재 개정 번호면 원장 저장·번호 1 증가", revOk.data_rev === revRow.data_rev + 1 && JSON.stringify(revOk.data).includes("옛 원장"), `${revRow.data_rev}→${revOk.data_rev}`);
+  check("성과관리팀 원장 저장 → 원본 양식 조각 다시 그림", (revOk.original_html ?? "").replace(/<[^>]+>/g, "").includes("(시험) 이달 실적 반영"));
   ({ data: v } = await admin.from("card_versions").select("id, status, confirmed_by").eq("card_id", own.id).eq("period", period).maybeSingle());
-  const { data: edits } = await admin.from("card_edits").select("id, summary").eq("card_id", own.id);
-  check("확정 → 원장 반영·원본 양식 다시 그림", after.data.plan.lines.at(-1) === "∙ (시험) 이달 실적 반영" && after.original_html.replace(/<[^>]+>/g, "").includes("(시험) 이달 실적 반영"), `ok=${r.ok} last=${JSON.stringify(after.data.plan.lines.at(-1))} html=${after.original_html.replace(/<[^>]+>/g, "").includes("이달 실적 반영")} raw=${JSON.stringify(r).slice(0, 160)}`);
-  check("작성본 확정·이력", v.status === "confirmed" && edits.some((e) => /작성본 확정/.test(e.summary ?? "")), `${v.status} ${edits.map((e) => e.summary)}`);
+  const { data: edits } = await admin.from("card_edits").select("id, summary, edited_by").eq("card_id", own.id);
+  check("작성본 확정(확정자 = 부서 담당자)·부서 확정 이력", v.status === "confirmed" && v.confirmed_by === deptId && edits.some((e) => /작성본 확정\(부서\)/.test(e.summary ?? "") && e.edited_by === deptId), `${v.status} ${v.confirmed_by === deptId} ${edits.map((e) => e.summary)}`);
   const my2 = await d.get("/my");
   check("내 과제 칩: 확정", my2.html.includes(">확정<"));
 
@@ -353,7 +344,8 @@ try {
       const name = String(c.data.kpi?.rows?.[0]?.name ?? "").trim();
       return name && !/^[-–—·]+$/.test(name);
     });
-  r = await call(d, "/my/report", "saveReportInputs", [mine.id, { [`${kpiCard.id}#0`]: "46,210건" }]);
+  // 열쇠 규칙 = lib/reports/model.ts kpiKeyedRows(카드 id#정규화한 지표 이름; 첫 행이라 같은 이름 차례 붙임 없음)
+  r = await call(d, "/my/report", "saveReportInputs", [mine.id, { [`${kpiCard.id}#${String(kpiCard.data.kpi.rows[0].name).trim().normalize("NFC").replace(/\s+/g, " ")}`]: "46,210건" }]);
   check("계량 실적 저장", r.ok === true, JSON.stringify(r));
   const s1 = await call(d, "/my/report", "startMaterialUpload", [mine.id, "시험.pdf", 12]);
   check("추가자료 서명 업로드 주소", s1.ok === true && s1.path?.startsWith(`${mine.id}/`), JSON.stringify(s1).slice(0, 100));
@@ -373,18 +365,18 @@ try {
   check("리뷰 화면: 평가내용2 과제별 초안 칸(아직 초안 없음 → 만들기 링크)", rvText.includes("평가내용2 과제별 초안(HTML)") && rvText.includes("초안 만들기"), "");
   const other = await d.get(`/reports/${theirs.id}`);
   check("남의 부서 보고서는 못 봄(404)", other.status === 404, String(other.status));
-  r = await call(d, "/my/report", "setReportStatus", [mine.id, "submitted"]);
-  check("초안 없으면 제출 못 함", r.ok === false, JSON.stringify(r));
+  r = await call(d, "/my/report", "setReportStatus", [mine.id, "approved"]);
+  check("초안 없으면 확정 못 함", r.ok === false, JSON.stringify(r));
   r = await call(d, "/my/report", "deleteMaterial", [mats[0].id]);
   const { data: objs } = await admin.storage.from("report-materials").list(String(mine.id));
   check("추가자료 삭제(파일까지)", r.ok === true && (objs ?? []).length === 0, `${(objs ?? []).length}`);
   const rl = await p.get("/reports");
   check("보고서 현황 표", text(rl.html).includes("주관") && text(rl.html).includes("자료 준비"));
-  // 부서 제출 단위(2026-09-27): 부서는 원고를 직접 쓰지 않고(평가내용2는 과제별 초안), 과제별 초안이 모두 있어야 제출
+  // 부서 확정 단위(2026-09-27 제출 단위 → 2026-10-27 확정): 부서는 원고를 직접 쓰지 않고(평가내용2는 과제별 초안), 과제별 초안이 모두 있어야 확정
   r = await call(d, `/reports/${mine.id}`, "saveReportBlocks", [mine.id, [{ type: "paragraph", text: "(시험) 부서 원고" }]]);
   check("부서는 원고를 직접 쓰지 않음", r.ok === false);
-  r = await call(d, "/my/report", "setReportStatus", [mine.id, "submitted"]);
-  check("과제별 초안이 없으면 제출 안 됨", r.ok === false, JSON.stringify(r).slice(0, 80));
+  r = await call(d, "/my/report", "setReportStatus", [mine.id, "approved"]);
+  check("과제별 초안이 없으면 확정 안 됨", r.ok === false, JSON.stringify(r).slice(0, 80));
   const rv2 = await p.get(`/reports/${mine.id}`);
   check("검토 화면: 직접 쓰기·HWPX 내보내기 단추 없음, 목록 아이콘", rv2.status === 200 && !text(rv2.html).includes("직접 쓰기") && !text(rv2.html).includes("HWPX 내보내기") && rv2.html.includes('aria-label="목록으로'), String(rv2.status));
 
@@ -416,6 +408,7 @@ try {
   const dash = await p.get("/dashboard");
   const dashText = text(dash.html);
   check("현황: 공통 틀(이달 할 일 · 대상사업별 · 본부·실·단별 부서)", dashText.includes("이달 할 일") && dashText.includes("대상사업별") && dashText.includes("본부·실·단별"), dashText.slice(0, 80));
+  check("현황: 할 일에 이달 부서 확정 작성본(성과관리팀은 이력에서 봄)", dashText.includes("부서 확정 작성본"), dashText.match(/.{0,20}부서 확정 작성본.{0,20}/)?.[0]);
   check("현황: 점검 1건이 점검 통계에 잡힘", /보냄\s*1/.test(dashText), dashText.match(/보냄\s*\d+/)?.[0]);
 
   // ── 카드 전용 자료·수정 이력

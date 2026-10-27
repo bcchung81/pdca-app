@@ -54,6 +54,8 @@ export default async function DashboardPage() {
   const status = (id: string) => versions.get(id)?.status ?? "none";
   const done = (id: string) => ["submitted", "confirmed"].includes(status(id));
   const submitted = rows.filter((r) => status(r.id) === "submitted").length;
+  // 부서가 이달 직접 확정(원장 반영)한 과제 — 성과관리팀은 수정 이력에서 보고 필요하면 원장을 고침(2026-10-27)
+  const confirmed = rows.filter((r) => status(r.id) === "confirmed");
   const started = rows.filter((r) => versions.has(r.id)).length;
 
   // 평가단위별(주요사업 = 대상사업 3개, 경영관리 = 지표 1~14)
@@ -112,7 +114,9 @@ export default async function DashboardPage() {
   const draftHref = (value: string) => `/cards?${viewParams({ ...EMPTY_VIEW, filters: { ...EMPTY_VIEW.filters, draft: [value] } })}`;
   const noAccountTeams = new Set(noAccount.map((t) => t.key));
   const todo: TodoItem[] = [
-    { n: submitted, of: rows.length, label: "확정 대기 작성본", hint: "부서가 제출한 이달 작성본 — 원장에서 비교하고 확정", detail: submitted ? `${waitDays !== null ? `가장 오래된 제출 ${waitDays}일 전 · ` : ""}${teamOf(waiting)}` : undefined, href: draftHref("제출") },
+    { n: confirmed.length, of: rows.length, label: `${monthLabel(period)} 부서 확정 작성본`, hint: "부서가 원장에 바로 반영한 과제 — 수정 이력에서 보고 필요하면 원장을 고침", detail: confirmed.length ? teamOf(confirmed) : undefined, href: draftHref("확정") },
+    // 2026-10-27 전에 제출된 작성본이 남아 있을 때만(부서는 이제 제출하지 않고 확정)
+    ...(submitted ? [{ n: submitted, of: rows.length, label: "확정 대기 작성본", hint: "예전에 부서가 제출한 작성본 — 원장에서 비교하고 확정", detail: `${waitDays !== null ? `가장 오래된 제출 ${waitDays}일 전 · ` : ""}${teamOf(waiting)}`, href: draftHref("제출") }] : []),
     { n: rows.length - started, of: rows.length, label: `${monthLabel(period)} 작성본 시작 전`, hint: "부서가 이달 실적을 아직 반영하지 않은 과제", detail: hqOf(rows.filter((r) => !versions.has(r.id))), href: draftHref("시작 전") },
     { n: noAccount.length, of: tiles.length, label: "담당자 계정이 없는 부서", alert: true, hint: "「사용자」에서 계정을 등록", detail: noAccount.length ? `과제 수 ${spreadText(rows.filter((r) => noAccountTeams.has(r.team ?? r.department)).map((r) => r.team ?? r.department), 4)}` : undefined, href: "/users/import" },
     { n: unassigned.length, of: rows.length, label: "담당 과제로 지정되지 않은 과제", alert: true, hint: "담당자가 지정돼야 부서 담당자가 과제를 봄(팀이 정해지면 자동 매칭)", detail: hqOf(unassigned), href: "/users" },
@@ -152,7 +156,7 @@ export default async function DashboardPage() {
             { label: "미작성", n: rows.length - inspections.size, tone: INSPECTION_STATUS_TONE.none.seg, href: `${inspBase}&status=none`, title: "점검표 없음" },
           ]}
           metrics={[
-            { label: `${monthLabel(period)} 작성본`, value: started, sub: `/${rows.length}`, bar: { n: started, of: rows.length }, href: "/cards", title: `제출 대기 확정 ${submitted}건` },
+            { label: `${monthLabel(period)} 작성본`, value: started, sub: `/${rows.length}`, bar: { n: started, of: rows.length }, href: "/cards", title: `부서 확정 ${confirmed.length}건` },
             { label: "담당자 계정이 있는 부서", value: tiles.length - noAccount.length, sub: `/${tiles.length}`, bar: { n: tiles.length - noAccount.length, of: tiles.length }, tone: noAccount.length ? "warn" : undefined, href: "/users" },
             { label: "담당 과제로 지정됨", value: rows.length - unassigned.length, sub: `/${rows.length}`, bar: { n: rows.length - unassigned.length, of: rows.length }, tone: unassigned.length ? "warn" : undefined, href: "/users" },
           ]}

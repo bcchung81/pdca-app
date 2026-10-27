@@ -182,23 +182,23 @@ test("2025 셈 방향 추론: 달성률과 맞는 쪽(목표 = 실적·숫자 �
   assert.equal(inferPolarity({ target: "0건", actual: "0건", rate: "100.0%" }), null);
 });
 
-test("계량 표(Q5): 카드 계량 행 전부가 후보, 2025 표와 이름이 같은 행만 미리 체크 · 극성 기본은 2025 셈 방향 · 실적은 부서 입력(kpiKey) · 비계량·개선계획은 평가내용 줄임", () => {
+test("계량 표(Q5): 카드 계량 행 전부가 후보, 2025 표와 이름이 같은 행만 미리 체크 · 극성 기본은 2025 셈 방향 · 실적은 부서 입력(kpiKeyedRows) · 비계량·개선계획은 평가내용 줄임", () => {
   const kpi = { rows: [{ name: "부채비율", unit: "%", prev: "31.7%", target: "31.0%" }, { name: "-", prev: "", target: "" }, { name: "자산 운용 수익률", unit: "%", prev: "3.18", target: "3.3" }, { name: "영업이익률", prev: "0.6%", target: "0.9%" }] };
   const rpt = [
     ...skeleton([[1, "재무구조의 안정성 및 건전성 유지를 위한 기관의 노력과 성과"], [2, "예산편성(예비타당성 조사 등)을 통한 집행을 위한 노력과 성과"]]),
     { chunk_key: "k", text: "구분 | ’24년 / 실적 | ’25년 | 성과 분석\n\n〃 | 〃 | 목표 | 실적 | 달성률 | 〃\n\n부채비율 | 32.1% | 31.6% | 31.7% | 99.7% | ∙ 감소\n\n자산운용수익률 | 3.79% | 2.83% | 3.18% | 112.4% | ∙ 개선", meta: { chapter: "outcome", mark: "가" } },
   ];
-  const { part, warnings } = buildOutcomePart({ cards: [card("8-1", { kpi })], report2025: rpt, kpiInputs: [{ "경영관리8/8-1#0": "30.5%" }, { "경영관리8/8-1#0": "30.5%", "경영관리8/8-1#2": "" }] });
+  const { part, warnings } = buildOutcomePart({ cards: [card("8-1", { kpi })], report2025: rpt, kpiInputs: [{ "경영관리8/8-1#부채비율": "30.5%" }, { "경영관리8/8-1#부채비율": "30.5%", "경영관리8/8-1#자산 운용 수익률": "" }] });
   assert.deepEqual(part.kpi.map((k) => [k.id, k.human.checked, k.human.polarity, k.code.match2025, k.code.actual]), [
-    ["경영관리8/8-1#0", true, "down", "부채비율", "30.5%"],
-    ["경영관리8/8-1#2", true, "up", "자산운용수익률", ""],
-    ["경영관리8/8-1#3", false, "up", null, ""],
-  ], "빈 자리표시 행(-)은 빼고 원래 순번을 키로");
+    ["경영관리8/8-1#부채비율", true, "down", "부채비율", "30.5%"],
+    ["경영관리8/8-1#자산 운용 수익률", true, "up", "자산운용수익률", ""],
+    ["경영관리8/8-1#영업이익률", false, "up", null, ""],
+  ], "빈 자리표시 행(-)은 빼고 지표 이름을 키로");
   assert.equal(kpiRate(part.kpi[0]).text, "101.6%");
   assert.deepEqual(part.qual.map((r) => [r.id, r.human.label]), [["qual/1", "재무구조의 안정성 및 건전성 유지"], ["qual/2", "예산편성을 통한 집행"]]);
   assert.deepEqual(part.plan.map((r) => [r.id, r.ai.self, r.ai.plan]), [["plan/1", [], []], ["plan/2", [], []]]);
   assert.deepEqual(warnings, ["계량 표: 실적 미입력 1행(8-1 자산 운용 수익률) — 부서 경평 초안 「계량 실적」 입력이 필요"], "체크한 행만 경고");
-  const conflict = buildOutcomePart({ cards: [card("8-1", { kpi })], report2025: rpt, kpiInputs: [{ "경영관리8/8-1#0": "30.5%" }, { "경영관리8/8-1#0": "30.9%" }] });
+  const conflict = buildOutcomePart({ cards: [card("8-1", { kpi })], report2025: rpt, kpiInputs: [{ "경영관리8/8-1#부채비율": "30.5%" }, { "경영관리8/8-1#부채비율": "30.9%" }] });
   assert.equal(conflict.part.kpi[0].code.actual, "30.5%");
   assert.ok(conflict.warnings[0].includes("부서 보고서마다 입력값이 다름"));
   assert.equal(evalShort("효율적인 예산편성 및 투명한 집행을 위한 기관의 노력과 성과"), "효율적인 예산편성 및 투명한 집행");
@@ -241,7 +241,7 @@ function materials(over: Partial<MgUnitMaterials> = {}): MgUnitMaterials {
     report2025: skeleton([[1, "재무구조"], [2, "예산편성"]], { 1: "머리\n\n∙ 지난 실적 | ∙ ’25 실적 | ∙ 효과" }),
     evaluator: [],
     handbook: [],
-    kpiInputs: [{ "경영관리8/8-1#0": "30%" }],
+    kpiInputs: [{ "경영관리8/8-1#부채비율": "30%" }],
     ...over,
   };
 }
@@ -253,7 +253,7 @@ test("재료 판: 카드 원장 판·초안 저장 시각·실적 입력이 바�
   assert.deepEqual(saved.drafts, { "경영관리8/8-1": "2026-10-16T01:00:00Z" });
   assert.match(saved.inputs, /^[0-9a-f]{8}$/);
   assert.deepEqual(sourceChanges(saved, unitPartsSource(m)), [], "같은 재료면 바뀐 것 없음");
-  assert.deepEqual(unitPartsSource({ ...m, kpiInputs: [{ "경영관리8/8-1#0": "30%", "다른카드#0": "1" }] }).inputs, saved.inputs, "이 지표 카드 계량 행 밖의 입력은 판에 안 셈");
+  assert.deepEqual(unitPartsSource({ ...m, kpiInputs: [{ "경영관리8/8-1#부채비율": "30%", "다른카드#0": "1" }] }).inputs, saved.inputs, "이 지표 카드 계량 행 밖의 입력은 판에 안 셈");
   const now = unitPartsSource({
     ...m,
     cards: [{ ...m.cards[0], dataRev: 2 }, card("8-3")],
@@ -360,7 +360,7 @@ test("2025 틀 재현(지표 1~11): 평가내용 행 = 2025 전년 대비 표 �
       kpi: { rows: k25.map((k) => ({ name: k.name, prev: k.prev, target: k.target })) },
     });
     c.id = `경영관리${n}/${n}-1`;
-    const inputs = Object.fromEntries(k25.map((k, i) => [`${c.id}#${i}`, k.actual]));
+    const inputs = Object.fromEntries(k25.map((k) => [`${c.id}#${k.name.trim().replace(/\s+/g, " ")}`, k.actual]));
     const { parts } = buildUnitPartsMg({ unit, year: 2025, cards: [c], drafts: [], report2025: rpt, evaluator: [evaluator(f25.map((f, i) => ({ no: i + 1, text: f.join(" ") })))], handbook: [], kpiInputs: [inputs] });
     const priorCount = rpt.filter((x) => x.meta?.chapter === "prior").length;
     assert.equal(parts.prior!.rows.length, priorCount, `${unit} 평가내용 행`);

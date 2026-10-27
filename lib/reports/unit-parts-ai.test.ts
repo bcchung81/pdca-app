@@ -61,7 +61,7 @@ function materials(): MgUnitMaterials {
       { card_id: "경영관리8/8-2", section: "평가내용 1.", subsection: null, sort: 1 },
       { card_id: "경영관리8/8-1", section: "평가내용 1.", subsection: null, sort: 2 },
     ],
-    kpiInputs: [{ "경영관리8/8-1#0": "30.5" }],
+    kpiInputs: [{ "경영관리8/8-1#부채비율": "30.5" }],
   };
 }
 

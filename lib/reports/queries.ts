@@ -8,7 +8,7 @@ import type { SubmitCard } from "./submission.ts";
 import { DEFAULT_TRACK, type TrackId, trackOfUnit } from "../tracks/index.ts";
 
 
-/** reports.inputs — 부서가 넣은 올해 계량 실적(`kpiKey` = 카드 id#지표 순번 → 값) */
+/** reports.inputs — 부서가 넣은 올해 계량 실적(`kpiKeyedRows` = 카드 id#지표 이름 → 값) */
 export interface ReportInputs {
   kpi?: Record<string, string>;
 }

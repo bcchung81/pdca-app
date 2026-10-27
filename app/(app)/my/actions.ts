@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
+import { mergeIntoLedger } from "../../../lib/cards/confirm.ts";
 import { checkEditable, recomputeDerived } from "../../../lib/cards/edit.ts";
 import { canonicalJson } from "../../../lib/cards/fixed.ts";
 import { renderCard } from "../../../lib/cards/render.ts";
@@ -79,28 +80,56 @@ export async function saveDraft(_prev: SaveState, formData: FormData): Promise<S
   return { status: "ok", message: "저장됨", at: now, versionId: inserted.id, rev: 0 };
 }
 
-/** 열린 작성본 제출 / 제출 취소 */
-export async function setDraftStatus(uid: string, op: "submit" | "withdraw"): Promise<{ ok: boolean; message?: string }> {
+/**
+ * 작성본 확정(원장 반영) — 부서 담당자(2026-10-27 사용자 결정: 성과관리팀 제출·확정 단계 없이 부서가 바로 반영, 성과관리팀은 원장 이력에서 보고 필요하면 원장을 고침).
+ * 병합은 성과관리팀 확정과 같은 규칙(lib/cards/confirm.ts — 부서가 바꾼 구역만, 잠긴 고정 영역은 원장 값, 개정 번호 조건 쓰기, 이력, 매칭 작업).
+ * 순서는 원장 먼저 → 작성본 「확정」: 부서는 확정한 작성본을 되돌릴 권한이 없어(RLS) 「작성본 선점 → 실패하면 되돌림」을 못 씀.
+ * 원장을 쓴 뒤 작성본 확정이 실패해도(그사이 다른 창이 작성본을 고침) 원장은 그대로이고, 다시 확정하면 같은 구역을 다시 반영할 뿐(병합은 같은 결과).
+ */
+export async function confirmMyDraft(uid: string): Promise<{ ok: boolean; message?: string }> {
   const me = await requireUser("/my");
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
+  if (me.role !== "dept_user") return { ok: false, message: "부서 담당자의 작성본 확정입니다 — 성과관리팀·관리자는 과제 원장에서 바로 고칩니다." };
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id").eq("uid", uid).maybeSingle();
   if (!card) return { ok: false, message: "카드를 찾을 수 없습니다." };
   const open = await openVersion(supabase, card.id);
-  if (op === "submit") {
-    if (!open || open.status !== "draft") return { ok: false, message: "제출할 작성본이 없습니다. 카드에서 실적을 먼저 고쳐 주세요." };
-    const { data, error } = await supabase
-      .from("card_versions")
-      .update({ status: "submitted", submitted_at: new Date().toISOString(), submitted_by: me.id, note: null })
-      .eq("id", open.id)
-      .eq("status", "draft")
-      .select("id");
-    if (error || !data?.length) return { ok: false, message: "제출하지 못했습니다." };
-  } else {
-    if (!open || open.status !== "submitted") return { ok: false, message: "제출한 작성본이 없습니다." };
-    const { data, error } = await supabase.from("card_versions").update({ status: "draft", submitted_at: null }).eq("id", open.id).eq("status", "submitted").select("id");
-    if (error || !data?.length) return { ok: false, message: "제출을 취소하지 못했습니다." };
+  if (open?.status === "submitted") return { ok: false, message: "제출한 작성본입니다 — 「제출 취소」를 누른 뒤 확정해 주세요." };
+  if (!open) return { ok: false, message: "확정할 작성본이 없습니다. 카드에서 실적을 먼저 고쳐 주세요." };
+  const month = `${Number(open.period.slice(5))}월`;
+  const res = await mergeIntoLedger(supabase, { id: me.id, staff: false }, card.id, { data: open.data, base: open.base }, `${month} 작성본 확정(부서)`);
+  if (!res.ok) return { ok: false, message: res.message };
+  // 작성본을 확정으로(확정자 = 본인 — DB 트리거 guard_card_version이 작성 중·본인만 허용). 병합한 내용 그대로일 때만(개정 번호)
+  const { data: done, error } = await supabase
+    .from("card_versions")
+    .update({ status: "confirmed", confirmed_by: me.id, confirmed_at: new Date().toISOString() })
+    .eq("id", open.id)
+    .eq("status", "draft")
+    .eq("rev", open.rev)
+    .select("id");
+  revalidatePath("/my");
+  revalidatePath("/cards");
+  revalidatePath("/inspections");
+  if (error || !done?.length) {
+    console.error("confirmMyDraft version", error?.message ?? "0 rows");
+    return { ok: false, message: "원장에는 반영했지만 작성본을 확정으로 바꾸지 못했습니다(그사이 작성본이 바뀜). 화면을 새로 고친 뒤 다시 확정해 주세요." };
   }
+  const overlap = res.conflicts.length ? ` 원장에서도 따로 바뀐 구역(${res.conflicts.join("·")})은 작성본 내용으로 바뀌었습니다.` : "";
+  return { ok: true, message: `${month} 작성본을 확정해 원장에 반영했습니다.${overlap} 성과관리팀은 수정 이력에서 봅니다.` };
+}
+
+/** 남은 제출 작성본의 제출 취소(2026-10-27부터 부서는 제출하지 않고 확정 — confirmMyDraft. 예전 「제출」은 받지 않음) */
+export async function setDraftStatus(uid: string, op: "withdraw"): Promise<{ ok: boolean; message?: string }> {
+  await requireUser("/my");
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
+  if (op !== "withdraw") return { ok: false, message: "제출 단계는 없어졌습니다 — 「확정(원장 반영)」을 눌러 주세요." };
+  const supabase = await createClient();
+  const { data: card } = await supabase.from("cards").select("id").eq("uid", uid).maybeSingle();
+  if (!card) return { ok: false, message: "카드를 찾을 수 없습니다." };
+  const open = await openVersion(supabase, card.id);
+  if (!open || open.status !== "submitted") return { ok: false, message: "제출한 작성본이 없습니다." };
+  const { data, error } = await supabase.from("card_versions").update({ status: "draft", submitted_at: null }).eq("id", open.id).eq("status", "submitted").select("id");
+  if (error || !data?.length) return { ok: false, message: "제출을 취소하지 못했습니다." };
   revalidatePath("/my");
   revalidatePath("/cards");
   return { ok: true };

@@ -1,6 +1,6 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
-import { setDraftStatus } from "../../app/(app)/my/actions";
+import { confirmMyDraft, setDraftStatus } from "../../app/(app)/my/actions";
 import { withReturn } from "../../lib/nav/return-to.ts";
 import { usePaneWidth } from "../workspace/pane-resizer";
 import { paneClass, paneWidthStyle } from "../workspace/right-pane.ts";
@@ -8,7 +8,7 @@ import type { CardEditorHandle } from "./card-editor";
 import type { WorkspaceProps } from "./card-workspace";
 
 /**
- * 카드 작업 공간의 화면 상태·효과(오른쪽 패널 탭, 더보기 메뉴, 닫기 확인, 작성본 제출·취소).
+ * 카드 작업 공간의 화면 상태·효과(오른쪽 패널 탭, 더보기 메뉴, 닫기 확인, 작성본 확정(원장 반영)·남은 제출 취소).
  * 머리(card-workspace-header)와 본문(card-workspace-body)이 이 값을 받아 그립니다.
  */
 export function useCardWorkspace(props: WorkspaceProps) {
@@ -104,17 +104,18 @@ export function useCardWorkspace(props: WorkspaceProps) {
     router.refresh();
   }, [router]);
 
-  const draftOp = (op: "submit" | "withdraw") =>
+  // 확정(원장 반영): 편집기에 남은 변경을 먼저 저장한 뒤 — 저장 못 하면 확정하지 않음(옛 작성본이 원장에 들어가지 않게)
+  const draftOp = (op: "confirm" | "withdraw") =>
     startTransition(async () => {
-      if (op === "submit" && !(await editor.current?.flush())) {
-        setMessage("저장하지 못해 제출하지 않았습니다.");
+      if (op === "confirm" && !(await editor.current?.flush())) {
+        setMessage("저장하지 못해 확정하지 않았습니다.");
         return;
       }
-      const res = await setDraftStatus(props.uid, op);
+      const res = op === "confirm" ? await confirmMyDraft(props.uid) : await setDraftStatus(props.uid, op);
       setMessage(
         res.ok
-          ? op === "submit"
-            ? "제출했습니다. 성과관리팀이 확인해 원장에 반영합니다."
+          ? op === "confirm"
+            ? (res.message ?? "확정해 원장에 반영했습니다.")
             : "제출을 취소했습니다. 다시 고칠 수 있습니다."
           : `${res.message ?? "처리하지 못했습니다."} 화면을 새로 고쳐 최신 상태를 확인해 주세요.`,
       );

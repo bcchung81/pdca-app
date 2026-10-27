@@ -507,7 +507,7 @@ export async function applyImportToDraft(
     });
   }
   revalidatePath("/my");
-  return { ok: true, message: `작성본에 반영했습니다(${applied.map((k) => BLOCK_LABEL[k]).join("·")}). 확인한 뒤 성과관리팀에 제출해 주세요.`, data: after, rev, versionId, imageUrls };
+  return { ok: true, message: `작성본에 반영했습니다(${applied.map((k) => BLOCK_LABEL[k]).join("·")}). 확인한 뒤 「확정(원장 반영)」을 눌러 주세요.`, data: after, rev, versionId, imageUrls };
 }
 
 /** 부서 작성본 채우기: 올린 파일의 카드를 지금 작성본(없으면 원장)과 블록별로 비교 */

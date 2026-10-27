@@ -18,7 +18,7 @@ import { realFindingLines } from "./findings.ts";
 import { mgFindingParts } from "./mg-draft.ts";
 import { evalsFor } from "./mg-outline.ts";
 import { evalNoOf } from "./mg-page-plan.ts";
-import { kpiKey, kpiRowsOf } from "./model.ts";
+import { kpiKeyedRows } from "./model.ts";
 import type { ReportSectionSpec } from "./section.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -152,7 +152,7 @@ export interface PriorPart {
 }
 
 export interface KpiRow {
-  /** kpiKey(카드 id, 지표 순번) — 부서 실적 입력과 같은 키 */
+  /** kpiKeyedRows 열쇠(카드 id#지표 이름) — 부서 실적 입력과 같은 키 */
   id: string;
   code: {
     cardId: string;
@@ -620,12 +620,12 @@ export function buildOutcomePart(m: Pick<MgUnitMaterials, "cards" | "report2025"
   const rows2025 = table2025 ? kpi2025Rows(table2025.text) : [];
   const by2025 = new Map(rows2025.map((r) => [kpiNameKey(r.name), r]));
   const kpi: KpiRow[] = activeCards(m.cards).flatMap((c) =>
-    kpiRowsOf(c.data?.kpi?.rows).map((k) => {
+    kpiKeyedRows(c.id, c.data?.kpi?.rows).map((k) => {
       const hit = by2025.get(kpiNameKey(k.name)) ?? null;
       const polarity2025 = hit ? inferPolarity(hit) : null;
       return {
-        id: kpiKey(c.id, k.i),
-        code: { cardId: c.id, taskNo: c.taskNo, index: k.i, name: k.name, unit: k.unit, prev: k.prev, target: k.target, actual: inputs[kpiKey(c.id, k.i)] ?? "", match2025: hit?.name ?? null, polarity2025 },
+        id: k.key,
+        code: { cardId: c.id, taskNo: c.taskNo, index: k.i, name: k.name, unit: k.unit, prev: k.prev, target: k.target, actual: inputs[k.key] ?? "", match2025: hit?.name ?? null, polarity2025 },
         human: { checked: !!hit, polarity: polarity2025 ?? "up" },
         ai: { analysis: [] },
       };
@@ -668,7 +668,7 @@ function fnv8(s: string): string {
 export function unitPartsSource(m: Pick<MgUnitMaterials, "cards" | "drafts" | "kpiInputs">): UnitPartsSource {
   const cards = activeCards(m.cards);
   const { inputs } = mergeKpiInputs(m.kpiInputs);
-  const keys = cards.flatMap((c) => kpiRowsOf(c.data?.kpi?.rows).map((k) => kpiKey(c.id, k.i))).sort();
+  const keys = cards.flatMap((c) => kpiKeyedRows(c.id, c.data?.kpi?.rows).map((k) => k.key)).sort();
   const ids = new Set(cards.map((c) => c.id));
   return {
     cards: Object.fromEntries(cards.map((c) => [c.id, Number(c.dataRev ?? 0)])),

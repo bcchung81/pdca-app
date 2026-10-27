@@ -83,11 +83,11 @@ test("yearActuals: 카드 계량지표(부서 입력 우선) + 올해 수치 든
 });
 
 test("yearActuals: 주요사업3/7-나(계량지표 2행·월별 수치 659건) — 부서 입력이 있는 지표는 채울 자료에서 빠짐", { skip: NO_SEED_CARDS }, () => {
-  const a = yearActuals(card2, { "주요사업3/7-나#0": "91점" }, "2026-09-27");
+  const a = yearActuals(card2, { "주요사업3/7-나#전담기관 만족도": "91점" }, "2026-09-27");
   assert.equal(a.kpi.length, 2);
   assert.equal(a.kpi[0].name, "전담기관 만족도");
-  assert.equal(a.kpi[0].input, "91점", "inputs 키는 카드id#순번(lib/reports/model.ts kpiKey)");
-  assert.equal(a.kpi[1].input, "", "순번이 다른 지표는 입력 없음");
+  assert.equal(a.kpi[0].input, "91점", "inputs 키는 카드id#지표이름(lib/reports/model.ts kpiKeyedRows)");
+  assert.equal(a.kpi[1].input, "", "이름이 다른 지표는 입력 없음");
   assert.equal(a.monthly.length, 2, "수치가 든 줄만(테이블·날짜만 있는 줄 제외)");
   assert.ok(a.monthly.every((m) => m.period === "1월~9월"));
   assert.ok(a.monthly.some((m) => m.line.includes("659건")));
@@ -209,4 +209,13 @@ test("dedupeNeedYear·cleanLine: ^{’26년}【확인: ’26년 …】의 안쪽
   assert.equal(dedupeNeedYear("^{’26년}【확인: ’26년】"), "^{’26년}【확인: ’26년】");
   assert.equal(dedupeNeedYear("’26년 건수는 【확인: ’26년 건수】"), "’26년 건수는 【확인: ’26년 건수】");
   assert.equal(cleanLine("- 인식도 ^{’25년}89% → ^{‘26년}【확인: ‘26년 위험성평가 인식도(%)】"), "인식도 ^{’25년}89% → ^{’26년}【확인: 위험성평가 인식도(%)】", "AI 답 정리 단계에서(두 트랙 공용)");
+});
+
+test("yearActuals: 열쇠는 지표 이름 — 행을 끼우거나 순서를 바꿔도 같은 지표에 값이 붙고, 이름이 바뀐 지표는 비어 보임", () => {
+  const inputs = { "c1#B 지표": "7건" };
+  const rows = (names: string[]) => ({ id: "c1", kpi: { rows: names.map((name) => ({ name })) } });
+  assert.equal(yearActuals(rows(["A 지표", "B 지표"]), inputs).kpi[1].input, "7건");
+  const moved = yearActuals(rows(["새 지표", "B 지표", "A 지표"]), inputs).kpi;
+  assert.deepEqual(moved.map((k) => k.input), ["", "7건", ""]);
+  assert.deepEqual(yearActuals(rows(["B 지표 (수정)"]), inputs).kpi.map((k) => k.input), [""]);
 });

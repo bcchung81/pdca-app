@@ -93,7 +93,7 @@ export interface UnitRow {
   sent: number;
 }
 
-/** 대상사업별(경영관리는 지표별): 마다 작성본(제출·확정)·점검(보냄·확인) 진행 막대 두 개. inspection={false}면 작성본 막대만 */
+/** 대상사업별(경영관리는 지표별): 마다 작성본(확정 — 예전 제출 포함)·점검(보냄·확인) 진행 막대 두 개. inspection={false}면 작성본 막대만 */
 export function UnitsPanel({ units, title = "대상사업별", inspection = true, columns = 1 }: { units: UnitRow[]; title?: string; inspection?: boolean; columns?: 1 | 2 }) {
   const two = columns === 2;
   // 2열(xl 이상)이면 한 줄이 ≈400px라 넓은 막대 열을 두면 이름 칸이 0폭으로 접힘(경영관리 지표 14개) — 막대 열을 좁히고 작은 라벨은 숨김(머리 오른쪽 설명이 같은 말)
@@ -102,7 +102,7 @@ export function UnitsPanel({ units, title = "대상사업별", inspection = true
     : `grid-cols-[minmax(0,1fr)_32px_minmax(0,176px)] ${two ? "xl:grid-cols-[minmax(0,1fr)_24px_minmax(0,96px)] xl:gap-2" : ""}`;
   const barLabel = `w-9 shrink-0 text-xs whitespace-nowrap text-muted ${two ? "xl:hidden" : ""}`;
   return (
-    <Panel title={title} aside={inspection ? "이달 작성본(제출·확정) · 점검(보냄·확인)" : "이달 작성본(제출·확정)"} dense className="shrink-0">
+    <Panel title={title} aside={inspection ? "이달 작성본(확정) · 점검(보냄·확인)" : "이달 작성본(확정)"} dense className="shrink-0">
       <ul className={`${TALL_PAD_LIST} ${columns === 2 ? "grid grid-cols-1 gap-x-6 xl:grid-cols-2" : "flex flex-col"}`}>
         {units.map((u) => (
           <li key={u.id} className={`grid h-6 ${TALL_ROW} ${grid} items-center gap-3 border-b border-row-line px-4 text-ui last:border-b-0`}>
@@ -140,7 +140,7 @@ export interface DeptTile {
   accounts: number;
 }
 
-/** 부서 타일 한 칸 — 막대 = 작성본 제출·확정, 주황 점 = 미확인 점검 수, 점선 테두리 = 담당자 계정 없음 */
+/** 부서 타일 한 칸 — 막대 = 작성본 확정(예전 제출 포함), 주황 점 = 미확인 점검 수, 점선 테두리 = 담당자 계정 없음 */
 function DeptTileView({ t }: { t: DeptTile }) {
   const detail = `${t.name} · ${t.hq} · 과제 ${t.n} · 작성본 ${t.submitted}/${t.n} · 미확인 점검 ${t.unacked} · ${t.accounts ? `담당자 ${t.accounts}명` : "담당자 계정 없음"}`;
   const cls = `flex min-w-0 flex-col justify-center gap-0.5 rounded-md border bg-paper px-2 ${t.accounts ? "border-line" : "border-dashed border-warn"}`;
@@ -176,7 +176,7 @@ export function HqDeptPanel({ groups }: { groups: HqGroup[] }) {
   return (
     <Panel
       title={`본부·실·단별 · 부서 ${groups.reduce((n, g) => n + g.tiles.length, 0)}개`}
-      aside={<span>막대 = 이달 작성본 제출·확정 · 점선 = 담당자 계정 없음 · 타일을 누르면 그 부서 담당자 화면</span>}
+      aside={<span>막대 = 이달 작성본 확정 · 점선 = 담당자 계정 없음 · 타일을 누르면 그 부서 담당자 화면</span>}
       dense
       className="grow"
     >
