@@ -24,6 +24,15 @@
 <!-- @actuals.kpiNone -->
 없음 — 쓰려면 【확인: ’{{yy}}년 {{name}}】
 
+<!-- @actuals.kpiOutcome -->
+{{value}}(카드 정량 성과 칸 — 적힌 시점·값 그대로)
+
+<!-- @actuals.outcomeHead -->
+- 카드 정량 성과 칸 중 올해 실적이 든 줄(카드 outcome.quantitative — 적힌 시점·값 그대로 씀):
+
+<!-- @actuals.outcomeItem -->
+  - {{line}}
+
 <!-- @actuals.monthlyHead -->
 - 월별 실적 중 수치가 든 줄(카드 do.monthly — 모두 올해 실적이므로 쓸 때 ’{{yy}}.월 시점을 붙임):
 

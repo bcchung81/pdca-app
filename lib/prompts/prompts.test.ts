@@ -274,7 +274,8 @@ test("수치 띠 실적 규칙(2026-10-15 후속 6): 주요사업 집필 요청 
   assert.doesNotMatch(JSON.stringify(reportDraftPromptsMg().prompts), /올해 실적 값이 2개 이상일 때만/);
   // 2026-10-17 서사 순서(S — 여는 블록·핵심 메시지는 이 과제의 가치에서, 지적은 해소 블록 하나로)로 앞 둘의 판 바뀜(@309828eb → @845bc269, @913804d5 → @b1183426)
   // 2026-10-26 공통 지식 선별 방식(실험) 절 kb.select.*를 request.md에 더해 집필 판만 바뀜(@845bc269 → @02ce64ac) — 통째로 넣기 절 글은 그대로
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@02ce64ac");
+  // 2026-10-27 카드 「정량 성과」 칸의 올해 실적 절 actuals.kpiOutcome·outcomeHead·outcomeItem을 더해 집필 판만 바뀜(@02ce64ac → @130db7d3)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@130db7d3");
   assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@b1183426");
   assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@db2b1b11");
 });

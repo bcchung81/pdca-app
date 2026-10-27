@@ -2,10 +2,11 @@
 // 앱에서 사용자가 한 흐름과 같게 「구성안 다시 만들기」(짜임 지정·요청 메모 없음, 근거는 앱 기본 — 카드 + 카드 전용 자료 저장본 + 전년 절 + 평가 근거 + 공통 지식)
 // → 그 구성안 그대로 승인 → 구성안대로 집필(판면 맞추기·자동 고치기 포함)을 하고, 초안 HTML·spec·경고를 <evalDir>/drafts에, 묶음 기록을 <evalDir>/manifest.json에 씀.
 // DB는 읽기만 함(smoke가 저장하지 않음). Claude API는 부르지 않음 — claude 팔은 AI_PROVIDER=cli, 나머지는 AI_PROVIDER=codex이고 자식에는 ANTHROPIC_API_KEY를 빈 값으로 넘김.
-// 실행: node --env-file-if-exists=.env.local scripts/eval/model-compare-run.ts --out <evalDir> --cards <id,id,…> [--arms claude,sol,luna,sel] [--runs 2] [--concurrency 2] [--select-dir <폴더>] [--dry]
+// 실행: node --env-file-if-exists=.env.local scripts/eval/model-compare-run.ts --out <evalDir> --cards <id,id,…> [--arms claude,sol,luna,sel,app] [--runs 2] [--concurrency 2] [--select-dir <폴더>] [--dry]
 //  경영관리 카드(경영관리N/N-M)는 scripts/smoke/ai-report-mg-smoke.ts --app(구성안 → 그대로 승인 → 집필, 서버 runReportOutlineMg·writeMgDraft와 같음)을 부름 — 산출 파일 이름·모양은 같음.
 //  팔 sel(2026-10-26 — 지식공급 하이브리드 선별 계획 7단계): claude 팔과 같고 공통 지식만 선별 방식(자식 환경 KNOWLEDGE_SELECT=report, 자식 인자 --select-dir <폴더> — selection.json·rules/*.md,
 //   scripts/lib/select-dir.ts). 나머지 팔은 KNOWLEDGE_SELECT를 비워 통째로 넣기. 선별되지 못한 카드는 .html.meta.json·manifest의 fellBack: true(비교에서 뺄 것)
+//  팔 app(2026-10-27): claude 팔과 같고 공통 지식 설정만 지금 앱 그대로(.env.local의 KNOWLEDGE_SELECT·KNOWLEDGE_SELECT_TRACKS, 선별 결과는 운영 DB) — 현재 동작 기준선
 //  --dry: 할 일 목록(순서·이미 있는 초안)만 찍고 아무것도 부르지 않음.
 //  이어 하기: <이름>.html·.html.json이 이미 있으면 건너뜀(기록은 manifest의 앞 항목 또는 .html.meta.json에서 다시 채움). 실패한 건은 한 번 더 돌리고, 그래도 실패하면 ok:false로 남기고 다음으로.
 //  진행 줄은 <evalDir>/run.txt, 자식 출력은 <evalDir>/logs/<이름>.log.
@@ -70,6 +71,8 @@ const ARMS: Record<string, Arm> = {
   luna: codexArm("luna", "gpt-6-luna"),
   // claude 팔과 같고 공통 지식만 선별 방식(경평 구성안·집필 — KNOWLEDGE_SELECT=report)
   sel: { id: "sel", label: `Claude ${claudeName} (Claude Code CLI, effort ${claudeSpec.effort}) + 공통 지식 선별`, provider: "cli", model: claudeSpec.cliModel, effort: claudeSpec.effort, env: { AI_PROVIDER: "cli", KNOWLEDGE_SELECT: "report" }, args: selectDir ? ["--select-dir", resolve(selectDir)] : [] },
+  // claude 팔과 같고 공통 지식 설정은 지금 앱 그대로(.env.local의 KNOWLEDGE_SELECT·KNOWLEDGE_SELECT_TRACKS — 선별 결과·규칙 문서는 운영 DB에서 읽음)
+  app: { id: "app", label: `Claude ${claudeName} (Claude Code CLI, effort ${claudeSpec.effort}) + 지금 앱 설정`, provider: "cli", model: claudeSpec.cliModel, effort: claudeSpec.effort, env: { AI_PROVIDER: "cli", KNOWLEDGE_SELECT: process.env.KNOWLEDGE_SELECT ?? "", KNOWLEDGE_SELECT_TRACKS: process.env.KNOWLEDGE_SELECT_TRACKS ?? "" } },
 };
 const armIds = (flag("--arms") ?? "claude,sol,luna").split(",").map((s) => s.trim()).filter(Boolean);
 const unknownArm = armIds.find((a) => !ARMS[a]);

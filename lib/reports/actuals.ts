@@ -3,6 +3,7 @@
 // 평가 세트 기준선(2026-09-27): 핵심 수치 띠 4개 중 올해 실적이 든 것 2개, 추진성과가 모두 예상·목표인 초안 2/8 — AI가 카드의 올해 월별 실적보다 전년·목표 수치를 앞세움.
 
 import type { LooseJson } from "../loose-json.ts";
+import { KPI_COVER_MIN, kpiKeyWords, wordCover } from "./kpi-cover.ts";
 
 type Json = LooseJson;
 
@@ -16,6 +17,12 @@ export function needsIn(text: string): string[] {
 
 /** 자리표시를 걷은 글(숫자 대조용 — 자리표시 안의 시점·기간 숫자는 사실이 아님) */
 export const stripNeeds = (text: string) => String(text ?? "").replace(NEED_RE, "");
+
+/**
+ * 윗첨자 연도 바로 뒤 자리표시 안의 같은 연도를 뺌: 「^{’26년}【확인: ’26년 AI 활용 … 건수】」 → 「^{’26년}【확인: AI 활용 … 건수】」
+ * (2026-10-27 — 화면에 「’26년’26년 …」으로 보였음, 기준선 8건 중 주요사업 4건·경영관리 1건). 연도가 다르거나 「’26.4」 같은 월 시점·자리표시가 연도뿐이면 그대로
+ */
+export const dedupeNeedYear = (text: string) => text.replace(/(\^\{\s*[’'‘](\d{2})년?\s*\}\s*【확인:\s*)[’'‘](\d{2})년\s*(?=[^】\s])/g, (m, head: string, a: string, b: string) => (a === b ? head : m));
 
 /** 수치(단위가 붙은 숫자)가 든 글인가 — 날짜(7.6.)·시점(’26.7)·목록 번호는 뺌 */
 const DATE_RE = /[’']\d{2}(?:\.\d{1,2}){0,2}\.?|\(\s*\d{1,2}\.\s?\d{1,2}\.?\s*\)|\b\d{1,2}\.\s?\d{1,2}\.(?!\d)/g;
@@ -36,6 +43,8 @@ export interface KpiActual {
   expected: string;
   /** ’26년 실적 — 부서가 경평 초안 「계량 실적」에 넣은 값(reports.inputs.kpi) */
   input: string;
+  /** 카드 정량 성과 칸(outcome.quantitative)에서 이 지표에 붙인 올해 실적 줄(지표 이름 낱말이 절반 넘게 든 줄 — outcomeActuals). 없으면 빈 글·없음 */
+  outcome?: string;
 }
 
 export interface YearActuals {
@@ -44,6 +53,8 @@ export interface YearActuals {
   kpi: KpiActual[];
   /** 올해 월별 실적(카드 do.monthly) 중 수치가 든 줄 */
   monthly: Array<{ period: string; line: string }>;
+  /** 카드 정량 성과 칸의 올해 실적 줄 중 어느 계량지표에도 붙지 않은 것(붙은 줄은 KpiActual.outcome). today가 없으면 보지 않음 */
+  outcome?: string[];
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -54,14 +65,44 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
  */
 export function yearActuals(card: Json, inputs: Record<string, string> = {}, today = ""): YearActuals {
   const rows: Json[] = Array.isArray(card?.kpi?.rows) ? card.kpi.rows : [];
-  const kpi = rows
+  const kpi: KpiActual[] = rows
     .map((k, i) => ({ name: str(k?.name), unit: str(k?.unit), prev: str(k?.prev), target: str(k?.target), expected: str(k?.expected), input: str(inputs[`${card?.id}#${i}`]) }))
     .filter((k) => k.name && !/^[-–—·]+$/.test(k.name));
   const monthly: YearActuals["monthly"] = [];
   for (const m of Array.isArray(card?.do?.monthly) ? card.do.monthly : []) {
     for (const line of Array.isArray(m?.items) ? m.items : []) if (typeof line === "string" && hasFigure(line)) monthly.push({ period: str(m?.period), line: line.trim() });
   }
-  return { today, kpi, monthly };
+  const year = Number(/^(\d{4})-/.exec(today)?.[1] ?? 0);
+  if (!year) return { today, kpi, monthly };
+  // 카드 정량 성과 칸의 올해 실적(2026-10-27): 주요사업1/7-가처럼 칸에 「(’26년 목표 2.267일 → ’26년 성과 2.000일)」이 있는데 계량지표 줄이 「없음 → 【확인】」으로 알려
+  // 초안이 카드에 있는 실적을 자리표시로 비웠음(블라인드 심사). 지표 이름 낱말이 절반 넘게 든 줄은 그 지표에 붙이고, 나머지는 따로 알림
+  const keys = kpiKeyWords(kpi.map((k) => k.name));
+  const outcome: string[] = [];
+  for (const line of outcomeActuals(card, year)) {
+    const i = kpi.findIndex((k, j) => !k.outcome && wordCover(keys[j], line) >= KPI_COVER_MIN);
+    if (i >= 0) kpi[i].outcome = line;
+    else outcome.push(line);
+  }
+  return { today, kpi, monthly, outcome };
+}
+
+/** 글머리 기호로 시작하는 줄 = 새 항목(아니면 앞 줄에 이어 붙음 — 「∙ … 성과 달성(’26.8)」 다음 줄 「(’26년 목표 … → ’26년 성과 2.000일)」) */
+const ITEM_HEAD = /^[∙·•\-－○◦▪□■◆※*]/;
+
+/**
+ * 카드 정량 성과 칸(outcome.quantitative)의 올해 실적 줄: 올해 시점(’26·2026년 — 바로 뒤가 목표·예상·계획·전망이 아닌 것)과 목표·계획 값이 아닌 단위 수치(actualFigures)와
+ * 성과·실적·달성 낱말이 있고 예정·예상 줄이 아닌 것. 글머리 없이 이어지는 줄은 앞 항목에 붙여 한 줄로 봄. 따옴표 ‘26은 ’26으로 읽음.
+ * 운영 102장 중 잡히는 것: 주요사업1/7-가(「’26년 성과 2.000일」). 「목표 100% 초과 달성」(3/6-가)·「목표(40%) 100% 달성」(경영관리3/3-3)은 값이 목표 쪽이라, 「00% 증가(’26.12 예정)」(2/8-가)는 예정이라 뺌
+ */
+export function outcomeActuals(card: Json, year: number): string[] {
+  const items: string[] = [];
+  for (const raw of Array.isArray(card?.outcome?.quantitative) ? card.outcome.quantitative : []) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const line = raw.trim().replace(/‘(?=\d{2})/g, "’");
+    if (items.length && !ITEM_HEAD.test(line)) items[items.length - 1] += ` ${line}`;
+    else items.push(line);
+  }
+  return items.filter((l) => mentionsNow(l, year) && actualFigures(l).length > 0 && /성과|실적|달성/.test(l) && !/예정|예상/.test(l)).map((l) => l.replace(new RegExp(`^${ITEM_HEAD.source.slice(1)}\\s*`), ""));
 }
 
 /** 계량지표 중 올해 실적이 아직 없는 것(부서 입력도 카드 예상 칸도 비었음) — 「채울 자료」 목록용 */
@@ -125,13 +166,17 @@ export const STATS_ACTUAL_MIN = 2;
  * + 부서가 넣은 올해 계량 실적. 중복 없이
  */
 export function yearFigures(a: YearActuals): string[] {
-  const out: string[] = [];
-  for (const m of a.monthly) {
-    const line = m.line.replace(DATE_RE, " ");
-    for (const x of line.matchAll(new RegExp(FIGURE_RE.source, "g"))) if (!PLAN_BAR.test(line.slice(Math.max(0, x.index - 8), x.index))) out.push(x[0].replace(/\s+/g, ""));
-  }
+  const out: string[] = a.monthly.flatMap((m) => actualFigures(m.line));
   for (const k of a.kpi) if (/\d/.test(k.input)) out.push(`${k.input}${k.unit}`);
   return [...new Set(out)];
+}
+
+/** 줄의 단위 수치 중 날짜·시점을 빼고 바로 앞(8자 안)에 목표·계획·예상·전망이 붙지 않은 것(빈칸 걷은 모양) */
+export function actualFigures(text: string): string[] {
+  const line = text.replace(DATE_RE, " ");
+  const out: string[] = [];
+  for (const x of line.matchAll(new RegExp(FIGURE_RE.source, "g"))) if (!PLAN_BAR.test(line.slice(Math.max(0, x.index - 8), x.index))) out.push(x[0].replace(/\s+/g, ""));
+  return out;
 }
 
 /** 자리표시 상한(한 소항목) — 평가 논점에 꼭 필요한 수치에만 */

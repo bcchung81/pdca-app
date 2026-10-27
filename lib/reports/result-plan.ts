@@ -5,8 +5,11 @@
 // 실적 칸 = 주요사업 추진성과 상자(results·resultCards·resultBand·resultChart)와 라벨 「추진성과/추진실적/성과」 블록,
 //           추진실적 열 표(table:result)의 실적 칸(수치·결과 줄)과 구분표의 「추진실적」 열.
 
+import type { LooseJson } from "../loose-json.ts";
 import { stripNeeds } from "./actuals.ts";
 import type { Block } from "./blocks.ts";
+import { plainText } from "./fit.ts";
+import { bigramSet } from "./ground.ts";
 import type { ReportSectionSpec } from "./section.ts";
 
 /** 기준 시점(집필·점검 날짜) — 이보다 뒤 연·월은 아직 안 온 시점 */
@@ -118,4 +121,111 @@ export function resultPlanWarning(spec: ReportSectionSpec, today?: string): stri
   const more = hits.length > 3 ? ` 외 ${hits.length - 3}줄` : "";
   const marks = [...new Set(hits.map(([, hit]) => hit))].slice(0, 4).map((h) => `「${h}」`);
   return `실적 칸: ${shown.join(" / ")}${more} — 계획(${marks.join("·")})이 실적 칸에 있음 — 올해 한 일·결과로 바꾸거나 계획은 추진내용으로`;
+}
+
+// ---------------------------------------------------------------------------
+// 계획을 실적처럼 쓴 줄(2026-10-27 품질 측정 후속 — 참고 경고, 자동 고치기 사유·점수에는 안 넣음).
+// 블라인드 심사: 주요사업1/1-가 추진성과 「성과 산출 기준을 기존 20분 → 개선 25분으로 바꿔 실질 투입 시간 기준 확립」은 카드 [Plan] 조치 및 개선방향의 계획일 뿐
+// 적용을 마쳤다는 실행 근거가 없음. 표지 낱말(예정·할 계획)이 없어 위 「실적 칸」 점검은 못 잡음 → 실적 칸 줄이 카드 계획 줄 하나와 많이 겹치고
+// 카드의 실행 근거(추진내용·월별 실적·성과 칸·넘겨받은 자료)와는 적게 겹치면 알림.
+
+/** 줄의 글자 두 개 묶음 중 계획 줄 하나에 있는 비율이 이 값 이상 */
+export const PLAN_OVERLAP_MIN = 0.5;
+/** 줄의 글자 두 개 묶음 중 실행 근거에 있는 비율이 이 값 미만(기준선 8건: 1-가 위 줄 0.48, 계획 겹침 0.5 이상인 다른 줄은 0.71 이상) */
+export const DO_OVERLAP_MAX = 0.6;
+/** 판단할 최소 글자 두 개 묶음 수 — 표 머리·지표 이름 같은 짧은 줄(「국정과제 이행지수(%)」)은 판단하지 않음 */
+const PLAN_LINE_MIN = 8;
+
+/** 값 안의 글 전부(배열·객체를 따라 내려감, 그림 칸은 뺌) */
+function textsOf(v: LooseJson): string[] {
+  if (typeof v === "string") return [v];
+  if (Array.isArray(v)) return v.flatMap(textsOf);
+  if (v && typeof v === "object" && !("image" in v)) return Object.values(v).flatMap(textsOf);
+  return [];
+}
+
+/** 카드의 계획 줄: [Plan] 조치 및 개선방향(plan.lines) + 환류·지적 행의 개선방안 칸(경영관리 feedback·findings rows[].plan) */
+export function cardPlanLines(card: LooseJson): string[] {
+  const rows = (x: LooseJson) => (Array.isArray(x?.rows) ? x.rows : []).flatMap((r: LooseJson) => textsOf(r?.plan));
+  return [...textsOf(card?.plan?.lines), ...rows(card?.feedback), ...rows(card?.findings)].map((s) => s.trim()).filter(Boolean);
+}
+
+/** 카드의 실행 근거 글: 추진내용(do.lines)·월별 실적(do.monthly 항목, 표 칸 포함)·성과 칸(outcome 정량·정성) */
+export function cardDoText(card: LooseJson): string {
+  const monthly = (Array.isArray(card?.do?.monthly) ? card.do.monthly : []).flatMap((m: LooseJson) => textsOf(m?.items));
+  return [...textsOf(card?.do?.lines), ...monthly, ...textsOf(card?.outcome?.quantitative), ...textsOf(card?.outcome?.qualitative)].join("\n");
+}
+
+/** 묶음 a 중 b에 있는 비율 */
+const share = (a: Set<string>, b: Set<string>) => {
+  let hit = 0;
+  for (const g of a) if (b.has(g)) hit += 1;
+  return hit / a.size;
+};
+
+/**
+ * 계획을 실적처럼 쓴 실적 칸 줄: [줄, 가장 많이 겹친 카드 계획 줄]. 계획 표지(planMarker)가 있는 줄은 이미 「실적 칸」 경고가 잡으므로 뺌.
+ * evidence: 카드 밖 실행 근거 글(카드 전용 자료 등 — 있으면 실행 근거에 더함)
+ */
+export function planAsResult(spec: ReportSectionSpec, card: LooseJson, evidence = ""): Array<[string, string]> {
+  const plans = cardPlanLines(card).map((p) => [p, bigramSet(p)] as const);
+  if (!plans.length) return [];
+  const done = bigramSet(`${cardDoText(card)}\n${evidence}`);
+  const out: Array<[string, string]> = [];
+  for (const line of resultLines(spec)) {
+    if (planMarker(line)) continue;
+    const bg = bigramSet(plainText(stripNeeds(line)));
+    if (bg.size < PLAN_LINE_MIN) continue;
+    let best: readonly [string, number] = ["", 0];
+    for (const [p, pb] of plans) {
+      const v = share(bg, pb);
+      if (v > best[1]) best = [p, v];
+    }
+    if (best[1] >= PLAN_OVERLAP_MIN && share(bg, done) < DO_OVERLAP_MAX) out.push([line, best[0]]);
+  }
+  return out;
+}
+
+const short = (s: string, n = 40) => {
+  const t = plainText(s).replace(/^[\s∙·•\-→★]+/, "").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+
+/** 괄호 밖 쉼표·쌍반점으로 나눈 마디 */
+function clausesOf(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of s) {
+    if (ch === "(" || ch === "（") depth += 1;
+    else if ((ch === ")" || ch === "）") && depth > 0) depth -= 1;
+    if (depth === 0 && /[,，;]/.test(ch)) {
+      out.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  return [...out, cur].map((c) => c.trim()).filter(Boolean);
+}
+
+/** 계획 줄에서 초안 줄과 가장 많이 겹치는 마디 — 경고에 짧게 보일 부분 */
+function closestClause(plan: string, line: string): string {
+  const bg = bigramSet(plainText(stripNeeds(line)));
+  const clauses = clausesOf(plan).filter((c) => bigramSet(c).size > 0);
+  let best: readonly [string, number] = [plan, -1];
+  for (const c of clauses) {
+    const cb = bigramSet(c);
+    let hit = 0;
+    for (const g of cb) if (bg.has(g)) hit += 1;
+    if (hit > best[1]) best = [c, hit];
+  }
+  return best[0];
+}
+
+/** 경고 한 줄(참고 — warning-levels.ts 「계획→실적」). 없으면 null. 줄 2개까지 보이고 나머지는 「외 N줄」 */
+export function planAsResultWarning(spec: ReportSectionSpec, card: LooseJson, evidence = ""): string | null {
+  const hits = planAsResult(spec, card, evidence);
+  if (!hits.length) return null;
+  const shown = hits.slice(0, 2).map(([line, plan]) => `「${short(line)}」(카드 계획 「${short(closestClause(plan, line))}」)`);
+  const more = hits.length > 2 ? ` 외 ${hits.length - 2}줄` : "";
+  return `계획→실적: ${shown.join(" / ")}${more} — 카드에서는 계획인데 실행 근거(추진내용·월별 실적·성과 칸)가 적음 — 한 일이 맞으면 근거를 붙이고, 아니면 계획으로 표시`;
 }

@@ -14,6 +14,8 @@ const SOURCES = [
   "lib/reports/mg-draft.ts",
   "lib/reports/mg-outline.ts",
   "lib/reports/result-plan.ts",
+  "lib/reports/repeat-figures.ts",
+  "lib/reports/kpi-cover.ts",
   "lib/reports/composition.ts",
   "lib/reports/fit.ts",
   "lib/reports/blocks.ts",

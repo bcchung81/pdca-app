@@ -277,7 +277,7 @@ if (app) {
     usage: { outline: outlineMeta?.usage ?? null, draft: usage },
     // 요청 글 크기(글자) — 집필은 1차 요청(자동 고치기는 같은 글 끝에 고칠 점이 붙음)
     request: { outline: outlineMeta?.request ?? null, draft: requestSize(reportSystem(prompts), `${prompt}${plan ? `\n\n${planPrompt(prompts, plan, ctx.module, ctx.head)}` : ""}`) },
-    select: selectDir ? { dir: selectDir, fellBack } : null,
+    select: selectDir ? { dir: selectDir, fellBack } : kb?.select ? { dir: "db", fellBack: false } : null,
     model: modelLabel(call),
     outlineModel: outlineMeta?.model ?? null,
     provider: aiProvider(),

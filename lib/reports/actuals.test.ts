@@ -3,7 +3,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NEED_RE, NEEDS_MAX, TIMING_LABEL, hasFigure, kpiGaps, needsIn, planOnly, stripNeeds, timingOf, yearActuals, yearIssues } from "./actuals.ts";
+import { NEED_RE, NEEDS_MAX, TIMING_LABEL, dedupeNeedYear, hasFigure, kpiGaps, needsIn, outcomeActuals, planOnly, stripNeeds, timingOf, yearActuals, yearFigures, yearIssues } from "./actuals.ts";
+import { reportDraftPrompts, reportDraftPromptsMg } from "../prompts/sets.ts";
+import { cleanLine, sectionContext, sectionPrompt } from "./section.ts";
+import { mgMaterialsPrompt } from "./mg-draft.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 
 const seed = { cards: seedCards<Record<string, any>>() };
@@ -143,4 +146,67 @@ test("yearIssues: 자리표시가 NEEDS_MAX(4)개를 넘으면 경고 — 스택
   const out = yearIssues(okStats, [], needs5, 2026);
   assert.deepEqual(out, [`자리표시가 5개입니다 — 평가 논점에 꼭 필요한 수치 ${NEEDS_MAX}개까지만 남깁니다.`]);
   assert.deepEqual(yearIssues(okStats, [], "【확인: 항목1】 【확인: 항목2】", 2026), [], "상한 이하면 경고 없음");
+});
+
+// ---------------------------------------------------------------------------
+// 카드 정량 성과 칸의 올해 실적(2026-10-27 — 주요사업1/7-가: 칸에 「’26년 성과 2.000일」이 있는데 계량지표가 「없음 → 【확인】」으로 안내됐음)
+
+const OUTCOME_CARD = {
+  id: "주요사업9/7-가",
+  kpi: { rows: [{ name: "공공용 주파수 신속 공급 성과", unit: null, prev: "2.833", target: "2.267" }, { name: "이용기관 만족도", unit: "점", prev: "80", target: "85" }] },
+  outcome: {
+    quantitative: [
+      "∙ 공공용 주파수 신속 공급 성과 달성(‘26.8)",
+      "(‘26년 목표 2.267일 → ‘26년 성과 2.000일)",
+      "∙ ’26년 운용수익률 목표 100% 초과 달성",
+      "∙ 교육 운영실적 00% 증가(’26.12 예정)",
+      "∙ ’25년 대비 150% 상향된 약 4.5만회 위험 해소 예상",
+      "∙ ’26년 상반기 현장 점검 실적 120건",
+    ],
+  },
+};
+
+test("outcomeActuals: 글머리 없는 줄은 앞 항목에 붙이고, 올해 시점·목표가 아닌 수치·성과/실적/달성이 있고 예정·예상이 아닌 줄만(‘26 → ’26)", () => {
+  assert.deepEqual(outcomeActuals(OUTCOME_CARD, 2026), ["공공용 주파수 신속 공급 성과 달성(’26.8) (’26년 목표 2.267일 → ’26년 성과 2.000일)", "’26년 상반기 현장 점검 실적 120건"]);
+  assert.deepEqual(outcomeActuals(OUTCOME_CARD, 2027), [], "다른 해");
+  assert.deepEqual(outcomeActuals({ outcome: { quantitative: ["(’26년 목표 2.267일)"] } }, 2026), [], "목표 값뿐");
+});
+
+test("yearActuals: 정량 성과 줄은 이름 낱말이 맞는 계량지표에 붙고(kpi.outcome), 남은 줄은 outcome — today가 없으면 보지 않음", () => {
+  const a = yearActuals(OUTCOME_CARD, {}, "2026-10-27");
+  assert.equal(a.kpi[0].outcome, "공공용 주파수 신속 공급 성과 달성(’26.8) (’26년 목표 2.267일 → ’26년 성과 2.000일)");
+  assert.equal(a.kpi[1].outcome, undefined);
+  assert.deepEqual(a.outcome, ["’26년 상반기 현장 점검 실적 120건"]);
+  assert.equal(yearActuals(OUTCOME_CARD).outcome, undefined);
+  assert.equal(yearActuals(OUTCOME_CARD).kpi[0].outcome, undefined);
+  assert.deepEqual(kpiGaps(a).map((k) => k.name), ["공공용 주파수 신속 공급 성과", "이용기관 만족도"], "채울 자료 목록은 그대로(부서 입력·예상 칸만 봄)");
+  assert.deepEqual(yearFigures(a), [], "도식 신호(월별·부서 입력)는 그대로");
+});
+
+test("요청 글: 정량 성과 칸 실적이 붙은 계량지표는 「없음 → 【확인】」 대신 그 줄로, 남은 줄은 따로 — 두 트랙", () => {
+  const a = yearActuals(OUTCOME_CARD, {}, "2026-10-27");
+  const biz = sectionPrompt(reportDraftPrompts().prompts, OUTCOME_CARD, sectionContext(OUTCOME_CARD, []), 2026, [], [], [], [], a);
+  assert.match(biz, /계량지표 공공용 주파수 신속 공급 성과\(—\): .*’26년 실적 공공용 주파수 신속 공급 성과 달성\(’26\.8\) \(’26년 목표 2\.267일 → ’26년 성과 2\.000일\)\(카드 정량 성과 칸/);
+  assert.doesNotMatch(biz, /【확인: ’26년 공공용 주파수 신속 공급 성과】/);
+  assert.match(biz, /【확인: ’26년 이용기관 만족도】/, "붙은 줄이 없는 지표는 그대로");
+  assert.match(biz, /카드 정량 성과 칸 중 올해 실적이 든 줄[^\n]*\n {2}- ’26년 상반기 현장 점검 실적 120건/);
+  const ctx = { indicator: "지표", taskNo: "9-1", markers: [], prior: [], evals: [], cardAsOf: "" };
+  const mg = mgMaterialsPrompt(reportDraftPromptsMg().prompts, OUTCOME_CARD, ctx as never, 2026, [], [], [], a);
+  assert.match(mg, /’26년 실적 공공용 주파수 신속 공급 성과 달성.*\(카드 정량 성과 칸/);
+  assert.match(mg, /- ’26년 상반기 현장 점검 실적 120건/);
+  // 정량 성과 실적이 없으면 예전 글 그대로(새 절이 안 나옴)
+  assert.doesNotMatch(sectionPrompt(reportDraftPrompts().prompts, { id: "x" }, sectionContext({ id: "x" }, []), 2026, [], [], [], [], yearActuals({ id: "x" }, {}, "2026-10-27")), /카드 정량 성과 칸/);
+});
+
+// ---------------------------------------------------------------------------
+// 윗첨자 연도 뒤 자리표시의 같은 연도(2026-10-27 — 화면 「’26년’26년 …」)
+
+test("dedupeNeedYear·cleanLine: ^{’26년}【확인: ’26년 …】의 안쪽 같은 연도만 뺌 — 다른 연도·월 시점·연도뿐인 자리표시·윗첨자 없는 글은 그대로", () => {
+  assert.equal(dedupeNeedYear("^{’25년}30,706건 → ^{’26년}【확인: ’26년 AI 활용 고위험 작업 대체 건수】 (목표 45,000건)"), "^{’25년}30,706건 → ^{’26년}【확인: AI 활용 고위험 작업 대체 건수】 (목표 45,000건)");
+  assert.equal(dedupeNeedYear("^{’26}【확인: ’26년 소요기간(일)】"), "^{’26}【확인: 소요기간(일)】");
+  assert.equal(dedupeNeedYear("^{’26년}【확인: ’25년 실적】"), "^{’26년}【확인: ’25년 실적】");
+  assert.equal(dedupeNeedYear("^{’26년}【확인: ’26.4 전환 인원】"), "^{’26년}【확인: ’26.4 전환 인원】");
+  assert.equal(dedupeNeedYear("^{’26년}【확인: ’26년】"), "^{’26년}【확인: ’26년】");
+  assert.equal(dedupeNeedYear("’26년 건수는 【확인: ’26년 건수】"), "’26년 건수는 【확인: ’26년 건수】");
+  assert.equal(cleanLine("- 인식도 ^{’25년}89% → ^{‘26년}【확인: ‘26년 위험성평가 인식도(%)】"), "인식도 ^{’25년}89% → ^{’26년}【확인: 위험성평가 인식도(%)】", "AI 답 정리 단계에서(두 트랙 공용)");
 });

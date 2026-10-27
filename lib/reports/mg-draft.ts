@@ -25,7 +25,7 @@ import { MG_LIMITS, type MgPriorSection, mgCloseRule, mgClosePrompt, mgPartLabel
 import type { MgDraftMeta, MgPart } from "./mg-types.ts";
 import { proseIssues } from "./prose.ts";
 import { resultPlanWarning } from "./result-plan.ts";
-import { type Marker, type ReportFile, type ReportSectionSpec, cleanLine, knownNumbers, numberTokens, quoteFoundIn, resultRepeatIssue, sectionText, sourceKey, styleWarnings } from "./section.ts";
+import { type Marker, type ReportFile, type ReportSectionSpec, cleanLine, knownNumbers, numberTokens, quoteFoundIn, resultRepeatIssue, sectionText, signalWarnings, sourceKey, styleWarnings } from "./section.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 type Json = LooseJson;
@@ -138,6 +138,9 @@ export const MG_REQUEST_SECTIONS = [
   "actuals.kpiInput",
   "actuals.kpiExpected",
   "actuals.kpiNone",
+  "actuals.kpiOutcome",
+  "actuals.outcomeHead",
+  "actuals.outcomeItem",
   "actuals.monthlyHead",
   "actuals.monthlyItem",
   "actuals.monthlyNone",
@@ -202,13 +205,17 @@ export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext,
   if (actuals) {
     lines.push("", r("actuals.head", { year, today: actuals.today || "—" }));
     for (const k of actuals.kpi) {
-      const actual = k.input ? r("actuals.kpiInput", { value: k.input }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy: yy(year), name: k.name });
+      const actual = k.input ? r("actuals.kpiInput", { value: k.input }) : k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy: yy(year), name: k.name });
       lines.push(r("actuals.kpi", { name: k.name, unit: k.unit || "—", prevYY: yy(year - 1), prev: k.prev || "—", yy: yy(year), target: k.target || "—", actual }));
     }
     if (actuals.monthly.length) {
       lines.push(r("actuals.monthlyHead", { yy: yy(year) }));
       for (const m of actuals.monthly) lines.push(r("actuals.monthlyItem", { period: m.period || "—", line: m.line }));
     } else lines.push(r("actuals.monthlyNone"));
+    if (actuals.outcome?.length) {
+      lines.push(r("actuals.outcomeHead"));
+      for (const line of actuals.outcome) lines.push(r("actuals.outcomeItem", { line }));
+    }
   }
   if (lens.length) {
     lines.push("", r("lens.head"));
@@ -488,6 +495,7 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
   warnings.push(...proseIssues(spec).map((x) => `문장: ${x}`), ...mgResultRepeats(spec));
   const planned = resultPlanWarning(spec, today);
   if (planned) warnings.push(planned);
+  warnings.push(...signalWarnings(spec, card));
   return { spec, unknownNumbers, warnings };
 }
 
@@ -511,6 +519,7 @@ export function recheckMgSection(spec: ReportSectionSpec, card: Json, extraText 
   warnings.push(...proseIssues(next).map((x) => `문장: ${x}`), ...mgResultRepeats(next));
   const planned = resultPlanWarning(next, today);
   if (planned) warnings.push(planned);
+  warnings.push(...signalWarnings(next, card));
   const scores = groundScores(next, `${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}`);
   const weak = scores.filter((x) => x.overlap < GROUND_WEAK);
   if (weak.length) {

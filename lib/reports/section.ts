@@ -14,10 +14,12 @@ import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PA
 import { isStory, storyLabel } from "./frameworks.ts";
 import { cardFindings } from "./findings.ts";
 import { type DiagramHint, type HintOptions, bizVarietyIssue, diagramHints, kindUsage, ownKindsIn, repeatedKinds } from "./diagram-hints.ts";
-import { NEEDS_MAX, NEED_RE, type YearActuals, stripNeeds, yearActuals, yearFigures, yearIssues } from "./actuals.ts";
+import { NEEDS_MAX, NEED_RE, type YearActuals, dedupeNeedYear, stripNeeds, yearActuals, yearFigures, yearIssues } from "./actuals.ts";
 import { GROUND_WEAK, groundScores } from "./ground.ts";
 import { proseIssues } from "./prose.ts";
-import { resultPlanWarning } from "./result-plan.ts";
+import { kpiMissingWarning } from "./kpi-cover.ts";
+import { figureRepeatWarning } from "./repeat-figures.ts";
+import { planAsResultWarning, resultPlanWarning } from "./result-plan.ts";
 import { LENS_GROUPS, type LensRef, SURVEY_TYPES } from "./lens.ts";
 import { type PriorPick, priorLabel } from "./prior.ts";
 import type { MgDraftMeta } from "./mg-types.ts";
@@ -249,6 +251,9 @@ export const REQUEST_SECTIONS = [
   "actuals.kpiInput",
   "actuals.kpiExpected",
   "actuals.kpiNone",
+  "actuals.kpiOutcome",
+  "actuals.outcomeHead",
+  "actuals.outcomeItem",
   "actuals.monthlyHead",
   "actuals.monthlyItem",
   "actuals.monthlyNone",
@@ -381,17 +386,21 @@ export function sectionPrompt(
       card: inspectionCardText(card),
     }),
   ];
-  // 올해 실적 재료: 계량지표(’25 실적·’26 목표·’26 실적 = 부서 입력 또는 카드 예상 칸) + 월별 실적 중 수치가 든 줄(lib/reports/actuals.ts)
+  // 올해 실적 재료: 계량지표(’25 실적·’26 목표·’26 실적 = 부서 입력 → 카드 정량 성과 칸 → 카드 예상 칸) + 월별 실적 중 수치가 든 줄 + 정량 성과 칸의 남은 올해 실적 줄(lib/reports/actuals.ts)
   const yy = String(year % 100).padStart(2, "0");
   lines.push("", r("actuals.head", { year, today: actuals.today || "—" }));
   for (const k of actuals.kpi) {
-    const actual = k.input ? r("actuals.kpiInput", { value: k.input }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy, name: k.name });
+    const actual = k.input ? r("actuals.kpiInput", { value: k.input }) : k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy, name: k.name });
     lines.push(r("actuals.kpi", { name: k.name, unit: k.unit || "—", prevYY: String((year - 1) % 100).padStart(2, "0"), prev: k.prev || "—", yy, target: k.target || "—", actual }));
   }
   if (actuals.monthly.length) {
     lines.push(r("actuals.monthlyHead", { yy }));
     for (const m of actuals.monthly) lines.push(r("actuals.monthlyItem", { period: m.period || "—", line: m.line }));
   } else lines.push(r("actuals.monthlyNone"));
+  if (actuals.outcome?.length) {
+    lines.push(r("actuals.outcomeHead"));
+    for (const line of actuals.outcome) lines.push(r("actuals.outcomeItem", { line }));
+  }
   // 판면 예산: 쪽 높이·블록 영역·칸 폭별 한 줄 글자 수(lib/reports/fit.ts — 2025 판면·보고서 CSS와 같은 값)
   lines.push(
     "",
@@ -533,13 +542,15 @@ export function fitPrompt(p: ReportPrompts, ctx: SectionContext, draft: SectionO
 // 검증: 형식 정리 + 숫자 대조
 
 export const cleanLine = (s: unknown, max = 400) =>
-  reportTypography(
-    String(s ?? "")
-      .replace(/[<>]/g, "")
-      .replace(/^\s*(?:[-∙•·#]|\*(?!\*))\s*/, "") // 글머리 기호는 떼되 강조 표시(**…**)는 둠
-      .replace(/\s+/g, " ")
-      .trim(),
-  ).slice(0, max);
+  dedupeNeedYear(
+    reportTypography(
+      String(s ?? "")
+        .replace(/[<>]/g, "")
+        .replace(/^\s*(?:[-∙•·#]|\*(?!\*))\s*/, "") // 글머리 기호는 떼되 강조 표시(**…**)는 둠
+        .replace(/\s+/g, " ")
+        .trim(),
+    ),
+  ).slice(0, max); // 윗첨자 연도 뒤 자리표시의 같은 연도는 뺌(actuals.ts dedupeNeedYear)
 
 /**
  * 글자 한도로 자르되 닫히지 않은 【…】·(…)는 여는 기호 앞에서 끊음(2026-10-10 — 추진성과 3칸이 쓰인 초안 4건 중 2건이
@@ -792,6 +803,7 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   // 실적 칸의 계획 표지(2026-10-17 F1 — 경고만, 자동 고치기 사유·점수에는 안 넣음)
   const planned = resultPlanWarning(spec, today);
   if (planned) warnings.push(planned);
+  warnings.push(...signalWarnings(spec, card));
   // 근거 겹침(4단계 검증 보강): 블록 글·추진성과 문장마다 근거(카드 + 첨부·전년 절·실사 답변 — extraText)와 겹치는 말이 적으면 표시(신호일 뿐, 판정 아님).
   // 평가 기준·지적·유관기관 사례(quoteOnly)는 인용 원문 대조에만 쓰므로 여기서는 근거에 넣지 않음(다른 기관·평가위원 말을 KCA 실적 근거로 삼지 않게)
   const groundText = `${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}`;
@@ -806,6 +818,16 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   const prose = proseIssues(spec);
   warnings.push(...prose.map((x) => `문장: ${x}`));
   return { spec, unknownNumbers, warnings, yearIssues: issues, composeIssues: [...ownIssues, ...priorQuote, ...place], proseIssues: prose };
+}
+
+/**
+ * 참고 경고 셋(2026-10-27 품질 측정 후속 — 집필·다시 점검 공용, 두 트랙): 같은 수치 반복(repeat-figures.ts)·카드 계획을 실적처럼 쓴 줄(result-plan.ts planAsResult)·
+ * 카드 계량지표가 초안에 없음(kpi-cover.ts — 주요사업만, 경영관리는 지표가 많아 뺌). 경고만 — 자동 고치기 사유·점수(fix-policy.ts)에는 넣지 않음
+ */
+export function signalWarnings(spec: ReportSectionSpec, card: Json): string[] {
+  const out = [figureRepeatWarning(spec), planAsResultWarning(spec, card)];
+  if (!spec.mg) out.push(kpiMissingWarning(yearActuals(card).kpi.map((k) => k.name), sectionText(spec)));
+  return out.filter((x): x is string => Boolean(x));
 }
 
 /**
@@ -907,6 +929,7 @@ export function recheckSection(spec: ReportSectionSpec, card: Json, extraText = 
   if (repeat) warnings.push(repeat);
   const planned = resultPlanWarning(next, today);
   if (planned) warnings.push(planned);
+  warnings.push(...signalWarnings(next, card));
   const scores = groundScores(next, `${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}`);
   const weak = scores.filter((x) => x.overlap < GROUND_WEAK);
   if (weak.length) {
