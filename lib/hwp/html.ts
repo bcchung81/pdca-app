@@ -1170,7 +1170,9 @@ export const HW_CSS = `
 .hw-flow{white-space:pre-wrap;overflow-wrap:anywhere}
 .hw-flow .hw-lead{display:inline}
 .hw-edit{white-space:pre-wrap!important;overflow-wrap:anywhere}
-.hw-p.hw-edit,.hw-edit .hw-p{font-size:var(--hw-fs)!important;line-height:var(--hw-lh)!important;padding-left:var(--hw-pl);padding-right:var(--hw-pr);text-indent:var(--hw-ti);text-align:var(--hw-ta);word-break:var(--hw-wb)}
+.hw-p.hw-edit,.hw-edit .hw-p,.hw-seg.hw-edit{font-size:var(--hw-fs)!important;line-height:var(--hw-lh)!important;padding-left:var(--hw-pl);padding-right:var(--hw-pr);text-indent:var(--hw-ti);text-align:var(--hw-ta);word-break:var(--hw-wb)}
+.hw-seg.hw-edit{display:block}
+.hw-seg.hw-edit:not(:first-child){text-indent:0}
 .hw-edit .hw-l{display:inline!important;width:auto!important;height:auto!important;margin:0!important;padding:0!important;transform:none!important;line-height:inherit!important;font-size:inherit!important;white-space:pre-wrap!important;text-indent:0}
 .hw-edit .hw-bl{display:none}
 .hw-edit [data-w="q"]{display:inline!important}

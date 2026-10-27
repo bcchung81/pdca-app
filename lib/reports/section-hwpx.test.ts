@@ -291,9 +291,12 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
   assert.deepEqual(sectionHwpxInput(layoutSpec).input, sectionHwpxInput(layoutSpec).input);
 });
 
-// 값 객체(REPORT_STYLE)로 옮길 때 바이트까지 같음을 확인한 고정값 — 2026-10-21 사이 칸 5 → 3.5mm·기호 13 → 10pt·시기 화살표 4.2 → 3.2mm·좁은 칸 안 여백 3px로 갱신
+// 값 객체(REPORT_STYLE)로 옮길 때 바이트까지 같음을 확인한 고정값 — 2026-10-21 사이 칸 5 → 3.5mm·기호 13 → 10pt·시기 화살표 4.2 → 3.2mm·좁은 칸 안 여백 3px로 갱신.
+// 2026-10-26 글꼴 별칭·표지 갱신(report-fonts.ts): 별칭 @font-face(local만)·표지 덮기 규칙을 더하고, 글꼴 목록에 별칭을 넣고 KoPubWorld를 빼고,
+// 제목·라벨 −0.02em을 같은 값의 변수(--k-ls-head·--k-ls-label-t)로 바꿈. 이 네 가지를 되돌린 글이 옛 고정값 3575b10a…과 같음을 확인 —
+// 표지가 없으면(글꼴 없는 PC) 계산값은 예전과 같음(report-fonts.test.ts fontSpacingFor(""))
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "3575b10a51b225c0fbe507de47e6ca0b10a4b5a379d7197e73f7bca8951fab5f");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "dabe660f2320672670ffaae6864ce3f347ef7cbcf0c4c93346060529a6555321");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {

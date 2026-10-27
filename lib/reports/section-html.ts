@@ -2,6 +2,7 @@
 // 클래스는 lib/reports/section-css.ts(2025 최종본 실측 회색조 도식 표본)와 같습니다. 제목 수준: 실행과제 h4 · 소항목 h5.
 
 import { fitTextLines } from "./fit-dom.ts";
+import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
 import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, tableBars } from "./blocks.ts";
 import { TABLE_SHAPE_MM, blockWidth, resultRowHeadMm, soloWidth, tableRowHeadMm } from "./fit.ts";
@@ -673,7 +674,7 @@ ${REPORT_CSS}
 <body>
 <p class="meta">${esc(`${meta.year}년도 경영실적보고서${spec.mg ? `(경영관리) ${spec.mg.indicator} 초안` : "(주요사업) 평가내용2 소항목 초안"} · 과제관리카드 ${spec.card.taskNo} · ${meta.model ? `AI 초안(${meta.model})` : "초안"}${meta.generatedAt ? ` · ${meta.generatedAt}` : ""}${unknownNumbers.length ? ` · 붉은 점선 = 카드에 없는 숫자(확인 필요)` : ""}`)}</p>
 <div class="wrap">${sectionHtml(spec, unknownNumbers, opts)}</div>
-<script>/* 자간 맞춤(1~2글자 넘친 칸 글을 한 줄로) */(document.fonts ? document.fonts.ready : Promise.resolve()).then(function () { (${fitTextLines.toString()})(document); });</script>
+<script>/* 글꼴 표지(진짜 원본 글꼴이면 Noto 흉내 자간 보정을 끔 — report-fonts.ts) → 글꼴 준비 → 자간 맞춤(1~2글자 넘친 칸 글을 한 줄로) */${reportFontsScript()}.then(function () { return document.fonts ? document.fonts.ready : null; }).then(function () { (${fitTextLines.toString()})(document); });</script>
 </body>
 </html>
 `;

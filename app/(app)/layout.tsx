@@ -4,6 +4,7 @@ import Link from "next/link";
 import { NAV_COOKIE, type NavMode, navSectionsFor } from "../../components/shell/nav-items";
 import { BrandLogo } from "../../components/shell/brand-mark";
 import { NavProvider } from "../../components/shell/nav-context";
+import { ReportFontProbe } from "../../components/reports/report-font-probe";
 import { type FindItem, QuickFind } from "../../components/shell/quick-find";
 import { SideNav } from "../../components/shell/side-nav";
 import { TrackSwitch } from "../../components/shell/track-switch";
@@ -48,6 +49,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       <a href="#content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-skip rounded-md border border-navy bg-paper px-3 py-2 text-ui font-semibold text-navy">
         본문으로 건너뛰기
       </a>
+      {/* 경평 초안 글꼴 표지(<html data-kfont> — 진짜 원본 글꼴이면 화면 자간 보정을 끔, lib/reports/report-fonts.ts) */}
+      <ReportFontProbe />
       <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line-strong pr-6 pl-5">
         <div className="flex min-w-0 items-center gap-3.5">
           {/* 로고(심볼 + 글자) = 홈(역할별 첫 화면 — 부서 담당자는 내 과제, 성과관리팀·관리자는 현황) */}

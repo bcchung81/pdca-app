@@ -531,7 +531,7 @@ const FIT_TEXT = { done: "", doing: "text-st-doing-text", alert: "font-semibold 
 const SHOW_TITLE: Partial<Record<StageAction["key"], string>> = {
   "show-check": "오른쪽 「점검 결과」 탭 — 채울 자료·확인할 것을 누르면 왼쪽 초안의 그 자리로",
   "show-outline": "구성안 판면으로 바꾸고 구성안을 펼침 — 고친 뒤 「승인하고 집필」",
-  report: "경평 초안 허브에서 보고서 상태(제출·승인)를 봅니다",
+  report: "경평 초안 허브에서 보고서 상태(확정)를 봅니다",
 };
 
 /**

@@ -1,5 +1,7 @@
 // 보고서 도식 CSS — docs/analysis/diagram-html-samples.html(2025 최종본 실측 회색조·글꼴·크기)에서 옮김. 모든 규칙은 .kca-dg-doc 아래로 한정.
-// 글꼴 파일은 넣지 않습니다(기관 PC의 KoPub·맑은 고딕·HY헤드라인M을 먼저 찾고, 없으면 시스템 글꼴).
+// 글꼴 파일은 넣지 않습니다(기관 PC의 KoPub·맑은 고딕·HY헤드라인M을 먼저 찾고, 없으면 시스템 글꼴). 글꼴 이름·자간 보정은 report-fonts.ts 한 곳.
+
+import { FONT_SPACING, REPORT_FONTS, fontFaceCss, fontSpacingCss } from "./report-fonts.ts";
 
 /**
  * 화면 CSS와 한글(HWPX) 양식(lib/reports/section-hwpx.ts)이 같이 쓰는 값 — 회색조·선 굵기(pt)·글자 크기(pt)·줄간격.
@@ -33,30 +35,37 @@ const F = REPORT_STYLE.pt;
 const N = REPORT_STYLE.need;
 const J = REPORT_STYLE.join;
 const BX = REPORT_STYLE.boxPadX;
+const SP = FONT_SPACING.base;
+const A = { body: REPORT_FONTS.body.alias, dotum: REPORT_FONTS.dotum.alias, label: REPORT_FONTS.label.alias, head: REPORT_FONTS.head.alias, num: REPORT_FONTS.num.alias };
 
 export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로 — 한글 글꼴의 전각 따옴표는 「’ 25년」처럼 벌어짐(2025 최종본은 좁은 따옴표) */
 @font-face{font-family:"KcaQuoteSerif";src:local("Georgia"),local("Times New Roman"),local("Noto Serif"),local("DejaVu Serif");unicode-range:U+2018-201F}
 @font-face{font-family:"KcaQuoteSans";src:local("Arial"),local("Helvetica Neue"),local("Helvetica"),local("Noto Sans"),local("DejaVu Sans");unicode-range:U+2018-201F}
+/* 글꼴 별칭: PC에 설치된 옛 KoPub(2.0)·맑은 고딕·HY헤드라인M·함초롬바탕을 굵기별로 이름(local)으로만 찾음 — 한글 파일과 같은 글꼴(report-fonts.ts) */
+${fontFaceCss()}
 /* ───────────── 모든 규칙은 .kca-dg-doc 아래로 한정 ───────────── */
 .kca-dg-doc{
   /* 색: 2025 최종본은 전 쪽 회색조(PDF 채움색 실측) */
   --k-g0:${G.g0}; --k-g1:${G.g1}; --k-g2:${G.g2}; --k-g3:${G.g3}; --k-g4:${G.g4}; --k-g5:${G.g5}; --k-ink:${G.ink};
   --k-hair:${L.hair}pt; --k-thick:${L.thick}pt;
-  /* 글꼴: 원본 이름 우선, 없으면 Google Fonts 대체 */
-  --k-f-body:"KcaQuoteSerif","KoPubWorld바탕체","KoPubBatang","KoPub Batang","HCR Batang","Noto Serif KR",serif;
-  --k-f-label:"KcaQuoteSans","맑은 고딕","Malgun Gothic","Noto Sans KR",sans-serif;
-  --k-f-dotum:"KcaQuoteSans","KoPubWorld돋움체","KoPubDotum","KoPub Dotum","Noto Sans KR",sans-serif;
-  --k-f-head:"KcaQuoteSans","HY헤드라인M","H2hdrM","Noto Sans KR",sans-serif;
+  /* 글꼴: 따옴표 별칭 → 원본 글꼴 별칭(굵기별 local) → 원본 이름 → Google Fonts 대체 */
+  --k-f-body:"KcaQuoteSerif","${A.body}","KoPubBatang","KoPub Batang","HCR Batang","Noto Serif KR",serif;
+  --k-f-label:"KcaQuoteSans","${A.label}","맑은 고딕","Malgun Gothic","Noto Sans KR",sans-serif;
+  --k-f-dotum:"KcaQuoteSans","${A.dotum}","KoPubDotum","KoPub Dotum","Noto Sans KR",sans-serif;
+  --k-f-head:"KcaQuoteSans","${A.head}","HY헤드라인M","H2hdrM","Noto Sans KR",sans-serif;
   /* 크기: PDF 실측 pt 그대로 */
   --k-fs-body:${F.body}pt; --k-fs-small:${F.small}pt; --k-fs-label:${F.label}pt; --k-fs-sub:${F.sub}pt; --k-fs-head:${F.head}pt; --k-fs-tag:${F.tag}pt;
   --k-lh:${REPORT_STYLE.lineHeight};            /* HWP 줄간격 160%(기준선 간격 16.8pt/10.6pt) 근사 */
-  --k-ls:-0.083em;        /* 한글 글자폭 실측 0.917em(KoPub바탕L 10.6pt, 자간·장평 반영) ÷ Noto 1.0em */
-  --k-ws:0.09em;          /* 띄어쓰기 실측 0.26em 보정 */
-  --k-ls-dotum:-0.12em;   /* KoPub돋움B 실측 0.874em */
-  --k-ls-label:-0.04em;   /* 맑은고딕B 실측 0.958em */
+  /* 자간 보정(Noto로 그릴 때 원본 글꼴 폭 흉내 — 진짜 글꼴이면 <html data-kfont> 표지로 한글 파일 값 0으로 덮음, report-fonts.ts) */
+  --k-ls:${SP["--k-ls"]};        /* 한글 글자폭 실측 0.917em(KoPub바탕L 10.6pt, 자간·장평 반영) ÷ Noto 1.0em */
+  --k-ws:${SP["--k-ws"]};          /* 띄어쓰기 실측 0.26em 보정 */
+  --k-ls-dotum:${SP["--k-ls-dotum"]};   /* KoPub돋움B 실측 0.874em */
+  --k-ls-label:${SP["--k-ls-label"]};   /* 맑은고딕B 실측 0.958em */
+  --k-ls-label-t:${SP["--k-ls-label-t"]}; --k-ls-head:${SP["--k-ls-head"]};   /* 라벨 글꼴 표 머리·정의 띠·그림 설명 · 제목 */
   --k-body-w:170mm;       /* 본문 폭(실측 172mm, 안전 여유 2mm) */
   font-family:var(--k-f-label); color:var(--k-ink); position:relative; overflow-wrap:anywhere;
 }
+${fontSpacingCss()}
 .kca-dg-doc *, .kca-dg-doc *::before, .kca-dg-doc *::after{box-sizing:border-box}
 .kca-dg-doc .k-frame{width:var(--k-body-w);font-family:var(--k-f-body);font-size:var(--k-fs-body);line-height:var(--k-lh);
   letter-spacing:var(--k-ls);word-spacing:var(--k-ws);word-break:keep-all;overflow-wrap:break-word;font-weight:300;color:var(--k-ink)}
@@ -84,7 +93,7 @@ export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로
 
 /* ───────────── heading_task / heading_sub ───────────── */
 .kca-dg-doc .k-task{display:flex;align-items:center;gap:7px;margin:0 0 4px;padding:1px 0;
-  background:linear-gradient(90deg,var(--k-g2) 0%,var(--k-g1) 55%,#fff 100%);font:400 var(--k-fs-head)/1.25 var(--k-f-head);letter-spacing:-0.02em}
+  background:linear-gradient(90deg,var(--k-g2) 0%,var(--k-g1) 55%,#fff 100%);font:400 var(--k-fs-head)/1.25 var(--k-f-head);letter-spacing:var(--k-ls-head)}
 .kca-dg-doc .k-task__no{background:var(--k-g4);color:#fff;font-size:${F.taskNo}pt;padding:1px 6px;box-shadow:inset 2px 2px 0 rgba(255,255,255,.35)}
 .kca-dg-doc .k-task__t{font-weight:900}
 .kca-dg-doc .k-sub{font:700 var(--k-fs-sub)/1.3 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);margin:0 0 5px}
@@ -171,9 +180,9 @@ export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로
 .kca-dg-doc .k-kpi-head{display:grid;grid-template-columns:1fr 43mm;gap:4mm;align-items:start}
 .kca-dg-doc .k-kpi-name{display:flex;align-items:center;border:var(--k-hair) solid var(--k-ink);border-left:5pt solid var(--k-g5);padding:3px 4px;min-height:13mm}
 .kca-dg-doc .k-kpi-name .lab{background:var(--k-g2);font:700 13.6pt/1.4 var(--k-f-dotum);padding:1px 8px;white-space:nowrap}
-.kca-dg-doc .k-kpi-name .nm{flex:1;text-align:center;font:900 16pt/1.3 var(--k-f-head);letter-spacing:-0.02em}
+.kca-dg-doc .k-kpi-name .nm{flex:1;text-align:center;font:900 16pt/1.3 var(--k-f-head);letter-spacing:var(--k-ls-head)}
 .kca-dg-doc table.k-t{width:100%;border-collapse:collapse;font-size:10.6pt}
-.kca-dg-doc table.k-t th{background:var(--k-g2);font:700 10.4pt/1.45 var(--k-f-label);letter-spacing:-0.02em;padding:1px 3px;border-bottom:var(--k-hair) solid var(--k-g4);border-left:var(--k-hair) solid #fff}
+.kca-dg-doc table.k-t th{background:var(--k-g2);font:700 10.4pt/1.45 var(--k-f-label);letter-spacing:var(--k-ls-label-t);padding:1px 3px;border-bottom:var(--k-hair) solid var(--k-g4);border-left:var(--k-hair) solid #fff}
 .kca-dg-doc table.k-t td{padding:1px 4px;border-bottom:var(--k-hair) solid var(--k-g4);border-left:var(--k-hair) solid var(--k-g3);text-align:center}
 .kca-dg-doc table.k-t td:first-child,.kca-dg-doc table.k-t th:first-child{border-left:0}
 .kca-dg-doc table.k-t{border-top:var(--k-thick) solid var(--k-g4)}
@@ -181,7 +190,7 @@ export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로
 .kca-dg-doc table.k-t tr.b td{font-weight:700}
 .kca-dg-doc table.k-t td.lft{text-align:center;font-family:var(--k-f-label);font-weight:400}
 .kca-dg-doc table.k-t tr.b td.lft{font-weight:700}
-.kca-dg-doc .k-def{margin:5px 0;padding:2px 6px;text-align:center;font:700 11pt/1.55 var(--k-f-label);letter-spacing:-0.02em;
+.kca-dg-doc .k-def{margin:5px 0;padding:2px 6px;text-align:center;font:700 11pt/1.55 var(--k-f-label);letter-spacing:var(--k-ls-label-t);
   background:repeating-linear-gradient(135deg,#fff 0 3px,var(--k-g2) 3px 4px);border-top:var(--k-hair) solid var(--k-g3);border-bottom:var(--k-hair) solid var(--k-g3)}
 .kca-dg-doc .k-def span{background:linear-gradient(90deg,transparent,#fff 12%,#fff 88%,transparent);padding:0 18px}
 .kca-dg-doc .k-h5{font:700 15pt/1.3 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);margin:8px 0 3px}
@@ -205,7 +214,7 @@ export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로
 .kca-dg-doc .k-result__body{padding:3px 6px;font-weight:700;display:flex;align-items:center;background:linear-gradient(90deg,var(--k-g1),#fff 70%);margin:3pt 3pt 3pt 0}
 /* ───────────── 앱 추가: 종이·대상사업 상자·카드 격자·action_table·경고 ───────────── */
 .kca-dg-doc .k-paper{background:#fff;padding:8mm 6mm;box-shadow:0 1px 3px rgba(0,0,0,.18);width:max-content;max-width:none}
-.kca-dg-doc .k-biz{display:inline-flex;align-items:center;gap:6px;margin:0 0 5px;font:400 var(--k-fs-head)/1.3 var(--k-f-head);letter-spacing:-0.02em}
+.kca-dg-doc .k-biz{display:inline-flex;align-items:center;gap:6px;margin:0 0 5px;font:400 var(--k-fs-head)/1.3 var(--k-f-head);letter-spacing:var(--k-ls-head)}
 .kca-dg-doc .k-biz__no{background:var(--k-g2);border:var(--k-hair) solid var(--k-g4);padding:1px 8px;font-size:${F.bizNo}pt}
 .kca-dg-doc .k-cards{display:grid;gap:3mm;margin-top:3px}
 .kca-dg-doc .k-card{border:var(--k-hair) solid var(--k-g4);display:flex;flex-direction:column;min-width:0}
@@ -324,7 +333,7 @@ export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로
 .kca-dg-doc .k-figrow__main{flex:1;min-width:0}
 .kca-dg-doc .k-fig{flex:none;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 3px;box-sizing:border-box;border:1px dashed var(--k-g4);background:repeating-linear-gradient(45deg,#f1f2f1 0 5px,#e6e7e6 5px 10px);text-align:center}
 .kca-dg-doc .k-fig__kind{font:700 ${F.figKind}pt/1.25 var(--k-f-label);color:#fff;background:var(--k-g5);padding:0 4px;border-radius:2px;letter-spacing:0}
-.kca-dg-doc .k-fig__desc{font:400 ${F.figDesc}pt/1.3 var(--k-f-label);color:var(--k-g5);letter-spacing:-0.02em;word-break:keep-all;overflow-wrap:anywhere}
+.kca-dg-doc .k-fig__desc{font:400 ${F.figDesc}pt/1.3 var(--k-f-label);color:var(--k-g5);letter-spacing:var(--k-ls-label-t);word-break:keep-all;overflow-wrap:anywhere}
 .kca-dg-doc .k-fig--logo{padding:1px 2px}
 .kca-dg-doc .k-fig--logo .k-fig__desc{font-size:7pt}
 .kca-dg-doc .k-panel__b{display:flex;gap:2mm;align-items:stretch;padding-right:2mm}
@@ -367,7 +376,7 @@ export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로
 .kca-dg-doc ol.k-panel__list{list-style:none;margin:0;padding:2px 5px 3px}
 .kca-dg-doc ol.k-panel__list > li{padding-left:1.3em}
 .kca-dg-doc ol.k-panel__list > li::before{content:none}
-.kca-dg-doc .k-panel__no{position:absolute;left:0;top:0;font-family:"Haansoft Batang","HCR Batang",serif;letter-spacing:0}
+.kca-dg-doc .k-panel__no{position:absolute;left:0;top:0;font-family:"${A.num}","Haansoft Batang","HCR Batang",serif;letter-spacing:0}
 /* 우수사례 라벨 줄 */
 .kca-dg-doc .k-case__kv{padding-left:0}
 .kca-dg-doc .k-case__kv::before{content:none}
@@ -381,7 +390,7 @@ export const REPORT_CSS = `/* 따옴표(‘’“”)만 좁은 라틴 글꼴로
 .kca-dg-doc .k-stat__n{font:700 9.5pt/1.4 var(--k-f-dotum);color:var(--k-g5);margin:1px 0 0}
 /* 3단계 표현 보강(2026-09-27, 2025 119~126쪽): VS 대립 2칸 · Q&A 상자 · 수치 표 · 추진성과 막대·강조 띠 · 위첨자 비교 */
 .kca-dg-doc .k-cards--vs{display:grid;grid-template-columns:minmax(0,1fr) 9mm minmax(0,1fr);gap:0;margin-top:3px}
-.kca-dg-doc .k-vs{align-self:center;justify-self:center;width:8mm;height:8mm;border-radius:50%;background:var(--k-g5);color:#fff;display:flex;align-items:center;justify-content:center;font:900 9pt/1 var(--k-f-head);letter-spacing:-0.02em}
+.kca-dg-doc .k-vs{align-self:center;justify-self:center;width:8mm;height:8mm;border-radius:50%;background:var(--k-g5);color:#fff;display:flex;align-items:center;justify-content:center;font:900 9pt/1 var(--k-f-head);letter-spacing:var(--k-ls-head)}
 .kca-dg-doc dl.k-qa{margin:3px 0 0;border:var(--k-hair) solid var(--k-g4);border-radius:3pt;padding:2px 6px 3px;display:grid;grid-template-columns:6mm minmax(0,1fr);row-gap:0}
 .kca-dg-doc .k-qa dt,.kca-dg-doc .k-qa dd{display:contents;margin:0}
 .kca-dg-doc .k-qa dt > span:last-child{font:700 10.6pt/1.5 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);min-width:0}

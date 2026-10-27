@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Ellipsis, FolderOpen, History, PanelRightClo
 import Link from "next/link";
 import { type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { fitTextLines } from "../../lib/reports/fit-dom";
+import { reportFontsReady } from "./report-font-probe";
 import { Toast } from "../cards/review/review-ui";
 import { ListIconButton } from "../workspace/list-icon-button";
 import { PaneResizer, usePaneWidth } from "../workspace/pane-resizer";
@@ -171,10 +172,17 @@ export function DraftWorkspace(
   });
   const margin = marginOf(leftW);
   const column = columnOf(leftW);
-  // 확대·판이 바뀌면 자간 맞춤을 다시(줄 수는 실제 글꼴 폭으로 재므로 확대 뒤 다시 잼 — 여백 메모는 크기 변화로 다시 섬)
+  // 확대·판이 바뀌면 자간 맞춤을 다시(줄 수는 실제 글꼴 폭으로 재므로 확대 뒤 다시 잼 — 여백 메모는 크기 변화로 다시 섬). 글꼴 표지(자간 보정)가 달린 뒤에
   useEffect(() => {
     const el = paperRef.current;
-    if (el && shown === "draft") fitTextLines(el);
+    if (!el || shown !== "draft") return;
+    let off = false;
+    void reportFontsReady().then(() => {
+      if (!off) fitTextLines(el);
+    });
+    return () => {
+      off = true;
+    };
   }, [zoom, shown]);
 
   // Esc: 근거 자료 패널을 닫고 탭으로(더보기 메뉴가 열려 있으면 메뉴가 먼저 받음 — 메뉴는 capture 단계에서 preventDefault)
@@ -373,7 +381,7 @@ export function DraftWorkspace(
       {head}
       {props.locked && (
         <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-warn-bg px-5 py-2 text-ui text-warn">
-          <span>제출한 보고서의 과제입니다 — 고치려면 「경평 초안」에서 제출을 취소해 주세요.</span>
+          <span>확정(또는 제출)한 보고서의 과제입니다 — 고치려면 「경평 초안」에서 확정 취소(또는 제출 취소)를 해 주세요.</span>
           <Link href="/my/report" className="shrink-0 font-semibold text-link no-underline hover:underline">
             경평 초안 열기 →
           </Link>

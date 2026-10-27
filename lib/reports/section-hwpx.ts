@@ -16,6 +16,7 @@ import { writeHwpxPackage } from "../hwpx/postprocess.ts";
 import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, blockTexts, figureMm, isPanelCompare, ladderGroups, tableBars } from "./blocks.ts";
 import { PAGE_MM, TABLE_SHAPE_MM, resultBandMm, resultRowHeadMm, tableRowHeadMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
+import { fontName } from "./report-fonts.ts";
 import { REPORT_STYLE } from "./section-css.ts";
 import type { Diagram, LadderRow, MiniChart, ReportSectionSpec } from "./section.ts";
 
@@ -52,9 +53,17 @@ const BODY_W = mm(PAGE_MM.width);
 
 /**
  * 글꼴 이름(한글이 쓰는 이름 — data/templates의 한컴 저장본 header.xml에 「KoPub바탕체 Light」「KoPub돋움체 Bold」「맑은 고딕」「HY헤드라인M」이 이 이름으로 적힘.
- * 「KoPub바탕체 Bold」는 같은 이름 짜임으로 적은 것 — 한글에서 확인 필요). 글꼴 파일은 넣지 않음(금기 6). 대체 글꼴은 함초롬바탕·함초롬돋움
+ * 「KoPub바탕체 Bold」는 같은 이름 짜임으로 적은 것 — 한글에서 확인 필요). 글꼴 파일은 넣지 않음(금기 6). 대체 글꼴은 함초롬바탕·함초롬돋움.
+ * 이름은 화면 CSS 별칭과 같은 표(report-fonts.ts REPORT_FONTS)에서 굵기로 가져옴 — 굵지 않은 본문은 Light(300), 굵게는 Bold(700)
  */
-export const HWPX_FACES = { body: "KoPub바탕체 Light", bodyB: "KoPub바탕체 Bold", dotumB: "KoPub돋움체 Bold", label: "맑은 고딕", head: "HY헤드라인M", num: "함초롬바탕" } as const;
+export const HWPX_FACES = {
+  body: fontName("body", 300),
+  bodyB: fontName("body", 700),
+  dotumB: fontName("dotum", 700),
+  label: fontName("label", 400),
+  head: fontName("head", 400),
+  num: fontName("num", 400),
+} as const;
 type Face = keyof typeof HWPX_FACES;
 const FACE_ALT: Record<Face, string | null> = { body: "함초롬바탕", bodyB: "함초롬바탕", dotumB: "함초롬돋움", label: "함초롬돋움", head: "함초롬돋움", num: null };
 

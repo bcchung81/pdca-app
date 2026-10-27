@@ -77,7 +77,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my">) {
       ? {
           href: boardHref(view, a.uid, base),
           label: staff ? `${a.taskNo} 카드 보기` : a.label,
-          title: a.kind === "returned" ? `돌려받은 ${a.taskNo} 작성본을 열어 보완합니다` : a.kind === "start" ? `${a.taskNo} 카드를 열어 ${monthLabel(period)} 실적을 작성본에 반영합니다` : `${a.taskNo} 작성본을 열어 이어서 고치고 제출합니다`,
+          title: a.kind === "returned" ? `돌려받은 ${a.taskNo} 작성본을 열어 보완합니다` : a.kind === "start" ? `${a.taskNo} 카드를 열어 ${monthLabel(period)} 실적을 작성본에 반영합니다` : `${a.taskNo} 작성본을 열어 이어서 고치고 「확정(원장 반영)」을 누릅니다`,
         }
       : a.kind === "inspect"
         ? { href: toAckHref, label: staff ? "점검 결과 보기" : a.label, title: "확인할 점검 결과 목록을 엽니다" }

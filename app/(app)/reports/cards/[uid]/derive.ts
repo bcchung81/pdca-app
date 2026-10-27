@@ -115,6 +115,7 @@ export function menuOf(o: { uid: string; teamQs: string; selfHref: string; repor
         ]
       : []),
     ...(o.hasSpec && o.mg ? [{ href: hwpxHref, label: "한글 내려받기", hint: "개조식 원고(HWPX) — 도식은 표·목록으로 펼침, 그림은 자리표시", download: true }] : []),
+    { href: "/help#report-fonts", label: "글꼴 안내", hint: "화면·한글을 같은 글꼴로 — KoPub 2.0 설치" },
   ];
 }
 
@@ -173,11 +174,11 @@ export function cardRefs(card: CardRow) {
 export function draftMetaOf(o: { uid: string; spec: ReportSectionSpec | null; draft: DraftRow | null; hasOutline: boolean; stale: boolean; need: number; warn: number; staff: boolean; deptView: boolean; teamQs: string; report: ReportRef | null }): DraftMeta {
   const { spec, draft } = o;
   const submit = !o.staff
-    ? { href: "/my/report", label: "제출은 경평 초안 허브에서" }
+    ? { href: "/my/report", label: "확정은 경평 초안 허브에서" }
     : o.deptView
-      ? { href: `/my/report${o.teamQs}`, label: "제출은 경평 초안 허브에서" }
+      ? { href: `/my/report${o.teamQs}`, label: "확정은 경평 초안 허브에서" }
       : o.report
-        ? { href: withReturn(`/reports/${o.report.id}`, `/reports/cards/${o.uid}`), label: "제출·승인은 보고서 검토에서" }
+        ? { href: withReturn(`/reports/${o.report.id}`, `/reports/cards/${o.uid}`), label: "승인은 보고서 검토에서" }
         : null;
   return {
     stale: o.stale,

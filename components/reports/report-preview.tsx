@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { fitTextLines } from "../../lib/reports/fit-dom";
+import { reportFontsReady } from "./report-font-probe";
 
 /**
  * 경평 초안 미리보기: 서버가 그린 소항목 HTML을 넣고, 글꼴이 준비되면 자간 맞춤(1~2글자 넘친 칸 글을 한 줄로 — lib/reports/fit-dom.ts).
@@ -13,9 +14,12 @@ export function ReportPreview({ html, zoom }: { html: string; zoom?: number }) {
     const el = ref.current;
     if (!el) return;
     let off = false;
-    void document.fonts.ready.then(() => {
-      if (!off) fitTextLines(el);
-    });
+    // 글꼴 표지(자간 보정 켜고 끔)를 먼저 달고, 글꼴이 준비된 뒤 맞춤
+    void reportFontsReady()
+      .then(() => document.fonts.ready)
+      .then(() => {
+        if (!off) fitTextLines(el);
+      });
     return () => {
       off = true;
     };

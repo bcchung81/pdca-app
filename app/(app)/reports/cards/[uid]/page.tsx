@@ -16,6 +16,7 @@ import { cardCommentsOf, cardRefs, checkNeedsOf, draftMetaOf, menuOf, neighborsO
 import { loadCard, loadReportCardData } from "./load.ts";
 import { ReportCheck } from "./report-card-check";
 import { ReportCardPreview } from "./report-card-preview";
+import { ReportFontNotice } from "../../../../../components/reports/report-font-status";
 import { ReportToolbar, ReportToolbarEnd } from "./report-card-toolbar";
 
 export const metadata: Metadata = { title: "과제별 초안 · 경평 초안 · 경평AI비서" };
@@ -101,7 +102,12 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
       hasSpec={Boolean(spec)}
       draftInfo={spec ? `${draft?.model ?? "AI"} · ${fmtDateTime(draft?.updated_at)}` : null}
       draftMeta={draftMetaOf({ uid, spec, draft, hasOutline: Boolean(composition), stale, need: needCount, warn: warnings.length, staff, deptView, teamQs, report })}
-      toolbar={<ReportToolbar spec={spec} draft={draft} composition={composition} stale={stale} unknown={unknown} />}
+      toolbar={
+        <>
+          <ReportFontNotice />
+          <ReportToolbar spec={spec} draft={draft} composition={composition} stale={stale} unknown={unknown} />
+        </>
+      }
       toolbarEnd={<ReportToolbarEnd uid={uid} spec={spec} canWrite={canWrite} />}
       preview={<ReportCardPreview spec={spec} unknown={unknown} weak={needs.weakSentences} canWrite={canWrite} hasOutline={Boolean(composition)} />}
       outline={outlineDataOf(composition, draft, spec, outlineModule)}
