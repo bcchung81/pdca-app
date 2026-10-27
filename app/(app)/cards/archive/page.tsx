@@ -5,7 +5,7 @@ import { requireAtLeast } from "../../../../lib/auth/dal.ts";
 import { fmtDateTime } from "../../../../lib/format.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 
-export const metadata: Metadata = { title: "보관함 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "보관함 · 경영AI비서" };
 
 /** 과제 원장 · 보관함: 삭제(보관)한 과제. 되살리기(성과관리팀), 영구 삭제(관리자) */
 export default async function ArchivePage() {

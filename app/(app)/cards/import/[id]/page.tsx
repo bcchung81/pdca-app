@@ -12,7 +12,7 @@ import { createClient } from "../../../../../lib/supabase/server.ts";
 import type { ImportFileMeta } from "../actions";
 import type { LooseJson } from "../../../../../lib/loose-json.ts";
 
-export const metadata: Metadata = { title: "현행화 검토 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "현행화 검토 · 경영AI비서" };
 // Vercel Pro 최대 800초 — 과제별 초안은 판면 맞추기 두 번까지 돌면 300초에 가까움, Hobby 플랜(최대 300초)에서는 배포가 거절되므로 운영은 Pro
 export const maxDuration = 800;
 

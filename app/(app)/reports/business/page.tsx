@@ -6,7 +6,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { compareUnitId } from "../../../../lib/cards/view.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
 
-export const metadata: Metadata = { title: "사업 조판 · 경평 초안 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "사업 조판 · 경평 초안 · 경영AI비서" };
 
 /** 경평 초안 「사업 조판」 탭 첫 진입: 머리띠에서 고른 트랙의 첫 평가단위(주요사업 BZ-1·경영관리 지표 MG-1 — 숫자 순)로 보냄 */
 export default async function BusinessIndexPage() {

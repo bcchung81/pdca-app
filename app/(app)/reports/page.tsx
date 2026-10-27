@@ -16,7 +16,7 @@ import { loadUnitPartSpecs } from "../../../lib/reports/unit-parts-queries.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
 
-export const metadata: Metadata = { title: "경평 초안 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "경평 초안 · 경영AI비서" };
 
 const STATUSES: ReportStatus[] = ["preparing", "drafting", "submitted", "approved"];
 

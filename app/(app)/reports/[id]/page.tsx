@@ -17,7 +17,7 @@ import { sectionHtml } from "../../../../lib/reports/section-html.ts";
 import { submitReadiness } from "../../../../lib/reports/submission.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 
-export const metadata: Metadata = { title: "경평 초안 검토 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "경평 초안 검토 · 경영AI비서" };
 
 /**
  * 경평 초안 검토(사업 × 부서 보고서 하나): 목차에 든 과제를 과제별 초안(카드 1장 → 평가내용2 소항목) 순서로 모아 보여 줍니다.

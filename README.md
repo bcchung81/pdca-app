@@ -1,4 +1,4 @@
-# 경영평가 Sherpa — KCA 경영평가 PDCA 웹앱 (pdca-app)
+# 경영AI비서 — KCA 경영평가 PDCA 웹앱 (pdca-app)
 
 > 로고: Summit Guide(정상으로 안내하는 길) — 심볼 `components/shell/brand-mark.tsx`·탭 아이콘 `app/icon.svg`, 시안 `public/sherpa-logos.html`
 

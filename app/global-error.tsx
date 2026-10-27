@@ -10,7 +10,7 @@ export default function GlobalError({ error, retry }: { error: Error & { digest?
   return (
     <html lang="ko">
       <body style={{ margin: 0, background: "#f4f2ee", color: "#1d2433", fontFamily: "system-ui, -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif" }}>
-        <title>오류 · 경영평가 Sherpa</title>
+        <title>오류 · 경영AI비서</title>
         <main style={{ maxWidth: 560, margin: "15vh auto 0", padding: "0 16px", display: "flex", flexDirection: "column", gap: 12 }}>
           <h1 style={{ fontSize: 22, margin: 0, color: "#193d35" }}>화면을 불러오지 못했습니다</h1>
           <p style={{ fontSize: 14, lineHeight: 1.6, margin: 0, color: "#4b5160" }}>

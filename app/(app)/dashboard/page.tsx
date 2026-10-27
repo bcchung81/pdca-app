@@ -16,7 +16,7 @@ import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
 import { DEFAULT_TRACK } from "../../../lib/tracks/index.ts";
 
-export const metadata: Metadata = { title: "현황 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "현황 · 경영AI비서" };
 
 /**
  * 성과관리팀·관리자 첫 화면. 경영관리 ↔ 주요사업을 오가도 같은 틀(통계 한 줄 · 이달 할 일 · 평가단위별 · 본부→부서별)이고

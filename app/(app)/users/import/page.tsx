@@ -6,7 +6,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { loadMatchTeams } from "../../../../lib/users/service.ts";
 import { PasteImport } from "./paste-import";
 
-export const metadata: Metadata = { title: "일괄 등록 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "일괄 등록 · 경영AI비서" };
 // 줄마다 계정을 만들고 담당 과제를 지정하므로 300줄이면 수 분이 걸릴 수 있음
 export const maxDuration = 300;
 

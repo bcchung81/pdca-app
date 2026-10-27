@@ -16,7 +16,7 @@ import { buildSearchQuery } from "../../../lib/knowledge/search-query.ts";
 import { withReturn } from "../../../lib/nav/return-to.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 
-export const metadata: Metadata = { title: "공통 지식 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "공통 지식 · 경영AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const PAGE = 40;

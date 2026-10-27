@@ -12,7 +12,7 @@ import { UNIT_LABEL } from "../../../../lib/knowledge/labels.ts";
 import { PEER_DOC_ID } from "../../../../lib/knowledge/parsers/peer.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 
-export const metadata: Metadata = { title: "공통 자료·틀 · 경영평가 Sherpa" };
+export const metadata: Metadata = { title: "공통 자료·틀 · 경영AI비서" };
 /** 일반 문서를 올릴 때 서버에서 읽고 나누는 시간(큰 PDF는 오래 걸릴 수 있어 함수 최대 시간을 명시) */
 export const maxDuration = 300;
 

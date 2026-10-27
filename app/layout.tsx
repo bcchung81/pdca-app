@@ -7,8 +7,8 @@ const hahmlet = Hahmlet({ weight: ["500", "600", "700"], variable: "--font-hahml
 const plexMono = IBM_Plex_Mono({ weight: ["400", "500"], subsets: ["latin"], variable: "--font-plex-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "경영평가 Sherpa",
-  description: "Sherpa · 경영평가 Agent — 과제관리카드 · 월간 점검 · 경영실적보고서 작성 지원",
+  title: "경영AI비서",
+  description: "경영AI비서 — 과제관리카드 · 월간 점검 · 경영실적보고서 작성 지원",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

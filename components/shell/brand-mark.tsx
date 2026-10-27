@@ -10,16 +10,13 @@ export function BrandMark({ className, title }: { className?: string; title?: st
   );
 }
 
-/** 이름 → 역할 순서. 부제는 헤더에서도 최소 12px을 유지하고 두 줄 모두 줄바꿈하지 않습니다. */
+/** 로고는 「경영AI비서」 한 줄입니다. 줄바꿈하지 않습니다. */
 export function BrandLogo({ size = "header" }: { size?: "header" | "login" }) {
-  const s = size === "login" ? { mark: "size-12", gap: "gap-3", name: "text-figure", subtitle: "text-sm" } : { mark: "size-[34px]", gap: "gap-2.5", name: "text-title", subtitle: "text-xs" };
+  const s = size === "login" ? { mark: "size-12", gap: "gap-3", name: "text-figure" } : { mark: "size-[34px]", gap: "gap-2.5", name: "text-title" };
   return (
     <span className={`flex items-center ${s.gap}`}>
       <BrandMark className={`${s.mark} shrink-0`} />
-      <span className="flex flex-col gap-0.5 font-sans whitespace-nowrap text-brand-ink">
-        <span className={`${s.name} leading-none font-semibold tracking-[-0.02em]`}>Sherpa</span>
-        <span className={`${s.subtitle} leading-tight font-medium`}>경영평가 Agent</span>
-      </span>
+      <span className={`${s.name} font-sans leading-none font-semibold tracking-[-0.02em] whitespace-nowrap text-brand-ink`}>경영AI비서</span>
     </span>
   );
 }
