@@ -10,6 +10,7 @@ import {
   CHECKLIST_RESULTS,
   CHECKLIST_TITLE,
   type ChecklistRow,
+  INSPECTION_TEXT_MAX as MAX,
   type Evidence,
   type InspectionResult,
   type InspectionStatus,
@@ -22,6 +23,7 @@ import {
   type TableKey,
   caseFootnote,
   checklistIntro,
+  cleanResult,
   directionLines,
   formTablesOf,
   linkText,
@@ -94,7 +96,8 @@ export function InspectionEditor({
   // 보기(부서와 같은 「AI 컨설팅 결과」 양식) · 고치기(입력). 보낸·확인한 점검표는 보기만, 내용이 있으면 보기부터
   const [mode, setMode] = useState<"view" | "edit">(() => (locked || hasContent(initial) ? "view" : "edit"));
   const viewing = locked || mode === "view";
-  const issues = sendProblems(res);
+  // 서버와 같은 정리(공백만 있는 칸은 빈 칸) 뒤에 판정 — 화면이 보내기를 켰는데 서버가 거절하는 일이 없게
+  const issues = sendProblems(cleanResult(res, res.form));
   const t = tally(res);
   const tables = formTablesOf(res.form);
   const unverified = unverifiedCount(res);
@@ -184,7 +187,7 @@ export function InspectionEditor({
           <h3 className="text-sm font-bold text-navy">□ AI 점검 총평</h3>
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             추진현황 — 평가 기준상 현재 단계 + 연말까지의 관건(2~3줄, 활동·수치 나열 없이)
-            <textarea value={res.overview.status} disabled={locked || aiBusy} onChange={(e) => setOverview("status", e.target.value)} rows={3} className={area} />
+            <textarea value={res.overview.status} disabled={locked || aiBusy} onChange={(e) => setOverview("status", e.target.value)} maxLength={MAX.overview} rows={3} className={area} />
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             <span>
@@ -192,13 +195,13 @@ export function InspectionEditor({
               {directionLines(res.overview.direction).length > 4 && <span className="ml-2 font-normal text-warn">4줄을 넘었습니다</span>}
               {directionLines(res.overview.direction).some((l) => !l.startsWith("★")) && <span className="ml-2 font-normal text-warn">★로 시작하지 않는 줄이 있습니다</span>}
             </span>
-            <textarea value={res.overview.direction} disabled={locked || aiBusy} onChange={(e) => setOverview("direction", e.target.value)} rows={4} placeholder="★OutCome 연결·계량 수치의 함정: … → …" className={area} />
+            <textarea value={res.overview.direction} disabled={locked || aiBusy} onChange={(e) => setOverview("direction", e.target.value)} maxLength={MAX.overview} rows={4} placeholder="★OutCome 연결·계량 수치의 함정: … → …" className={area} />
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             {peerReady
               ? "★ 사례제안 — 기관명 — 사업명(등급): 잘한 점 요약(2~3줄) / 다음 줄 ▸ 인사이트: 1문장. 맞는 사례가 없으면 「해당 없음 — 붙임2에 유사 유형 사례 없음」"
               : "★ 사례제안 — 붙임2(유관기관 평가보고서 정리)가 들어오기 전에는 「기준 미확인 — 붙임2 미확보」"}
-            <textarea value={res.overview.case} disabled={locked || aiBusy} onChange={(e) => setOverview("case", e.target.value)} rows={2} className={area} />
+            <textarea value={res.overview.case} disabled={locked || aiBusy} onChange={(e) => setOverview("case", e.target.value)} maxLength={MAX.overview} rows={2} className={area} />
           </label>
           <p className="text-xs text-muted">{caseFootnote(res.form)}</p>
         </section>
@@ -257,12 +260,12 @@ export function InspectionEditor({
                         {k === "patterns" && (
                           <div className="flex min-w-0 gap-2">
                             <span className={fieldLabel}>예상 질의</span>
-                            <input value={r.question} disabled={busy} onChange={(e) => setRow(k, i, { question: e.target.value })} placeholder="위원이 이 카드에 던질 질문 1문장 …?" aria-label={`예상 질의: ${f.name}`} className={input} />
+                            <input value={r.question} disabled={busy} onChange={(e) => setRow(k, i, { question: e.target.value })} maxLength={MAX.question} placeholder="위원이 이 카드에 던질 질문 1문장 …?" aria-label={`예상 질의: ${f.name}`} className={input} />
                           </div>
                         )}
                         <div className="flex min-w-0 gap-2">
                           <span className={fieldLabel}>보완</span>
-                          <textarea value={r.fix} disabled={busy} onChange={(e) => setRow(k, i, { fix: e.target.value })} rows={2} placeholder="'칸 이름'에 무엇을 추가·보완" aria-label={`보완: ${f.name}`} className={area} />
+                          <textarea value={r.fix} disabled={busy} onChange={(e) => setRow(k, i, { fix: e.target.value })} maxLength={MAX.fix} rows={2} placeholder="'칸 이름'에 무엇을 추가·보완" aria-label={`보완: ${f.name}`} className={area} />
                         </div>
                         <div className="flex min-w-0 gap-2">
                           <span className={fieldLabel}>근거</span>
@@ -270,13 +273,13 @@ export function InspectionEditor({
                             {r.evidence.map((e, ei) => (
                               <div key={ei} className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-paper px-2 py-1.5">
                                 <div className="flex min-w-0 items-center gap-1.5">
-                                  <input value={e.source} disabled={busy} onChange={(ev) => setEvidence(k, i, ei, { source: ev.target.value })} placeholder="지식파일명+위치(예: 관리계획 '26 자가진단 · …)" aria-label="근거 출처" className={`${input} h-7 text-xs`} />
+                                  <input value={e.source} disabled={busy} onChange={(ev) => setEvidence(k, i, ei, { source: ev.target.value })} maxLength={MAX.evidenceSource} placeholder="지식파일명+위치(예: 관리계획 '26 자가진단 · …)" aria-label="근거 출처" className={`${input} h-7 text-xs`} />
                                   <EvidenceBadge e={e} />
                                   <button type="button" disabled={busy} onClick={() => setRow(k, i, { evidence: r.evidence.filter((_, n) => n !== ei) })} aria-label="근거 지우기" className="size-7 shrink-0 rounded-md border border-field-line text-xs text-muted hover:border-navy">
                                     ✕
                                   </button>
                                 </div>
-                                <textarea value={e.quote} disabled={busy} onChange={(ev) => setEvidence(k, i, ei, { quote: ev.target.value })} rows={2} placeholder="「원문 인용」 — 지식파일 원문 그대로 한 문장 이내" aria-label="근거 원문" className={`${area} text-xs leading-5`} />
+                                <textarea value={e.quote} disabled={busy} onChange={(ev) => setEvidence(k, i, ei, { quote: ev.target.value })} maxLength={MAX.evidenceQuote} rows={2} placeholder="「원문 인용」 — 지식파일 원문 그대로 한 문장 이내" aria-label="근거 원문" className={`${area} text-xs leading-5`} />
                               </div>
                             ))}
                             {r.evidence.length < 3 && (
@@ -293,7 +296,7 @@ export function InspectionEditor({
                         </div>
                         <div className="flex min-w-0 gap-2">
                           <span className={fieldLabel}>카드</span>
-                          <input value={r.card} disabled={busy} onChange={(e) => setRow(k, i, { card: e.target.value })} placeholder="'칸 이름' — 현재 상태(비었음·약함)" aria-label={`카드 근거: ${f.name}`} className={input} />
+                          <input value={r.card} disabled={busy} onChange={(e) => setRow(k, i, { card: e.target.value })} maxLength={MAX.card} placeholder="'칸 이름' — 현재 상태(비었음·약함)" aria-label={`카드 근거: ${f.name}`} className={input} />
                         </div>
                         {r.links?.length ? (
                           <div className="flex min-w-0 gap-2">
@@ -316,6 +319,7 @@ export function InspectionEditor({
                           value={r.note}
                           disabled={busy}
                           onChange={(e) => setRow(k, i, { note: e.target.value })}
+                          maxLength={MAX.note}
                           placeholder={r.judgment === "기준 미확인" ? "예: 관리계획 Ⅱ 착안사항(Do)" : r.judgment === "해당 없음" ? "예: 계량지표 없음 / 점검월 미도래(사전점검)" : "(선택) 일부 요소만 기준 미확인일 때"}
                           aria-label={`${r.judgment} 사유: ${f.name}`}
                           className={input}
@@ -339,7 +343,7 @@ export function InspectionEditor({
                 <li key={i} className={`flex min-w-0 flex-col gap-2 rounded-md border px-3 py-2.5 ${row.result === "아니오" ? "border-warn/60 bg-warn-bg/40" : "border-line"}`}>
                   <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1.5">
                     <span className="w-14 shrink-0 font-mono text-xs leading-7 text-muted-2">{row.label}</span>
-                    <input value={row.point} disabled={busy} onChange={(e) => setChecklistRow(i, { point: e.target.value })} aria-label={`점검사항 요지: ${row.label}`} className={`${input} min-w-48 grow basis-60`} />
+                    <input value={row.point} disabled={busy} onChange={(e) => setChecklistRow(i, { point: e.target.value })} maxLength={MAX.checklistPoint} aria-label={`점검사항 요지: ${row.label}`} className={`${input} min-w-48 grow basis-60`} />
                     <div className="flex shrink-0 flex-wrap gap-1" role="radiogroup" aria-label={`결과: ${row.label}`}>
                       {CHECKLIST_RESULTS.map((v) => {
                         const on = row.result === v;
@@ -353,9 +357,9 @@ export function InspectionEditor({
                   </div>
                   <div className="flex min-w-0 flex-wrap gap-2 pl-14">
                     <span className={fieldLabel}>반영과제</span>
-                    <input value={row.task} disabled={busy} onChange={(e) => setChecklistRow(i, { task: e.target.value })} placeholder="과제번호 또는 —" aria-label={`반영과제: ${row.label}`} className={`${input} w-28`} />
+                    <input value={row.task} disabled={busy} onChange={(e) => setChecklistRow(i, { task: e.target.value })} maxLength={MAX.checklistTask} placeholder="과제번호 또는 —" aria-label={`반영과제: ${row.label}`} className={`${input} w-28`} />
                     <span className={fieldLabel}>비고</span>
-                    <input value={row.note} disabled={busy} onChange={(e) => setChecklistRow(i, { note: e.target.value })} placeholder="예: 근거 카드 내용 한 줄 / 보완: 어느 칸에 무엇" aria-label={`비고: ${row.label}`} className={`${input} min-w-48 grow basis-60`} />
+                    <input value={row.note} disabled={busy} onChange={(e) => setChecklistRow(i, { note: e.target.value })} maxLength={MAX.checklistNote} placeholder="예: 근거 카드 내용 한 줄 / 보완: 어느 칸에 무엇" aria-label={`비고: ${row.label}`} className={`${input} min-w-48 grow basis-60`} />
                     <button type="button" disabled={busy} onClick={() => dropChecklistRow(i)} className="h-8 shrink-0 rounded-md border border-field-line px-2 text-xs text-muted hover:border-navy">
                       이 점검표에서 빼기
                     </button>

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { type CardMaterial, deleteCardMaterial, finishCardMaterialUpload, listCardMaterials, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
 import { FileDrop } from "../ui/file-drop";
+import { ATTACH_ACCEPT, ATTACH_LABEL } from "../../lib/ai/writer.ts";
+import { materialNameProblem } from "../../lib/cards/limits.ts";
 
 /** 카드 전용 자료: 이 카드의 실적 근거 파일(AI 작성지원·경평 초안에서 첨부로 골라 씀). 다른 카드·월간 점검에는 쓰이지 않습니다 */
 export function MaterialsPanel({ uid, readOnly, onClose }: { uid: string; readOnly: boolean; onClose: () => void }) {
@@ -37,7 +39,9 @@ export function MaterialsPanel({ uid, readOnly, onClose }: { uid: string; readOn
             items={state.items}
             canEdit={state.canEdit && !readOnly}
             compact
-            hint="실적 결과보고·보도자료·공문 등(파일당 50MB) · AI 작성지원에서 첨부로 골라 씁니다"
+            hint={`실적 결과보고·보도자료·공문 등(파일당 50MB) · 받는 형식: ${ATTACH_LABEL} · AI 작성지원에서 첨부로 골라 씁니다`}
+            accept={ATTACH_ACCEPT}
+            checkName={materialNameProblem}
             start={(name, size) => startCardMaterialUpload(uid, name, size)}
             finish={(path, name, mime, size) => finishCardMaterialUpload(uid, path, name, mime, size)}
             remove={(id) => deleteCardMaterial(id)}

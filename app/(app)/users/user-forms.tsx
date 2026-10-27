@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState, useTransition } from "react";
+import { NAME_MAX } from "../../../lib/users/name.ts";
 import type { AssignCard } from "../../../lib/users/service.ts";
 import { type UserFormState, inviteUser, setUserActive, setUserAssignments, updateUser } from "./actions";
 import { T } from "../../../components/ui/kit";
@@ -84,7 +85,7 @@ export function UserEditForm({
       </p>
       <label className={label}>
         이름·직위
-        <input name="display_name" defaultValue={user.displayName} placeholder="예: 홍길동 차장" className={field} />
+        <input name="display_name" defaultValue={user.displayName} required maxLength={NAME_MAX} placeholder="예: 홍길동 차장" className={field} />
       </label>
       <label className={label}>
         팀
@@ -119,7 +120,7 @@ export function InviteForm({ teams, isAdmin }: { teams: Team[]; isAdmin: boolean
       </label>
       <label className={label}>
         이름·직위
-        <input name="display_name" required placeholder="예: 홍길동 차장" className={field} />
+        <input name="display_name" required maxLength={NAME_MAX} placeholder="예: 홍길동 차장" className={field} />
       </label>
       <label className={label}>
         팀

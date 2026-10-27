@@ -26,6 +26,7 @@ import { currentPeriod } from "../../../lib/cards/view.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
 import { prepCardChanged } from "../../../lib/prep/triggers.ts";
+import { RETURN_NOTE_MAX } from "../../../lib/cards/limits.ts";
 
 /** 저장 결과. rev = 원장 개정 번호(원장 저장), versionId = 열린 작성본 번호(작성본 저장) — 편집기가 다음 저장에 씀 */
 export type SaveState = { status: "idle" } | { status: "ok"; message: string; at: string; rev?: number; versionId?: number } | { status: "error"; message: string };
@@ -422,7 +423,7 @@ export async function returnDraft(versionId: number, note: string): Promise<{ ok
   const me = await requireRole(["pmo", "admin"], "/cards");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 돌려보낼 수 있습니다." };
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
-  const memo = note.trim().slice(0, 1000);
+  const memo = note.trim().slice(0, RETURN_NOTE_MAX);
   if (!memo) return { ok: false, message: "돌려보내는 이유를 적어 주세요." };
   const supabase = await createClient();
   const { data, error } = await supabase.from("card_versions").update({ status: "draft", note: memo, submitted_at: null }).eq("id", versionId).eq("status", "submitted").select("id");

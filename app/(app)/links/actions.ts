@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireAtLeast } from "../../../lib/auth/dal.ts";
+import { TASK_MAP_NOTE_MAX } from "../../../lib/links/limits.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 
 /** 과제 대응표(card_knowledge_scope)의 한 행 — (과제, 조각) */
@@ -35,7 +36,7 @@ export async function setTaskMapStatus(cardId: string, status: "confirmed" | "dr
   const done = status === "confirmed";
   const { data, error } = await supabase
     .from("task_map")
-    .update({ status, note: note.trim().slice(0, 1000) || null, confirmed_by: done ? me.id : null, confirmed_at: done ? new Date().toISOString() : null })
+    .update({ status, note: note.trim().slice(0, TASK_MAP_NOTE_MAX) || null, confirmed_by: done ? me.id : null, confirmed_at: done ? new Date().toISOString() : null })
     .eq("card_id", cardId)
     .select("card_id");
   if (error || !data?.length) return { ok: false, message: "바꾸지 못했습니다." };

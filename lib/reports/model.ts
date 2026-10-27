@@ -45,6 +45,9 @@ const DEPT_MOVES = new Set(["preparing>drafting", "drafting>submitted", "submitt
 /** 성과관리팀·관리자만 하는 전이: 제출 → 승인, 승인 → 작성 중(승인 취소 — 다시 고치게 돌려보냄). 돌려보내기 메모는 서버가 따로 요구 */
 const STAFF_MOVES = new Set(["submitted>approved", "approved>drafting"]);
 
+/** 「승인 풀기」 단추가 보내는 상태(승인 → 작성 중 — 전이 표 STAFF_MOVES. 화면 단추가 표 밖으로 보내지 않게 시험이 대조) */
+export const UNAPPROVE_TO: ReportStatus = "drafting";
+
 /**
  * 보고서 상태 전이 표(규칙 한 곳 — 2026-10-10 개선 계획 P1-1). 화면 단추·서버 액션(setReportStatus)·DB 트리거(private.report_transition_ok — 같은 목록)가 같은 규칙.
  * 예전에는 성과관리팀이 아무 전이나(준비·작성 중 → 승인처럼 제출 조건을 건너뛰는 것까지) 할 수 있었음
@@ -52,6 +55,11 @@ const STAFF_MOVES = new Set(["submitted>approved", "approved>drafting"]);
 export function canMove(role: "dept_user" | "pmo" | "admin", from: ReportStatus, to: ReportStatus): boolean {
   const k = `${from}>${to}`;
   return DEPT_MOVES.has(k) || (role !== "dept_user" && STAFF_MOVES.has(k));
+}
+
+/** 부서가 고칠 점 메모가 필수인 전이: 성과관리팀의 돌려보내기(제출 → 작성 중)·승인 풀기(승인 → 작성 중). 부서의 제출 취소는 메모 없음 */
+export function needsReturnMemo(role: "dept_user" | "pmo" | "admin", from: ReportStatus, to: ReportStatus): boolean {
+  return role !== "dept_user" && to === "drafting" && (from === "submitted" || from === "approved") && canMove(role, from, to);
 }
 
 export function deptCanMove(from: ReportStatus, to: ReportStatus): boolean {

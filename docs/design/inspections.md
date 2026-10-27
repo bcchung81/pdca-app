@@ -35,7 +35,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 
 ### 2026-10-10 개선 계획 반영
 - **일괄 점검 동시 2건**: 미작성 과제를 동시 2건씩 처리(`lib/ai/pool.ts` `runPool`, 동시 수 `BATCH_CONCURRENCY` = 2 = 서버 동시 제한 `AI_LIMITS` — 넘으면 서버가 「이미 N건」으로 거절하며 `pool.test.ts`가 같음을 지킴). 실패는 건너뜀.
-- **확인한 점검표 잠금**: 서버 `inspectionWriteBlock`(`lib/inspections/model.ts`)과 DB 트리거 `guard_inspection_ack`(마이그레이션 `20261010110000_report_inspection_guards.sql`)가 둘 다 지킴 — 확인한 점검표는 누구도, 보낸 점검표는 보내기 취소만 고칠 수 있음.
+- **확인한 점검표 잠금**: 서버 `inspectionWriteBlock`(`lib/inspections/model.ts`)과 DB 트리거 `guard_inspection_ack`(마이그레이션 `20261010110000_report_inspection_guards.sql`, 보낸 점검표까지 `20261027100000_inspection_sent_guard.sql`)가 둘 다 지킴 — 확인한 점검표는 누구도, 보낸 점검표는 상태만(보내기 취소 → 초안·부서 확인) 바꿀 수 있고 내용 열은 못 바꿈. 보내기 취소 서버 경로는 상태만 초안으로 바꿈(내용은 다음 초안 저장 때 다시 계산).
 
 ## CLAUDE.md에서 옮긴 상세 (2026-10-17)
 

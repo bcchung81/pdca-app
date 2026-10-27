@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { T } from "../ui/kit";
+import { TASK_MAP_NOTE_MAX } from "../../lib/links/limits.ts";
 import { type LinkKey, bulkConfirm, setLinkStatus, setTaskMapStatus } from "../../app/(app)/links/actions";
 
 const btn = `h-7 rounded-md border px-2.5 text-xs font-semibold whitespace-nowrap ${T.off}`;
@@ -54,7 +55,7 @@ export function TaskMapForm({ cardId, status, note }: { cardId: string; status: 
     });
   return (
     <div className="flex flex-col gap-2">
-      <textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2} placeholder="메모(부서 협의 결과 등)" className="rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
+      <textarea value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={TASK_MAP_NOTE_MAX} rows={2} placeholder="메모(부서 협의 결과 등)" className="rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
       <div className="flex items-center gap-2">
         {msg && (
           <span role="status" className="text-xs text-muted-2">

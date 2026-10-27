@@ -2,6 +2,8 @@
 // 고친 칸은 「경로 → 값」 표로 들고(경로는 lib/reports/unit-parts-edit.ts 허용 경로와 같음), 원래 값과 사실상 같으면(공백·빈 줄 차이) 저장 대상에서 뺌.
 // 입력 칸은 사람이 친 그대로(끝 줄바꿈 포함) 두고, 저장 목록을 만들 때만 서버와 같은 규칙(공백 한 칸·앞뒤 공백·빈 줄 뺌)으로 정리해 견줌.
 
+import { UNIT_PART_LINES_MAX, UNIT_PART_LINE_MAX } from "./input-limits.ts";
+
 /** 고친 칸: 경로 → 값(글 목록·글·참거짓·극성·담당자 표) */
 export type EditMap = Record<string, unknown>;
 
@@ -53,6 +55,19 @@ export function editList(edits: EditMap, spec: unknown): PartEdit[] {
   return Object.entries(edits)
     .filter(([path, value]) => !same(getAtPath(spec, path), value))
     .map(([path, value]) => ({ path, value }));
+}
+
+/**
+ * 목록 칸이 서버 한도(한 줄 600자·40줄 — 넘으면 서버가 말없이 자름)를 넘으면 안내 글, 아니면 null.
+ * 서버와 같이 공백 정리·빈 줄 제외 뒤 셈. 목록이 아닌 값은 null
+ */
+export function linesOverLimit(v: unknown): string | null {
+  if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) return null;
+  const lines = (normalizeValue(v) as string[]).filter(Boolean);
+  const long = lines.findIndex((l) => l.length > UNIT_PART_LINE_MAX);
+  if (long >= 0) return `${long + 1}번째 줄이 ${lines[long].length}자입니다 — 한 줄은 ${UNIT_PART_LINE_MAX}자 이하로 줄여 주세요.`;
+  if (lines.length > UNIT_PART_LINES_MAX) return `${lines.length}줄입니다 — ${UNIT_PART_LINES_MAX}줄 이하로 줄여 주세요.`;
+  return null;
 }
 
 /** 서버 한 번 호출 분량으로 나눔 */

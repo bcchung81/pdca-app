@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { T } from "../ui/kit";
 import { archiveCard, purgeCard, restoreCard } from "../../app/(app)/cards/archive-actions";
+import { ARCHIVE_REASON_MAX } from "../../lib/cards/limits.ts";
 
 /** 색을 쓰는 곳이 더하는 단추 모양(경고색 등 T.btn 계열에 없는 색) */
 const btn = `flex h-7 shrink-0 items-center rounded-md border px-2.5 text-xs font-semibold whitespace-nowrap ${T.off}`;
@@ -76,7 +77,7 @@ export function ArchiveCardForm(props: { uid: string; onDone: (message: string) 
     <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-warn/40 bg-warn-bg px-6 py-2 text-ui">
       <span className="shrink-0 font-semibold text-warn">과제 삭제(보관)</span>
       <span className="min-w-0 text-xs text-muted-2">목록·부서 화면·AI·점검에서 빠지고 보관함에서 되살릴 수 있습니다.</span>
-      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="까닭(예: 과제 통합·폐지)" aria-label="삭제(보관)하는 까닭" className="h-8 w-56 min-w-0 rounded-md border border-field-line bg-paper px-2 text-xs" />
+      <input value={reason} maxLength={ARCHIVE_REASON_MAX} onChange={(e) => setReason(e.target.value)} placeholder="까닭(예: 과제 통합·폐지)" aria-label="삭제(보관)하는 까닭" className="h-8 w-56 min-w-0 rounded-md border border-field-line bg-paper px-2 text-xs" />
       <button
         type="button"
         disabled={pending || !reason.trim()}

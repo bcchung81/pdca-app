@@ -16,7 +16,8 @@ import {
 } from "../../app/(app)/reports/actions";
 import { fmtDateTime } from "../../lib/format.ts";
 import { type MaterialMatch, initialSelection, materialSummary, suggestCards } from "../../lib/reports/material-match.ts";
-import { COMMENT_KINDS, type ReportStatus, canMove } from "../../lib/reports/model.ts";
+import { COMMENT_KINDS, type ReportStatus, UNAPPROVE_TO, canMove } from "../../lib/reports/model.ts";
+import { KPI_VALUE_MAX } from "../../lib/reports/input-limits.ts";
 import { REVIEW_NOTE_MAX } from "../../lib/reports/submission.ts";
 import { ConfirmDialog, plain, primary } from "../ui/confirm-dialog";
 import { FileDrop, type FileItem } from "../ui/file-drop";
@@ -88,7 +89,7 @@ export interface ReportReadiness {
 }
 
 /**
- * 상태 버튼: 부서(제출 — 준비 상태를 확인 창에서 보이고 제출 · 제출 취소), 성과관리팀(돌려보내기 — 메모 필수 · 승인 — 메모 선택).
+ * 상태 버튼: 부서(제출 — 준비 상태를 확인 창에서 보이고 제출 · 제출 취소), 성과관리팀(돌려보내기·승인 풀기 — 메모 필수 · 승인 — 메모 선택).
  * readiness는 부서 제출 버튼에만 씀(제출 조건 재확인은 서버가 다시 함 — setReportStatus).
  */
 export function ReportStatusButtons({ id, status, staff, readiness }: { id: number; status: ReportStatus; staff: boolean; readiness?: ReportReadiness }) {
@@ -97,6 +98,7 @@ export function ReportStatusButtons({ id, status, staff, readiness }: { id: numb
   const [submitOpen, setSubmitOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
+  const [unapproveOpen, setUnapproveOpen] = useState(false);
   const [returnMemo, setReturnMemo] = useState("");
   const [approveMemo, setApproveMemo] = useState("");
   const ready = readiness?.ready ?? false;
@@ -167,9 +169,33 @@ export function ReportStatusButtons({ id, status, staff, readiness }: { id: numb
         </>
       )}
       {staff && status === "approved" && (
-        <button type="button" disabled={pending} onClick={() => go("submitted", "승인을 풀었습니다.")} className={plain}>
-          승인 풀기
-        </button>
+        <>
+          <button type="button" disabled={pending} onClick={() => setUnapproveOpen(true)} title="작성 중으로 되돌립니다 — 부서가 다시 고칠 수 있고, 적은 메모가 부서 화면의 검토 메모를 대신합니다" className={plain}>
+            승인 풀기
+          </button>
+          <ConfirmDialog
+            label="승인 풀기"
+            title="승인을 풀고 부서에 돌려보낼까요?"
+            open={unapproveOpen}
+            onOpenChange={setUnapproveOpen}
+            pending={pending}
+            confirmLabel="승인 풀기"
+            confirmDisabled={!returnMemo.trim()}
+            onConfirm={() =>
+              run(async () => {
+                setUnapproveOpen(false);
+                const r = await setReportStatus(id, UNAPPROVE_TO, returnMemo);
+                if (r.ok) setReturnMemo("");
+                return r;
+              }, "승인을 풀어 작성 중으로 되돌렸습니다 — 부서가 다시 고칠 수 있습니다.")
+            }
+          >
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-muted">
+              부서가 고칠 점(필수 — 부서 화면에 보입니다)
+              <textarea value={returnMemo} maxLength={REVIEW_NOTE_MAX} onChange={(e) => setReturnMemo(e.target.value)} rows={4} className="min-w-0 rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-sm text-ink" placeholder="예: 승인 뒤 바뀐 계량 실적을 반영해 주세요." />
+            </label>
+          </ConfirmDialog>
+        </>
       )}
       {staff && status === "submitted" && (
         <ConfirmDialog
@@ -375,6 +401,7 @@ export function KpiInputs({ reportId, rows, initial, canEdit }: { reportId: numb
                   <input
                     value={vals[r.key] ?? ""}
                     disabled={!canEdit}
+                    maxLength={KPI_VALUE_MAX}
                     onChange={(e) => setVals((v) => ({ ...v, [r.key]: e.target.value }))}
                     placeholder="예: 46,210건"
                     aria-label={`${r.name} 12월 잠정 실적`}

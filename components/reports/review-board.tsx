@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { COMMENT_BODY_MAX } from "../../lib/reports/input-limits.ts";
 import { addComment, setCommentStatus } from "../../app/(app)/reports/actions";
 import { fmtDateTime } from "../../lib/format.ts";
 import { COMMENT_KINDS } from "../../lib/reports/model.ts";
@@ -222,7 +223,7 @@ export function ReviewBoard({
                 </button>
               ))}
             </div>
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="코멘트 내용" aria-label="코멘트 내용" className="rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
+            <textarea value={body} maxLength={COMMENT_BODY_MAX} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="코멘트 내용" aria-label="코멘트 내용" className="rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
             <div className="flex items-center gap-2">
               {msg && (
                 <span role={msg.ok ? "status" : "alert"} className={`max-w-[220px] truncate text-xs ${msg.ok ? "text-muted-2" : "text-error"}`} title={msg.text}>

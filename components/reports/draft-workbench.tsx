@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type Dispatch, type ReactNode, type SetStateAction, useState } from "react";
 import { deleteCardMaterial, finishCardMaterialUpload, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
+import { ATTACH_ACCEPT, ATTACH_LABEL, isAttachableName } from "../../lib/ai/writer.ts";
 import { FileDrop } from "../ui/file-drop";
 import { T } from "../ui/kit";
 import { useAsk } from "../ui/confirm-dialog";
@@ -275,7 +276,9 @@ export function DraftSources(props: SourceProps & { uid: string; canWrite: boole
               list={false}
               canEdit
               compact
-              hint="한글·PDF·워드·엑셀(파일당 50MB) · 이 카드에서만 씀"
+              accept={ATTACH_ACCEPT}
+              checkName={(name) => (isAttachableName(name) ? null : `「${name}」 — ${ATTACH_LABEL} 파일만 올릴 수 있습니다.`)}
+              hint={`${ATTACH_LABEL}(파일당 50MB) · 이 카드에서만 씀`}
               start={(name, size) => startCardMaterialUpload(props.uid, name, size)}
               finish={(path, name, mime, size) => finishCardMaterialUpload(props.uid, path, name, mime, size)}
               remove={(id) => deleteCardMaterial(id)}

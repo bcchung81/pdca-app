@@ -263,6 +263,21 @@ export function emptyResult(form: FormId = FORM_ID): InspectionResult {
   };
 }
 
+/** 점검표 칸 글자 한도 — 서버 정리(cleanRow·readEvidence·cleanChecklist·readResult)와 편집 화면 maxLength가 같은 값을 씀 */
+export const INSPECTION_TEXT_MAX = {
+  overview: 2000,
+  question: 500,
+  fix: 2000,
+  card: 1000,
+  note: 1000,
+  evidenceSource: 300,
+  evidenceQuote: 600,
+  checklistPoint: 400,
+  checklistTask: 40,
+  checklistNote: 600,
+} as const;
+const TEXT_MAX = INSPECTION_TEXT_MAX;
+
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/\r\n?/g, "\n").trim().slice(0, max) : "");
 
 /** 저장된 점검표 jsonb의 칸들(검증 전 — 모든 값이 믿을 수 없는 값이라 unknown) */
@@ -287,8 +302,8 @@ function readEvidence(raw: unknown): Evidence[] {
   if (!Array.isArray(raw)) return [];
   return (raw as RawEvidence[])
     .map((e) => ({
-      source: str(e?.source, 300),
-      quote: str(e?.quote, 600).replace(/^「|」$/g, ""),
+      source: str(e?.source, TEXT_MAX.evidenceSource),
+      quote: str(e?.quote, TEXT_MAX.evidenceQuote).replace(/^「|」$/g, ""),
       key: typeof e?.key === "string" && e.key.trim() ? e.key.trim().slice(0, 200) : null,
       verified: typeof e?.verified === "boolean" ? e.verified : null,
     }))
@@ -317,11 +332,11 @@ export function cleanRow(table: TableKey, input: unknown): RowResult {
   const judgment = JUDGMENTS.includes(raw?.judgment as Judgment) ? (raw?.judgment as Judgment) : null;
   const row: RowResult = {
     judgment,
-    question: str(raw?.question, 500),
-    fix: str(raw?.fix, 2000),
+    question: str(raw?.question, TEXT_MAX.question),
+    fix: str(raw?.fix, TEXT_MAX.fix),
     evidence: readEvidence(raw?.evidence),
-    card: str(raw?.card, 1000),
-    note: str(raw?.note, 1000),
+    card: str(raw?.card, TEXT_MAX.card),
+    note: str(raw?.note, TEXT_MAX.note),
   };
   const internal = raw?.internal === true && (judgment === "충족" || judgment === "미흡") ? ({ internal: true } as const) : {};
   const links = readLinks(raw?.links);
@@ -347,10 +362,10 @@ export function cleanChecklist(input: unknown): ChecklistBlock {
     ? (raw.rows as RawChecklistRow[])
         .map((r): ChecklistRow => ({
           label: checklistText(r?.label, 40),
-          point: checklistText(r?.point, 400),
+          point: checklistText(r?.point, TEXT_MAX.checklistPoint),
           result: CHECKLIST_RESULTS.includes(r?.result as ChecklistResult) ? (r?.result as ChecklistResult) : null,
-          task: checklistText(r?.task, 40),
-          note: checklistText(r?.note, 600),
+          task: checklistText(r?.task, TEXT_MAX.checklistTask),
+          note: checklistText(r?.note, TEXT_MAX.checklistNote),
         }))
         .filter((r) => r.label || r.point)
         .slice(0, 120)
@@ -368,7 +383,7 @@ export function readResult(input: unknown): InspectionResult {
   const rows = (table: TableKey) => tables[table].rows.map((_, i) => cleanRow(table, Array.isArray(raw[table]) ? (raw[table] as unknown[])[i] : null));
   return {
     form,
-    overview: { status: str(raw.overview?.status, 2000), direction: str(raw.overview?.direction, 2000), case: str(raw.overview?.case, 2000) },
+    overview: { status: str(raw.overview?.status, TEXT_MAX.overview), direction: str(raw.overview?.direction, TEXT_MAX.overview), case: str(raw.overview?.case, TEXT_MAX.overview) },
     axes: rows("axes"),
     patterns: rows("patterns"),
     coherence: rows("coherence"),

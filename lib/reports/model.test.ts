@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { REPORT_STATUSES, canMove, cleanBlocks, deptCanMove, kpiKey, kpiRowsOf, parseTableText, reportsToStart, readBlocks, safeExt, toTableText } from "./model.ts";
+import { REPORT_STATUSES, UNAPPROVE_TO, canMove, cleanBlocks, deptCanMove, kpiKey, kpiRowsOf, needsReturnMemo, parseTableText, reportsToStart, readBlocks, safeExt, toTableText } from "./model.ts";
 
 test("블록 읽기는 형식이 맞는 것만", () => {
   const b = readBlocks([{ id: "b1", type: "heading", level: 2, text: "가" }, { id: 3, type: "paragraph" }, { id: "t", type: "table", rows: [["a", 1]] }, { id: "x", type: "image" }]);
@@ -90,4 +90,23 @@ test("초안이 먼저 있는 준비 중 보고서만 시작 대상", () => {
   ];
   assert.deepEqual(reportsToStart(reports, drafts), [1]);
   assert.deepEqual(reportsToStart(reports, []), []);
+});
+
+test("UNAPPROVE_TO: 「승인 풀기」 단추가 보내는 상태는 성과관리팀 전이 표를 통과하고 부서는 못 함", () => {
+  assert.ok(canMove("pmo", "approved", UNAPPROVE_TO));
+  assert.ok(canMove("admin", "approved", UNAPPROVE_TO));
+  assert.ok(!canMove("dept_user", "approved", UNAPPROVE_TO));
+  assert.ok(!canMove("pmo", "approved", "submitted"), "예전 단추의 승인 → 제출은 표 밖");
+});
+
+test("돌려보내기·승인 풀기는 메모 필수, 부서 제출 취소·승인·제출은 불필요", () => {
+  for (const role of ["pmo", "admin"] as const) {
+    assert.ok(needsReturnMemo(role, "submitted", "drafting"), "돌려보내기");
+    assert.ok(needsReturnMemo(role, "approved", UNAPPROVE_TO), "승인 풀기");
+    assert.ok(!needsReturnMemo(role, "submitted", "approved"), "승인");
+    assert.ok(!needsReturnMemo(role, "drafting", "submitted"), "제출");
+  }
+  assert.ok(!needsReturnMemo("dept_user", "submitted", "drafting"), "부서 제출 취소");
+  assert.ok(!needsReturnMemo("dept_user", "approved", "drafting"), "부서는 승인 못 풂");
+  assert.ok(!needsReturnMemo("pmo", "drafting", "drafting"));
 });

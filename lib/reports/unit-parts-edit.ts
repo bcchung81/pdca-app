@@ -17,6 +17,7 @@ import {
   mgUnitPartKeys,
   outcomeWarnings,
 } from "./unit-parts-mg.ts";
+import { UNIT_PART_CONTACT_MAX, UNIT_PART_LINES_MAX, UNIT_PART_LINE_MAX, UNIT_PART_TEXT_MAX } from "./input-limits.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 
@@ -201,19 +202,17 @@ const clean = (s: unknown, max: number) =>
     .trim()
     .slice(0, max);
 
-const LINE_MAX = 600;
-const LINES_MAX = 40;
 const CONTACTS_MAX = 10;
 
 /** 값 → 칸 값(형식이 틀리면 undefined) */
 function fieldValue(kind: FieldKind, v: unknown): unknown {
-  if (kind === "lines") return Array.isArray(v) ? v.map((x) => clean(x, LINE_MAX)).filter(Boolean).slice(0, LINES_MAX) : undefined;
-  if (kind === "text") return typeof v === "string" ? clean(v, 200) : undefined;
+  if (kind === "lines") return Array.isArray(v) ? v.map((x) => clean(x, UNIT_PART_LINE_MAX)).filter(Boolean).slice(0, UNIT_PART_LINES_MAX) : undefined;
+  if (kind === "text") return typeof v === "string" ? clean(v, UNIT_PART_TEXT_MAX) : undefined;
   if (kind === "bool") return typeof v === "boolean" ? v : undefined;
   if (kind === "polarity") return v === "up" || v === "down" ? v : undefined;
   if (!Array.isArray(v)) return undefined;
   return (v as Array<Record<string, unknown> | null | undefined>)
-    .map((r): ContactRow => ({ role: clean(r?.role, 100), name: clean(r?.name, 100), phone: clean(r?.phone, 100), email: clean(r?.email, 100) }))
+    .map((r): ContactRow => ({ role: clean(r?.role, UNIT_PART_CONTACT_MAX), name: clean(r?.name, UNIT_PART_CONTACT_MAX), phone: clean(r?.phone, UNIT_PART_CONTACT_MAX), email: clean(r?.email, UNIT_PART_CONTACT_MAX) }))
     .filter((r) => r.role || r.name || r.phone || r.email)
     .slice(0, CONTACTS_MAX);
 }

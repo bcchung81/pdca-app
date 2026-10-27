@@ -7,6 +7,7 @@ import type { BlockDiff, BlockKey } from "../../../lib/cards/hwp/sync.ts";
 import { T } from "../../ui/kit";
 import { CardFileUpload } from "./card-file-upload";
 import { SyncReview } from "./sync-review";
+import { SKIP_REASON_MAX } from "../../../lib/cards/limits.ts";
 
 
 /** 현행화 목록: 올리면 그 묶음의 검토 화면으로 */
@@ -83,7 +84,7 @@ export function SkipItem(props: { importId: number; itemId: number }) {
     );
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="사유(예: 부서 확인 후 다시)" className="h-8 w-48 min-w-0 rounded-md border border-field-line px-2 text-xs" aria-label="건너뛰는 사유" />
+      <input value={reason} maxLength={SKIP_REASON_MAX} onChange={(e) => setReason(e.target.value)} placeholder="사유(예: 부서 확인 후 다시)" className="h-8 w-48 min-w-0 rounded-md border border-field-line px-2 text-xs" aria-label="건너뛰는 사유" />
       <button
         type="button"
         disabled={pending}

@@ -8,6 +8,7 @@ import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { FILES_SECTIONS, type PromptFile, filesBlock } from "./writer.ts";
 import type { LooseJson } from "../loose-json.ts";
+import { COMMENT_TEXT_MAX } from "../cards/limits.ts";
 
 type Json = LooseJson;
 
@@ -31,7 +32,7 @@ export interface KeepInput {
   quote: string;
 }
 
-export const COMMENT_LIMITS = { comments: 12, text: 2000, quote: 400, keeps: 20 } as const;
+export const COMMENT_LIMITS = { comments: 12, text: COMMENT_TEXT_MAX, quote: 400, keeps: 20 } as const;
 
 /** 드래그 코멘트 프롬프트 파일(resources/prompts/card-comment)에 있어야 하는 절 */
 export const COMMENT_PROMPT_SPEC: PromptSpec = {
@@ -137,7 +138,7 @@ export function verifyComments(result: CommentResult, card: Json, targets: Map<s
   return comments.map((c) => {
     const r = result.results.find((x) => x.comment_id === c.id);
     if (!r) return { id: c.id, outcome: "declined", reply: "AI가 이 코멘트에 답하지 않았습니다. 다시 보내 주세요.", edits: [], dropped: 0 };
-    const reply = r.reply.trim().slice(0, 2000);
+    const reply = r.reply.trim().slice(0, COMMENT_TEXT_MAX);
     if (c.kind === "ask") return { id: c.id, outcome: r.outcome === "declined" ? "declined" : "answered", reply, edits: [], dropped: r.edits.length };
     const seen = new Set<string>();
     const edits: VerifiedEdit[] = [];

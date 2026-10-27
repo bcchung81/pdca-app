@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type MouseEvent as ReactMouseEvent, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { saveDraftTexts } from "../../app/(app)/reports/cards/edit-actions";
+import { DRAFT_TEXT_EDITS_MAX, DRAFT_TEXT_MAX } from "../../lib/reports/input-limits.ts";
 import { useAutosave } from "../workspace/autosave";
 
 /** 자동 저장 기다림(과제원장 편집기와 같음) */
@@ -43,6 +44,13 @@ export function useDraftTextEdit(opts: { uid: string; version: string | null; en
   useEffect(() => {
     versionRef.current = opts.version;
   }, [opts.version]);
+
+  /** 서버가 말없이 자르는 한도(글 600자·한 번에 60건)를 넘으면 안내 글 — 넘는 고침은 모으지 않음 */
+  const overLimit = (path: string, text: string): string | null => {
+    if (text.length > DRAFT_TEXT_MAX) return `${text.length}자입니다 — ${DRAFT_TEXT_MAX}자 이하로 줄여 주세요.`;
+    if (!pending.current.has(path) && pending.current.size >= DRAFT_TEXT_EDITS_MAX) return `저장 안 한 고침이 ${DRAFT_TEXT_EDITS_MAX}건입니다 — 먼저 「지금 저장」을 눌러 주세요.`;
+    return null;
+  };
 
   const bump = () => setPendingCount(pending.current.size);
 
@@ -156,6 +164,11 @@ export function useDraftTextEdit(opts: { uid: string; version: string | null; en
     const onInput = () => {
       const text = read();
       if (text === saved.trim() && !pending.current.has(path)) return;
+      const bad = overLimit(path, text);
+      if (bad) {
+        setStatus({ kind: "error", text: bad });
+        return;
+      }
       record(path, text, join, false);
     };
     const end = () => {
@@ -163,7 +176,16 @@ export function useDraftTextEdit(opts: { uid: string; version: string | null; en
       done = true;
       const text = read();
       finish();
-      if (text === saved.trim()) {
+      const bad = text === saved.trim() ? null : overLimit(path, text);
+      if (bad) {
+        // 한도를 넘는 고침은 저장하지 않고 이번 고침을 취소(Esc와 같음)
+        if (hadPending) pending.current.set(path, hadPending);
+        else pending.current.delete(path);
+        bump();
+        el.innerHTML = html;
+        setStatus({ kind: "error", text: bad });
+        opts.onError(`저장하지 않았습니다 — ${bad}`);
+      } else if (text === saved.trim()) {
         // 고치기 전 저장된 글로 돌아왔으면 모은 고침도 뺌
         if (pending.current.delete(path)) bump();
         el.innerHTML = el.dataset.savedHtml ?? html;

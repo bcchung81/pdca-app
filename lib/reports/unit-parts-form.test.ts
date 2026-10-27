@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EDITS_PER_CALL, chunkEdits, editList, getAtPath, linesToText, normalizeValue, setEdit, textToLines, valueAt } from "./unit-parts-form.ts";
+import { EDITS_PER_CALL, chunkEdits, editList, getAtPath, linesOverLimit, linesToText, normalizeValue, setEdit, textToLines, valueAt } from "./unit-parts-form.ts";
 
 const spec = {
   part: "findings",
@@ -54,4 +54,12 @@ test("줄 ↔ 입력 글은 끝 줄바꿈까지 왕복", () => {
   assert.deepEqual(textToLines("a\nb\n"), ["a", "b", ""]);
   assert.equal(linesToText(textToLines("a\nb\n")), "a\nb\n");
   assert.equal(linesToText(undefined), "");
+});
+
+test("linesOverLimit: 한 줄 600자·40줄을 넘으면 안내 글(서버가 말없이 자르는 한도), 빈 줄·공백은 서버처럼 정리해 셈", () => {
+  assert.equal(linesOverLimit(["짧은 글", "", "  "]), null);
+  assert.match(linesOverLimit(["가".repeat(601)]) ?? "", /1번째 줄이 601자/);
+  assert.equal(linesOverLimit(["가".repeat(600)]), null);
+  assert.match(linesOverLimit(Array.from({ length: 41 }, (_, i) => `줄 ${i}`)) ?? "", /41줄/);
+  assert.equal(linesOverLimit("글"), null);
 });

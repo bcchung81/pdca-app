@@ -10,6 +10,7 @@ import { type BlockEditRequest, type ResultBox, RESULT_INDEX, applyBlockEdit, ap
 import { type ShapeRules, blockShapeCode, blockShapeName, shapeDelta, shapeRules } from "../../../../lib/reports/block-shape.ts";
 import { applyDraftText, blockAt } from "../../../../lib/reports/draft-text.ts";
 import type { Block, BlockOutput } from "../../../../lib/reports/blocks.ts";
+import { DRAFT_TEXT_EDITS_MAX, DRAFT_TEXT_MAX } from "../../../../lib/reports/input-limits.ts";
 import { readComposition } from "../../../../lib/reports/composition.ts";
 import { blocksSampleHtml } from "../../../../lib/reports/section-html.ts";
 import { requireUser } from "../../../../lib/auth/dal.ts";
@@ -314,14 +315,14 @@ export async function saveDraftTexts(uid: string, raw: { edits: Array<{ path: st
   const d = await loadDraftForEdit(uid);
   if (!d) return { ok: false, message: "고칠 초안이 없습니다(블록 목록 초안만 고칠 수 있음)." };
   if (String(raw?.version ?? "") !== d.version) return { ok: false, conflict: true, message: "그사이 초안이 바뀌었습니다(다시 만들기·다른 수정). 화면을 새로 고친 뒤 다시 고쳐 주세요." };
-  const edits = (Array.isArray(raw?.edits) ? raw.edits : []).slice(0, 60);
+  const edits = (Array.isArray(raw?.edits) ? raw.edits : []).slice(0, DRAFT_TEXT_EDITS_MAX);
   if (!edits.length) return { ok: true, version: d.version, changed: 0, unknown: 0, message: "저장할 변경이 없습니다." };
   // 모두 적용해 본 뒤 저장(하나라도 잘못된 경로면 저장하지 않음)
   let spec = d.spec;
   const touched = new Set<number>();
   let changed = 0;
   for (const e of edits) {
-    const r = applyDraftText(spec, { path: String(e?.path ?? ""), text: cleanLine(e?.text, 600), join: e?.join || undefined });
+    const r = applyDraftText(spec, { path: String(e?.path ?? ""), text: cleanLine(e?.text, DRAFT_TEXT_MAX), join: e?.join || undefined });
     if (!r.ok) return { ok: false, message: r.message };
     if (!r.changed) continue;
     spec = r.spec;

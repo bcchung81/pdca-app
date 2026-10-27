@@ -54,10 +54,21 @@ export async function saveInspection(uid: string, period: string, payload: unkno
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id, eval_unit_id").eq("uid", uid).maybeSingle();
   if (!card) return { status: "error", message: "카드를 찾을 수 없습니다." };
-  const { data: existing } = await supabase.from("inspections").select("id, status").eq("card_id", card.id).eq("period", period).maybeSingle();
-  // 초안만 저장·보내기, 보낸 점검표는 보내기 취소만, 확인한 점검표는 아무것도(lib/inspections/model.ts — DB 트리거도 확인한 점검표를 막음)
+  const { data: existing } = await supabase.from("inspections").select("id, status, result").eq("card_id", card.id).eq("period", period).maybeSingle();
+  // 초안만 저장·보내기, 보낸 점검표는 보내기 취소만, 확인한 점검표는 아무것도(lib/inspections/model.ts — DB 트리거 guard_inspection_ack도 같은 규칙)
   const blocked = inspectionWriteBlock(existing?.status ?? null, intent);
   if (blocked) return { status: "error", message: blocked };
+  // 보내기 취소는 상태만 초안으로(내용 열은 그대로 — 보낸 점검표의 내용 변경은 DB 트리거가 거절, 20261027100000)
+  if (intent === "unsend" && existing?.status === "sent") {
+    const { data, error } = await supabase.from("inspections").update({ status: "draft" }).eq("id", existing.id).eq("status", "sent").select("id");
+    if (error || !data?.length) {
+      console.error("saveInspection unsend", error?.message ?? "0 rows");
+      return { status: "error", message: "보내기를 취소하지 못했습니다." };
+    }
+    revalidatePath("/inspections");
+    revalidatePath("/my/inspections");
+    return { status: "ok", result: readResult(existing.result), message: "보내기를 취소했습니다(초안)." };
+  }
 
   const refs = await gatherInspectionKnowledge(supabase, card.eval_unit_id);
   const result = recheckEvidence(cleanResult(payload, trackSpecOfUnit(card.eval_unit_id).inspectionForm), refs);

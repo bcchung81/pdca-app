@@ -4,7 +4,8 @@ import { Plus, X } from "lucide-react";
 import Link from "next/link";
 import { withReturn } from "../../lib/nav/return-to.ts";
 import { T } from "../ui/kit";
-import { type EditMap, linesToText, textToLines, valueAt } from "../../lib/reports/unit-parts-form.ts";
+import { UNIT_PART_CONTACT_MAX, UNIT_PART_TEXT_MAX } from "../../lib/reports/input-limits.ts";
+import { type EditMap, linesToText, linesOverLimit, textToLines, valueAt } from "../../lib/reports/unit-parts-form.ts";
 import type { ContactRow, CoverPart, FindingsPart, OutcomePart, PriorPart, UnitPart } from "../../lib/reports/unit-parts-mg.ts";
 
 /**
@@ -62,6 +63,7 @@ function Lines({ ctx, path, name, hint }: { ctx: FormCtx; path: string; name: st
   const value = valueAt(ctx.edits, ctx.spec, path);
   const text = linesToText(value);
   const dirty = path in ctx.edits;
+  const over = ctx.editable ? linesOverLimit(value) : null;
   const Wrap = ctx.editable ? "label" : "div";
   return (
     <Wrap className="flex min-w-0 flex-col gap-0.5">
@@ -77,7 +79,7 @@ function Lines({ ctx, path, name, hint }: { ctx: FormCtx; path: string; name: st
           onChange={(e) => ctx.set(path, textToLines(e.target.value))}
           placeholder={hint ?? "한 줄이 불릿 하나입니다. 「- 」로 시작하면 하위 줄입니다."}
           aria-label={name}
-          className={`${field} resize-y ${dirty ? "border-warn" : ""}`}
+          className={`${field} resize-y ${over ? "border-error" : dirty ? "border-warn" : ""}`}
         />
       ) : (
         <ul className="flex min-w-0 flex-col gap-0.5 text-ui leading-5 text-ink">
@@ -91,6 +93,11 @@ function Lines({ ctx, path, name, hint }: { ctx: FormCtx; path: string; name: st
             <li className="text-muted-2">비어 있음</li>
           )}
         </ul>
+      )}
+      {over && (
+        <span role="alert" className="text-xs text-error">
+          {over}
+        </span>
       )}
     </Wrap>
   );
@@ -107,7 +114,7 @@ function Text({ ctx, path, name }: { ctx: FormCtx; path: string; name: string })
         {dirty && <span className="ml-1 font-normal text-warn">· 고침</span>}
       </span>
       {ctx.editable ? (
-        <input value={value} disabled={ctx.busy} onChange={(e) => ctx.set(path, e.target.value)} aria-label={name} className={`h-8 ${field} ${dirty ? "border-warn" : ""}`} />
+        <input value={value} maxLength={UNIT_PART_TEXT_MAX} disabled={ctx.busy} onChange={(e) => ctx.set(path, e.target.value)} aria-label={name} className={`h-8 ${field} ${dirty ? "border-warn" : ""}`} />
       ) : (
         <span className="text-ui text-ink">{value || "—"}</span>
       )}
@@ -169,7 +176,7 @@ function CoverForm({ ctx, part }: { ctx: FormCtx; part: CoverPart }) {
           {contacts.map((r, i) => (
             <li key={i} className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-center gap-1.5">
               {COLS.map(([key, name]) => (
-                <input key={key} value={r[key]} disabled={!ctx.editable || ctx.busy} onChange={(e) => setRow(i, key, e.target.value)} placeholder={name} aria-label={`담당자 ${i + 1} ${name}`} className={`h-8 ${field}`} />
+                <input key={key} value={r[key]} maxLength={UNIT_PART_CONTACT_MAX} disabled={!ctx.editable || ctx.busy} onChange={(e) => setRow(i, key, e.target.value)} placeholder={name} aria-label={`담당자 ${i + 1} ${name}`} className={`h-8 ${field}`} />
               ))}
               {ctx.editable && (
                 <button type="button" disabled={ctx.busy} onClick={() => ctx.set("human.contacts", contacts.filter((_, j) => j !== i))} aria-label={`담당자 ${i + 1} 행 지우기`} title="이 행 지우기" className="col-span-2 flex h-6 w-fit items-center gap-1 text-xs text-muted hover:text-warn">

@@ -2,10 +2,10 @@
 // 미리보기 화면(팀을 바꿀 때마다 다시 셈)과 서버의 반영 액션이 같은 함수를 씁니다. 서버는 클라이언트가 보낸 값을 믿지 않고 이 판정을 다시 돌립니다.
 
 import type { AppRole } from "../auth/access.ts";
+import { checkDisplayName } from "./name.ts";
 import { cleanCell } from "./paste.ts";
 import type { ExistingSnapshot, TeamRef } from "./types.ts";
 
-export const NAME_MAX = 40;
 export const EMAIL_MAX = 254;
 
 /** 붙여넣기로 등록할 수 있는 권한: 부서 담당자 · 성과관리팀(관리자만 고를 수 있음) */
@@ -78,12 +78,12 @@ const blank = (status: PlanStatus, input: PlanInput, name: string, email: string
 
 /** 한 줄 판정. seen은 앞선 줄에서 나온 이메일(중복 검사용) — planRows가 채웁니다 */
 export function planRow(input: PlanInput, ctx: PlanContext, seen: ReadonlySet<string> = new Set()): PlannedRow {
-  const name = cleanCell(input.name);
+  const checked = checkDisplayName(input.name);
+  const name = checked.name;
   const email = extractEmail(input.email);
   if (!email) return blank("invalid", input, name, "", "이메일 주소를 읽지 못했습니다");
-  if (!name) return blank("invalid", input, name, email, "이름이 비어 있습니다");
   if (name.includes("@")) return blank("invalid", input, name, email, "이름 칸에 메일 주소가 들어 있습니다 — 열 순서를 확인해 주세요");
-  if (name.length > NAME_MAX) return blank("invalid", input, name, email, `이름이 ${NAME_MAX}자를 넘습니다`);
+  if (!checked.ok) return blank("invalid", input, name, email, checked.message);
   if (seen.has(email)) return blank("duplicate", input, name, email, "붙여넣은 표 안에서 같은 메일이 앞에 이미 있습니다");
 
   const role: PlanRole = input.role === "pmo" ? "pmo" : "dept_user";

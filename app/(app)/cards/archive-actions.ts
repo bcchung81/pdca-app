@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/dal.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { prepCardAdded } from "../../../lib/prep/triggers.ts";
+import { ARCHIVE_REASON_MAX } from "../../../lib/cards/limits.ts";
 
 // 과제 삭제 = 보관(되살릴 수 있음). 보관한 과제는 목록·부서 화면·AI·점검·보고서에서 빠지고, 부서는 읽지도 쓰지도 못합니다(RLS).
 // 영구 삭제는 관리자만, 보관함에서 과제번호를 한 번 더 적어 확인한 뒤 — 작성본·점검·이력·자료 파일까지 함께 지워집니다.
@@ -13,7 +14,7 @@ type Result = { ok: boolean; message: string };
 export async function archiveCard(uid: string, reason: string): Promise<Result> {
   const me = await requireRole(["pmo", "admin"], "/cards");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 과제를 삭제(보관)할 수 있습니다." };
-  const why = String(reason ?? "").trim().slice(0, 300);
+  const why = String(reason ?? "").trim().slice(0, ARCHIVE_REASON_MAX);
   if (!why) return { ok: false, message: "삭제(보관)하는 까닭을 적어 주세요." };
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id, data, status").eq("uid", uid).maybeSingle();

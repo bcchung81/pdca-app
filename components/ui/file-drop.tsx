@@ -47,6 +47,8 @@ export function FileDrop(props: {
   hint: string;
   maxLabel?: string;
   accept?: string;
+  /** 올리기 전 파일 이름 검사 — 거절 문구를 돌려주면 그 파일은 올리지 않고 보임(없으면 검사 안 함) */
+  checkName?: (name: string) => string | null;
   start: StartUpload;
   finish: FinishUpload;
   remove: (id: string) => Promise<Ok>;
@@ -67,6 +69,11 @@ export function FileDrop(props: {
   const upload = async (files: FileList | File[]) => {
     setErr(null);
     for (const file of Array.from(files)) {
+      const problem = props.checkName?.(file.name);
+      if (problem) {
+        setErr(problem);
+        continue;
+      }
       setBusy(`${file.name} 올리는 중…`);
       const r = await uploadSigned(props.bucket, file, props.start, props.finish);
       if (!r.ok) {

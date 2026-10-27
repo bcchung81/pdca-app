@@ -323,6 +323,17 @@ test("월간 점검: 보낸 결과만 부서에 보이고, 부서는 확인만",
   await as("pmo", () => db.query("update public.inspections set status = 'sent' where id = $1", [id]));
   assert.equal(await as("inspector", () => count("select 1 from public.inspections")), 1);
   await rejects(() => as("inspector", () => db.query("update public.inspections set status = 'acknowledged', result = '{}' where id = $1", [id])), /성과관리팀만/);
+  // 보낸 점검표는 성과관리팀도 내용을 못 고침(20261027100000 — 예전에는 서버 액션만 막았음): 상태만 그대로 두든, 보내기 취소와 함께든
+  for (const sql of ["update public.inspections set result = '{\"summary\":\"고침\"}' where id = $1", "update public.inspections set model = 'x', knowledge_keys = '{k}' where id = $1", "update public.inspections set status = 'draft', result = '{}' where id = $1"]) {
+    await rejects(() => as("pmo", () => db.query(sql, [id])), /보내기를 취소한 뒤/);
+  }
+  assert.equal((await db.query<{ s: string }>("select result->>'summary' as s from public.inspections where id = $1", [id])).rows[0].s, "점검", "내용 그대로");
+  // 보내기 취소(상태만 → 초안)는 허용, 초안은 고칠 수 있고 다시 보낼 수 있음
+  await as("pmo", () => db.query("update public.inspections set status = 'draft' where id = $1", [id]));
+  assert.equal(await as("inspector", () => count("select 1 from public.inspections")), 0, "취소한 점검표는 부서에 안 보임");
+  await as("pmo", () => db.query("update public.inspections set result = '{\"summary\":\"점검\"}', model = 'manual' where id = $1", [id]));
+  await as("pmo", () => db.query("update public.inspections set status = 'sent' where id = $1", [id]));
+  // 부서의 확인(상태만 → acknowledged)은 보낸 점검표에서 허용
   await as("inspector", () => db.query("update public.inspections set status = 'acknowledged' where id = $1", [id]));
   // 부서가 확인한 점검표는 성과관리팀도 못 고침(2026-10-10 개선 계획 P1-2 — 예전에는 성과관리팀 직접 호출이면 뚫렸음), 서비스 키는 막지 않음
   await rejects(() => as("pmo", () => db.query("update public.inspections set result = '{}' where id = $1", [id])), /확인한 점검표/);

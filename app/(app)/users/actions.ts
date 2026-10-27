@@ -5,6 +5,7 @@ import { type AppRole, type CurrentUser, requireAtLeast } from "../../../lib/aut
 import { allowedEmailDomains } from "../../../lib/auth/redirect.ts";
 import { createAdminClient } from "../../../lib/supabase/admin.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
+import { checkDisplayName } from "../../../lib/users/name.ts";
 import { type PlanContext, extractEmail, planRows } from "../../../lib/users/plan.ts";
 import { type Db, type ExistingProfile, assignTeamCards, loadMatchTeams, loadProfilesByEmail, logAccessEvent } from "../../../lib/users/service.ts";
 import { type ApplyResult, type ApplyRowInput, type ApplyRowResult, type ExistingLookup, type LookupResponse, PASTE_MAX_ROWS, type TeamOption } from "../../../lib/users/types.ts";
@@ -61,8 +62,10 @@ export async function updateUser(_prev: UserFormState, formData: FormData): Prom
   if (!me) return error(NOT_STAFF);
   const id = String(formData.get("id") ?? "");
   const team = parseTeam(formData.get("team_id"));
-  const displayName = String(formData.get("display_name") ?? "").trim().slice(0, 40);
+  const name = checkDisplayName(String(formData.get("display_name") ?? ""));
   if (!id || team === "invalid") return error("입력값을 확인해 주세요.");
+  if (!name.ok) return error(`${name.message}.`);
+  const displayName = name.name;
 
   const supabase = await createClient();
   const { data: target } = await supabase.from("profiles").select("id, role, team_id").eq("id", id).maybeSingle();
@@ -71,6 +74,7 @@ export async function updateUser(_prev: UserFormState, formData: FormData): Prom
   if (!isAdmin && target.role !== "dept_user") return error("성과관리팀·관리자 계정은 관리자만 바꿀 수 있습니다.");
   const role = isAdmin ? parseRole(formData.get("role")) : "dept_user";
   if (!role) return error("입력값을 확인해 주세요.");
+  if (role === "dept_user" && team === null) return error("부서 담당자는 팀을 골라야 합니다.");
 
   if (id === me.id && role !== "admin") {
     const { count } = await supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin").eq("active", true);
@@ -106,8 +110,10 @@ export async function inviteUser(_prev: UserFormState, formData: FormData): Prom
   const email = extractEmail(String(formData.get("email") ?? ""));
   const role = isAdmin ? parseRole(formData.get("role")) : "dept_user";
   const team = parseTeam(formData.get("team_id"));
-  const displayName = String(formData.get("display_name") ?? "").trim().slice(0, 40);
+  const name = checkDisplayName(String(formData.get("display_name") ?? ""));
   if (!email || !role || team === "invalid") return error("메일·역할·부서를 확인해 주세요.");
+  if (!name.ok) return error(`${name.message}.`);
+  const displayName = name.name;
   if (role === "dept_user" && team === null) return error("부서 담당자는 팀을 골라야 합니다.");
   if (!isAdmin && !allowedEmailDomains().includes(email.slice(email.lastIndexOf("@") + 1))) {
     return error(`기관 메일(@${allowedEmailDomains().join(", @")})만 등록할 수 있습니다. 외부 주소는 관리자에게 요청해 주세요.`);

@@ -7,7 +7,7 @@ import { fillUnitPartsAi, refillUnitParts, saveUnitPartEdits, setUnitPartStatus 
 import type { UnitPartView } from "../../app/(app)/reports/business/[unit]/parts/actions";
 import { type ProgressSpec, rangeText, UNIT_AI_EXPECT, unitAiProgress } from "../../lib/ai/progress.ts";
 import { fmtDateTime } from "../../lib/format.ts";
-import { type EditMap, chunkEdits, editList, setEdit } from "../../lib/reports/unit-parts-form.ts";
+import { type EditMap, chunkEdits, editList, linesOverLimit, setEdit } from "../../lib/reports/unit-parts-form.ts";
 import type { UnitPartKey } from "../../lib/tracks/index.ts";
 import { T, Tag } from "../ui/kit";
 import { type PaneTabItem, PaneTabs } from "../workspace/pane-tabs";
@@ -138,6 +138,11 @@ export function UnitPartsWorkspace(props: {
     if (!list.length) {
       clearEdits([key]);
       setMsg({ ok: true, text: "바뀐 칸이 없습니다." });
+      return;
+    }
+    const over = list.map((e) => linesOverLimit(e.value)).find(Boolean);
+    if (over) {
+      setMsg({ ok: false, text: `저장하지 않았습니다 — ${over}` });
       return;
     }
     start(async () => {

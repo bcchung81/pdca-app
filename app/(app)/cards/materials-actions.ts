@@ -7,6 +7,7 @@ import { requireUser } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
 import { safeExt } from "../../../lib/reports/model.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
+import { MATERIAL_MAX_BYTES, materialNameProblem } from "../../../lib/cards/limits.ts";
 
 // 카드 전용 자료(card-materials/{cards.uid}/…): 그 카드 안에서만 씀. 권한은 RLS(can_read_card·can_write_card)가 판정합니다.
 
@@ -24,8 +25,6 @@ export interface CardMaterial {
   /** 읽은 글 수(parsed일 때) */
   chars: number | null;
 }
-
-const MAX_BYTES = 50 * 1024 * 1024;
 
 async function cardFor(uid: string) {
   const supabase = await createClient();
@@ -66,7 +65,9 @@ export async function startCardMaterialUpload(uid: string, fileName: string, byt
   await requireUser("/cards");
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   if (!fileName || bytes <= 0) return { ok: false, message: "파일을 골라 주세요." };
-  if (bytes > MAX_BYTES) return { ok: false, message: "파일은 50MB 이하만 올릴 수 있습니다." };
+  const nameProblem = materialNameProblem(fileName);
+  if (nameProblem) return { ok: false, message: nameProblem };
+  if (bytes > MATERIAL_MAX_BYTES) return { ok: false, message: "파일은 50MB 이하만 올릴 수 있습니다." };
   const { supabase, card } = await cardFor(uid);
   if (!card) return { ok: false, message: "카드를 찾을 수 없습니다." };
   const path = `${card.uid}/${randomUUID()}${safeExt(fileName)}`;

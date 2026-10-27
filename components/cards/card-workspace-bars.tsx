@@ -8,6 +8,7 @@ import type { ReviewProps } from "../../lib/cards/versions.ts";
 import { fmtDateTime } from "../../lib/format.ts";
 import { T } from "../ui/kit";
 import type { CardEditorHandle } from "./card-editor";
+import { RETURN_NOTE_MAX } from "../../lib/cards/limits.ts";
 
 /** 성과관리팀: 제출된 작성본을 원장과 비교하고 확정·돌려보내기 */
 export function ReviewBar({ review, editor, onDone }: { review: ReviewProps; editor: React.RefObject<CardEditorHandle | null>; onDone: (m: string) => void }) {
@@ -70,7 +71,7 @@ export function ReviewBar({ review, editor, onDone }: { review: ReviewProps; edi
       )}
       {returning && (
         <div className="flex min-w-0 items-start gap-2 px-6 pb-2">
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="돌려보내는 이유(부서 담당자에게 보임)" className="min-w-0 grow rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={RETURN_NOTE_MAX} placeholder="돌려보내는 이유(부서 담당자에게 보임)" className="min-w-0 grow rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
           <button type="button" disabled={pending || !note.trim()} onClick={sendBack} className={`flex h-8 shrink-0 items-center rounded-md border px-2.5 text-xs font-semibold whitespace-nowrap no-underline border-warn bg-paper text-warn ${T.off}`}>
             보내기
           </button>

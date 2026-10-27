@@ -7,11 +7,12 @@ import { parseColumns } from "../../../lib/ai/material-text.ts";
 import { requireAtLeast, requireUser } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
 import { type MaterialMatch, planMaterialSelection } from "../../../lib/reports/material-match.ts";
-import { COMMENT_KINDS, type ReportStatus, canMove, cleanBlocks, reportsToStart, safeExt } from "../../../lib/reports/model.ts";
+import { COMMENT_KINDS, type ReportStatus, canMove, cleanBlocks, needsReturnMemo, reportsToStart, safeExt } from "../../../lib/reports/model.ts";
 import { buildOutline, isPageStep } from "../../../lib/reports/outline.ts";
 import { buildMgOutline } from "../../../lib/reports/mg-page-plan.ts";
 import { loadMgPageRefs } from "../../../lib/reports/mg-queries.ts";
 import { getReport, loadSubmitCards, submitKey } from "../../../lib/reports/queries.ts";
+import { COMMENT_BODY_MAX, KPI_VALUE_MAX } from "../../../lib/reports/input-limits.ts";
 import { REVIEW_NOTE_MAX, submitBlockedReason, submitReadiness } from "../../../lib/reports/submission.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
@@ -88,7 +89,7 @@ export async function setLeadTeam(unitId: string, teamId: number | null): Promis
 /**
  * 보고서 상태: 부서는 제출·제출 취소, 성과관리팀은 승인·돌려보내기까지.
  * 제출 조건 = 목차에 든 과제 모두 과제별 초안 있음(submitReadiness — 예전에는 원고 블록 수만 봤음). 나머지 확인할 것은 화면 확인 창에서만.
- * 성과관리팀이 제출된 보고서를 돌려보낼 때(제출 → 초안 작성)는 메모 필수 — 부서 화면에 보임(review_note)
+ * 성과관리팀이 제출된 보고서를 돌려보낼 때(제출 → 초안 작성)·승인을 풀 때(승인 → 작성 중)는 메모 필수 — 부서 화면에 보임(review_note)
  */
 export async function setReportStatus(id: number, to: ReportStatus, note?: string): Promise<Result> {
   const me = await requireUser("/reports");
@@ -105,14 +106,14 @@ export async function setReportStatus(id: number, to: ReportStatus, note?: strin
     if (why) return { ok: false, message: why };
   }
   const memo = String(note ?? "").trim().slice(0, REVIEW_NOTE_MAX);
-  const returning = staff && report.status === "submitted" && to === "drafting";
-  if (returning && !memo) return { ok: false, message: "돌려보낼 때는 부서가 고칠 점을 메모로 적어 주세요." };
+  const returning = needsReturnMemo(me.role, report.status, to);
+  if (returning && !memo) return { ok: false, message: "돌려보내거나 승인을 풀 때는 부서가 고칠 점을 메모로 적어 주세요." };
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { status: to };
   if (to === "submitted") Object.assign(patch, { submitted_at: now, submitted_by: me.id });
   if (to === "approved") Object.assign(patch, { approved_at: now, approved_by: me.id });
   if (to !== "approved" && staff) Object.assign(patch, { approved_at: null, approved_by: null });
-  // 성과관리팀 검토 메모: 돌려보내기(필수)·승인(선택) 때 남김 — 부서는 못 바꿈(guard_report)
+  // 성과관리팀 검토 메모: 돌려보내기·승인 풀기(필수)·승인(선택) 때 남김 — 부서는 못 바꿈(guard_report)
   if (staff && (returning || to === "approved")) Object.assign(patch, { review_note: memo, reviewed_at: now, reviewed_by: me.id });
   // 읽은 상태가 그대로일 때만(두 사람이 동시에 바꾸면 늦은 쪽은 0행)
   const { data, error } = await supabase.from("reports").update(patch).eq("id", id).eq("status", report.status).select("id");
@@ -133,7 +134,7 @@ export async function saveReportInputs(id: number, kpi: Record<string, string>):
   const clean = Object.fromEntries(
     Object.entries(kpi)
       .slice(0, 200)
-      .map(([k, v]) => [k.slice(0, 200), String(v).trim().slice(0, 200)]),
+      .map(([k, v]) => [k.slice(0, 200), String(v).trim().slice(0, KPI_VALUE_MAX)]),
   );
   const { data, error } = await supabase
     .from("reports")
@@ -252,7 +253,7 @@ export async function addComment(reportId: number, anchor: string, kind: string,
   if (!text) return { ok: false, message: "코멘트 내용을 적어 주세요." };
   if (!(COMMENT_KINDS as readonly string[]).includes(kind)) return { ok: false, message: "코멘트 종류를 골라 주세요." };
   const supabase = await createClient();
-  const { error } = await supabase.from("report_comments").insert({ report_id: reportId, anchor: anchor.slice(0, 100) || "all", kind, body: text.slice(0, 4000), author_id: me.id });
+  const { error } = await supabase.from("report_comments").insert({ report_id: reportId, anchor: anchor.slice(0, 100) || "all", kind, body: text.slice(0, COMMENT_BODY_MAX), author_id: me.id });
   if (error) return { ok: false, message: "코멘트를 달지 못했습니다." };
   refresh(reportId);
   return { ok: true };

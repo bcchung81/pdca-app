@@ -6,6 +6,7 @@ import { T } from "../../ui/kit";
 import { pathLabel } from "../../../lib/cards/path-label.ts";
 import type { NoteKind, NoteStatus, ReviewNote, ReviewTarget, ToastSpec } from "./use-card-review";
 import type { LooseJson } from "../../../lib/loose-json.ts";
+import { COMMENT_TEXT_MAX } from "../../../lib/cards/limits.ts";
 
 
 // 리뷰어 화면 부품: 드래그 도구줄 · 작성 카드 · 여백 메모 열 · 알림. 위치는 편집기 스크롤 영역 안에서 잽니다.
@@ -151,6 +152,7 @@ export function Composer(props: { state: ComposerState; mode: "edit" | "ask"; ca
       <textarea
         ref={ref}
         value={state.text}
+        maxLength={COMMENT_TEXT_MAX}
         onChange={(e) => props.onChange({ ...state, text: e.target.value })}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.nativeEvent.isComposing) {

@@ -20,6 +20,7 @@ import { type CardLayout, layoutImageKeys } from "../../../../lib/hwp/layout.ts"
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { prepCardAdded, prepCardChanged } from "../../../../lib/prep/triggers.ts";
 import type { LooseJson } from "../../../../lib/loose-json.ts";
+import { SKIP_REASON_MAX } from "../../../../lib/cards/limits.ts";
 
 // 과제관리카드 현행화(성과관리팀 종합점검 지침 14 <현행화모드>):
 // 한글 파일 올리기 → kordoc으로 읽어 카드 JSON → 원장 과제와 매칭 → (화면) 블록별 비교 → 승인한 것만 반영.
@@ -372,7 +373,7 @@ export async function skipImportItems(importId: number, itemIds: number[], reaso
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("card_import_items")
-    .update({ status: "skipped", result: { reason: reason.trim().slice(0, 300) || "건너뜀" }, decided_by: me.id, decided_at: new Date().toISOString() })
+    .update({ status: "skipped", result: { reason: reason.trim().slice(0, SKIP_REASON_MAX) || "건너뜀" }, decided_by: me.id, decided_at: new Date().toISOString() })
     .eq("import_id", importId)
     .in("id", (itemIds ?? []).slice(0, 200))
     .eq("status", "pending")
