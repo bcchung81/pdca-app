@@ -12,6 +12,7 @@ import { userBlocks } from "./user-blocks.ts";
 import { type BundleChunk, type KnowledgeBundle, listText, sharedTexts } from "../knowledge/bundle.ts";
 import type { EditTarget } from "../cards/patch.ts";
 import { CliFailedError, CliUnavailableError, runClaudeCli } from "./cli.ts";
+import { isDegenerateChat, isDegenerateWriter, retryIfDegenerate } from "./degenerate.ts";
 import { codexSpec, runCodexCli } from "./codex-cli.ts";
 import { type CommentRequest, type CommentResult, commentPrompt } from "./comments.ts";
 import { OUTLINE_SKELETON, parseRules, pickHeadings, pickRules, pickSections } from "../harness/rules.ts";
@@ -250,6 +251,10 @@ async function cardStructured<T extends z.ZodType>(feature: AiFeature, p: Prompt
 const FOLLOWUP_LIMITS = { maxTokens: FEATURE_MAX_TOKENS.card_assist, timeoutMs: 480_000 } as const;
 
 export async function callWriter(input: WriterInput): Promise<WriterCall> {
+  return retryIfDegenerate(() => callWriterOnce(input), (c) => isDegenerateWriter(c.result));
+}
+
+async function callWriterOnce(input: WriterInput): Promise<WriterCall> {
   const { prompts, schema } = (isMgmtCard(input.card) ? assistPromptsMg : assistPrompts)();
   const files = promptFiles(input.files);
   const r = await cardStructured("card_assist", prompts, input.kb, (list) => userPrompt(prompts, input.card, list, { ...input.req, files }), schema, files, input.req.mode === "followup" ? FOLLOWUP_LIMITS : {});
@@ -279,7 +284,13 @@ export interface ChatCall {
 }
 
 /** 카드 「AI 작성지원 › 질문」 한 번(지침 09 + 문체 기준 — 작성지원과 적응문만 다름). 첨부 자료는 작성지원과 같은 길 */
-export async function callChat(input: { card: LooseJson; kb: KnowledgeBundle; req: Omit<ChatRequest, "files">; files: MaterialDoc[] }): Promise<ChatCall> {
+export async function callChat(input: ChatInput): Promise<ChatCall> {
+  return retryIfDegenerate(() => callChatOnce(input), (c) => isDegenerateChat(c.result));
+}
+
+type ChatInput = { card: LooseJson; kb: KnowledgeBundle; req: Omit<ChatRequest, "files">; files: MaterialDoc[] };
+
+async function callChatOnce(input: ChatInput): Promise<ChatCall> {
   const { prompts, schema } = (isMgmtCard(input.card) ? chatPromptsMg : chatPrompts)();
   const files = promptFiles(input.files);
   const r = await cardStructured("card_chat", prompts, input.kb, (list) => chatPrompt(prompts, input.card, list, { ...input.req, files }), schema, files);
