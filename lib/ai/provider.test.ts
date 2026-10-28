@@ -46,6 +46,12 @@ test("apiKeysFrom: 기본 키가 앞, 공백·빈 값·중복은 뺌, 예비만 
   assert.deepEqual(apiKeysFrom({ ANTHROPIC_API_KEY: "a", ANTHROPIC_API_KEY_FALLBACK: "a" }), ["a"]);
   assert.deepEqual(apiKeysFrom({ ANTHROPIC_API_KEY_FALLBACK: "b" }), ["b"]);
   assert.deepEqual(apiKeysFrom({}), []);
+  // 예비 2: 기본 → 예비 1 → 예비 2 순서, 예비 2만 있어도 목록, 공백·빈 값·앞 두 자리와 같은 값은 뺌
+  assert.deepEqual(apiKeysFrom({ ANTHROPIC_API_KEY: "a", ANTHROPIC_API_KEY_FALLBACK: "b", ANTHROPIC_API_KEY_FALLBACK2: "c" }), ["a", "b", "c"]);
+  assert.deepEqual(apiKeysFrom({ ANTHROPIC_API_KEY_FALLBACK2: "c" }), ["c"]);
+  assert.deepEqual(apiKeysFrom({ ANTHROPIC_API_KEY: " a ", ANTHROPIC_API_KEY_FALLBACK: "", ANTHROPIC_API_KEY_FALLBACK2: " c " }), ["a", "c"]);
+  assert.deepEqual(apiKeysFrom({ ANTHROPIC_API_KEY: "a", ANTHROPIC_API_KEY_FALLBACK: "b", ANTHROPIC_API_KEY_FALLBACK2: "a" }), ["a", "b"]);
+  assert.deepEqual(apiKeysFrom({ ANTHROPIC_API_KEY: "a", ANTHROPIC_API_KEY_FALLBACK: "b", ANTHROPIC_API_KEY_FALLBACK2: "b" }), ["a", "b"]);
 });
 
 test("keyOrder: 소진 안 된 키가 먼저(원래 순서), 소진된 키는 뒤 — 모두 소진이면 원래 순서", () => {
@@ -53,4 +59,8 @@ test("keyOrder: 소진 안 된 키가 먼저(원래 순서), 소진된 키는 �
   assert.deepEqual(keyOrder(["a", "b"], new Set(["a"])), ["b", "a"]);
   assert.deepEqual(keyOrder(["a", "b"], new Set(["a", "b"])), ["a", "b"]);
   assert.deepEqual(keyOrder(["a", "b"], new Set(["b"])), ["a", "b"]);
+  // 3키
+  assert.deepEqual(keyOrder(["a", "b", "c"], new Set(["a"])), ["b", "c", "a"]);
+  assert.deepEqual(keyOrder(["a", "b", "c"], new Set(["a", "b"])), ["c", "a", "b"]);
+  assert.deepEqual(keyOrder(["a", "b", "c"], new Set(["a", "b", "c"])), ["a", "b", "c"]);
 });

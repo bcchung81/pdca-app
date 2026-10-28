@@ -154,7 +154,7 @@ async function structuredApi<T extends z.ZodType>(opts: {
         // 크레딧 부족은 요청을 처리하기 전에 거절돼 과금이 없으므로 같은 요청을 예비 키로 다시 보내도 됨 — 새 키는 시각·시도 횟수를 새로 시작
         if (kind === "credit" && k + 1 < keys.length) {
           exhaustedKeys.add(key);
-          console.warn(`structuredApi: ${opts.feature} ${allKeys.indexOf(key) === 0 ? "기본" : "예비"} 키 크레딧 부족 — 다음 키로 전환`);
+          console.warn(`structuredApi: ${opts.feature} ${["기본", "예비 1", "예비 2"][allKeys.indexOf(key)] ?? "예비"} 키 크레딧 부족 — 다음 키로 전환`);
           break;
         }
         if (!shouldRetryApi(kind, Date.now() - t0, attempt)) throw e;

@@ -29,9 +29,9 @@ export function isCreditBalanceError(message: string): boolean {
   return /credit balance is too low/i.test(message);
 }
 
-/** 쓸 API 키 목록 — 기본 키(ANTHROPIC_API_KEY)가 앞, 예비 키(ANTHROPIC_API_KEY_FALLBACK)가 뒤. 공백 제거, 빈 값·같은 키 중복은 뺌 */
+/** 쓸 API 키 목록 — 기본 키(ANTHROPIC_API_KEY) → 예비 1(ANTHROPIC_API_KEY_FALLBACK) → 예비 2(ANTHROPIC_API_KEY_FALLBACK2) 순. 공백 제거, 빈 값·같은 키 중복은 뺌 */
 export function apiKeysFrom(env: Record<string, string | undefined>): string[] {
-  const keys = [env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEY_FALLBACK].map((k) => (k ?? "").trim()).filter(Boolean);
+  const keys = [env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEY_FALLBACK, env.ANTHROPIC_API_KEY_FALLBACK2].map((k) => (k ?? "").trim()).filter(Boolean);
   return [...new Set(keys)];
 }
 
