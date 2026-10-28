@@ -1,6 +1,9 @@
 // 경평 초안 → 한글(HWPX) 화면 양식(lib/reports/section-hwpx.ts) 테스트 — 2026-10-21 「A안」.
 // 지키는 것: 블록 19종 × 모양·그림 자리·추진성과·머리가 예외 없이 변환되고 validateHwpx 통과·readHwpx로 다시 읽힘 · 화면에 보이는 글이 모두 한글 글에 있음 ·
 // 최상위 표 폭 = 본문 170mm(칸 폭 합) · 쪽 정의(216×303 맞쪽·여백)·글꼴 이름·줄간격 160% · 그림 자리 상자 = 크기 등급 mm · 모르는 종류·옛 spec → 경고 ·
+// 모든 문단 모양의 줄 나눔 = 한글 어절 단위(breakNonLatinWord BREAK_WORD — 이름과 뜻이 반대)·영문 단어 단위 · 핵심 수치 칸의 【확인: …】은 10.5pt(나머지 수치는 15pt) ·
+// 모든 글자 모양의 빈칸 폭 = 글꼴 빈칸(useFontSpace="1" — 화면 브라우저와 같음) ·
+// 머리 세 문단(대상사업·실행과제·소항목)과 상자 머리·표 머리 칸·수치 칸의 줄간격 = 화면 CSS line-height × 100(REPORT_STYLE.lh 한 곳) ·
 // 화면 CSS(REPORT_CSS) 고정(공용 값을 바꾸면 함께 바뀜이 드러남) · 칸 사이 기호 칸·좁은 칸 안 여백은 화면·판면 어림·한글이 같은 값.
 
 import assert from "node:assert/strict";
@@ -367,6 +370,100 @@ test("【확인: …】은 괄호 그대로 + 노란 음영(따로 붙인 「확
   const run = [...doc.sections[0].paras, ...allTables(doc.sections[0].paras).flatMap((t) => t.cells.flatMap((c) => c.paras))].flatMap((p) => p.items).find((it) => it.kind === "text" && it.text.startsWith("【확인: "));
   assert.ok(run && run.kind === "text");
   assert.ok(doc.charPrs[run.charPr].shade, "노란 음영");
+});
+
+test("줄 나눔: 모든 문단 모양이 breakNonLatinWord=BREAK_WORD(어절 단위)·breakLatinWord=KEEP_WORD", async () => {
+  const { bytes, doc } = await convert(makeSpec(Object.values(SAMPLES)));
+  assert.ok(doc.paraPrs.length > 0);
+  for (const pp of doc.paraPrs) assert.deepEqual([pp.breakNonLatin, pp.breakLatin], ["BREAK_WORD", "KEEP_WORD"]);
+  const head = await (await JSZip.loadAsync(bytes)).file("Contents/header.xml")!.async("string");
+  assert.ok(!/breakNonLatinWord="KEEP_WORD"/.test(head));
+  assert.match(head, /breakNonLatinWord="BREAK_WORD"/);
+  assert.match(head, /breakLatinWord="KEEP_WORD"/);
+});
+
+test("핵심 수치 칸: 머리의 【확인: …】만 10.5pt, 보통 큰 수치는 15pt 그대로", async () => {
+  assert.equal(REPORT_STYLE.pt.statNeed, 10.5);
+  const { doc } = await convert(makeSpec([SAMPLES.stats]));
+  const runs = [...doc.sections[0].paras, ...allTables(doc.sections[0].paras).flatMap((t) => t.cells.flatMap((c) => c.paras))].flatMap((p) => p.items);
+  const size = (pred: (t: string) => boolean) => {
+    const r = runs.find((it) => it.kind === "text" && pred(it.text));
+    assert.ok(r && r.kind === "text");
+    return doc.charPrs[r.charPr].height;
+  };
+  assert.equal(size((t) => t.includes("’26년 국수")), 1050);
+  assert.equal(size((t) => t.startsWith("【확인: ")), 1050);
+  assert.equal(size((t) => t === "97%"), 1500);
+});
+
+test("빈칸 폭: 모든 글자 모양이 useFontSpace=1(글꼴의 빈칸 폭 — 화면과 같음)", async () => {
+  const { bytes, doc } = await convert(layoutSpec);
+  assert.ok(doc.charPrs.length > 0);
+  assert.ok(doc.charPrs.every((c) => c.useFontSpace));
+  const head = await (await JSZip.loadAsync(bytes)).file("Contents/header.xml")!.async("string");
+  assert.equal(head.match(/<hh:charPr /g)?.length, head.match(/useFontSpace="1"/g)?.length);
+  assert.ok(!/useFontSpace="0"/.test(head));
+});
+
+/** 글(문단 안 조각을 이은 것)이 조건에 맞는 첫 문단의 줄간격 % — 표 칸 안까지 */
+function lineOf(doc: HwpDoc, pred: (t: string) => boolean): number {
+  const find = (ps: Para[]): Para | undefined => {
+    for (const p of ps) {
+      if (pred(p.items.map((it) => (it.kind === "text" ? it.text : "")).join(""))) return p;
+      for (const t of tablesOf([p])) for (const c of t.cells) {
+        const got = find(c.paras);
+        if (got) return got;
+      }
+    }
+  };
+  const p = find(doc.sections[0].paras);
+  assert.ok(p, "문단 없음");
+  const pp = doc.paraPrs[p.paraPr];
+  assert.equal(pp.lineSpacingType, "PERCENT");
+  return pp.lineSpacing;
+}
+/** 화면 CSS 규칙(.kca-dg-doc <선택자>{…})의 font 줄 높이 */
+function cssLh(sel: string): number {
+  const m = new RegExp(`\\.kca-dg-doc ${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\{[^}]*?font:[^;}]*?/([0-9.]+) `).exec(REPORT_CSS);
+  assert.ok(m, `CSS 규칙 ${sel}`);
+  return Number(m[1]);
+}
+
+test("머리 세 문단 줄간격 = 화면 CSS line-height × 100: 대상사업 130 · 실행과제 125 · 소항목 130", async () => {
+  const LH = REPORT_STYLE.lh;
+  assert.deepEqual([LH.biz, LH.task, LH.sub], [1.3, 1.25, 1.3]);
+  assert.deepEqual([cssLh(".k-biz"), cssLh(".k-task"), cssLh(".k-sub")], [LH.biz, LH.task, LH.sub]);
+  const { doc } = await convert(layoutSpec);
+  assert.equal(lineOf(doc, (t) => t.startsWith(" 대상사업1 ")), 130);
+  assert.equal(lineOf(doc, (t) => t.startsWith(" 1-1 ")), 125);
+  assert.equal(lineOf(doc, (t) => t.startsWith("가. [수신환경] ")), 130);
+});
+
+test("상자 머리·표 머리 칸·수치 칸 줄간격 = 화면 CSS line-height × 100(REPORT_STYLE.lh)", async () => {
+  const LH = REPORT_STYLE.lh;
+  const rows: Array<[sample: string, pred: (t: string) => boolean, css: string, lh: number, want: number]> = [
+    ["table:", (t) => t === "구분", "table.k-tbl thead th", LH.tbl, 145],
+    ["table:", (t) => t === "건수", "table.k-tbl tbody th", LH.tbl, 145],
+    ["table:result", (t) => t === "가", "table.k-tbl tbody th", LH.tbl, 145],
+    ["table:result", (t) => t === "추진실적", ".k-res__h", LH.resHead, 140],
+    ["table:result", (t) => t === "1,240건", ".k-res__v", LH.resValue, 130],
+    ["cards:plain", (t) => t.endsWith("가 칸"), ".k-card__h", LH.card, 150],
+    ["steps:row", (t) => t.endsWith("수요조사"), ".k-proc__h", LH.proc, 155],
+    ["timeline:chevron", (t) => t === "’24년", ".k-tl__h", LH.tl, 150],
+    ["compare:table", (t) => t === "구 분", "table.k-ba thead th", LH.ba, 150],
+    ["compare:panels", (t) => t.endsWith("수작업"), ".k-panel__h", LH.panel, 155],
+    ["case", (t) => t.endsWith("대통령상 수상"), ".k-case__h", LH.caseHead, 155],
+    ["quotes", (t) => t.endsWith("정부 지시"), ".k-ctx__head", LH.ctx, 150],
+    ["chart", (t) => t.startsWith("막대 제목"), ".k-chart figcaption", LH.chart, 145],
+    ["stats", (t) => t === "97%", ".k-stat__v", LH.stat, 130],
+    ["stats", (t) => t === "기준일 9월", ".k-stat__n", LH.statNote, 140],
+  ];
+  for (const [sample, pred, css, lh, want] of rows) {
+    assert.equal(cssLh(css), lh, `${css} CSS`);
+    assert.equal(Math.round(lh * 100), want, css);
+    const { doc } = await convert(makeSpec([SAMPLES[sample]]));
+    assert.equal(lineOf(doc, pred), want, `${sample} — ${css}`);
+  }
 });
 
 test("XML 금지 문자: 본문·모양·미리보기 글 모두 0", async () => {

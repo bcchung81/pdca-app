@@ -3,6 +3,7 @@
 //  · 짜임은 화면 렌더러(section-html.ts)를 그대로 따라감: 머리(대상사업·실행과제 띠·소항목) → 본문(layoutGroups 묶음 — 라벨 사다리 표·단 띠·전폭·가로 반씩)
 //    → 블록 19종 + 모양(blockCore와 같은 갈래) → 추진성과 상자. 묶음 함수(layoutGroups·ladderGroups·isPanelCompare·tableBars)는 렌더러·판면 어림과 같은 것을 씀
 //  · 치수·색·크기는 화면과 한 곳: 판면·라벨 칸 mm는 fit.ts·layout.ts·blocks.ts 상수, 회색조·선 굵기·글자 크기·줄간격은 section-css.ts REPORT_STYLE.
+//    부품별 줄 높이(머리·상자 머리·표 머리 칸·수치 칸 — CSS line-height)는 REPORT_STYLE.lh × 100을 그 문단의 「글자에 따라 %」 줄간격으로(그 밖은 기본 160%)
 //    여기서 새로 정하는 값은 화면 CSS의 px·em 값을 HWPUNIT로 옮긴 것과 한글의 일반 규칙(테두리 굵기 표·글머리표)뿐
 //  · 도형(그리기 개체)은 쓰지 않음(1회차 — 파일 깨짐 위험을 줄임): 상자·화살표·막대는 표 칸·채움·테두리·글자(▶ ✚ ↺ ▼ ⇄ ◉)로 그림
 //  · 글은 줄 배치(linesegarray) 없이 써서 한글이 조판하고, 칸 높이는 최소 높이만 적어 한글이 글에 맞게 늘림
@@ -71,6 +72,9 @@ const ST = REPORT_STYLE;
 const G = ST.gray;
 const F = ST.pt;
 const NEED = ST.need;
+/** 부품별 줄 높이(화면 CSS line-height 배수 — REPORT_STYLE.lh) → 한글 줄간격 %(글자에 따라: 그 줄 글자 크기 × %, CSS line-height × 100과 같은 뜻) */
+const LH = ST.lh;
+const pct = (v: number) => Math.round(v * 100);
 /** 칸 사이 기호 칸(카드 묶음 ✚·▶·시기 흐름 ▶·PDCA ▶) mm·기호 pt — 화면 .k-join·grid 템플릿과 같은 값 */
 const JOIN = ST.join;
 /** 좁은 칸 본문 안 여백 좌우(카드·PDCA·단계·시기 본문 — 화면 .k-card__b·.k-proc__b·.k-tl__b) */
@@ -189,7 +193,8 @@ class Shapes {
       color: hex(c.color ?? G.ink),
       shade: c.shade ? hex(c.shade) : null,
       kerning: false,
-      useFontSpace: false,
+      // 빈칸 폭은 글꼴의 빈칸 글리프 폭(화면 브라우저와 같음). false면 한글 기본 빈칸 폭이라 줄이 길어짐(표본 07: 내용 높이 155.0 → 141.4mm, 화면 137.1mm)
+      useFontSpace: true,
       borderFill: bf,
     };
     return this.once("cp", this.doc.charPrs, v);
@@ -199,7 +204,9 @@ class Shapes {
     const v: ParaPr = {
       align: p.align ?? "JUSTIFY",
       breakLatin: "KEEP_WORD",
-      breakNonLatin: "KEEP_WORD",
+      // HWPX breakNonLatinWord는 이름과 뜻이 반대: KEEP_WORD = 글자 단위, BREAK_WORD = 어절 단위(한글 11 저장본 3개 줄 배치: KEEP_WORD 낱말 가운데 끊김 317회 / BREAK_WORD 2회).
+      // 화면 word-break: keep-all과 같은 어절 단위가 목적. 영문 breakLatinWord는 이름 그대로(KEEP_WORD = 단어 단위)
+      breakNonLatin: "BREAK_WORD",
       condense: 0,
       lineSpacingType: "PERCENT",
       lineSpacing: p.line ?? ST.lineSpacingPct,
@@ -262,7 +269,7 @@ class Writer {
   }
 
   /** 글 → 조각: 【확인: …】(괄호 그대로 + 노란 음영) → **강조** → ^{위첨자}. 짝 없는 **는 걷음(화면 emph와 같음) */
-  rich(s: string, base: CS): Inline[] {
+  rich(s: string, base: CS, needPt?: number): Inline[] {
     const text = flat(s);
     const out: Inline[] = [];
     const sup = (t: string, c: CS) => {
@@ -287,7 +294,7 @@ class Writer {
     for (const m of text.matchAll(/【확인:\s*([^】]{1,200})】/g)) {
       emph(text.slice(last, m.index), base);
       // 글자 그대로 「【확인: 내용】」(한글 찾기로 모두 찾음) + 화면 【확인】과 같은 노란 음영
-      const need: CS = { ...base, face: base.face === "bodyB" ? "body" : base.face, bold: false, color: NEED.ink, shade: NEED.bg };
+      const need: CS = { ...base, face: base.face === "bodyB" ? "body" : base.face, bold: false, color: NEED.ink, shade: NEED.bg, ...(needPt ? { pt: needPt } : {}) };
       out.push(this.run("【확인: ", need));
       emph(m[1], need);
       out.push(this.run("】", need));
@@ -428,12 +435,13 @@ class SectionWriter extends Writer {
   /** 라벨 칸 글: 「Step 1 …」「’24년 …」「1단계 …」는 앞을 칩으로 + 줄바꿈(section-html.ts labelHtml) */
   labelParas(label: string): Para[] {
     const m = /^(Step\s?\d+|’\d\d년~?|\d{4}년~?|\d단계)\s*(.*)$/.exec(label);
-    if (!m) return [this.para({ align: "CENTER" }, [this.run(flat(label), LABEL)], LABEL)];
-    return [this.para({ align: "CENTER" }, this.tag(m[1], false, LABEL), LABEL), ...(m[2] ? [this.para({ align: "CENTER" }, [this.run(m[2], LABEL)], LABEL)] : [])];
+    const ps: PS = { align: "CENTER", line: pct(LH.ladder) };
+    if (!m) return [this.para(ps, [this.run(flat(label), LABEL)], LABEL)];
+    return [this.para(ps, this.tag(m[1], false, LABEL), LABEL), ...(m[2] ? [this.para(ps, [this.run(m[2], LABEL)], LABEL)] : [])];
   }
 
   title(b: Pick<Block, "title">): Para[] {
-    return b.title ? [this.p(b.title, HEAD, { align: "LEFT", before: px(4) })] : [];
+    return b.title ? [this.p(b.title, HEAD, { align: "LEFT", before: px(4), line: pct(LH.title) })] : [];
   }
 
   /** 그림 자리(화면 .k-fig): 크기 등급 mm 그대로의 점선 상자 + 빗금 바탕 + 종류 칩 + 서술 */
@@ -441,8 +449,8 @@ class SectionWriter extends Writer {
     const { w, h } = figureMm(f);
     const logo = f.kind === "logo";
     const paras = [
-      this.para({ align: "CENTER", line: 130 }, [this.run(FIGURE_LABEL[f.kind], { face: "label", pt: F.figKind, bold: true, color: WHITE, shade: G.g5 })], { face: "label", pt: F.figKind }),
-      this.para({ align: "CENTER", line: 130 }, [this.run(flat(f.desc), { face: "label", pt: logo ? 7 : F.figDesc, color: G.g5 })], { face: "label", pt: F.figDesc }),
+      this.para({ align: "CENTER", line: pct(LH.figKind) }, [this.run(FIGURE_LABEL[f.kind], { face: "label", pt: F.figKind, bold: true, color: WHITE, shade: G.g5 })], { face: "label", pt: F.figKind }),
+      this.para({ align: "CENTER", line: pct(LH.figDesc) }, [this.run(flat(f.desc), { face: "label", pt: logo ? 7 : F.figDesc, color: G.g5 })], { face: "label", pt: F.figDesc }),
     ];
     const m: [number, number, number, number] = logo ? [px(2), px(2), px(1), px(1)] : [px(3), px(3), px(2), px(2)];
     return this.table([mm(w)], [mm(h)], [{ r: 0, c: 0, paras, m, box: { ...all({ pt: 0.75, color: G.g4, type: "DASH" }), fill: G.g1, hatch: "#e6e7e6" } }]);
@@ -500,8 +508,8 @@ class SectionWriter extends Writer {
     const out: TCell[] = [];
     cells.forEach((c, i) => {
       const col = i * 2;
-      if (i) out.push({ r: 0, c: col - 1, rs: rowH.length, paras: joiner ? [this.para({ align: "CENTER" }, [this.run(joiner, { face: "label", pt: JOIN.pt, bold: true, color: G.g3 })], BODY)] : [], m: M0 });
-      out.push({ r: 0, c: col, paras: [this.para({ align: "CENTER" }, head(c, i), HEAD)], box: { l: HAIR, r: HAIR, t: HAIR, b: HAIR, fill: G.g2 }, m: [px(4), px(4), 0, 0] });
+      if (i) out.push({ r: 0, c: col - 1, rs: rowH.length, paras: joiner ? [this.para({ align: "CENTER", line: pct(LH.join) }, [this.run(joiner, { face: "label", pt: JOIN.pt, bold: true, color: G.g3 })], BODY)] : [], m: M0 });
+      out.push({ r: 0, c: col, paras: [this.para({ align: "CENTER", line: pct(LH.card) }, head(c, i), HEAD)], box: { l: HAIR, r: HAIR, t: HAIR, b: HAIR, fill: G.g2 }, m: [px(4), px(4), 0, 0] });
       out.push({ r: 1, c: col, paras: c.bullets.length ? this.ul(c.bullets) : [this.empty()], box: { l: HAIR, r: HAIR, b: hasNote ? null : HAIR }, m: [BOX_X, BOX_X, px(2), px(2)] });
       if (hasNote) out.push({ r: 2, c: col, paras: c.note ? [this.p(c.note, BODY_B, { align: "CENTER" })] : [], box: { l: HAIR, r: HAIR, t: HAIR3, b: HAIR }, m: [px(4), px(4), px(1), px(1)] });
     });
@@ -522,7 +530,7 @@ class SectionWriter extends Writer {
           // VS 대립 2칸: 가운데 9mm에 VS 원(진회색 바탕 흰 글자)
           const t = this.cardColumns(cells, w, 9, "", head);
           const mid = t.cells.find((c) => c.col === 1);
-          if (mid) mid.paras = [this.para({ align: "CENTER" }, [this.run("VS", { face: "head", pt: 9, color: WHITE, shade: G.g5 })], BODY)];
+          if (mid) mid.paras = [this.para({ align: "CENTER", line: pct(LH.vs) }, [this.run("VS", { face: "head", pt: 9, color: WHITE, shade: G.g5 })], BODY)];
           return [...title, this.host(t, px(3))];
         }
         const join = b.variant === "plus" ? "✚" : b.variant === "arrow" ? "▶" : "";
@@ -533,7 +541,7 @@ class SectionWriter extends Writer {
         const cells = b.cells.slice(0, 4);
         const t = this.cardColumns(cells, w, JOIN.gapMm, "▶", (c, i) => [this.run((c.tag || DEF[i]).slice(0, 2), { face: "label", pt: 8.5, bold: true, color: WHITE, shade: G.g4 }), this.run(" ", HEAD), ...this.rich(c.head, HEAD)]);
         const out = [...title, this.host(t, px(3))];
-        if (b.text) out.push(this.host(this.table([w], [lineH(F.small)], [{ r: 0, c: 0, paras: [this.para({ align: "CENTER" }, [this.run("↺ ", { ...HEAD, pt: F.small }), ...this.rich(b.text, { ...HEAD, pt: F.small })], HEAD)], box: all({ ...HAIR, type: "DASH" }), m: [px(6), px(6), px(2), px(2)] }]), mm(1.2)));
+        if (b.text) out.push(this.host(this.table([w], [lineH(F.small)], [{ r: 0, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.pdcaFb) }, [this.run("↺ ", { ...HEAD, pt: F.small }), ...this.rich(b.text, { ...HEAD, pt: F.small })], HEAD)], box: all({ ...HAIR, type: "DASH" }), m: [px(6), px(6), px(2), px(2)] }]), mm(1.2)));
         return out;
       }
       case "compare":
@@ -567,19 +575,19 @@ class SectionWriter extends Writer {
             if (i) chips.push(this.run(" → ", { face: "label", pt: 10, bold: true, color: G.g4 }));
             chips.push(...this.rich(x, { face: "dotumB", pt: F.small, box: all(HAIR5, G.g0) }));
           });
-          paras.push(this.para({ align: "LEFT", before: px(3) }, chips, BODY));
+          paras.push(this.para({ align: "LEFT", before: px(3), line: pct(LH.chip) }, chips, BODY));
         }
         return [this.host(this.table([w], [lineH()], [{ r: 0, c: 0, paras, box: all(HAIR), m: [px(6), px(6), 0, px(4)], va: "TOP" }]), px(5))];
       }
       case "band": {
-        const text = this.para({ align: "CENTER" }, [this.run("▶ ", HEAD), ...this.rich(b.text, HEAD), this.run(" ◀", HEAD)], HEAD);
+        const text = this.para({ align: "CENTER", line: pct(LH.band) }, [this.run("▶ ", HEAD), ...this.rich(b.text, HEAD), this.run(" ◀", HEAD)], HEAD);
         if (!b.label) return [this.host(this.table([w], [lineH()], [{ r: 0, c: 0, paras: [text], box: all(HAIR) }]), px(5))];
         const lw = mm(Math.max(18, textEm(b.label) * F.label * (25.4 / 72) + 16 * (25.4 / 96)));
         const colW = this.cols(w, [lw, mm(2), { fr: 1 }]);
         return [
           this.host(
             this.table(colW, [lineH()], [
-              { r: 0, c: 0, paras: [this.para({ align: "CENTER" }, [this.run(flat(b.label), LABEL)], LABEL)], box: all(HAIR, G.g2), m: [px(8), px(8), 0, 0] },
+              { r: 0, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.band) }, [this.run(flat(b.label), LABEL)], LABEL)], box: all(HAIR, G.g2), m: [px(8), px(8), 0, 0] },
               { r: 0, c: 1, paras: [], m: M0 },
               { r: 0, c: 2, paras: [text], box: all(HAIR) },
             ]),
@@ -604,7 +612,7 @@ class SectionWriter extends Writer {
         return [this.host(cw < w ? this.center(t, w) : t, px(5))];
       }
       case "subhead":
-        return [this.p(b.text, { face: "dotumB", pt: F.subhead }, { align: "LEFT", before: px(7), after: px(2) })];
+        return [this.p(b.text, { face: "dotumB", pt: F.subhead }, { align: "LEFT", before: px(7), after: px(2), line: pct(LH.subhead) })];
       case "qa":
         return [...title, this.host(this.qa(b.cells, w), px(3))];
       case "table":
@@ -640,14 +648,14 @@ class SectionWriter extends Writer {
     const H11: CS = { face: "dotumB", pt: F.box };
     const n = rows.length;
     const cells: TCell[] = [
-      { r: 0, c: 0, paras: [this.p("구 분", H11, { align: "CENTER" })], box: { fill: G.g2 }, m: [px(5), px(5), px(2), px(2)] },
-      { r: 0, c: 1, paras: [this.p("기 존", H11, { align: "CENTER" })], box: { fill: G.g2 }, m: [px(5), px(5), px(2), px(2)] },
+      { r: 0, c: 0, paras: [this.p("구 분", H11, { align: "CENTER", line: pct(LH.ba) })], box: { fill: G.g2 }, m: [px(5), px(5), px(2), px(2)] },
+      { r: 0, c: 1, paras: [this.p("기 존", H11, { align: "CENTER", line: pct(LH.ba) })], box: { fill: G.g2 }, m: [px(5), px(5), px(2), px(2)] },
       { r: 0, c: 2, paras: [], m: M0 },
-      { r: 0, c: 3, paras: [this.p("개 선", { ...H11, color: WHITE }, { align: "CENTER" })], box: { l: THICK, r: THICK, t: THICK, fill: G.g4 }, m: [px(5), px(5), px(2), px(2)] },
+      { r: 0, c: 3, paras: [this.p("개 선", { ...H11, color: WHITE }, { align: "CENTER", line: pct(LH.ba) })], box: { l: THICK, r: THICK, t: THICK, fill: G.g4 }, m: [px(5), px(5), px(2), px(2)] },
     ];
     rows.forEach((r, i) => {
       const last = i === n - 1;
-      cells.push({ r: i + 1, c: 0, paras: [this.p(r.key, H11, { align: "CENTER" })], box: { b: HAIR3, r: HAIR3 }, m: [px(5), px(5), px(2), px(2)] });
+      cells.push({ r: i + 1, c: 0, paras: [this.p(r.key, H11, { align: "CENTER", line: pct(LH.ba) })], box: { b: HAIR3, r: HAIR3 }, m: [px(5), px(5), px(2), px(2)] });
       cells.push({ r: i + 1, c: 1, paras: this.ul(r.before), box: { b: HAIR3 }, m: [px(5), px(5), px(2), px(2)] });
       if (i === 0) cells.push({ r: 1, c: 2, rs: n, paras: [this.para({ align: "CENTER" }, [this.run("▶", { face: "label", pt: 16, bold: true, color: G.g3 })], BODY)], m: M0 });
       cells.push({ r: i + 1, c: 3, paras: this.ul(r.after), box: { l: THICK, r: THICK, b: last ? THICK : HAIR3 }, m: [px(5), px(5), px(2), px(2)] });
@@ -668,7 +676,7 @@ class SectionWriter extends Writer {
       const k = to ? 1 : 0;
       const line = to ? THICK : HAIR;
       const headC: CS = to ? { ...HEAD, color: WHITE } : HEAD;
-      const head = this.para({ align: "CENTER" }, [...this.tag(TAG[k], to, headC), ...this.rich((b.items[k] ?? "").replace(LEAD_TAG, ""), headC)], HEAD);
+      const head = this.para({ align: "CENTER", line: pct(LH.panel) }, [...this.tag(TAG[k], to, headC), ...this.rich((b.items[k] ?? "").replace(LEAD_TAG, ""), headC)], HEAD);
       const items = b.rows.map((r, i) =>
         this.para({ align: "JUSTIFY", left: 0, indent: -Math.round(1.3 * F.body * 100) }, [
           this.run(`${[...NUM[k]][i] ?? ""} `, { face: "num", pt: F.body }),
@@ -717,7 +725,7 @@ class SectionWriter extends Writer {
     const cells: TCell[] = [];
     steps.forEach((s, i) => {
       const lr = { l: i ? HAIR : undefined, r: i < n - 1 ? HAIR : undefined };
-      cells.push({ r: 0, c: i, paras: [this.para({ align: "CENTER" }, [this.run(String(i + 1), { face: "dotumB", pt: F.tag, box: all(HAIR5, G.g0) }), this.run(" ", H11), ...this.rich(s.title, H11)], H11)], box: { ...lr, fill: G.g2 }, m: [px(10), px(10), 0, 0] });
+      cells.push({ r: 0, c: i, paras: [this.para({ align: "CENTER", line: pct(LH.proc) }, [this.run(String(i + 1), { face: "dotumB", pt: F.tag, box: all(HAIR5, G.g0) }), this.run(" ", H11), ...this.rich(s.title, H11)], H11)], box: { ...lr, fill: G.g2 }, m: [px(10), px(10), 0, 0] });
       cells.push({ r: 1, c: i, paras: s.bullets.length ? this.ul(s.bullets) : [this.empty()], box: lr, m: [BOX_X, BOX_X, px(2), px(2)] });
       if (hasNote) cells.push({ r: 2, c: i, paras: s.note ? [this.p(s.note, BODY_B, { align: "CENTER" })] : [], box: { ...lr, t: HAIR }, m: [px(3), px(3), px(1), px(1)] });
     });
@@ -740,12 +748,12 @@ class SectionWriter extends Writer {
       box: all(HAIR),
       m: [px(4), px(4), 0, px(2)],
       paras: [
-        this.para({ align: "CENTER", box: { b: HAIR } }, [this.run(` ${i + 1}단계 `, { ...HEAD, shade: G.g2 }), this.run(" ", HEAD), ...this.rich(c.head.replace(STEP_LEAD, ""), HEAD)], HEAD),
+        this.para({ align: "CENTER", line: pct(LH.zig), box: { b: HAIR } }, [this.run(` ${i + 1}단계 `, { ...HEAD, shade: G.g2 }), this.run(" ", HEAD), ...this.rich(c.head.replace(STEP_LEAD, ""), HEAD)], HEAD),
         ...this.ul(c.bullets),
         ...(c.note ? [this.p(c.note, BODY_B, { align: "CENTER", before: px(2), box: { t: HAIR3 } })] : []),
       ],
     }));
-    const arrow = (r: number, c: number, ch: string): TCell => ({ r, c, paras: [this.para({ align: "CENTER" }, [this.run(ch, { face: "label", pt: 12, bold: true, color: G.g3 })], BODY)], m: M0 });
+    const arrow = (r: number, c: number, ch: string): TCell => ({ r, c, paras: [this.para({ align: "CENTER", line: pct(LH.zigArr) }, [this.run(ch, { face: "label", pt: 12, bold: true, color: G.g3 })], BODY)], m: M0 });
     const blank = (r: number, c: number): TCell => ({ r, c, paras: [], m: M0 });
     out.push(blank(0, 1), arrow(1, 0, "▼"), blank(1, 1), arrow(1, 2, "▲"), arrow(2, 1, "▶"));
     return this.table(colW, [lineH(), mm(5), lineH()], out, { outline: HAIR3 });
@@ -768,7 +776,7 @@ class SectionWriter extends Writer {
       const cur = i === steps.length - 1;
       const line = cur ? THICK : HAIR;
       if (i) cells.push({ r: 0, c: col - 1, rs: rows, paras: [this.para({ align: "CENTER" }, [this.run("▶", { face: "label", pt: 9, bold: true, color: G.g4 })], BODY)], m: M0 });
-      cells.push({ r: 0, c: col, paras: [this.para({ align: "CENTER" }, this.rich(s.title, cur ? { ...H11, color: WHITE } : H11), H11)], box: { l: HAIR, r: HAIR, t: HAIR, b: line, fill: cur ? G.g4 : G.g2 }, m: [px(2), px(2), 0, 0] });
+      cells.push({ r: 0, c: col, paras: [this.para({ align: "CENTER", line: pct(LH.tl) }, this.rich(s.title, cur ? { ...H11, color: WHITE } : H11), H11)], box: { l: HAIR, r: HAIR, t: HAIR, b: line, fill: cur ? G.g4 : G.g2 }, m: [px(2), px(2), 0, 0] });
       cells.push({ r: 1, c: col, va: "TOP", paras: s.bullets.length ? this.ul(s.bullets) : [this.empty()], box: { l: line, r: line, b: hasNote ? null : line }, m: [BOX_X, BOX_X, px(1), px(1)] });
       if (hasNote) cells.push({ r: 2, c: col, va: "BOTTOM", paras: s.note ? [this.p(s.note, BODY_B, { align: "CENTER" })] : [], box: { l: line, r: line, b: line }, m: [BOX_X, BOX_X, px(1), px(1)] });
     });
@@ -815,7 +823,7 @@ class SectionWriter extends Writer {
     const link = (r: number, c: number): TCell => ({ r, c, paras: [this.para({ align: "CENTER" }, [this.run("⇄", { face: "label", pt: 13, bold: true, color: G.g4 })], BODY)], m: M0 });
     const logos = (b.figures ?? []).filter((f) => f.pos === "center");
     const mid = (cw: number): Para[] => [
-      this.para({ align: "CENTER", box: { fill: G.g4 } }, this.rich(center.head, { ...HEAD, color: WHITE }), HEAD),
+      this.para({ align: "CENTER", line: pct(LH.hub), box: { fill: G.g4 } }, this.rich(center.head, { ...HEAD, color: WHITE }), HEAD),
       ...(logos.length ? [this.logoRow(logos, inner(cw, [px(5), px(5), 0, px(2)]))] : []),
       ...this.ul(center.bullets),
     ];
@@ -826,7 +834,7 @@ class SectionWriter extends Writer {
         c: col,
         box: all(HAIR),
         m: [px(5), px(5), px(2), px(3)],
-        paras: [this.para({ align: "CENTER", box: all(HAIR5, G.g0) }, this.rich(c.head, HEAD), HEAD), this.p(c.bullets.join(" / "), BODY, { align: "CENTER" })],
+        paras: [this.para({ align: "CENTER", line: pct(LH.hub), box: all(HAIR5, G.g0) }, this.rich(c.head, HEAD), HEAD), this.p(c.bullets.join(" / "), BODY, { align: "CENTER" })],
       });
       return [this.host(this.table(colW, [lineH()], [node(nodes[0], 0), link(0, 1), { r: 0, c: 2, paras: mid(colW[2]), box: all(HAIR), m: [px(5), px(5), 0, px(2)], va: "CENTER" }, link(0, 3), node(nodes[1], 4)]), px(3))];
     }
@@ -837,7 +845,7 @@ class SectionWriter extends Writer {
       lw,
       nodes.map(() => lineH()),
       nodes.flatMap((c, i): TCell[] => [
-        { r: i, c: 0, paras: [this.p(c.head, { ...HEAD, pt: 10.2 }, { align: "CENTER" })], box: all(HAIR, G.g1), m: [px(4), px(4), px(1), px(1)] },
+        { r: i, c: 0, paras: [this.p(c.head, { ...HEAD, pt: 10.2 }, { align: "CENTER", line: pct(LH.hubList) })], box: all(HAIR, G.g1), m: [px(4), px(4), px(1), px(1)] },
         { r: i, c: 1, paras: this.ul(c.bullets), box: all(HAIR), m: [px(4), px(4), px(1), px(1)] },
       ]),
     );
@@ -882,7 +890,7 @@ class SectionWriter extends Writer {
           out.push({ r, c: col, paras: [], m: M0 }, { r, c: col + 1, paras: [], m: M0 });
           continue;
         }
-        out.push({ r, c: col, paras: [this.para({ align: "CENTER" }, this.rich(c.head || "현장", { face: "dotumB", pt: 7.5, color: WHITE, shade: G.g4 }), BODY)], m: [0, mm(3), px(3), px(3)] });
+        out.push({ r, c: col, paras: [this.para({ align: "CENTER", line: pct(LH.voice) }, this.rich(c.head || "현장", { face: "dotumB", pt: 7.5, color: WHITE, shade: G.g4 }), BODY)], m: [0, mm(3), px(3), px(3)] });
         out.push({ r, c: col + 1, paras: [this.para({ align: "CENTER" }, [this.run("“", BODY), ...this.rich(c.bullets[0] ?? "", BODY), this.run("”", BODY)])], box: all(HAIR), m: [px(6), px(6), px(2), px(2)] });
       }
     }
@@ -901,7 +909,7 @@ class SectionWriter extends Writer {
     cells.forEach((c, i) => {
       const col = i * 2;
       if (i) out.push({ r: 0, c: col - 1, rs: 2, paras: [], m: M0 });
-      out.push({ r: 0, c: col, paras: [this.para({ align: "CENTER" }, [...this.tag(c.tag, false, HEAD), ...this.rich(c.head, HEAD)], HEAD)], box: { l: HAIR, r: HAIR, t: HAIR, b: HAIR, fill: G.g1 }, m: [px(4), px(4), 0, 0] });
+      out.push({ r: 0, c: col, paras: [this.para({ align: "CENTER", line: pct(LH.ctx) }, [...this.tag(c.tag, false, HEAD), ...this.rich(c.head, HEAD)], HEAD)], box: { l: HAIR, r: HAIR, t: HAIR, b: HAIR, fill: G.g1 }, m: [px(4), px(4), 0, 0] });
       const items: Inline[] = [this.run("“", BODY), ...this.rich(c.bullets[0] ?? "", BODY), this.run("”", BODY)];
       if (c.note) items.push(this.run("(", { ...BODY, pt: F.small }), ...this.rich(c.note.replace(/^\(|\)$/g, ""), { ...BODY, pt: F.small }), this.run(")", { ...BODY, pt: F.small }));
       out.push({ r: 1, c: col, paras: [this.para({ bullet: true }, items)], box: { l: HAIR, r: HAIR, b: HAIR }, m: [px(5), px(5), px(2), px(3)] });
@@ -919,7 +927,7 @@ class SectionWriter extends Writer {
       return m ? this.para({ align: "JUSTIFY" }, [...this.tag(m[1]), ...this.rich(m[2], BODY)]) : this.para({ bullet: true }, this.rich(x, BODY));
     });
     const cells: TCell[] = [
-      { r: 0, c: 0, paras: [this.para({ align: "CENTER" }, [this.run(` ${flat(b.label || "우수사례")}  `, { ...H11, color: WHITE, shade: G.g4 }), this.run("  ", H11), ...this.rich(b.title, H11)], H11)], box: { fill: G.g1 }, m: [0, px(4), 0, 0] },
+      { r: 0, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.caseHead) }, [this.run(` ${flat(b.label || "우수사례")}  `, { ...H11, color: WHITE, shade: G.g4 }), this.run("  ", H11), ...this.rich(b.title, H11)], H11)], box: { fill: G.g1 }, m: [0, px(4), 0, 0] },
       { r: 1, c: 0, paras: items.length ? items : [this.empty()], m: [px(5), px(5), px(2), px(3)], va: "TOP" },
     ];
     if (fig) cells.push({ r: 0, c: 1, rs: 2, paras: [this.host(this.figBox(fig))], box: { l: { pt: 0.75, color: G.g4, type: "DASH" } }, m: M0 });
@@ -954,7 +962,7 @@ class SectionWriter extends Writer {
         r: 0,
         c: 0,
         cs: ncol,
-        paras: [this.para({ align: "CENTER" }, [...this.rich(c.title, { ...HEAD, pt: F.small }), ...(c.badge ? [this.run(" ", HEAD), this.run(plain(c.badge), { face: "dotumB", pt: F.tag, color: WHITE, shade: G.g5 })] : [])], HEAD)],
+        paras: [this.para({ align: "CENTER", line: pct(LH.chart) }, [...this.rich(c.title, { ...HEAD, pt: F.small }), ...(c.badge ? [this.run(" ", HEAD), this.run(plain(c.badge), { face: "dotumB", pt: F.tag, color: WHITE, shade: G.g5 })] : [])], HEAD)],
         box: { b: HAIR, fill: G.g1 },
         m: [px(3), px(3), 0, 0],
       });
@@ -988,10 +996,10 @@ class SectionWriter extends Writer {
   qa(cells: BlockCell[], w: number): Table {
     const colW = this.cols(w, [mm(6), { fr: 1 }]);
     const out: TCell[] = [];
-    const mark = (ch: string, a: boolean) => this.para({ align: "CENTER" }, [this.run(ch, a ? { face: "dotumB", pt: F.tag, color: G.g5, box: all(HAIR5, G.g0) } : { face: "dotumB", pt: F.tag, color: WHITE, shade: G.g5 })], BODY);
+    const mark = (ch: string, a: boolean) => this.para({ align: "CENTER", line: pct(LH.qaMark) }, [this.run(ch, a ? { face: "dotumB", pt: F.tag, color: G.g5, box: all(HAIR5, G.g0) } : { face: "dotumB", pt: F.tag, color: WHITE, shade: G.g5 })], BODY);
     cells.forEach((c, i) => {
       out.push({ r: i * 2, c: 0, va: "TOP", paras: [mark("Q", false)], m: [px(6), 0, px(2), 0] });
-      out.push({ r: i * 2, c: 1, va: "TOP", paras: [this.p(c.head, HEAD, { align: "LEFT" })], m: [0, px(6), px(2), 0] });
+      out.push({ r: i * 2, c: 1, va: "TOP", paras: [this.p(c.head, HEAD, { align: "LEFT", line: pct(LH.qa) })], m: [0, px(6), px(2), 0] });
       out.push({ r: i * 2 + 1, c: 0, va: "TOP", paras: [mark("A", true)], m: [px(6), 0, 0, mm(0.8)] });
       out.push({ r: i * 2 + 1, c: 1, va: "TOP", paras: c.bullets.length === 1 ? [this.p(c.bullets[0])] : this.ul(c.bullets), m: [0, px(6), 0, mm(0.8)] });
     });
@@ -1010,7 +1018,7 @@ class SectionWriter extends Writer {
       return {
         r: 0,
         c: i,
-        paras: [this.p(x, dark ? { ...LABEL, color: WHITE } : LABEL, { align: "CENTER" })],
+        paras: [this.p(x, dark ? { ...LABEL, color: WHITE } : LABEL, { align: "CENTER", line: pct(LH.tbl) })],
         box: { t: THICK, b: HAIR, l: i ? { pt: ST.line.hair, color: G.g0 } : undefined, fill: dark ? (i === b.items.length - 1 ? G.g5 : G.g4) : G.g2 },
         m: [px(4), px(4), px(1), px(1)],
       };
@@ -1018,7 +1026,7 @@ class SectionWriter extends Writer {
     const last = b.cells.length - 1;
     b.cells.forEach((c, i) => {
       const bottom = i === last ? HAIR : HAIR3;
-      cells.push({ r: i + 1, c: 0, paras: [this.p(c.head, { ...HEAD, pt: F.label }, { align: "CENTER" })], box: { b: bottom, fill: G.g1 }, m: [px(4), px(4), px(1), px(1)] });
+      cells.push({ r: i + 1, c: 0, paras: [this.p(c.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { b: bottom, fill: G.g1 }, m: [px(4), px(4), px(1), px(1)] });
       const lens = bars ? tableBars(c.bullets) : [];
       for (let k = 0; k < nv; k++) {
         const x = c.bullets[k] ?? "";
@@ -1056,15 +1064,15 @@ class SectionWriter extends Writer {
     const off = rh ? 1 : 0;
     const W9: CS = { face: "dotumB", pt: F.small, color: WHITE };
     const res: Para[] = [
-      this.para({ align: "CENTER", box: { b: { pt: ST.line.hair, color: G.g0 } }, after: px(1) }, [this.run("추진실적", W9)], W9),
-      ...b.series.flatMap((x) => [this.p(x.value, { face: "dotumB", pt: F.stat, color: WHITE }, { align: "CENTER", before: px(1) }), ...(x.label ? [this.p(x.label, W9, { align: "CENTER" })] : [])]),
-      ...(b.text ? [this.p(b.text, W9, { align: "CENTER", before: px(2) })] : []),
+      this.para({ align: "CENTER", line: pct(LH.resHead), box: { b: { pt: ST.line.hair, color: G.g0 } }, after: px(1) }, [this.run("추진실적", W9)], W9),
+      ...b.series.flatMap((x) => [this.p(x.value, { face: "dotumB", pt: F.stat, color: WHITE }, { align: "CENTER", before: px(1), line: pct(LH.resValue) }), ...(x.label ? [this.p(x.label, W9, { align: "CENTER", line: pct(LH.resLine) })] : [])]),
+      ...(b.text ? [this.p(b.text, W9, { align: "CENTER", before: px(2), line: pct(LH.resLine) })] : []),
     ];
     const n = Math.max(1, b.cells.length);
     const cells: TCell[] = [];
     b.cells.forEach((c, i) => {
       const bottom = i === n - 1 ? HAIR : HAIR3;
-      if (rh) cells.push({ r: i, c: 0, paras: [this.p(c.head, { ...HEAD, pt: F.label }, { align: "CENTER" })], box: { b: bottom, fill: G.g1, t: i === 0 ? THICK : undefined }, m: [px(4), px(4), px(1), px(1)] });
+      if (rh) cells.push({ r: i, c: 0, paras: [this.p(c.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { b: bottom, fill: G.g1, t: i === 0 ? THICK : undefined }, m: [px(4), px(4), px(1), px(1)] });
       cells.push({ r: i, c: off, paras: this.ul(c.bullets), box: { b: bottom, l: off ? HAIR3 : undefined, t: i === 0 ? THICK : undefined }, m: [px(4), px(4), px(1), px(1)] });
     });
     cells.push({ r: 0, c: off + 1, rs: n, paras: res, box: { fill: G.g5, l: { pt: ST.line.hair, color: G.g5 }, t: THICK, b: HAIR }, m: [px(4), px(4), px(2), px(2)] });
@@ -1080,11 +1088,11 @@ class SectionWriter extends Writer {
     const m: [number, number, number, number] = [px(4), px(4), px(1), px(1)];
     for (const g of ladderGroups(b.cells)) {
       const end = g.start + g.rows === n;
-      cells.push({ r: g.start, c: 0, rs: g.rows, paras: [this.p(g.head, { ...HEAD, pt: F.label }, { align: "CENTER" })], box: { fill: G.g2, r: HAIR, b: end ? HAIR : HAIR3, t: g.start === 0 ? THICK : undefined }, m });
+      cells.push({ r: g.start, c: 0, rs: g.rows, paras: [this.p(g.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { fill: G.g2, r: HAIR, b: end ? HAIR : HAIR3, t: g.start === 0 ? THICK : undefined }, m });
       for (let i = g.start; i < g.start + g.rows; i++) {
         const bottom = i === n - 1 ? HAIR : HAIR3;
         const top = i === 0 ? THICK : undefined;
-        if (sub) cells.push({ r: i, c: 1, paras: [this.p(b.cells[i].tag, { ...HEAD, pt: F.label }, { align: "LEFT" })], box: { fill: G.g1, r: HAIR3, b: bottom, t: top }, m });
+        if (sub) cells.push({ r: i, c: 1, paras: [this.p(b.cells[i].tag, { ...HEAD, pt: F.label }, { align: "LEFT", line: pct(LH.tbl) })], box: { fill: G.g1, r: HAIR3, b: bottom, t: top }, m });
         cells.push({ r: i, c: sub ? 2 : 1, paras: this.ul(b.cells[i].bullets), box: { b: bottom, t: top }, m });
       }
     }
@@ -1104,17 +1112,17 @@ class SectionWriter extends Writer {
     const m: [number, number, number, number] = [px(3), px(3), px(2), px(2)];
     const th = () => {
       const i = layer++;
-      if (tier) cells.push({ r, c: 0, paras: [this.p(b.items[i] ?? "", { ...HEAD, pt: F.small }, { align: "CENTER" })], box: all(HAIR, G.g2), m });
+      if (tier) cells.push({ r, c: 0, paras: [this.p(b.items[i] ?? "", { ...HEAD, pt: F.small }, { align: "CENTER", line: pct(LH.stratTh) })], box: all(HAIR, G.g2), m });
     };
     const H: CS = HEAD;
     if (b.text) {
       th();
-      cells.push({ r, c: off, cs: n, paras: [this.p(b.text, { ...H, color: WHITE }, { align: "CENTER" })], box: all(HAIR, G.g4), m: [px(4), px(4), px(2), px(2)] });
+      cells.push({ r, c: off, cs: n, paras: [this.p(b.text, { ...H, color: WHITE }, { align: "CENTER", line: pct(LH.stratTop) })], box: all(HAIR, G.g4), m: [px(4), px(4), px(2), px(2)] });
       rowH.push(lineH());
       r++;
     }
     th();
-    b.cells.forEach((c, i) => cells.push({ r, c: off + i, paras: [this.para({ align: "CENTER" }, [...this.tag(c.tag, false, H), ...this.rich(c.head, H)], H)], box: all(HAIR, G.g1), m }));
+    b.cells.forEach((c, i) => cells.push({ r, c: off + i, paras: [this.para({ align: "CENTER", line: pct(LH.stratHead) }, [...this.tag(c.tag, false, H), ...this.rich(c.head, H)], H)], box: all(HAIR, G.g1), m }));
     rowH.push(lineH());
     r++;
     th();
@@ -1123,7 +1131,7 @@ class SectionWriter extends Writer {
     r++;
     if (b.cells.some((c) => c.note)) {
       th();
-      b.cells.forEach((c, i) => cells.push({ r, c: off + i, paras: c.note ? [this.p(c.note, { ...H, pt: F.small }, { align: "CENTER" })] : [], box: all(HAIR, G.g1), m }));
+      b.cells.forEach((c, i) => cells.push({ r, c: off + i, paras: c.note ? [this.p(c.note, { ...H, pt: F.small }, { align: "CENTER", line: pct(LH.stratFoot) })] : [], box: all(HAIR, G.g1), m }));
       rowH.push(lineH(F.small));
       r++;
     }
@@ -1149,9 +1157,10 @@ class SectionWriter extends Writer {
         m: [px(4), px(4), px(2), px(3)],
         paras: [
           ...(c.tag ? [this.para({ align: "CENTER" }, this.tag(c.tag).slice(0, -1), BODY)] : []),
-          this.p(c.head, { face: "dotumB", pt: F.stat }, { align: "CENTER" }),
+          // 큰 수치 자리의 【확인: …】은 화면(.k-stat__v .k-need)처럼 10.5pt 굵은 돋움으로 줄임
+          this.para({ align: "CENTER", line: pct(LH.stat) }, this.rich(c.head, { face: "dotumB", pt: F.stat }, F.statNeed), { face: "dotumB", pt: F.stat }),
           ...(c.bullets[0] ? [this.p(c.bullets[0], BODY, { align: "CENTER" })] : []),
-          ...(c.note ? [this.p(c.note, { face: "dotumB", pt: F.small, color: G.g5 }, { align: "CENTER" })] : []),
+          ...(c.note ? [this.p(c.note, { face: "dotumB", pt: F.small, color: G.g5 }, { align: "CENTER", line: pct(LH.statNote) })] : []),
         ],
       });
     });
@@ -1235,7 +1244,7 @@ class SectionWriter extends Writer {
     const W: CS = { ...HEAD, color: WHITE, shade: G.g5 };
     const m = /^(Step\s?\d+|’\d\d년~?|\d{4}년~?|\d단계)\s*(.*)$/.exec(label);
     const items = m ? [this.run(" ", W), ...this.tag(m[1], false, W), this.run(`${m[2]}   `, W)] : [this.run(` ${flat(label)}   `, W)];
-    return this.para({ align: "LEFT", before: px(6), after: px(1), box: { b: { pt: 1.2, color: G.g5 } } }, items, HEAD);
+    return this.para({ align: "LEFT", before: px(6), after: px(1), line: pct(LH.stage), box: { b: { pt: 1.2, color: G.g5 } } }, items, HEAD);
   }
 
   /** 추진성과 상자: [라벨 21mm 진회색][본문 — 3칸·불릿(굵게)·막대][강조 띠] — 굵은 테두리 */
@@ -1281,28 +1290,28 @@ class SectionWriter extends Writer {
         ]
       : main;
     const cells: TCell[] = [
-      { r: 0, c: 0, paras: [this.p("추진성과", { face: "dotumB", pt: F.resultLabel, color: WHITE }, { align: "CENTER" })], box: { l: edge, t: edge, b: edge, fill: G.g5 }, m: [px(2), px(2), 0, 0] },
+      { r: 0, c: 0, paras: [this.p("추진성과", { face: "dotumB", pt: F.resultLabel, color: WHITE }, { align: "CENTER", line: pct(LH.result) })], box: { l: edge, t: edge, b: edge, fill: G.g5 }, m: [px(2), px(2), 0, 0] },
       { r: 0, c: 1, paras: body, box: { t: edge, b: edge, r: bandMm ? undefined : edge, fill: G.g1 }, m: bodyM },
     ];
     if (bandMm && spec.resultBand)
-      cells.push({ r: 0, c: 2, paras: [this.p(spec.resultBand, { face: "dotumB", pt: F.box, color: WHITE, shade: G.g5 }, { align: "CENTER" })], box: { t: edge, b: edge, r: edge }, m: [mm(2), px(5), 0, 0] });
+      cells.push({ r: 0, c: 2, paras: [this.p(spec.resultBand, { face: "dotumB", pt: F.box, color: WHITE, shade: G.g5 }, { align: "CENTER", line: pct(LH.resultBand) })], box: { t: edge, b: edge, r: edge }, m: [mm(2), px(5), 0, 0] });
     return [this.host(this.table(colW, [lineH()], cells), px(6))];
   }
 
   /** 머리: 대상사업 상자 · 실행과제 띠(번호 칩·BP) · 소항목(가. [칩] 제목 + 마커) */
   heads(spec: ReportSectionSpec): Para[] {
     const H15: CS = { face: "head", pt: F.head };
-    const biz = this.para({ align: "LEFT", after: px(5) }, [this.run(` 대상사업${spec.business.no} `, { face: "head", pt: F.bizNo, box: all(HAIR, G.g2) }), this.run("  ", H15), this.run(flat(spec.business.name), H15)], H15);
+    const biz = this.para({ align: "LEFT", after: px(5), line: pct(LH.biz) }, [this.run(` 대상사업${spec.business.no} `, { face: "head", pt: F.bizNo, box: all(HAIR, G.g2) }), this.run("  ", H15), this.run(flat(spec.business.name), H15)], H15);
     const marker = (m: string) => (MARKER_STYLE[m] ? [this.run(" ", HEAD), this.run(` ${m} `, MARKER_STYLE[m])] : []);
     const task = this.para(
-      { align: "LEFT", after: px(4), box: { fill: G.g1 } },
+      { align: "LEFT", after: px(4), line: pct(LH.task), box: { fill: G.g1 } },
       [this.run(` ${flat(spec.task.no)} `, { face: "head", pt: F.taskNo, color: WHITE, shade: G.g4 }), this.run("  ", H15), this.run(flat(spec.task.title), H15), ...(spec.task.bp ? marker("BP") : [])],
       H15,
     );
     const S14: CS = { face: "dotumB", pt: F.sub };
     // 갈래 칩은 v3 블록 목록 초안만(화면 sectionBodyInner와 같음)
     const chip = spec.version === 3 && spec.sub.chip ? `[${flat(spec.sub.chip)}] ` : "";
-    const sub = this.para({ align: "LEFT", after: px(5) }, [this.run(`${flat(spec.sub.mark)}. ${chip}`, S14), ...this.rich(spec.sub.title, S14), ...spec.sub.markers.flatMap(marker)], S14);
+    const sub = this.para({ align: "LEFT", after: px(5), line: pct(LH.sub) }, [this.run(`${flat(spec.sub.mark)}. ${chip}`, S14), ...this.rich(spec.sub.title, S14), ...spec.sub.markers.flatMap(marker)], S14);
     return [biz, task, sub];
   }
 
@@ -1325,8 +1334,8 @@ class SectionWriter extends Writer {
         const colW = this.cols(w, [{ fr: 1 }, { fr: 1 }]);
         const m: [number, number, number, number] = [px(5), px(5), px(2), px(2)];
         const cells: TCell[] = [
-          { r: 0, c: 0, paras: [this.p("추진 노력", LABEL, { align: "CENTER" })], box: { t: THICK, b: HAIR, fill: G.g2 }, m },
-          { r: 0, c: 1, paras: [this.p("추진 성과", { ...LABEL, color: WHITE }, { align: "CENTER" })], box: { t: THICK, b: HAIR, fill: G.g4 }, m },
+          { r: 0, c: 0, paras: [this.p("추진 노력", LABEL, { align: "CENTER", line: pct(LH.act) })], box: { t: THICK, b: HAIR, fill: G.g2 }, m },
+          { r: 0, c: 1, paras: [this.p("추진 성과", { ...LABEL, color: WHITE }, { align: "CENTER", line: pct(LH.act) })], box: { t: THICK, b: HAIR, fill: G.g4 }, m },
           ...d.actions.flatMap((a, i): TCell[] => [
             { r: i + 1, c: 0, paras: [this.p(a.effort)], box: { b: HAIR }, m },
             { r: i + 1, c: 1, paras: [this.p(a.result, BODY_B)], box: { b: HAIR, l: HAIR3 }, m },
@@ -1353,7 +1362,7 @@ class SectionWriter extends Writer {
         const sideW = this.cols(cw, [{ fr: 1 }, mm(2.5), mm(42)]);
         paras = [this.host(this.table(sideW, [lineH()], [{ r: 0, c: 0, va: "TOP", m: M0, paras: main(sideW[0]) }, { r: 0, c: 1, m: M0, paras: [] }, { r: 0, c: 2, m: M0, paras: [this.host(this.chart(r.chart, sideW[2]))] }]))];
       } else paras = main(cw);
-      cells.push({ r: i, c: 0, paras: [this.para({ align: "CENTER" }, [this.run(flat(r.label), LABEL)], LABEL)], box: all(HAIR, G.g2), m });
+      cells.push({ r: i, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.ladder) }, [this.run(flat(r.label), LABEL)], LABEL)], box: all(HAIR, G.g2), m });
       cells.push({ r: i, c: 1, paras: paras.length ? paras : [this.empty()], box: { r: HAIR, t: HAIR, b: HAIR }, m });
     });
     return [this.host(this.table(colW, rows.map(() => lineH()), cells), px(5))];
