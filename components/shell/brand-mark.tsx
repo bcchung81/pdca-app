@@ -10,13 +10,16 @@ export function BrandMark({ className, title }: { className?: string; title?: st
   );
 }
 
-/** 로고는 「경평AI비서」 한 줄입니다. 줄바꿈하지 않습니다. */
+/**
+ * 로고는 「경평AI비서」 한 줄입니다. 줄바꿈하지 않습니다.
+ * 글꼴·굵기·자간은 트랙 스위치와 같게(크기만 로고용)
+ */
 export function BrandLogo({ size = "header" }: { size?: "header" | "login" }) {
   const s = size === "login" ? { mark: "size-12", gap: "gap-3", name: "text-figure" } : { mark: "size-[34px]", gap: "gap-2.5", name: "text-title" };
   return (
     <span className={`flex items-center ${s.gap}`}>
       <BrandMark className={`${s.mark} shrink-0`} />
-      <span className={`${s.name} font-sans leading-none font-semibold tracking-[-0.02em] whitespace-nowrap text-brand-ink`}>경평AI비서</span>
+      <span className={`${s.name} font-sans leading-none font-semibold whitespace-nowrap text-brand-ink`}>경평AI비서</span>
     </span>
   );
 }
