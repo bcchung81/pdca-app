@@ -586,28 +586,30 @@ function DraftRail(props: { stage: DraftStage; meta: DraftMeta; draftInfo: strin
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <ol aria-label="초안 단계" className="m-0 flex list-none flex-col gap-2.5 p-0">
-        {stage.steps.map((s) => (
-          <li key={s.key} aria-current={s.now ? "step" : undefined} className="flex min-w-0 items-start gap-2.5">
-            <span className="flex h-5 shrink-0 items-center">
-              <StatusMark tone={s.tone} />
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      {/* 파이프라인: 컨테이너 폭 20rem(320px) 이상이면 세 칸 한 줄 + 칸 사이 ›, 그보다 좁으면 세로 */}
+      <div className="@container min-w-0">
+        <ol aria-label="초안 단계" className="m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[20rem]:grid-cols-3 @min-[20rem]:gap-x-4">
+          {stage.steps.map((s, i) => (
+            <li key={s.key} aria-current={s.now ? "step" : undefined} className={`relative flex min-w-0 flex-col gap-1 rounded-md border px-2 py-1.5 ${s.now ? "border-navy bg-thead" : "border-line"}`}>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <span className="flex h-5 shrink-0 items-center">
+                  <StatusMark tone={s.tone} />
+                </span>
                 <span className={`text-sm leading-5 font-semibold whitespace-nowrap ${s.now ? "text-navy" : "text-ink"}`}>{s.label}</span>
                 <Tag tone={MARK_TAG[s.tone]}>{s.state}</Tag>
               </div>
               {metaLine(s.key)}
-              {/* 제출은 과제별 화면에서 하지 않음 — 부서 허브(성과관리팀은 보고서 검토)로. 잠기면 주 단추가 그리로 감 */}
-              {s.key === "check" && meta.submit && stage.primary?.key !== "report" && (
-                <Link href={meta.submit.href} className={`${T.btnQuiet} self-start`}>
-                  {meta.submit.label}
-                </Link>
-              )}
-            </div>
-          </li>
-        ))}
-      </ol>
+              {i < stage.steps.length - 1 && <ChevronRight size={14} aria-hidden="true" className="absolute top-2.5 -right-[15px] hidden text-muted-2 @min-[20rem]:block" />}
+            </li>
+          ))}
+        </ol>
+      </div>
+      {/* 제출은 과제별 화면에서 하지 않음 — 부서 허브(성과관리팀은 보고서 검토)로. 잠기면 주 단추가 그리로 감 */}
+      {meta.submit && stage.primary?.key !== "report" && stage.steps.some((s) => s.key === "check") && (
+        <Link href={meta.submit.href} className={`${T.btnQuiet} self-start`}>
+          {meta.submit.label}
+        </Link>
+      )}
       {(stage.primary || stage.alt.length > 0) && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           {stage.primary && button(stage.primary, "primary")}
