@@ -172,3 +172,15 @@ test("문단·표 HTML: 글이 escape되어 들어가고 표는 칸 수만큼 �
   assert.ok(t.includes("둘"));
   assert.ok(HW_CSS.length > 100);
 });
+
+test("줄 나눔 단위(HWPX 이름): BREAK_WORD(어절) → word-break:keep-all, KEEP_WORD(글자) → normal — 흘려 그리는 문단 인라인 값과 편집 흐름 변수 --hw-wb 둘 다", () => {
+  const ctx = ctxOf([pp({ breakNonLatin: "BREAK_WORD" }), pp({ breakNonLatin: "KEEP_WORD" })]);
+  const opts = { first: true, last: true, prevAfter: 0, width: 10000, depth: 1 };
+  const flow = (paraPr: number) => paraHtml(ctx, { ...para("과제 개요", []), paraPr, flow: true }, opts).html;
+  assert.match(flow(0), /class="hw-p hw-flow"[^>]*word-break:keep-all/);
+  assert.match(flow(1), /class="hw-p hw-flow"[^>]*word-break:normal/);
+  // 원본 줄 배치 문단(편집 칸) — 편집 중에 흘려 보일 때 쓰는 변수
+  const lined = (paraPr: number) => paraHtml(ctx, { ...para("과제 개요", [line(0, 1000)]), paraPr, attrs: ' data-p="x"' }, opts).html;
+  assert.match(lined(0), /--hw-wb:keep-all/);
+  assert.match(lined(1), /--hw-wb:normal/);
+});

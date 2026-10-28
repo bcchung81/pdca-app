@@ -879,7 +879,8 @@ function flowStyle(ctx: HtmlCtx, p: Para, pp: ParaPr, gs: Glyph[], firstCp: numb
   const ti = pp.indent;
   const ta = pp.align === "CENTER" ? "center" : pp.align === "RIGHT" ? "right" : pp.align === "LEFT" ? "left" : "justify";
   const face = c ? c.face[0] : "";
-  const wb = pp.breakNonLatin === "KEEP_WORD" ? "keep-all" : "normal";
+  // HWPX 뜻: BREAK_WORD = 한글 어절 단위(keep-all), KEEP_WORD = 글자 단위(normal) — 이름과 뜻이 반대(hwp5.ts paraShape 주석)
+  const wb = pp.breakNonLatin === "BREAK_WORD" ? "keep-all" : "normal";
   const vars = `--hw-pl:${f3(px(pl))}px;--hw-pr:${f3(px(pp.right))}px;--hw-ti:${f3(px(ti))}px;--hw-lh:${f3(px(pitch))}px;--hw-fs:${f3(px(h))}px;--hw-ta:${ta};--hw-wb:${wb}`;
   const css = [
     `padding-left:${f3(px(pl))}px`,

@@ -9,8 +9,8 @@ import type { PageDef, Para } from "../hwp/model.ts";
 import { applyCardToLayout } from "./layout-render.ts";
 import type { LooseJson } from "../loose-json.ts";
 
-/** 쪽 정보가 없는 옛 배치: A4 세로, 본문 폭이 가운데 오게(위·아래 여백은 한글 기본값) */
-function pageOf(l: CardLayout): PageDef {
+/** 배치의 쪽 정의. 쪽 정보가 없는 옛 배치: A4 세로, 본문 폭이 가운데 오게(위·아래 여백은 한글 기본값) */
+export function pageOf(l: CardLayout): PageDef {
   if (l.page) return l.page;
   const width = 59528;
   const side = Math.max(0, Math.round((width - l.textWidth) / 2));

@@ -189,7 +189,7 @@ function paraPrXml(id: number, pp: ParaPr, fillRef: (bf: number) => number, tabs
     `<hh:paraPr id="${id}" tabPrIDRef="${pp.tabDef < tabs ? pp.tabDef : 0}" condense="${n(pp.condense)}" fontLineHeight="${b(pp.fontLineHeight)}" snapToGrid="${b(pp.snapToGrid)}" suppressLineNumbers="0" checked="0">` +
     `<hh:align horizontal="${pp.align}" vertical="${pp.vertAlign}"/>` +
     `<hh:heading type="${pp.headingType}" idRef="${pp.headingType === "NONE" ? 0 : n(pp.headingId)}" level="${n(pp.headingLevel)}"/>` +
-    `<hh:breakSetting breakLatinWord="${pp.breakLatin}" breakNonLatinWord="${pp.breakNonLatin}" widowOrphan="0" keepWithNext="${b(pp.keepWithNext)}" keepLines="0" pageBreakBefore="0" lineWrap="BREAK"/>` +
+    `<hh:breakSetting breakLatinWord="${pp.breakLatin}" breakNonLatinWord="${pp.breakNonLatin}" widowOrphan="0" keepWithNext="${b(pp.keepWithNext)}" keepLines="0" pageBreakBefore="0" lineWrap="${pp.lineWrap ?? "BREAK"}"/>` +
     `<hh:autoSpacing eAsianEng="${b(pp.autoSpaceEAsianEng)}" eAsianNum="${b(pp.autoSpaceEAsianNum)}"/>` +
     marginSwitch(pp) +
     `<hh:border borderFillIDRef="${fillRef(pp.borderFill)}" offsetLeft="${n(ol)}" offsetRight="${n(or)}" offsetTop="${n(ot)}" offsetBottom="${n(ob)}" connect="0" ignoreMargin="0"/>` +

@@ -259,7 +259,10 @@ function paraShape(d: Buffer): ParaPr {
   return {
     align: ALIGN[(a1 >>> 2) & 7] ?? "JUSTIFY",
     breakLatin: (["KEEP_WORD", "HYPHENATION", "BREAK_WORD"] as const)[(a1 >>> 5) & 3] ?? "KEEP_WORD",
-    breakNonLatin: (a1 >>> 7) & 1 ? "BREAK_WORD" : "KEEP_WORD",
+    // 한글 줄나눔(비트 7): 규격은 0 = 어절, 1 = 글자. HWPX breakNonLatinWord는 이름과 뜻이 반대(KEEP_WORD = 글자, BREAK_WORD = 어절 —
+    // 한글 11 저장본 줄 배치 검산, 커밋 acca106)라서 1 → KEEP_WORD, 0 → BREAK_WORD. 카드 원본 HWP 4개 줄 배치 검산(2026-10-28):
+    // 비트 7 = 1 문단은 낱말 가운데 끊김 241/1478, 0 문단은 3/573(셋 다 칸보다 긴 낱말) — 1이 글자 단위
+    breakNonLatin: (a1 >>> 7) & 1 ? "KEEP_WORD" : "BREAK_WORD",
     snapToGrid: ((a1 >>> 8) & 1) === 1,
     condense: (a1 >>> 9) & 0x7f,
     keepWithNext: ((a1 >>> 17) & 1) === 1,

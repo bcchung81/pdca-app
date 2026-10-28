@@ -9,6 +9,7 @@ import { ListIconButton } from "../workspace/list-icon-button";
 import { ArchiveCardForm } from "./archive-controls";
 import type { WorkspaceProps } from "./card-workspace";
 import { useAsk } from "../ui/confirm-dialog";
+import { cardDomTarget, useDomHwpx } from "../reports/dom-hwpx-download";
 import { T } from "../ui/kit";
 import { ReviewBar } from "./card-workspace-bars";
 import type { CardWorkspaceState } from "./use-card-workspace";
@@ -168,12 +169,15 @@ function HeaderButtons({ props, ws }: HeaderProps) {
   );
 }
 
-/** 더보기 메뉴: 한글 내려받기 · 작성본 채우기 · 현행화 · 보관 */
+/** 더보기 메뉴: 한글 내려받기(원본 배치 · 화면 그대로) · 작성본 채우기 · 현행화 · 보관 */
 function MoreMenu({ props, ws }: HeaderProps) {
   const { draft } = props;
   const { menu, setMenu, draftMode, menuRef } = ws;
+  // 한글(화면 그대로): 원본 배치가 있는 카드만(숨은 사본이 원본 배치로 그림). 편집 중인 글을 먼저 저장해 사본(서버 내용)이 화면과 같게
+  const dom = useDomHwpx();
   return (
     <div ref={menuRef} className="relative">
+      {dom.ui}
       <button type="button" aria-haspopup="menu" aria-expanded={menu} aria-label="더보기" title="더보기 — 한글 내려받기·채우기·현행화·보관" onClick={() => setMenu(!menu)} className={`${T.iconBtn} ${menu ? "border-navy text-navy" : "border-field-line text-ink hover:border-navy"}`}>
         <Ellipsis size={16} aria-hidden />
       </button>
@@ -183,6 +187,21 @@ function MoreMenu({ props, ws }: HeaderProps) {
             한글(HWPX)로 내려받기
             <span className="block text-xs text-muted">지금 보이는 {draftMode ? "작성본" : "원장"} 카드 · 9.16 양식</span>
           </a>
+          {props.layout && (
+            <button
+              role="menuitem"
+              type="button"
+              disabled={dom.busy}
+              onClick={() => {
+                setMenu(false);
+                dom.startTarget(cardDomTarget(props.uid, async () => (await ws.editor.current?.flush()) ?? true));
+              }}
+              className={`px-3 py-2 text-left text-ink hover:bg-row-hover ${T.off}`}
+            >
+              한글(화면 그대로)
+              <span className="block text-xs text-muted">화면 모양 그대로 옮김 · 다시 올리기(채우기·현행화)에는 위 파일</span>
+            </button>
+          )}
           {draftMode && !props.readOnly && (
             <button
               role="menuitem"

@@ -141,3 +141,15 @@ test("확장 크기 레코드(4095바이트 이상) 문단 글도 읽음", () =>
   const p = d.sections[0].paras[0];
   assert.equal((p.items[0] as any).text.length, 2100);
 });
+
+test("문단 모양 줄 나눔: 한글 비트 7 = 1(글자 단위) → KEEP_WORD, 0(어절 단위) → BREAK_WORD(HWPX 이름 — 뜻과 반대) · 영문 비트 5~6은 단어·하이픈·글자 순", () => {
+  const shape = (a1: number) => {
+    const b = Buffer.alloc(54);
+    b.writeUInt32LE(a1 >>> 0, 0);
+    return rec(25, 0, b);
+  };
+  const info = Buffer.concat([idMappings(), rec(19, 0, Buffer.concat([Buffer.from([0]), str("함초롬바탕")])), charShape(), shape(1 << 7), shape(0), shape(1 << 5), shape(2 << 5)]);
+  const pps = readHwp5(hwp({ docInfo: info, sections: [GOOD()] })).paraPrs;
+  assert.deepEqual(pps.map((p) => p.breakNonLatin), ["KEEP_WORD", "BREAK_WORD", "BREAK_WORD", "BREAK_WORD"]);
+  assert.deepEqual(pps.map((p) => p.breakLatin), ["KEEP_WORD", "KEEP_WORD", "HYPHENATION", "BREAK_WORD"]);
+});

@@ -114,3 +114,27 @@ test("띄운 표와 같은 문단의 딱지 표(주요사업2 다섯째 카드 A
   });
   assert.ok(both, "띄운 표 + 글자처럼 놓은 딱지가 한 문단");
 });
+
+// 2026-10-28: HWP5 문단 모양 비트 7(1 = 글자 단위)을 HWPX 이름(KEEP_WORD = 글자, BREAK_WORD = 어절 — 이름과 뜻이 반대)으로 읽어 그대로 씀.
+// 예전에는 이름을 반대로 붙여 내려받은 파일의 본문이 어절로, 제목·라벨이 글자로 뒤집혔음(「과제 개 / 요」)
+test("59장: 내려받은 한글 파일의 줄 나눔 단위가 원본과 같음 — 제목·라벨 문단(원본 어절) BREAK_WORD, 긴 본문 문단(원본 글자) KEEP_WORD", { skip: NO_SEED_CARDS || (!has && "원본 한글 파일 없음") }, async () => {
+  const LABELS = new Set(["과제명", "(과제번호)", "부서(팀)", "관리자/작성자"]);
+  let labels = 0;
+  let body = 0;
+  for (const x of all()) {
+    const doc = await readHwpx(await hwpx(x.card, x));
+    walk(doc.sections[0].paras, (p) => {
+      const t = paraText(p).trim();
+      const unit = doc.paraPrs[p.paraPr].breakNonLatin;
+      if (LABELS.has(t)) {
+        labels++;
+        assert.equal(unit, "BREAK_WORD", `${x.card.id} 라벨 「${t}」`);
+      } else if (t.length >= 40 && /^[-※]/.test(t)) {
+        body++;
+        assert.equal(unit, "KEEP_WORD", `${x.card.id} 본문 「${t.slice(0, 20)}」`);
+      }
+    });
+  }
+  assert.equal(labels, 59 * LABELS.size);
+  assert.ok(body > 300, `긴 본문 문단 ${body}개`);
+});

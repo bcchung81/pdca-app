@@ -55,7 +55,7 @@ export interface ParaPr {
   align: Align;
   /** 라틴 문자 줄나눔: 단어·하이픈·글자 */
   breakLatin: "KEEP_WORD" | "HYPHENATION" | "BREAK_WORD";
-  /** 한글 줄나눔: 어절·글자 */
+  /** 한글 줄나눔 — HWPX 이름 그대로이고 이름과 뜻이 반대: BREAK_WORD = 어절 단위, KEEP_WORD = 글자 단위(hwp5.ts paraShape 주석) */
   breakNonLatin: "KEEP_WORD" | "BREAK_WORD";
   /** 최소 공백(%, 0~75): 줄을 맞추려고 빈칸을 이만큼까지 줄일 수 있음 */
   condense: number;
@@ -83,6 +83,8 @@ export interface ParaPr {
   headingLevel: number;
   autoSpaceEAsianEng: boolean;
   autoSpaceEAsianNum: boolean;
+  /** 줄 넘김: 보통 줄바꿈(BREAK — 없으면 이것)·자간을 줄여 한 줄로(SQUEEZE)·한 줄 그대로(KEEP). 읽을 때는 채우지 않음 */
+  lineWrap?: "BREAK" | "SQUEEZE" | "KEEP";
 }
 
 export type LineType =

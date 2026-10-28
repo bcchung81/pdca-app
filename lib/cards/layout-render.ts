@@ -25,6 +25,9 @@ export interface LayoutRenderOptions {
   imageUrl?: (key: string) => string | null;
   /** 새로 는 AX 붙임을 바로 앞 붙임의 표를 본떠 이어 씀(그림은 뺌, 없는 칸은 비움) — 한글 파일로 쓸 때 */
   cloneNewAx?: boolean;
+  /** 원본 문서 첫머리 묶음 제목 표(layout.lead)도 맨 위에 그림(renderLayoutCard) — 「한글(화면 그대로)」 숨은 사본: 한글 내려받기(layout-hwpx.ts)처럼
+   *  다시 올리면 묶음을 알아보게. 없으면 그리지 않음(카드 화면) */
+  lead?: boolean;
 }
 
 // ───────────────────────── 배치 훑기(고칠 수 있게 부모·칸·표까지)
@@ -797,7 +800,7 @@ export function renderLayoutCard(card: Json, layout: CardLayout, opts: LayoutRen
   const html: string[] = [];
   let prevTable = false;
   // 띄운 표와 같은 문단의 글자처럼 놓은 표(딱지)는 원본에서 문단 줄(위)에 있으므로 띄운 표보다 먼저
-  const order = L.blocks.slice();
+  const order = opts.lead && L.lead ? [L.lead, ...L.blocks] : L.blocks.slice();
   for (let i = 1; i < order.length; i++) {
     const b = order[i];
     const a = order[i - 1];
@@ -1174,10 +1177,16 @@ function insertNew(entry: Entry, ts: Target[], where: "after" | "before", marks:
   list.splice(at, 0, ...made);
 }
 
-/** 원본 배치 화면에 쓰는 CSS(한글 문서 조각 + 카드 양식 CSS와 겹치는 규칙 되돌림) */
+/**
+ * 원본 배치 화면에 쓰는 CSS(한글 문서 조각 + 카드 양식 CSS와 겹치는 규칙 되돌림).
+ * 줄 나눔 단위: 원본 줄 배치 문단은 줄마다 놓으므로 word-break:normal로 되돌리되, 흘려 그리는 문단(hw-flow — 인라인 word-break)과
+ * 편집 흐름(hw-edit — --hw-wb)은 문단 값을 물려받아야 함(덮으면 어절 단위 제목·라벨이 낱말 가운데서 끊김). 그래서 되돌림 뒤에 둠
+ */
 export const CARD_LAYOUT_CSS = `${HW_CSS}
 .kca-hwp{width:max-content;max-width:none;font-size:13.5px;line-height:normal}
 .kca-hwp .hw-doc,.kca-hwp .hw-doc *{word-break:normal;overflow-wrap:normal}
+.kca-hwp .hw-flow *,.kca-hwp .hw-edit *{word-break:inherit}
+.kca-hwp .hw-p.hw-edit,.kca-hwp .hw-edit .hw-p,.kca-hwp .hw-seg.hw-edit{word-break:var(--hw-wb)}
 .kca-hwp .hw-flow,.kca-hwp .hw-edit,.kca-hwp .hw-edit *{overflow-wrap:anywhere}
 .kca-hwp table.hw-t{border-collapse:separate;width:auto;max-width:none}
 .kca-hwp img{max-width:none}

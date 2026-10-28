@@ -1,0 +1,461 @@
+{
+ "version": 1,
+ "frame": {
+  "w": 170,
+  "h": 260
+ },
+ "fontMark": "body dotum",
+ "root": {
+  "kind": "box",
+  "tag": "div",
+  "rect": {
+   "x": 0,
+   "y": 0,
+   "w": 170,
+   "h": 260
+  },
+  "style": {
+   "display": "block",
+   "position": "static",
+   "bg": "rgba(0, 0, 0, 0)",
+   "bgImage": "none",
+   "border": [
+    {
+     "w": 0,
+     "style": "none",
+     "color": "rgb(0, 0, 0)"
+    },
+    {
+     "w": 0,
+     "style": "none",
+     "color": "rgb(0, 0, 0)"
+    },
+    {
+     "w": 0,
+     "style": "none",
+     "color": "rgb(0, 0, 0)"
+    },
+    {
+     "w": 0,
+     "style": "none",
+     "color": "rgb(0, 0, 0)"
+    }
+   ],
+   "pad": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "radius": "0px",
+   "shadow": "none",
+   "clipPath": "none",
+   "opacity": 1,
+   "fontFamily": "\"KcaBody\", serif",
+   "fontSize": 10,
+   "fontWeight": 300,
+   "fontStyle": "normal",
+   "color": "rgb(17, 17, 17)",
+   "lineHeight": 15,
+   "textAlign": "justify",
+   "textAlignLast": "auto",
+   "textJustify": "",
+   "letterSpacing": -0.83,
+   "wordSpacing": 0,
+   "verticalAlign": "baseline",
+   "textIndent": 0,
+   "textDecoration": "none",
+   "whiteSpace": "normal",
+   "wordBreak": "keep-all"
+  },
+  "children": [
+   {
+    "kind": "box",
+    "tag": "h4",
+    "rect": {
+     "x": 0,
+     "y": 0,
+     "w": 170,
+     "h": 8
+    },
+    "style": {
+     "display": "block",
+     "position": "static",
+     "bg": "rgba(0, 0, 0, 0)",
+     "bgImage": "none",
+     "border": [
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      }
+     ],
+     "pad": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "radius": "0px",
+     "shadow": "none",
+     "clipPath": "none",
+     "opacity": 1,
+     "fontFamily": "\"KcaHead\", serif",
+     "fontSize": 16,
+     "fontWeight": 400,
+     "fontStyle": "normal",
+     "color": "rgb(17, 17, 17)",
+     "lineHeight": 15,
+     "textAlign": "justify",
+     "textAlignLast": "auto",
+     "textJustify": "",
+     "letterSpacing": -0.32,
+     "wordSpacing": 0,
+     "verticalAlign": "baseline",
+     "textIndent": 0,
+     "textDecoration": "none",
+     "whiteSpace": "normal",
+     "wordBreak": "keep-all"
+    },
+    "children": [
+     {
+      "kind": "text",
+      "text": "가. 합성 과제 제목",
+      "frags": [
+       {
+        "at": 0,
+        "x": 0,
+        "y": 1,
+        "w": 60,
+        "h": 6
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "kind": "box",
+    "tag": "div",
+    "rect": {
+     "x": 0,
+     "y": 12,
+     "w": 84,
+     "h": 20
+    },
+    "style": {
+     "display": "block",
+     "position": "static",
+     "bg": "rgb(241, 242, 241)",
+     "bgImage": "none",
+     "border": [
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      },
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      },
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      },
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      }
+     ],
+     "pad": [
+      1.5,
+      2,
+      1.5,
+      2
+     ],
+     "radius": "0px",
+     "shadow": "none",
+     "clipPath": "none",
+     "opacity": 1,
+     "fontFamily": "\"KcaLabel\", sans-serif",
+     "fontSize": 10.4,
+     "fontWeight": 700,
+     "fontStyle": "normal",
+     "color": "rgb(17, 17, 17)",
+     "lineHeight": 15,
+     "textAlign": "center",
+     "textAlignLast": "auto",
+     "textJustify": "",
+     "letterSpacing": -0.41600000000000004,
+     "wordSpacing": 0,
+     "verticalAlign": "baseline",
+     "textIndent": 0,
+     "textDecoration": "none",
+     "whiteSpace": "normal",
+     "wordBreak": "keep-all"
+    },
+    "children": [
+     {
+      "kind": "text",
+      "text": "왼쪽 상자 글",
+      "frags": [
+       {
+        "at": 0,
+        "x": 2,
+        "y": 14,
+        "w": 40,
+        "h": 5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "kind": "box",
+    "tag": "div",
+    "rect": {
+     "x": 86,
+     "y": 12,
+     "w": 84,
+     "h": 20
+    },
+    "style": {
+     "display": "block",
+     "position": "static",
+     "bg": "rgba(0, 0, 0, 0)",
+     "bgImage": "none",
+     "border": [
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      },
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      },
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      },
+      {
+       "w": 0.26,
+       "style": "solid",
+       "color": "rgb(102, 102, 102)"
+      }
+     ],
+     "pad": [
+      1.5,
+      2,
+      1.5,
+      2
+     ],
+     "radius": "0px",
+     "shadow": "none",
+     "clipPath": "none",
+     "opacity": 1,
+     "fontFamily": "\"KcaLabel\", sans-serif",
+     "fontSize": 10.4,
+     "fontWeight": 700,
+     "fontStyle": "normal",
+     "color": "rgb(17, 17, 17)",
+     "lineHeight": 15,
+     "textAlign": "center",
+     "textAlignLast": "auto",
+     "textJustify": "",
+     "letterSpacing": -0.41600000000000004,
+     "wordSpacing": 0,
+     "verticalAlign": "baseline",
+     "textIndent": 0,
+     "textDecoration": "none",
+     "whiteSpace": "normal",
+     "wordBreak": "keep-all"
+    },
+    "children": [
+     {
+      "kind": "text",
+      "text": "오른쪽 상자 글",
+      "frags": [
+       {
+        "at": 0,
+        "x": 88,
+        "y": 14,
+        "w": 40,
+        "h": 5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "kind": "box",
+    "tag": "svg",
+    "rect": {
+     "x": 80,
+     "y": 40,
+     "w": 10,
+     "h": 10
+    },
+    "style": {
+     "display": "inline",
+     "position": "static",
+     "bg": "rgba(0, 0, 0, 0)",
+     "bgImage": "none",
+     "border": [
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      }
+     ],
+     "pad": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "radius": "0px",
+     "shadow": "none",
+     "clipPath": "none",
+     "opacity": 1,
+     "fontFamily": "\"KcaBody\", serif",
+     "fontSize": 10,
+     "fontWeight": 300,
+     "fontStyle": "normal",
+     "color": "rgb(17, 17, 17)",
+     "lineHeight": 15,
+     "textAlign": "justify",
+     "textAlignLast": "auto",
+     "textJustify": "",
+     "letterSpacing": -0.83,
+     "wordSpacing": 0,
+     "verticalAlign": "baseline",
+     "textIndent": 0,
+     "textDecoration": "none",
+     "whiteSpace": "normal",
+     "wordBreak": "keep-all"
+    },
+    "children": [],
+    "replaced": "svg",
+    "image": {
+     "png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+     "w": 1,
+     "h": 1
+    }
+   },
+   {
+    "kind": "box",
+    "tag": "p",
+    "rect": {
+     "x": 0,
+     "y": 60,
+     "w": 170,
+     "h": 200
+    },
+    "style": {
+     "display": "block",
+     "position": "static",
+     "bg": "rgba(0, 0, 0, 0)",
+     "bgImage": "none",
+     "border": [
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      },
+      {
+       "w": 0,
+       "style": "none",
+       "color": "rgb(0, 0, 0)"
+      }
+     ],
+     "pad": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "radius": "0px",
+     "shadow": "none",
+     "clipPath": "none",
+     "opacity": 1,
+     "fontFamily": "\"KcaBody\", serif",
+     "fontSize": 10,
+     "fontWeight": 300,
+     "fontStyle": "normal",
+     "color": "rgb(17, 17, 17)",
+     "lineHeight": 15,
+     "textAlign": "justify",
+     "textAlignLast": "auto",
+     "textJustify": "",
+     "letterSpacing": -0.83,
+     "wordSpacing": 0,
+     "verticalAlign": "baseline",
+     "textIndent": 0,
+     "textDecoration": "none",
+     "whiteSpace": "normal",
+     "wordBreak": "keep-all"
+    },
+    "children": [
+     {
+      "kind": "text",
+      "text": "합성 본문 문단입니다. 기관 자료가 아닌 시험용 글입니다.",
+      "frags": [
+       {
+        "at": 0,
+        "x": 0,
+        "y": 60,
+        "w": 150,
+        "h": 5
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -15,6 +15,7 @@ import { outlineView, shapeTable } from "../../../../../lib/reports/outline-view
 import { type PriorSection, pickPrior, priorLabel, scorePrior } from "../../../../../lib/reports/prior.ts";
 import { PRIOR_SAME_SCORE, type ReportSectionSpec, sectionText } from "../../../../../lib/reports/section.ts";
 import { REPORT_CSS } from "../../../../../lib/reports/section-css.ts";
+import { overflowLimitMm } from "../../../../../lib/reports/dom-hwpx/policy.ts";
 import { axesFor } from "../../../../../lib/reports/split-axes.ts";
 import { withReturn } from "../../../../../lib/nav/return-to.ts";
 import { fmtDateTime } from "../../../../../lib/format.ts";
@@ -96,25 +97,37 @@ export function usedOf(spec: ReportSectionSpec | null, draft: DraftRow | null) {
   return spec && draft?.updated_at ? (sources ? { card: sources.filter((s) => s.kind === "card").map((s) => s.id), report: sources.filter((s) => s.kind === "report").map((s) => s.id), at: String(draft.updated_at) } : null) : null;
 }
 
-/** 머리 더보기 메뉴 */
-export function menuOf(o: { uid: string; teamQs: string; selfHref: string; reportId: number | null; staffView: boolean; mg: boolean; evalUnitId: string; hasSpec: boolean }): MenuItem[] {
+/**
+ * 머리 더보기 메뉴. 한글 내려받기(2026-10-28): 두 트랙 모두 「화면 그대로」(DOM 방식 — 초안 판 version이 있을 때)가 기본이고,
+ * 실패하면 기존 양식을 안내 — 주요사업은 「한글(기존 양식)」(A안 ?form=a)·「한글(개조식)」, 경영관리는 「한글(개조식)」(경영관리의 기존 양식)
+ */
+export function menuOf(o: { uid: string; teamQs: string; selfHref: string; reportId: number | null; staffView: boolean; mg: boolean; evalUnitId: string; hasSpec: boolean; version: string | null; module: number }): MenuItem[] {
   const { uid, teamQs, selfHref } = o;
   const htmlHref = `/reports/cards/${uid}/html`;
   const hwpxHref = `/reports/cards/${uid}/hwpx`;
+  const formA = { href: `${hwpxHref}?form=a`, label: "한글(기존 양식)" };
+  const gaejo = { href: `${hwpxHref}?form=gaejo`, label: "한글(개조식)" };
+  const dom: MenuItem[] =
+    o.hasSpec && o.version
+      ? [
+          {
+            href: hwpxHref,
+            label: "한글 내려받기",
+            hint: o.mg ? "화면 그대로(HWPX) — 미리보기 배치대로 옮김, 여러 쪽은 한글이 나눔" : "화면 그대로(HWPX) — 미리보기 배치대로 상자·표·그림을 옮김",
+            dom: { uid, version: o.version, limitMm: overflowLimitMm({ mg: o.mg, module: o.module }), fallback: o.mg ? gaejo : formA },
+          },
+        ]
+      : [];
   return [
     { href: withReturn(`/cards/${uid}${teamQs}`, selfHref), label: "카드 보기", hint: "과제관리카드 전체 페이지" },
     ...(o.reportId !== null ? [{ href: withReturn(`/reports/${o.reportId}${teamQs}#평가내용2`, selfHref), label: "보고서에서 보기", hint: "이 사업·부서 보고서의 평가내용2에 모아 보기" }] : []),
     // 사업 조판은 성과관리팀 화면(부서 담당자는 열 수 없음 — 부서 화면 보기에서도 숨김)
     ...(o.staffView && !o.mg ? [{ href: withReturn(`/reports/business/${encodeURIComponent(o.evalUnitId)}#bz-${uid}`, selfHref), label: "사업 조판에서 보기", hint: "주요사업 전체를 쪽에 이어 붙인 모습에서 이 과제" }] : []),
     ...(o.hasSpec ? [{ href: htmlHref, label: "HTML 내려받기", hint: "이 초안을 HTML 한 파일로", download: true }] : []),
-    // 한글: 주요사업은 화면 양식 그대로(기본) + 개조식 원고, 경영관리는 개조식 원고 하나(route.ts)
-    ...(o.hasSpec && !o.mg
-      ? [
-          { href: hwpxHref, label: "한글 내려받기", hint: "화면 초안 양식 그대로(HWPX) — 경영실적보고서 용지, 상자·칸 도식, 그림은 크기대로 빈 자리", download: true },
-          { href: `${hwpxHref}?form=gaejo`, label: "한글(개조식)", hint: "개조식 원고(HWPX) — 도식은 표·목록으로 펼침, 그림은 자리표시 줄", download: true },
-        ]
-      : []),
-    ...(o.hasSpec && o.mg ? [{ href: hwpxHref, label: "한글 내려받기", hint: "개조식 원고(HWPX) — 도식은 표·목록으로 펼침, 그림은 자리표시", download: true }] : []),
+    // 한글: 화면 그대로(기본) + 기존 양식(주요사업 A안 — 경영실적보고서 용지, 상자·칸 도식, 그림은 크기대로 빈 자리) + 개조식 원고(route.ts)
+    ...dom,
+    ...(o.hasSpec && !o.mg ? [{ ...formA, hint: "예전 변환(HWPX) — 초안을 양식대로 다시 짬, 그림은 크기대로 빈 자리", download: true }] : []),
+    ...(o.hasSpec ? [{ ...gaejo, hint: "개조식 원고(HWPX) — 도식은 표·목록으로 펼침, 그림은 자리표시 줄", download: true }] : []),
     { href: "/help#report-fonts", label: "글꼴 안내", hint: "화면·한글을 같은 글꼴로 — KoPub 2.0 설치" },
   ];
 }

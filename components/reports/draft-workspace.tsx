@@ -28,11 +28,13 @@ import { type OutlineData, OutlinePanel, partName, rowOf, useOutlineEdit } from 
 import { type AltsRequest, OutlineAlts, startAlts } from "./outline-alts";
 import { T } from "../ui/kit";
 import { ShapePicker } from "./shape-picker";
+import { type DomHwpxItem, useDomHwpx } from "./dom-hwpx-download";
 import { BlockShapes } from "./block-shapes";
 import type { ShapeMenuItem } from "../../lib/reports/block-shape.ts";
 
 type Tab = "ai" | "check";
-export type MenuItem = { href: string; label: string; hint?: string; download?: boolean };
+/** 더보기 항목: 링크(download면 내려받기) 또는 화면 그대로 한글 내려받기(dom — 누르면 숨은 사본을 떠 서버로 보냄, dom-hwpx-download.tsx) */
+export type MenuItem = { href: string; label: string; hint?: string; download?: boolean; dom?: DomHwpxItem };
 type Sib = { href: string; taskNo: string; title: string } | null;
 
 /** 머리의 아이콘 단추(과제원장 옆 창·전체 페이지와 같은 모양, 이름은 aria-label·title) */
@@ -697,6 +699,8 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menuId = useId();
+  // 화면 그대로 한글 내려받기 — 메뉴가 닫혀도 진행·확인 창이 남도록 늘 그려지는 이 부품이 가짐
+  const hwpx = useDomHwpx();
 
   useEffect(() => {
     if (!open) return;
@@ -766,6 +770,24 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
                 {it.hint && <span className="block text-xs text-muted">{it.hint}</span>}
               </>
             );
+            if (it.dom) {
+              const dom = it.dom;
+              return (
+                <button
+                  key={it.href}
+                  type="button"
+                  role="menuitem"
+                  disabled={hwpx.busy}
+                  onClick={() => {
+                    setOpen(false);
+                    hwpx.start(dom);
+                  }}
+                  className={`${itemCls} text-left ${T.off}`}
+                >
+                  {body}
+                </button>
+              );
+            }
             return it.download ? (
               <a key={it.href} role="menuitem" href={it.href} download onClick={() => setOpen(false)} className={itemCls}>
                 {body}
@@ -778,6 +800,7 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
           })}
         </div>
       )}
+      {hwpx.ui}
     </div>
   );
 }

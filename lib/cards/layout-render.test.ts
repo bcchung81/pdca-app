@@ -8,7 +8,7 @@ import type { CardLayout } from "../hwp/layout.ts";
 import { addMonthly, applyText, deleteLine, insertLineAfter, toggleBox } from "./edit.ts";
 import { buildLayouts, layoutTaskNo } from "./layout-build.ts";
 import { keyOf, targetsOf } from "./layout-bind.ts";
-import { renderLayoutCard } from "./layout-render.ts";
+import { CARD_LAYOUT_CSS, renderLayoutCard } from "./layout-render.ts";
 import { cardSourceFile } from "./file-names.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 
@@ -117,4 +117,14 @@ test("잠근 영역·읽기 전용: 편집 표시가 원본 양식 렌더러와 
   assert.ok(!ro.includes("contenteditable"), "읽기 전용은 고를 수만");
   const view = renderLayoutCard(card, layout, {})!;
   assert.ok(!view.includes("data-p="), "보기만");
+});
+
+test("원본 배치 CSS: word-break:normal 되돌림이 흘려 그리는 문단(인라인 값)·편집 흐름(--hw-wb)의 줄 나눔 단위를 덮지 않음(되돌림 뒤에 물려받기·편집 규칙)", () => {
+  const rules = CARD_LAYOUT_CSS.split("\n");
+  const reset = rules.findIndex((r) => r.startsWith(".kca-hwp .hw-doc,.kca-hwp .hw-doc *{word-break:normal"));
+  const inherit = rules.indexOf(".kca-hwp .hw-flow *,.kca-hwp .hw-edit *{word-break:inherit}");
+  const edit = rules.indexOf(".kca-hwp .hw-p.hw-edit,.kca-hwp .hw-edit .hw-p,.kca-hwp .hw-seg.hw-edit{word-break:var(--hw-wb)}");
+  assert.ok(reset >= 0 && inherit > reset && edit > reset, "되돌림 뒤에 물려받기·편집 규칙");
+  // 편집 문단 규칙(클래스 셋)이 물려받기 규칙(클래스 둘)보다 구체적이어야 문단 자신이 --hw-wb를 씀
+  assert.ok(rules.slice(reset + 1).every((r, i) => reset + 1 + i === inherit || reset + 1 + i === edit || !/word-break/.test(r)), "그 뒤에 word-break를 다시 정하는 규칙 없음");
 });

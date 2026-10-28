@@ -76,7 +76,7 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
   const self = (u: string) => withReturn(`/reports/cards/${u}${teamQs}`, from);
   // 머리 글: 주요사업은 묶음 이름(주요사업N), 경영관리는 지표명(묶음 id 경영관리N은 식별자라 화면 글자로 쓰지 않음)
   const group = mg ? (unit?.name ?? card.eval_unit_id) : (unit?.card_group ?? card.eval_unit_id);
-  const menu = menuOf({ uid, teamQs, selfHref: `/reports/cards/${uid}${teamQs}`, reportId: report?.id ?? null, staffView, mg, evalUnitId: card.eval_unit_id, hasSpec: Boolean(spec) });
+  const menu = menuOf({ uid, teamQs, selfHref: `/reports/cards/${uid}${teamQs}`, reportId: report?.id ?? null, staffView, mg, evalUnitId: card.eval_unit_id, hasSpec: Boolean(spec), version: draft?.updated_at ? String(draft.updated_at) : null, module: spec?.module ?? 1 });
 
   // 「점검 결과」 탭의 채울 자료 건수가 작업 공간 탭 표지에도 쓰임
   const needs = checkNeedsOf(spec, card.data, report);
