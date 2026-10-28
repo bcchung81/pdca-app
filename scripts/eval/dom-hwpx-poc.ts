@@ -6,6 +6,7 @@
 // (안쪽에 위에 칠한 채움을 뺀 곳)의 가장 흔한 색과 채움색의 밝기 차이가 FILL_DIFF_MAX를 넘는 것을 보고. 결과표의 「채움 어긋남」이 0이어야 함
 //
 // 겹침 점검(2026-10-28): 변환기의 결정론 점검(convert.ts overlapCheck) 수 — 결과표 「겹침(줄 간격·세로)」이 0+0이어야 함
+// 내어쓰기 점검(2026-10-28): 부호로 시작하거나 글머리표인 문단 중 내어쓰기(음수 intent)가 없는 문단 수(lib/hwpx/hang.ts hangCheck — 변환기 통계) — 결과표 「내어쓰기 없음(부호 문단)」이 0이어야 함
 //
 // 쓰기: node scripts/eval/dom-hwpx-poc.ts <html 파일 또는 폴더 …> [--out <출력 폴더>]
 // 출력(파일마다): <이름>.snapshot.json · <이름>.a.hwpx(가) · <이름>.approx.json, 끝에 results.json과 결과표(표준 출력)
@@ -91,6 +92,7 @@ try {
         row.approx = approx.map((x) => `${x.kind} ${x.count}`);
         row.rules = stats.rules;
         row.overlap = `${stats.tight}+${stats.stacked}`;
+        row.hang = `${stats.flat} (${stats.marked})`;
         const { checked, bad } = await checkFills(page, FRAME_SELECTOR, snap.frame.w, fills);
         row.fills = fills.length;
         row.fillChecked = checked;
@@ -108,9 +110,9 @@ try {
 }
 writeFileSync(join(OUT, "results.json"), JSON.stringify(results, null, 1));
 
-console.log(`\n| 표본 | 글꼴 표지 | 틀(mm) | 검증 | 빠진 글 줄(화면 글 줄 수) | 한 줄 유지 문단 | 그림 | 가는 선 변 | 채움 어긋남(잰 채움) | 겹침(줄 간격·세로) | 근사 수 | 구성 | 크기(byte) |`);
-console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+console.log(`\n| 표본 | 글꼴 표지 | 틀(mm) | 검증 | 빠진 글 줄(화면 글 줄 수) | 한 줄 유지 문단 | 그림 | 가는 선 변 | 채움 어긋남(잰 채움) | 겹침(줄 간격·세로) | 내어쓰기 없음(부호 문단) | 근사 수 | 구성 | 크기(byte) |`);
+console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
 for (const r of results)
-  console.log(`| ${r.name} | ${r.fontMark} | ${r.frameMm} | ${r["a.valid"]} | ${r["a.missing"]} (${r.screenTexts}) | ${r.squeezed} | ${r.pics} | ${r.rules} | ${r.fillBad} (${r.fillChecked}/${r.fills}) | ${r.overlap} | ${r.approxCount} | ${r.stats} | ${r["a.bytes"]} |`);
+  console.log(`| ${r.name} | ${r.fontMark} | ${r.frameMm} | ${r["a.valid"]} | ${r["a.missing"]} (${r.screenTexts}) | ${r.squeezed} | ${r.pics} | ${r.rules} | ${r.fillBad} (${r.fillChecked}/${r.fills}) | ${r.overlap} | ${r.hang} | ${r.approxCount} | ${r.stats} | ${r["a.bytes"]} |`);
 console.log(`\n쪽 정의: ${results[0]?.page}`);
 console.log(`출력: ${OUT}`);

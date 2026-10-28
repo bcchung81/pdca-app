@@ -5,7 +5,10 @@ import { test } from "node:test";
 import JSZip from "jszip";
 import { parse, validateHwpx } from "kordoc";
 import { reportDraftMarkdown, senderDate } from "../reports/draft-md.ts";
+import { readHwpx } from "../hwp/hwpx.ts";
 import { draftToKcaHwpx, starLinesOf } from "./generate.ts";
+import { hangCheck, paraText } from "./hang.ts";
+import { MARK_CELL_EM } from "./kca-profile.ts";
 import { toKordocInput } from "./kordoc-input.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -102,4 +105,29 @@ test("보고서 원고 블록 → 개조식 초안: 제목 1 □, 제목 2·문�
   assert.ok(lines.includes("ㅇ 세부 과제"));
   assert.ok(lines.includes("| 구분 | 건수 |") && lines.includes("| --- | --- |") && lines.includes("| 지원\\|선정 | 12 |"));
   assert.equal(senderDate(new Date("2026-01-01T00:00:00Z")), "'26. 1. 1.(목)");
+});
+
+test("부호 문단 내어쓰기(2026-10-28): 본문 □·ㅇ·-·※는 kordoc 그대로(부호 + 탭 + 음수 intent + 내어쓰기 자동 탭) · 표 칸 「∙ … / ∙ …」도 같은 방식 · 점검 0", async () => {
+  const long = "둘째 줄까지 이어지도록 길게 쓴 문장입니다. ".repeat(4).trim();
+  const draft = `제목\n\n□ 추진 배경\nㅇ ${long}\n- ${long}\n※ ${long}\n\n| 지적사항 | 조치실적 |\n| --- | --- |\n| ∙ ${long} / ∙ 둘째 지적 | ∙ 조치 |\n`;
+  const { bytes, summary } = await draftToKcaHwpx(draft);
+  const v: any = await (validateHwpx as any)(Buffer.from(bytes));
+  assert.equal(v.ok, true, JSON.stringify(v.issues));
+  const doc = await readHwpx(bytes);
+  const paras = doc.sections.flatMap((x) => x.paras);
+  assert.deepEqual(hangCheck({ doc, paras }), { marked: 6, flat: 0, samples: [] });
+  assert.equal(summary.hangs, 2, "표 칸 두 문단만 후처리가 내어 씀");
+  const all = (ps: typeof paras): typeof paras => ps.flatMap((p) => [p, ...p.items.flatMap((it) => (it.kind === "obj" && it.obj.kind === "table" ? it.obj.cells.flatMap((c) => all(c.paras)) : []))]);
+  for (const p of all(paras)) {
+    const t = paraText(p);
+    if (!/^[□ㅇ\-※∙]\t/.test(t)) continue;
+    const pp = doc.paraPrs[p.paraPr];
+    const em = doc.charPrs[(p.items[0] as { charPr: number }).charPr].height;
+    // 부호 뒤 탭은 내어쓰기 자리까지 감(자동 탭) — 둘째 줄과 첫 줄 글이 같은 자리
+    assert.equal(doc.tabDefs[pp.tabDef].autoLeft, true, t.slice(0, 8));
+    // 내어쓰기 ≥ 부호 폭(전각 1em, 반각 「-」「∙」은 0.5em 이상) — 탭이 0보다 큰 폭을 가짐
+    const glyph = /^[-∙]/.test(t) ? 0.5 * em : em;
+    assert.ok(pp.indent < 0 && -pp.indent > glyph, `${t.slice(0, 8)} 내어쓰기 ${pp.indent} > 부호 폭 ${glyph}`);
+    if (t.startsWith("∙")) assert.equal(pp.indent, -Math.round(em * MARK_CELL_EM.narrow), "표 칸 반각 부호 1.2em");
+  }
 });

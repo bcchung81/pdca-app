@@ -6,12 +6,14 @@
 //  · sender_size(R018) — 발신 줄 12pt
 //  · star_restore(R011) — kordoc 4.15가 ＊ 각주 줄을 ※로 바꿔 내므로, 초안에서 ＊였던 줄의 기호를 되돌림
 //  · highlight(R040) — ==…== 표지를 지우고 노란 음영(#FFFF00)+볼드 run으로
+//  · 부호 문단 내어쓰기(2026-10-28 — 앱 규칙, lib/hwpx/hang.ts): kordoc이 내어 쓰지 않은 부호 문단(표 칸 등)에 kordoc 본문과 같은 방식의 내어쓰기
 //  · canonicalize_package(R043) — version.xml·settings.xml·manifest.xml·container.rdf 보강, 디렉터리 엔트리 제거,
 //    한컴 정품 순서·압축(내부망 자료교환이 kordoc 최소 패키지를 hwpx로 못 알아보고 반려하던 문제)
 // 옮기지 않은 것: 머리말 배너(R030)·계층 간격 스페이서(R013)·제목 박스 3행 원형(R084)·열 폭 재배분 등 — hwpx-recipe.md §3.5 참고.
 
 import JSZip from "jszip";
-import { FORM_SIZES_PT, HIGHLIGHT_SHADE, SENDER_SIZE_PT, TITLE_SIZE_PT } from "./kca-profile.ts";
+import { markerLead } from "./hang.ts";
+import { FORM_SIZES_PT, HIGHLIGHT_SHADE, MARK_CELL_EM, NARROW_MARKS, SENDER_SIZE_PT, TITLE_SIZE_PT } from "./kca-profile.ts";
 
 // ---------------------------------------------------------------------------
 // 글자 모양(charPr) 복제
@@ -92,11 +94,34 @@ class ParaPrs {
   private count: number;
   private added: string[] = [];
   private cache = new Map<string, string>();
+  private defs = new Map<string, string>();
   constructor(header: string) {
     const all = [...header.matchAll(/<hh:paraPr id="(\d+)"[\s\S]*?<\/hh:paraPr>/g)];
     this.base = all.find((m) => m[1] === "0")?.[0] ?? all[0]?.[0] ?? null;
     this.count = all.length;
     this.next = Math.max(-1, ...all.map((m) => Number(m[1]))) + 1;
+    for (const m of all) this.defs.set(m[1], m[0]);
+  }
+  /** id 문단 모양의 첫 줄 들여쓰기(+)·내어쓰기(-) — 없으면 null */
+  intentOf(id: string): number | null {
+    const m = /<hc:intent value="(-?\d+)"/.exec(this.defs.get(id) ?? "");
+    return m ? Number(m[1]) : null;
+  }
+  /** id 문단 모양을 복제해 내어쓰기(intent 음수)·탭 정의만 바꾼 새 id(같은 변환은 한 번만) */
+  hanging(id: string, intent: number, tabPr: string): string {
+    const key = `hang|${id}|${intent}|${tabPr}`;
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const src = this.defs.get(id);
+    if (!src) return id;
+    const nid = String(this.next++);
+    const xml = src
+      .replace(/<hh:paraPr id="\d+"/, `<hh:paraPr id="${nid}"`)
+      .replace(/tabPrIDRef="\d+"/, `tabPrIDRef="${tabPr}"`)
+      .replace(/<hc:intent value="-?\d+"/g, `<hc:intent value="${intent}"`);
+    this.added.push(xml);
+    this.cache.set(key, nid);
+    return nid;
   }
   /** 기본 문단 모양(id 0)을 바꾼 새 문단 모양 id(같은 모양은 한 번만) */
   get(spec: ParaSpec): string {
@@ -219,6 +244,8 @@ function highlightRuns(p: string, cp: CharPrs): { xml: string; count: number } {
 
 export interface PostSummary {
   paragraphs: Partial<Record<Kind, number>>;
+  /** 내어쓰기를 준 부호 문단 수(hangParagraphs) */
+  hangs: number;
   sizedRuns: number;
   titleRuns: number;
   senderRuns: number;
@@ -270,6 +297,35 @@ export function postprocessSection(section: string, cp: CharPrs, starLines: bool
     last = b;
   }
   return out + section.slice(last);
+}
+
+// ---------------------------------------------------------------------------
+// 부호 문단 내어쓰기(lib/hwpx/hang.ts 관례)
+
+/**
+ * kordoc은 본문 부호 문단(□·ㅇ·-·※)을 「부호 + 탭」 + 내어쓰기(음수 intent) + 내어쓰기 자동 탭(autoTabLeft — 탭이 내어쓰기 자리까지 감) 문단 모양으로 내지만
+ * 표 칸 글(경영관리 지표 한 파일의 지적사항·전년 대비 칸 「∙ … / ∙ …」 — unit-parts-md.ts cellBullets)은 그대로 둠. 같은 방식으로 맞춤:
+ * 글이 부호 + 빈칸으로 시작하고(markerLead) 내어쓰기가 없는 문단(표 안 문단까지 — 안에 문단을 품지 않은 것)의 부호 뒤 빈칸을 탭으로 바꾸고,
+ * 문단 모양을 복제해 intent = −(부호 칸 폭 MARK_CELL_EM × 첫 글자 크기), 탭 정의 = 내어쓰기 자동 탭. 자동 탭 정의가 없으면 손대지 않음
+ */
+export function hangParagraphs(section: string, pp: ParaPrs, cp: CharPrs, tabPr: string | null, sum: PostSummary): string {
+  if (tabPr === null) return section;
+  return section.replace(/<hp:p\b([^>]*)>((?:(?!<hp:p\b)[\s\S])*?)<\/hp:p>/g, (all, attrs: string, body: string) => {
+    const id = /paraPrIDRef="(\d+)"/.exec(attrs)?.[1];
+    if (!id || (pp.intentOf(id) ?? 0) < 0 || /<hp:tbl\b/.test(body)) return all;
+    // 첫 run의 첫 글이 「부호 + 빈칸 + 글」(앞 빈칸 없이)일 때만
+    const m = /^((?:<hp:linesegarray>[\s\S]*?<\/hp:linesegarray>)?<hp:run charPrIDRef="(\d+)"><hp:t>)([^<]*)/.exec(body);
+    if (!m) return all;
+    const lead = markerLead(m[3]);
+    if (!lead || lead >= m[3].length || /^[ \u3000]/.test(m[3])) return all;
+    const mark = m[3][0];
+    const em = cp.height(m[2]) ?? 1000;
+    const w = Math.round(em * (NARROW_MARKS.includes(mark) ? MARK_CELL_EM.narrow : MARK_CELL_EM.wide));
+    const tab = `<hp:tab width="${Math.max(0, w - Math.round(em * (NARROW_MARKS.includes(mark) ? 0.5 : 1)))}" leader="0" type="1"/>`;
+    const nid = pp.hanging(id, -w, tabPr);
+    sum.hangs += 1;
+    return `<hp:p${attrs.replace(/paraPrIDRef="\d+"/, `paraPrIDRef="${nid}"`)}>${m[1]}${mark}${tab}${m[3].slice(lead)}${body.slice(m[0].length)}</hp:p>`;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -414,12 +470,16 @@ export async function postprocessKca(input: Uint8Array, starLines: boolean[]): P
   const files = await readHwpxFiles(input);
   const dec = new TextDecoder();
   const enc = new TextEncoder();
-  const sum: PostSummary = { paragraphs: {}, sizedRuns: 0, titleRuns: 0, senderRuns: 0, starsRestored: 0, highlights: 0, package: { added: [], dirsRemoved: 0 } };
+  const sum: PostSummary = { paragraphs: {}, hangs: 0, sizedRuns: 0, titleRuns: 0, senderRuns: 0, starsRestored: 0, highlights: 0, package: { added: [], dirsRemoved: 0 } };
   const headerBytes = files.get("Contents/header.xml");
   if (headerBytes) {
-    const cp = new CharPrs(dec.decode(headerBytes));
-    for (const name of [...files.keys()].filter((n) => SECTION_RE.test(n)).sort()) files.set(name, enc.encode(postprocessSection(dec.decode(files.get(name)!), cp, starLines, sum)));
-    files.set("Contents/header.xml", enc.encode(cp.finish()));
+    const header = dec.decode(headerBytes);
+    const cp = new CharPrs(header);
+    const pp = new ParaPrs(header);
+    const autoTab = /<hh:tabPr id="(\d+)" autoTabLeft="1"/.exec(header)?.[1] ?? null;
+    for (const name of [...files.keys()].filter((n) => SECTION_RE.test(n)).sort())
+      files.set(name, enc.encode(hangParagraphs(postprocessSection(dec.decode(files.get(name)!), cp, starLines, sum), pp, cp, autoTab, sum)));
+    files.set("Contents/header.xml", enc.encode(pp.finish(cp.finish())));
   }
   const pkg = await writeHwpxPackage(files);
   sum.package = { added: pkg.added, dirsRemoved: pkg.dirsRemoved };

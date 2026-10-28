@@ -44,6 +44,11 @@ export const REPORT_STYLE = {
   join: { gapMm: 3.5, pt: 10, arrowMm: 3.2 },
   /** 좁은 칸 안쪽 좌우 여백(px, 2026-10-21 5·4px → 3px): 카드·PDCA 칸 본문(.k-card__b)·단계 본문(.k-proc__b)·시기 본문(.k-tl__b) */
   boxPadX: 3,
+  /**
+   * 불릿(.k-frame li — em): 글 시작(padding-left)·「•」 자리(::before left). 한글 양식은 글머리표 문단의 내어쓰기로 같은 자리에 둠
+   * (section-hwpx.ts — 첫 줄 부호 자리, 둘째 줄부터 글 시작 자리, lib/hwpx/hang.ts)
+   */
+  bullet: { padEm: 0.95, markEm: 0.05 },
 } as const;
 const G = REPORT_STYLE.gray;
 const L = REPORT_STYLE.line;
@@ -90,8 +95,8 @@ ${fontSpacingCss()}
 
 /* ───────────── 공통 조각: 태그·마커·불릿 ───────────── */
 .kca-dg-doc .k-frame ul{list-style:none;margin:0;padding:0}
-.kca-dg-doc .k-frame li{position:relative;padding-left:0.95em}
-.kca-dg-doc .k-frame li::before{content:"•";position:absolute;left:0.05em;top:0}
+.kca-dg-doc .k-frame li{position:relative;padding-left:${REPORT_STYLE.bullet.padEm}em}
+.kca-dg-doc .k-frame li::before{content:"•";position:absolute;left:${REPORT_STYLE.bullet.markEm}em;top:0}
 .kca-dg-doc .k-frame b,.kca-dg-doc .k-frame strong{font-weight:700}
 .kca-dg-doc .k-small{font-size:var(--k-fs-small)}
 .kca-dg-doc .k-nb{white-space:nowrap} /* 괄호 + 조사 한 덩어리(section-html parenJosa) */

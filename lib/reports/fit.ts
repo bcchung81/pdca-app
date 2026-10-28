@@ -16,7 +16,7 @@ const BODY_PT = 10.6;
 const LABEL_PT = REPORT_STYLE.pt.label;
 export const LINE_MM = BODY_PT * 1.52 * PT;
 /** 불릿 들여쓰기 0.95em */
-const INDENT_MM = 0.95 * BODY_PT * PT;
+const INDENT_MM = REPORT_STYLE.bullet.padEm * BODY_PT * PT;
 /** 사다리 표: 라벨 열 18mm, 칸 안 여백 좌우 3px */
 const LADDER_TD_MM = PAGE_MM.width - 18 - 6 * PX;
 /** 행 오른쪽 막대 칸(42mm + 사이 2.5mm) */

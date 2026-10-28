@@ -111,6 +111,8 @@ interface CS {
 interface PS {
   align?: Align;
   bullet?: boolean;
+  /** 글머리표 문단의 글자 크기(pt — 내어쓰기·본문과의 거리가 em이라 크기마다 다름). Writer.para가 채움 */
+  bulletPt?: number;
   left?: number;
   indent?: number;
   before?: number;
@@ -129,8 +131,18 @@ const HAIR5: Line = { pt: ST.line.hair, color: G.g5 };
 const THICK: Line = { pt: ST.line.thick, color: G.g4 };
 const all = (l: Line | null, fill?: string): Box => ({ l, r: l, t: l, b: l, ...(fill ? { fill } : {}) });
 
-/** 글머리표(화면 li::before 「•」) — 한글 글머리표로 두어 둘째 줄부터 글 시작에 맞춤(한글의 자동 내어쓰기) */
-const BULLET: Bullet = { char: "•", head: { align: "LEFT", instWidth: false, autoIndent: true, widthAdjust: 0, textOffset: 50, textOffsetPercent: true, numFormat: 0, charPr: -1 } };
+/**
+ * 글머리표(화면 li::before 「•」 — REPORT_STYLE.bullet): 한글 글머리표 문단의 내어쓰기로 화면과 같은 자리에 둠(lib/hwpx/hang.ts 관례).
+ * left = 부호 자리(markEm), intent = −(글 시작 − 부호 자리) — 첫 줄은 부호에서, 둘째 줄부터 글 시작(padEm)에서.
+ * 첫 줄 글 자리 = 부호 자리 + 「•」 폭 + 본문과의 거리 → 본문과의 거리 = padEm − markEm − 「•」 폭. 자동 내어쓰기는 끔(켜면 한글이 intent에 글머리표 폭을 더함)
+ */
+const BULLET_HANG = { mark: ST.bullet.markEm, text: ST.bullet.padEm };
+/** 「•」 폭(em) — 화면에서 잰 값(경평 초안 11장 스냅숏의 li::before 「•」 상자 폭 0.34~0.44em, 가장 흔한 값 0.40em — 본문 자간 맞춤이 더해져 흔들림) */
+const BULLET_GLYPH_EM = 0.4;
+const bulletOf = (pt: number): Bullet => ({
+  char: "•",
+  head: { align: "LEFT", instWidth: true, autoIndent: false, widthAdjust: 0, textOffset: Math.round((BULLET_HANG.text - BULLET_HANG.mark - BULLET_GLYPH_EM) * pt * 100), textOffsetPercent: false, numFormat: 0, charPr: -1 },
+});
 
 const hex = (c: string) => {
   const s = c.trim().replace(/^#/, "");
@@ -142,7 +154,7 @@ const border = (l?: Line | null): Border => (l ? { type: l.type ?? "SOLID", widt
 const seven = <T>(v: T) => Array.from({ length: 7 }, () => v);
 
 class Shapes {
-  readonly doc: HwpDoc = { format: "hwpx", faces: {}, charPrs: [], paraPrs: [], borderFills: [null], tabDefs: [], bullets: [BULLET], numberings: [], bins: new Map(), sections: [] };
+  readonly doc: HwpDoc = { format: "hwpx", faces: {}, charPrs: [], paraPrs: [], borderFills: [null], tabDefs: [], bullets: [], numberings: [], bins: new Map(), sections: [] };
   private ids = new Map<string, number>();
   /** 만든 값 그대로를 열쇠로(입력 표기가 달라도 같은 모양이면 한 번만) */
   private once<T>(kind: string, list: T[], v: T): number {
@@ -203,6 +215,7 @@ class Shapes {
   }
   para(p: PS): number {
     const bf = p.box ? this.fill(p.box) : 0;
+    const em = (p.bulletPt ?? F.body) * 100;
     const v: ParaPr = {
       align: p.align ?? "JUSTIFY",
       breakLatin: "KEEP_WORD",
@@ -213,9 +226,9 @@ class Shapes {
       condense: 0,
       lineSpacingType: "PERCENT",
       lineSpacing: p.line ?? ST.lineSpacingPct,
-      left: p.left ?? 0,
+      left: (p.left ?? 0) + (p.bullet ? Math.round(BULLET_HANG.mark * em) : 0),
       right: 0,
-      indent: p.indent ?? 0,
+      indent: p.bullet ? -Math.round((BULLET_HANG.text - BULLET_HANG.mark) * em) : (p.indent ?? 0),
       before: p.before ?? 0,
       after: p.after ?? 0,
       vertAlign: "BASELINE",
@@ -226,7 +239,7 @@ class Shapes {
       borderOffset: [0, 0, 0, 0],
       tabDef: 0,
       headingType: p.bullet ? "BULLET" : "NONE",
-      headingId: p.bullet ? 1 : 0,
+      headingId: p.bullet ? this.once("bu", this.doc.bullets, bulletOf(p.bulletPt ?? F.body)) + 1 : 0,
       headingLevel: 0,
       autoSpaceEAsianEng: false,
       autoSpaceEAsianNum: false,
@@ -321,7 +334,7 @@ class Writer {
       pos += it.kind === "text" ? it.text.length : 8;
       return x;
     });
-    return { paraPr: this.sh.para(ps), style: 0, items: its, lines: [], length: pos + 1, pageBreak: false, endCharPr: this.sh.char(end) };
+    return { paraPr: this.sh.para(ps.bullet ? { ...ps, bulletPt: end.pt } : ps), style: 0, items: its, lines: [], length: pos + 1, pageBreak: false, endCharPr: this.sh.char(end) };
   }
   /** 글 한 문단 */
   p(s: string, c: CS = BODY, ps: PS = {}): Para {

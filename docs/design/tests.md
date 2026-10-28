@@ -267,6 +267,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/cards/layout-render.test.ts`(CSS 순서 추가) | `CARD_LAYOUT_CSS`의 `word-break: normal` 되돌림이 흐름·편집 문단의 줄 나눔 단위를 덮지 않음(되돌림 뒤에 물려받기·편집 규칙, 그 뒤에 `word-break`를 다시 정하는 규칙 없음) |
 | `lib/cards/layout-hwpx.test.ts`(줄 나눔 추가) | 59장: 내려받은 한글의 줄 나눔 단위가 원본과 같음 — 제목·라벨 문단 `BREAK_WORD`, 긴 본문 문단 `KEEP_WORD`(원본 필요) |
 | `lib/reports/section-hwpx.test.ts`(A안 보정 추가) | 모든 문단 모양이 `breakNonLatinWord = BREAK_WORD`(어절)·`breakLatinWord = KEEP_WORD`, 모든 글자 모양이 `useFontSpace = 1`, 머리 세 문단·상자 머리·표 머리 칸·수치 칸 줄 간격이 화면 CSS `line-height`(`REPORT_STYLE.lh`)와 같음, 핵심 수치 칸은 【확인】만 10.5pt이고 큰 수치는 15pt 그대로(`acca106`) |
+| `lib/hwpx/hang.test.ts`·`dom-hwpx/convert.test.ts`·`section-hwpx.test.ts`·`lib/hwpx/hwpx.test.ts`(계층부호 내어쓰기, 2026-10-28) | 부호(□·ㅇ·-·•·∙·※) + 빈칸으로 시작하거나 글머리표인 문단은 음수 intent(= 부호 자리 + 빈칸 폭)로 둘째 줄이 글 첫 자 아래 — DOM은 화면 줄 기하·`::before` 글 시작에서, A안은 `REPORT_STYLE.bullet`(화면 CSS와 같은 값, 글머리표 자동 내어쓰기 끔), 개조식 표 칸은 kordoc 본문처럼 부호 + 탭 + 내어쓰기; 점검 `hangCheck`(내어쓰기 없는 부호 문단 수) — 경평 11·A안 8·개조식 8 = 0, 카드 DOM 59장 = 1(원본도 내어쓰지 않은 문단) |
 
 ## 원본 필요 시험(git 밖 — 없으면 이유를 적고 건너뜀)
 

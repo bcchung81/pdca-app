@@ -13,6 +13,8 @@
 // 옮김: 테두리·배경 → 칸 테두리/배경(borderFill), 글 → 글자 모양(글꼴은 report-fonts.ts 별칭 → 한글 이름), 줄 높이 → 줄 간격 %,
 //   자간(letter-spacing) → 글자 자간 %, vertical-align 길이 → 글자 위치 %, 자기 테두리·배경이 있는 인라인 상자(칩) → 글자 테두리(테두리 있음)·음영(배경만),
 //   왼쪽 안 여백 안에 놓인 절대 위치 ::before 한 글자 → 문단 글머리표, 추출기가 그린 SVG 그림(PNG) → 글자처럼 취급한 한글 그림
+// 내어쓰기(2026-10-28 — hangOf, 관례는 lib/hwpx/hang.ts): 글머리표 문단·화면에서 둘째 줄이 첫 줄보다 오른쪽에서 시작하는 문단(원본 배치 카드의 「∙ …」)·
+//   음수 text-indent·한 줄 부호 글(부호 뒤 글자 자리를 잰 것) → 첫 줄 자리 left + 음수 intent. 점검(hangCheck): 부호·글머리표 문단 중 내어쓰기 없는 수 → 통계·근사 목록
 // 줄 맞춤(한글은 파일의 줄 배치를 따르지 않고 다시 조판함 — 2026-10-28 한컴 뷰어 확인):
 //   · 화면에서 한 줄이던 글(줄 상자 1개, 줄바꿈 없음) → 문단 줄 넘김 SQUEEZE(한글이 자간을 줄여 한 줄로 — 한글 글 폭이 조금 넓어도 쪼개지지 않게)
 //   · 열 나눔 표가 영역 왼쪽에 붙어 있으면 끝 열을 영역 오른쪽 끝까지 넓힘(칸 폭 여유 — 줄 바꿀 자리가 없는 한 줄 글에 여유)
@@ -46,6 +48,7 @@
 import { BORDER_WIDTH_MM } from "../../hwp/hwp5.ts";
 import { type HwpxImage, type HwpxInput, hwpxFiles } from "../../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, CharPr, Cell, HwpDoc, Inline, LineSeg, PageDef, Para, ParaPr, Pic, Table } from "../../hwp/model.ts";
+import { hangCheck, markerLead } from "../../hwpx/hang.ts";
 import { writeHwpxPackage } from "../../hwpx/postprocess.ts";
 import { REPORT_FONTS, type ReportFontFace } from "../report-fonts.ts";
 import { cssUrls } from "./pictures.ts";
@@ -141,6 +144,10 @@ export interface DomHwpxStats {
   tight: number;
   /** 겹침 점검: 같은 칸(문단 목록) 안에서 앞 줄과 세로 위치가 겹치는 문단 수 — 줄 배치를 적었을 때만 셈 */
   stacked: number;
+  /** 내어쓰기 점검(lib/hwpx/hang.ts hangCheck): 부호로 시작하거나 글머리표인 문단 수 */
+  marked: number;
+  /** 내어쓰기 점검: 그중 내어쓰기가 없는 문단 수 — 0이어야 함 */
+  flat: number;
 }
 /** 채움 점검용: 한글에서 칠하는 칸·글자 배경의 화면 자리(틀 기준 mm)와 채움색 — 화면 픽셀과 견줌(시험판 스크립트) */
 export interface FillProbe {
@@ -529,12 +536,15 @@ class Shapes {
     };
     return this.once("pp", this.doc.paraPrs, v);
   }
-  /** 글머리표(문자·머리 글자 모양·본문과의 거리 HWPUNIT) → id(1부터) */
+  /**
+   * 글머리표(문자·머리 글자 모양·본문과의 거리 HWPUNIT) → id(1부터). 내어쓰기는 문단 모양 intent로 직접 주므로 자동 내어쓰기는 끔
+   * (켜면 한글이 intent에 글머리표 폭을 더해 둘째 줄이 글 첫 자보다 오른쪽으로 감 — lib/hwpx/hang.ts)
+   */
   bullet(char: string, charPr: number, offset: number): number {
     return (
       this.once("bu", this.doc.bullets, {
         char,
-        head: { align: "LEFT" as const, instWidth: true, autoIndent: true, widthAdjust: 0, textOffset: Math.max(0, offset), textOffsetPercent: false, numFormat: 0, charPr },
+        head: { align: "LEFT" as const, instWidth: true, autoIndent: false, widthAdjust: 0, textOffset: Math.max(0, offset), textOffsetPercent: false, numFormat: 0, charPr },
       }) + 1
     );
   }
@@ -722,7 +732,7 @@ class Converter {
   private pitchCache = new WeakMap<Flow, number>();
   private segCache = new WeakMap<Flow, Seg[]>();
   private tinyCp = -1;
-  readonly stats: DomHwpxStats = { paras: 0, tables: 0, cells: 0, depth: 0, lined: 0, squeezed: 0, pics: 0, images: 0, imageFills: 0, imageVoids: 0, rules: 0, split: 0, tight: 0, stacked: 0 };
+  readonly stats: DomHwpxStats = { paras: 0, tables: 0, cells: 0, depth: 0, lined: 0, squeezed: 0, pics: 0, images: 0, imageFills: 0, imageVoids: 0, rules: 0, split: 0, tight: 0, stacked: 0, marked: 0, flat: 0 };
   readonly fills: FillProbe[] = [];
   private paints = new WeakMap<SnapStyle, Paint>();
   private parents = new WeakMap<SnapBox, SnapBox>();
@@ -1214,9 +1224,10 @@ class Converter {
   }
   makeSegs(f: Flow): Seg[] {
     const segs: Seg[] = [];
-    const pseudoSeg = (p: SnapPseudo | undefined, chip: Chip | null, stick: "next" | "prev") => {
+    // px: 앞 의사요소(::before)의 시작 x(mm — 감싼 상자의 내용 왼쪽). 의사요소 글은 줄 부분(frags)을 재지 않아 내어쓰기 첫 줄 자리를 여기서 앎(hangOf)
+    const pseudoSeg = (p: SnapPseudo | undefined, chip: Chip | null, stick: "next" | "prev", px?: number) => {
       if (!p || !p.text || isAbs(p.style.position) || !p.style.display.startsWith("inline")) return;
-      segs.push({ kind: "text", text: p.text, cp: this.charOf(p.style, chip), stick, frags: [] });
+      segs.push({ kind: "text", text: p.text, cp: this.charOf(p.style, chip), stick, frags: [], ...(px !== undefined ? { px } : {}) });
     };
     // outerPt: 이 글을 담은 상자(st)의 둘레 글 크기 — 위·아래첨자 판정
     const walk = (nodes: SnapNode[], st: SnapStyle, chip: Chip | null, outerPt?: number) => {
@@ -1241,7 +1252,7 @@ class Converter {
           if (!n.children.every(inlineLevel)) this.notes.add("인라인 상자 안 블록 → 글로 펼침");
           this.notePseudo(n.before, false);
           this.notePseudo(n.after, false);
-          pseudoSeg(n.before, c, "next");
+          pseudoSeg(n.before, c, "next", n.rect.x + n.style.border[3].w + n.style.pad[3]);
           const em = n.style.fontSize / 0.75 / 96 * 25.4; // 1em(mm)
           if (deco && n.style.pad[3] >= 0.2 * em) segs.push({ kind: "text", text: " ", cp: this.charOf(n.style, c), stick: "next", frags: [] });
           walk(n.children, n.style, c, st.fontSize || outerPt);
@@ -1332,6 +1343,36 @@ class Converter {
     return { y0, y1 };
   }
 
+  /**
+   * 내어쓰기(lib/hwpx/hang.ts 관례 — 첫 줄은 left, 둘째 줄부터 left − intent): 첫 줄 시작 x0(mm)과 내어쓰기 폭 w(mm). 없으면 null. 왼쪽·양쪽·배분 정렬 글만
+   *  · 음수 text-indent(CSS 내어쓰기): 첫 줄 = 내용 왼쪽 + text-indent, 둘째 줄부터 내용 왼쪽
+   *  · 여러 줄: 둘째 줄부터의 가장 왼쪽 시작 − 첫 줄 시작(화면에서 잰 줄 상자 — 원본 배치 카드는 줄마다 왼쪽 안 여백을 준 인라인 블록)
+   *  · 한 줄이고 부호 + 빈칸으로 시작하는 글(markerLead): 부호 뒤 첫 글자가 따로 잰 줄 부분의 시작이면 그 자리 − 첫 줄 시작
+   */
+  hangOf(f: Flow, segs: Seg[], lines: Line[], align: Align): { x0: number; w: number } | null {
+    if (!["LEFT", "JUSTIFY", "DISTRIBUTE"].includes(align)) return null;
+    const ti = f.style.textIndent;
+    if (ti < -EPS) return { x0: f.rect.x + f.padIn[3] + ti, w: -ti };
+    if (!lines.length) return null;
+    // 첫 줄 시작: 줄 상자는 의사요소 글을 빼고 재므로, 맨 앞이 의사요소 글(원본 배치 카드의 기호 글머리 등)이면 그 시작 x
+    const first = segs[0];
+    const xa = Math.min(lines[0].x0, first?.kind === "text" && !first.frags.length && first.px !== undefined ? first.px : Infinity);
+    if (lines.length > 1) {
+      const xb = Math.min(...lines.slice(1).map((l) => l.x0));
+      return xb - xa > EPS ? { x0: xa, w: xb - xa } : null;
+    }
+    const text = segs.map((s) => (s.kind === "br" ? "\n" : s.kind === "pic" ? "\uFFFC".repeat(8) : s.text)).join("");
+    const lead = markerLead(text);
+    if (!lead) return null;
+    for (const s of segs) {
+      if (s.kind !== "text") continue;
+      const fr = s.frags.find((g) => (s.pos ?? 0) + g.at === lead && g.w > 0);
+      const x = fr ? fr.x : s.pos === lead && s.px !== undefined ? s.px : null;
+      if (x !== null) return x - xa > EPS ? { x0: xa, w: x - xa } : null;
+    }
+    return null;
+  }
+
   flowPara(f: Flow, region: Region): POut {
     const segs = this.segsOf(f);
     const st = f.style;
@@ -1361,12 +1402,18 @@ class Converter {
     let indent = st.textIndent;
     let bullet = 0;
     if (f.marker) {
+      // 글머리표: 첫 줄은 부호 자리, 둘째 줄부터 글 시작 자리(내어쓰기 = 글 시작 − 부호 왼쪽 — lib/hwpx/hang.ts)
       const m = f.marker;
       const mcp = this.charOf(m.style, null);
       const textStart = f.rect.x + f.padIn[3];
       bullet = this.sh.bullet(m.text, mcp, hu(textStart - right(m.rect)));
       left = m.rect.x - region.x0;
-      indent = 0;
+      indent = -(textStart - m.rect.x);
+    }
+    const hang = f.marker ? null : this.hangOf(f, segs, lines, align);
+    if (hang) {
+      left = hang.x0 - region.x0;
+      indent = -hang.w;
     }
     const single = lines.length <= 1 && !segs.some((s) => s.kind === "br");
     if (single && lines.length && lastAlignOf(st) === "DISTRIBUTE") align = "DISTRIBUTE";
@@ -1376,18 +1423,18 @@ class Converter {
       const tx1 = lines[0].x1;
       const lg = tx0 - region.x0;
       const rg = region.x1 - tx1;
-      if (!f.marker && lg > 0.5 && Math.abs(lg - rg) < 0.8) {
+      if (!f.marker && !hang && lg > 0.5 && Math.abs(lg - rg) < 0.8) {
         align = "CENTER";
         left = 0;
         rightM = 0;
         indent = 0;
-      } else if (!f.marker && lg > 0.5 && rg < 0.5) {
+      } else if (!f.marker && !hang && lg > 0.5 && rg < 0.5) {
         align = "RIGHT";
         left = 0;
         rightM = 0;
         indent = 0;
       } else {
-        if (!f.marker) {
+        if (!f.marker && !hang) {
           left = Math.max(0, lg);
           indent = 0;
         }
@@ -1900,7 +1947,7 @@ interface Chip {
   shade?: string | null;
 }
 /** 글 조각: 글·줄바꿈·글 속 그림(문단 안 개체 — 글자 자리 8칸) */
-type Seg = { kind: "text"; text: string; cp: number; stick?: "next" | "prev"; frags: SnapFrag[]; pos?: number } | { kind: "br"; cp: number; pos?: number } | { kind: "pic"; cp: number; src: PicSrc; pos?: number };
+type Seg = { kind: "text"; text: string; cp: number; stick?: "next" | "prev"; frags: SnapFrag[]; pos?: number; px?: number } | { kind: "br"; cp: number; pos?: number } | { kind: "pic"; cp: number; src: PicSrc; pos?: number };
 
 /**
  * 빈 자리를 꾸밈 없는 빈 칸으로(한 행에서 이어진 빈 자리를 옆으로, 같은 폭이 아래로 이어지면 아래로 합침).
@@ -1957,7 +2004,7 @@ function normalizeSpaces(segs: Seg[]): Seg[] {
       }
       const shift = (at: number) => at - base - removed.filter((k) => k < at).length;
       const frags = s.frags.filter((f) => f.at >= base && f.at <= base + part.length).map((f) => ({ ...f, at: Math.max(0, Math.min(text.length, shift(f.at))) }));
-      if (text) out.push({ kind: "text", text, cp: s.cp, stick: s.stick, frags });
+      if (text) out.push({ kind: "text", text, cp: s.cp, stick: s.stick, frags, ...(s.px !== undefined && pi === 0 ? { px: s.px } : {}) });
     });
   }
   // 끝 공백
@@ -2128,6 +2175,10 @@ export function snapshotHwpxInput(snap: LayoutSnapshot, opts: DomHwpxOptions): D
   cv.stats.stacked = ov.stacked;
   if (ov.tight) cv.notes.add("겹침 점검: 줄 간격이 글자 크기 × 0.9 미만인 문단", ov.tight);
   if (ov.stacked) cv.notes.add("겹침 점검: 같은 칸 안에서 앞 줄과 세로 위치가 겹치는 문단", ov.stacked);
+  const hc = hangCheck({ doc: cv.sh.doc, paras });
+  cv.stats.marked = hc.marked;
+  cv.stats.flat = hc.flat;
+  if (hc.flat) cv.notes.add("내어쓰기 점검: 부호로 시작하거나 글머리표인데 내어쓰기가 없는 문단", hc.flat);
   return { input: { doc: cv.sh.doc, page: pageDefOf(opts.page), paras, images: cv.images, title: opts.title ?? "" }, approx: cv.notes.list(), stats: cv.stats, fills: cv.fills };
 }
 

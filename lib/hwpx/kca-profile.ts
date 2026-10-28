@@ -30,3 +30,12 @@ export const KCA_GONGMUN = {
     2: { font: "휴먼명조", pt: FORM_SIZES_PT.dash, bold: false },
   },
 } as const;
+
+/**
+ * 부호 칸 폭(em) — kordoc이 손대지 않는 부호 문단(표 칸의 「∙ … / ∙ …」 등)에 후처리가 주는 내어쓰기(postprocess.ts hangParagraphs).
+ * kordoc 본문 부호 문단과 같은 셈(부호 폭 + 0.5em — ㅇ 15pt intent −2250 = 1.5em): 전각 부호 1.5em,
+ * 반각 부호(NARROW_MARKS)는 1.2em(글꼴에 따라 반각·전각 어느 쪽이어도 부호 뒤 탭이 0보다 큰 폭을 갖게)
+ */
+export const MARK_CELL_EM = { wide: 1.5, narrow: 1.2 } as const;
+/** 반각으로 그려질 수 있는 부호 */
+export const NARROW_MARKS = "-–·∙•*";

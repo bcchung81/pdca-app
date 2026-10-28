@@ -24,6 +24,7 @@ import { validateHwpx } from "kordoc";
 import type { Para, Table } from "../../hwp/model.ts";
 import { BLOCK_KINDS } from "../blocks.ts";
 import { REPORT_PAGE_MM } from "../section-hwpx.ts";
+import { hangCheck } from "../../hwpx/hang.ts";
 import { alignOf, gradientMean, imageFillMode, lastAlignOf, lenMm, overlapCheck, parseGradient, snapshotHwpxInput, snapshotToHwpx, splitTop, wordBreakOf } from "./convert.ts";
 import type { LayoutSnapshot, Rect, SnapBox, SnapNode, SnapPseudo, SnapStyle, SnapText } from "./snapshot.ts";
 
@@ -163,6 +164,10 @@ test("절대 위치 ::before 한 글자(왼쪽 안 여백 안) → 문단 글머
   assert.equal(pp.headingType, "BULLET");
   assert.equal(input.doc.bullets[pp.headingId - 1].char, "•");
   assert.equal(input.doc.bullets[pp.headingId - 1].head.textOffset, hu(3.5 - 1.7));
+  // 내어쓰기(2026-10-28): 첫 줄은 부호 자리(left), 둘째 줄부터 글 시작(left − intent) · 자동 내어쓰기는 끔(켜면 한글이 글머리표 폭을 더함)
+  assert.equal(pp.left, hu(0.2));
+  assert.equal(pp.indent, -hu(3.5 - 0.2));
+  assert.equal(input.doc.bullets[pp.headingId - 1].head.autoIndent, false);
   assert.equal(texts(input.paras[0]), "글머리 문단");
   const [t] = tablesIn(input.paras);
   // (215+255)/2 = 235(EB) · (216+255)/2 = 235.5 → 236(EC)
@@ -773,4 +778,30 @@ test("글 보존: 딱지 아래 줄까지 감긴 글은 딱지 옆 글이 아님
   // 글 문단은 블록 왼쪽(19mm)부터 — 딱지 오른쪽(30mm)으로 좁히면 둘째 줄 자리가 사라짐
   const para = input.paras.find((p) => texts(p) === words)!;
   assert.equal(ppOf(input, para).left, hu(19));
+});
+
+test("내어쓰기(2026-10-28): 부호 + 빈칸 두 줄 문단 — 화면 둘째 줄 시작 − 첫 줄 시작 → 음수 intent, left = 첫 줄 자리 · 음수 text-indent · 한 줄 부호 글(부호 뒤 글자가 따로 잰 줄 부분) · 점검 0", () => {
+  const PT = 25.4 / 72;
+  // 원본 배치 카드 모양: 줄마다 인라인 블록, 둘째 줄은 왼쪽 안 여백(내어쓰기) — 부호 「∙」 + 빈칸 폭 3.6mm
+  const lineBox = (kids: SnapNode[], y: number, pl = 0) => box("span", rect(1.06, y, 140, 5.6), kids, { display: "inline-block", fontSize: 10, lineHeight: 0, textAlign: "left", whiteSpace: "pre", pad: [0, 0, 0, pl] });
+  const two = box("div", rect(0, 10, 150, 11.2), [lineBox([text("∙", rect(1.06, 10, 1.4, 3.97)), text(" ", rect(2.46, 10, 2.2, 3.97)), text("전파 환경 다변화로 민원이 복잡해졌으나", rect(4.66, 10, 100, 3.97))], 10), lineBox([text("전용 창구 부재로 매번 위임장 제출", rect(4.66, 15.6, 90, 3.97))], 15.6, 3.6)], { fontSize: 0, lineHeight: 0, textAlign: "start" });
+  // 9.16 양식 모양: padding-left + 음수 text-indent(한 줄 글이어도 CSS가 내어쓰기를 알려 줌)
+  const css = box("p", rect(0, 30, 150, 5), [text("□ 해당사항 없음", rect(0, 30.5, 30, 4))], { pad: [0, 0, 0, 3.7], textIndent: -3.7, lineHeight: 10 * 1.5 });
+  // 한 줄 부호 글: 부호·빈칸은 의사요소 글(줄 부분을 재지 않음 — 감싼 상자 자리로), 글은 따로 잰 줄 부분
+  const gen = (t: string, x: number) => box("span", rect(x, 40, 1.9, 3.97), [], { display: "inline" }, { before: { text: t, style: style({ display: "inline" }), rect: null } });
+  const one = box("span", rect(0, 40, 150, 4.23), [gen("□", 0), gen(" ", 1.9), text("고도화과제(기존)", rect(3.68, 40, 30, 3.97))], { display: "inline-block", fontSize: 10, lineHeight: 0, whiteSpace: "pre", textAlign: "left" });
+  const plain = box("p", rect(0, 50, 150, 10 * 1.5 * PT * 2), [{ kind: "text", text: "부호 없는 두 줄 글입니다 둘째 줄", frags: [{ at: 0, x: 0, y: 50, w: 140, h: 4 }, { at: 9, x: 0, y: 55, w: 50, h: 4 }] }]);
+  const { input, stats } = snapshotHwpxInput(snap([two, css, box("div", rect(0, 40, 150, 4.23), [one]), plain]), { lines: false, page: PAGE });
+  const [p2, pc, p1, pn] = input.paras.map((p) => ppOf(input, p));
+  assert.equal(p2.left, hu(1.06), "첫 줄 = 부호 자리");
+  assert.equal(p2.indent, -hu(3.6), "내어쓰기 = 둘째 줄 시작 − 첫 줄 시작(부호 + 빈칸)");
+  assert.ok(Math.abs(-p2.indent - hu(1.4 + 2.2)) <= hu(0.05), "부호 + 빈칸 폭(허용 0.05mm)");
+  assert.equal(pc.left, 0, "CSS 내어쓰기: 첫 줄 = 내용 왼쪽 + text-indent");
+  assert.equal(pc.indent, -hu(3.7));
+  assert.equal(p1.left, 0);
+  assert.equal(p1.indent, -hu(3.68), "한 줄: 부호 뒤 첫 글자 자리 − 부호 자리");
+  assert.equal(pn.indent, 0, "부호 없고 화면도 내어 쓰지 않은 글은 그대로");
+  assert.equal(pn.left, 0);
+  assert.deepEqual([stats.marked, stats.flat], [3, 0]);
+  assert.deepEqual(hangCheck(input), { marked: 3, flat: 0, samples: [] });
 });

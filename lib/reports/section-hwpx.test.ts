@@ -12,6 +12,7 @@ import { test } from "node:test";
 import JSZip from "jszip";
 import { validateHwpx } from "kordoc";
 import { readHwpx } from "../hwp/hwpx.ts";
+import { hangCheck } from "../hwpx/hang.ts";
 import type { HwpDoc, Para, Table } from "../hwp/model.ts";
 import { BLOCK_KINDS, type Block, type BlockCell, FIGURE_LABEL, type Figure, VARIANTS, figureMm } from "./blocks.ts";
 import { PAGE_MM, blockWidth, slotOf } from "./fit.ts";
@@ -514,4 +515,27 @@ test("점 연혁: 점 칸은 두 반 행을 합치고 선(위쪽 테두리)은 �
   assert.ok(dots.every((c) => c.row === 1));
   const lines = t.cells.filter((c) => c.row === 2 && c.rowSpan === 1 && doc.borderFills[c.borderFill]!.top.type === "SOLID");
   assert.equal(lines.length, 4);
+});
+
+test("글머리표 내어쓰기(2026-10-28): 화면 li(부호 0.05em·글 0.95em — REPORT_STYLE.bullet)와 같은 자리 — left = 부호 자리, intent = −(글 − 부호), 첫 줄 글 = 부호 + 「•」 폭 + 본문과의 거리 · 자동 내어쓰기 끔 · 점검 0", async () => {
+  const B = REPORT_STYLE.bullet;
+  const spec = makeSpec([SAMPLES.bullets, SAMPLES["cards:arrow"], SAMPLES.case]);
+  const { input } = sectionHwpxInput(spec);
+  const allParas = (ps: Para[]): Para[] => ps.flatMap((p) => [p, ...tablesOf([p]).flatMap((t) => t.cells.flatMap((c) => allParas(c.paras)))]);
+  const bullets = allParas(input.paras).filter((p) => input.doc.paraPrs[p.paraPr].headingType === "BULLET");
+  assert.ok(bullets.length >= 3);
+  for (const p of bullets) {
+    const pp = input.doc.paraPrs[p.paraPr];
+    const em = input.doc.charPrs[p.endCharPr!].height;
+    const head = input.doc.bullets[pp.headingId - 1].head;
+    assert.equal(pp.left, Math.round(B.markEm * em), "첫 줄 = 부호 자리");
+    assert.equal(pp.indent, -Math.round((B.padEm - B.markEm) * em), "둘째 줄부터 = 글 시작");
+    assert.deepEqual([head.autoIndent, head.instWidth, head.textOffsetPercent], [false, true, false]);
+    // 첫 줄 글 자리(부호 자리 + 「•」 0.4em + 본문과의 거리)가 둘째 줄 자리(left − intent)와 같음(반올림 2 HWPUNIT 안)
+    assert.ok(Math.abs(pp.left + 0.4 * em + head.textOffset - (pp.left - pp.indent)) <= 2, `${em}`);
+  }
+  assert.equal(hangCheck(input).flat, 0);
+  // 파일로 써서 다시 읽어도 같음
+  const doc = await readHwpx((await sectionToHwpx(spec)).bytes);
+  assert.equal(hangCheck({ doc, paras: doc.sections.flatMap((x) => x.paras) }).flat, 0);
 });

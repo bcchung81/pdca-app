@@ -9,6 +9,8 @@
 // 원본 바이트를 읽는 가짜 저장소를 넘겨 받고, 변환에 pictures로 넘김. 화면 그림 수(<img> + 배경 url 상자)와 넣은 그림 수(그림 개체 + 그림 채우기 칸)를 견줌
 // 겹침 점검(2026-10-28): 변환기의 결정론 점검(convert.ts overlapCheck — 줄 간격 < 글자 크기 × 0.9인 문단·같은 칸 안 세로 위치가 겹치는 문단) 수를 카드마다 셈 — 0이어야 함
 // 글 보존 점검(2026-10-28): 화면 글 줄(스냅숏 — 숨은 사본 DOM의 보이는 글) 중 다시 읽은 한글(readHwpx)의 어느 문단에도 없는 줄 수(text-keep.ts) — 0이어야 함
+// 내어쓰기 점검(2026-10-28): 부호(□·ㅇ·-·∙·※ …)로 시작하거나 글머리표인 문단 중 내어쓰기(음수 intent)가 없는 문단 수(lib/hwpx/hang.ts hangCheck) — DOM 방식(변환기 통계)과 원본 배치 방식(다시 읽은 파일).
+//   0이 목표 — 남는 것은 원본 한글 파일도 내어 쓰지 않은 문단인지 원본 배치 쪽 수와 견줌
 // 운영 DB·버킷은 쓰지 않음(원본 파일·카드 JSON만 읽음). AI 부르지 않음.
 //
 // 쓰기: node scripts/eval/card-dom-roundtrip.ts [--out <폴더>] [--only 주요사업1/1-가,…] [--keep](HTML·HWPX를 남김)
@@ -30,6 +32,7 @@ import { CARD_LAYOUT_CSS } from "../../lib/cards/layout-render.ts";
 import { fitHwpText } from "../../lib/hwp/fit.ts";
 import { readHwp5 } from "../../lib/hwp/hwp5.ts";
 import { readHwpx } from "../../lib/hwp/hwpx.ts";
+import { hangCheck } from "../../lib/hwpx/hang.ts";
 import { writeHwpxPackage } from "../../lib/hwpx/postprocess.ts";
 import { bodyMmOf, snapshotToHwpx } from "../../lib/reports/dom-hwpx/convert.ts";
 import { extractLayout } from "../../lib/reports/dom-hwpx/extract.ts";
@@ -116,8 +119,14 @@ try {
     const row: any = { id };
     // ── 원본 배치 방식
     const imgs = new Map(it.images.map((im) => [im.key, { data: im.data, ext: im.key.split(".").pop() ?? "png" }]));
-    const lay = await readBack((await writeHwpxPackage(layoutHwpxFiles(it.card, it.layout, imgs)!)).bytes, it.card);
+    const layBytes = (await writeHwpxPackage(layoutHwpxFiles(it.card, it.layout, imgs)!)).bytes;
+    const lay = await readBack(layBytes, it.card);
     row.layout = lay.ok ? { group: lay.group, same: lay.same, changed: lay.changed, diffs: lay.diffs } : { error: lay.why };
+    {
+      const doc = await readHwpx(layBytes);
+      const hc = hangCheck({ doc, paras: doc.sections.flatMap((x) => x.paras) });
+      row.hangLayout = { marked: hc.marked, flat: hc.flat, samples: hc.samples };
+    }
     // ── DOM 방식
     const uid = `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
     for (const im of it.images) served.set(`${uid}/${im.key}`, { data: im.data, mime: im.mime });
@@ -204,6 +213,7 @@ try {
     row.valid = v.ok ? "ok" : "실패";
     row.stats = `표 ${stats.tables} · 칸 ${stats.cells} · 나눔 ${stats.split}`;
     row.overlap = { tight: stats.tight, stacked: stats.stacked };
+    row.hang = { marked: stats.marked, flat: stats.flat };
     {
       const lines = screenLines(snap);
       const lost = missingLines(lines, hwpParaTexts(await readHwpx(bytes)));
@@ -219,7 +229,7 @@ try {
     rows.push(row);
     const d = row.dom;
     console.log(`${id}: 그림 화면 ${row.screen.img}+${row.screen.bg} → 넣음 ${row.placed.images}+${row.placed.fills}(빈 자리 ${row.placed.voids}, 파일 pic ${row.inFile.pics}·채우기 칸 ${row.inFile.fillCells}) [${row.picHeader}]`);
-    console.log(`${id}: 원본 배치 ${row.layout.same ? "같음" : `다름(${(row.layout.changed ?? []).length}구역)`} · DOM ${d.error ?? (d.same ? "같음" : `다름 — 바뀐 구역 ${d.changed.length} [${d.changed.join(",")}] · 다른 경로 ${d.diffs.length}`)}${d.group === false ? " · 묶음 못 알아봄" : ""} · 판정 ${row.judge} · ${(row.bytes / 1024).toFixed(0)}KB(gzip ${(row.gzBytes / 1024).toFixed(0)}KB)·노드 ${row.nodes} · 채움 ${row.fills} · 겹침 ${row.overlap.tight}+${row.overlap.stacked} · 빠진 글 줄 ${row.lost}/${row.textLines}`);
+    console.log(`${id}: 원본 배치 ${row.layout.same ? "같음" : `다름(${(row.layout.changed ?? []).length}구역)`} · DOM ${d.error ?? (d.same ? "같음" : `다름 — 바뀐 구역 ${d.changed.length} [${d.changed.join(",")}] · 다른 경로 ${d.diffs.length}`)}${d.group === false ? " · 묶음 못 알아봄" : ""} · 판정 ${row.judge} · ${(row.bytes / 1024).toFixed(0)}KB(gzip ${(row.gzBytes / 1024).toFixed(0)}KB)·노드 ${row.nodes} · 채움 ${row.fills} · 겹침 ${row.overlap.tight}+${row.overlap.stacked} · 내어쓰기 없음 ${row.hang.flat}/${row.hang.marked}(원본 배치 ${row.hangLayout.flat}/${row.hangLayout.marked}) · 빠진 글 줄 ${row.lost}/${row.textLines}`);
     for (const l of row.lostList ?? []) console.log(`   빠진 글 줄: ${l}`);
   }
 } finally {
@@ -241,6 +251,7 @@ const sum = (f: (r: any) => number) => rows.reduce((a, r) => a + (f(r) || 0), 0)
 console.log(`\n그림: 사본 HTML ${sum((r) => r.images)}개 · 화면 <img> ${sum((r) => r.screen?.img)} + 배경 url ${sum((r) => r.screen?.bg)} = ${sum((r) => (r.screen?.img ?? 0) + (r.screen?.bg ?? 0))}`);
 console.log(`넣음: 그림 개체 ${sum((r) => r.placed?.images)} + 그림 채우기 칸 ${sum((r) => r.placed?.fills)} = ${sum((r) => (r.placed?.images ?? 0) + (r.placed?.fills ?? 0))} · 빈 자리 ${sum((r) => r.placed?.voids)} · 파일 안 pic ${sum((r) => r.inFile?.pics)}(SVG 포함)·채우기 칸 ${sum((r) => r.inFile?.fillCells)}`);
 console.log(`겹침 점검: 줄 간격 < 글자 × 0.9 문단 합 ${sum((r) => r.overlap?.tight)} · 같은 칸 세로 겹침 문단 합 ${sum((r) => r.overlap?.stacked)} · 겹침 0인 카드 ${cnt((r) => r.overlap && r.overlap.tight + r.overlap.stacked === 0)}/${n}`);
+console.log(`내어쓰기 점검: DOM 부호·글머리표 문단 ${sum((r) => r.hang?.marked)} 중 내어쓰기 없음 ${sum((r) => r.hang?.flat)} · 원본 배치 ${sum((r) => r.hangLayout?.marked)} 중 ${sum((r) => r.hangLayout?.flat)} · 없음 0인 카드 DOM ${cnt((r) => r.hang?.flat === 0)}/${n}`);
 console.log(`검증(validateHwpx) 통과 ${cnt((r) => r.valid === "ok")}/${n}`);
 console.log(`글 보존: 화면 글 줄 ${sum((r) => r.textLines)} 중 한글 문단에 없는 줄 ${sum((r) => r.lost)} · 빠진 줄 0인 카드 ${cnt((r) => r.lost === 0)}/${n}`);
 console.log(`화면 그림 수 = 넣은 수인 카드 ${cnt((r) => r.screen && r.screen.img + r.screen.bg === r.placed.images + r.placed.fills)}/${n}`);
