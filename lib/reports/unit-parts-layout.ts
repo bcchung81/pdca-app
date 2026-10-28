@@ -5,7 +5,7 @@
 //  표지는 쪽 수에 안 세므로(2025 실측 — 쪽 번호가 없음) 높이를 어림하지 않음.
 
 import type { BusinessLayout, MgOutside, MgOutsideChapter } from "./business-layout.ts";
-import { HEAD_PART_MM, LINE_MM, PAGE_MM, fitLayout, lineCount } from "./fit.ts";
+import { HEAD_PART_MM, LINE_MM, PAGE_MM, bodyLayout, fitLayout, lineCount } from "./fit.ts";
 import { type FindingsPart, type OutcomePart, type PriorPart, type UnitPartsMg, findingRemark, findingRowParts, kpiRate, unitPartsLabels } from "./unit-parts-mg.ts";
 import type { ReportSectionSpec } from "./section.ts";
 import type { LooseJson } from "../loose-json.ts";
@@ -51,7 +51,7 @@ function bulletsMm(items: string[], pct: number, t: Tally): number {
     return EMPTY_MM;
   }
   const w = colMm(pct) - TD_PAD_X - LI_INDENT;
-  return items.reduce((n, x) => n + Math.max(1, fitLayout(x, w).lines) * LINE_MM, 0);
+  return items.reduce((n, x) => n + Math.max(1, bodyLayout(x, w).lines) * LINE_MM, 0);
 }
 
 /** 글 칸 높이(mm): 불릿 아님 */

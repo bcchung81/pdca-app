@@ -208,3 +208,12 @@ test("sectionDocument: 제목·머리말(주요사업/경영관리 구분·모�
   assert.match(mg, /\(경영관리\) 지표 초안 · 과제관리카드 1-가 · 초안<\/p>/);
   assert.ok(!mg.includes("붉은 점선"));
 });
+
+test("괄호 + 조사 묶음(2026-10-28): 「(…)」 바로 뒤 조사 1~2자는 .k-nb 한 덩어리 — 괄호 안 빈칸·긴 괄호·조사가 아닌 긴 말·괄호만은 그대로", () => {
+  const html = blockHtml(B("bullets", "", { items: ["통합(’26.9.)에 맞춰 운영", "체계(AI)로, 정비", "기준(사후 검증)에 맞춤", "방안(가나다라마바사아자차카타파)에 따라", "통합(’26.9.)부터는 확대", "통합(’26.9.) 완료"] }), new Set());
+  assert.match(html, /통합<span class="k-nb">\(’26\.9\.\)에<\/span> 맞춰/);
+  assert.match(html, /체계<span class="k-nb">\(AI\)로<\/span>, 정비/);
+  assert.equal(html.match(/k-nb/g)?.length, 2, "빈칸 든 괄호·12자 넘는 괄호·조사 셋 이상·괄호만은 묶지 않음");
+  // 화면 글(태그를 걷은 글)은 그대로
+  assert.ok(html.replace(/<[^>]+>/g, "").includes("통합(’26.9.)에 맞춰 운영"));
+});

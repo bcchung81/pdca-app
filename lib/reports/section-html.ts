@@ -20,9 +20,15 @@ const marksOf = (unknownNumbers: string[], weak: string[] = []): Marks => Object
 
 /** 글 → 이스케이프 + 모르는 숫자 표시 + 채울 자료 자리표시 + 강조(**…** → 굵게, AI가 핵심 수치·결과 어구에 붙임) + 위첨자(^{…}) + 근거 약함 */
 function txt(s: string, unknown: Marks): string {
-  const h = sup(emph(needs(marked(s, unknown))));
+  const h = sup(emph(needs(parenJosa(marked(s, unknown)))));
   return unknown.weak?.has(s) ? `<span class="k-weak" title="근거 글과 겹치는 말이 적은 문장 — 원자료로 확인(신호, 판정 아님)">${h}</span>` : h;
 }
+
+/**
+ * 이스케이프한 글의 「(…)」 + 바로 뒤 조사 1~2자(「(’26.9.)에」·「(AI)로」)를 한 덩어리로(.k-nb — 줄을 넘기지 않음): 닫는 괄호 뒤에서 줄이 넘어가
+ * 조사만 다음 줄 첫머리에 남던 것(「통합(’26.9.) / 에 맞춰」, 2026-10-28 표본). 괄호 안이 짧고(12자) 빈칸이 없을 때만 — 묶음이 길면 칸이 넘침
+ */
+const parenJosa = (h: string) => h.replace(/\([^()\s]{1,12}\)[가-힣]{1,2}(?=[\s,.]|$)/g, '<span class="k-nb">$&</span>');
 
 /** 이스케이프한 글의 ^{…} → 위첨자(2025 추진성과 비교 「’24년100국 → ’25년200국」의 시점·기존/개선 — 짝이 없는 표기는 그대로) */
 const sup = (h: string) => h.replace(/\^\{([^{}]{1,120}?)\}/g, '<sup class="k-sup">$1</sup>');

@@ -3,9 +3,11 @@
 //    「표지. 」 + 갈래 칩 + 제목 + 마커 칩의 폭을 판면 어림과 같은 글 폭 모델(fit.ts subTitleMm)로 재고, 넘치면 자동 고치기 사유(제목만 줄임)
 //  - 블록 제목의 화살표(두 트랙, 참고): 「사후 확인 → AI 사전예방 전환」처럼 화살표 양쪽이 같은 대상을 가리키지 않으면 무엇이 바뀌었는지 안 보임 —
 //    양쪽에 공유하는 낱말(두 글자 이상 한글 낱말의 두 글자 조각 또는 영문·숫자 낱말)이 없으면 알림(판정이 아니라 신호, 글은 바꾸지 않음)
+//  - 표기 없는 상자(두 트랙, 참고): 상자형 도식이 라벨·제목·칸 머리·칩 없이 그려지면 무엇을 말하는 상자인지 안 보임(2026-10-28 표본 8장 중 4장 수치 띠)
 
 import type { Block } from "./blocks.ts";
 import { PAGE_MM, subTitleMax, subTitleMm } from "./fit.ts";
+import { containerOf } from "./layout.ts";
 
 export interface SubTitle {
   mark: string;
@@ -54,4 +56,26 @@ export function arrowTitleWarnings(blocks: readonly Pick<Block, "title">[]): str
   const bad = [...new Set(blocks.map((b) => b.title.trim()).filter((t) => t && arrowWithoutSharedNoun(t)))];
   if (!bad.length) return [];
   return [`블록 제목: ${bad.slice(0, 3).map((t) => `「${t}」`).join("·")} — 화살표 양쪽에 같은 대상(낱말)이 없어 무엇이 바뀌었는지 안 보입니다. 대상 명사가 든 한 줄로 쓰거나(「…을 A에서 B로」), 라벨·표 머리가 이미 전후를 말하면 제목을 비웁니다`];
+}
+
+/** 상자형 도식(렌더러가 상자로 그리는 종류) — 라벨·제목·칸 머리·칩이 모두 없으면 맨 상자 */
+const BOX_KINDS: ReadonlySet<string> = new Set(["cards", "timeline", "hub", "quotes", "define", "band", "stats"]);
+
+/**
+ * 화면에 보이는 표기가 하나도 없는 상자형 블록인지(section-html.ts blockCore와 같은 규칙): 라벨은 사다리 행·단 띠일 때(band는 띠 안 라벨 칸), 제목은 quotes·band가 그리지 않음,
+ * 칸 머리는 수치 띠(stats)에서는 큰 수치라 표기로 치지 않고 칩(tag)만 셈
+ */
+export function isBareBox(b: Pick<Block, "kind" | "label" | "title" | "layout" | "cells">): boolean {
+  if (!BOX_KINDS.has(b.kind)) return false;
+  const label = b.label.trim() && (b.kind === "band" || containerOf(b) !== "full");
+  const title = b.title.trim() && b.kind !== "quotes" && b.kind !== "band";
+  const heads = b.cells.some((c) => c.tag.trim() || (b.kind !== "stats" && c.head.trim()));
+  return !label && !title && !heads;
+}
+
+/** 표기 없는 상자 경고(참고) — 걸린 블록 종류를 한 줄로. 없으면 빈 배열 */
+export function bareBoxWarnings(blocks: readonly Pick<Block, "kind" | "label" | "title" | "layout" | "cells">[]): string[] {
+  const bad = blocks.map((b, i) => (isBareBox(b) ? `${i + 1}번째 ${b.kind}` : "")).filter(Boolean);
+  if (!bad.length) return [];
+  return [`표기 없는 상자: ${bad.join("·")} 블록에 라벨·제목·칸 머리·칩이 하나도 없어 무엇을 말하는 상자인지 안 보입니다 — 라벨(사다리 행)이나 블록 제목을 붙여 주세요`];
 }

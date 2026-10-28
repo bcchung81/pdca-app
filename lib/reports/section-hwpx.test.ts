@@ -298,8 +298,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 2026-10-26 글꼴 별칭·표지 갱신(report-fonts.ts): 별칭 @font-face(local만)·표지 덮기 규칙을 더하고, 글꼴 목록에 별칭을 넣고 KoPubWorld를 빼고,
 // 제목·라벨 −0.02em을 같은 값의 변수(--k-ls-head·--k-ls-label-t)로 바꿈. 이 네 가지를 되돌린 글이 옛 고정값 3575b10a…과 같음을 확인 —
 // 표지가 없으면(글꼴 없는 PC) 계산값은 예전과 같음(report-fonts.test.ts fontSpacingFor(""))
+// 2026-10-28 사용자 승인 화면 변경(dabe660f… → 335987e3…): 본문 글 글자 단위 규칙(word-break:normal — 불릿·패널·협업 역할·시기 점·수치 설명·정의·목소리·표 값 칸),
+// 괄호 + 조사 묶음 .k-nb(white-space:nowrap), 전후 비교 표 화살표 열 머리 바탕 투명
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "dabe660f2320672670ffaae6864ce3f347ef7cbcf0c4c93346060529a6555321");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "335987e33e0ad4723f327bc34caa3d568f2779ee903d0ccb76ca206a698b8e19");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {
@@ -372,14 +374,20 @@ test("【확인: …】은 괄호 그대로 + 노란 음영(따로 붙인 「확
   assert.ok(doc.charPrs[run.charPr].shade, "노란 음영");
 });
 
-test("줄 나눔: 모든 문단 모양이 breakNonLatinWord=BREAK_WORD(어절 단위)·breakLatinWord=KEEP_WORD", async () => {
+// 2026-10-28: 본문 글은 2025 최종본처럼 글자 단위(KEEP_WORD — 이름과 뜻이 반대), 제목·라벨·머리·칩은 어절 단위(BREAK_WORD) — 화면 section-css와 같은 갈래
+test("줄 나눔: 불릿·본문 문단은 breakNonLatinWord=KEEP_WORD(글자 단위), 머리·라벨 문단은 BREAK_WORD(어절 단위), 영문은 늘 KEEP_WORD(단어 단위)", async () => {
   const { bytes, doc } = await convert(makeSpec(Object.values(SAMPLES)));
   assert.ok(doc.paraPrs.length > 0);
-  for (const pp of doc.paraPrs) assert.deepEqual([pp.breakNonLatin, pp.breakLatin], ["BREAK_WORD", "KEEP_WORD"]);
+  for (const pp of doc.paraPrs) assert.equal(pp.breakLatin, "KEEP_WORD");
+  for (const pp of doc.paraPrs.filter((x) => x.headingType === "BULLET")) assert.equal(pp.breakNonLatin, "KEEP_WORD", "불릿 = 본문");
+  const paras = [...doc.sections[0].paras, ...allTables(doc.sections[0].paras).flatMap((t) => t.cells.flatMap((c) => c.paras))];
+  const textOf = (p: Para) => p.items.map((it) => (it.kind === "text" ? it.text : "")).join("");
+  const sub = paras.find((p) => textOf(p).includes("AI 판독"))!;
+  assert.equal(doc.paraPrs[sub.paraPr].breakNonLatin, "BREAK_WORD", "소항목 제목 = 어절 단위");
   const head = await (await JSZip.loadAsync(bytes)).file("Contents/header.xml")!.async("string");
-  assert.ok(!/breakNonLatinWord="KEEP_WORD"/.test(head));
+  assert.match(head, /breakNonLatinWord="KEEP_WORD"/);
   assert.match(head, /breakNonLatinWord="BREAK_WORD"/);
-  assert.match(head, /breakLatinWord="KEEP_WORD"/);
+  assert.doesNotMatch(head, /breakLatinWord="BREAK_WORD"/);
 });
 
 test("핵심 수치 칸: 머리의 【확인: …】만 10.5pt, 보통 큰 수치는 15pt 그대로", async () => {

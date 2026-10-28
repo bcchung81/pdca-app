@@ -263,12 +263,13 @@ test("blockRoom: 판면 여유가 큰 spec(블록 1개)이면 roomText에 「여
 });
 
 test("blockRoom: 주요사업 결과는 경영관리 분기(2026-10-12) 전과 같음 — spec3 세 블록의 값·글 고정", () => {
-  assert.deepEqual(blockRoom(spec3, 0), { unit: "line", perLine: 42, now: 1, max: 5, slack: 159 });
-  assert.deepEqual(blockRoom(spec3, 1), { unit: "cell", perLine: 15, now: 1, max: 5, slack: 159 });
-  // 칸 카드 본문 안 여백 좌우 5px → 3px(2026-10-21 REPORT_STYLE.boxPadX)로 칸 글 폭이 약 1mm 넓어져 19 → 20자
-  assert.deepEqual(blockRoom(spec3, 2), { unit: "cell", perLine: 20, now: 1, max: 5, slack: 159 });
-  assert.equal(roomText(blockRoom(spec3, 0)), "한 줄 약 42자 · 지금 불릿 줄 합 1줄 · 판면 여유 159mm — 불릿 줄 합 최대 5줄까지");
-  assert.equal(roomText(blockRoom(spec3, 1)), "한 줄 약 15자 · 지금 가장 긴 칸 1줄 · 판면 여유 159mm — 칸마다 최대 5줄까지");
+  // 본문 한글 폭 0.916 → 0.936em(2026-10-28 KoPub바탕 실측)으로 한 줄 한글 글자 수가 줄어듦: 전폭 불릿 42 → 41자, 칸 글 15 → 14자·20 → 19자
+  assert.deepEqual(blockRoom(spec3, 0), { unit: "line", perLine: 41, now: 1, max: 5, slack: 159 });
+  assert.deepEqual(blockRoom(spec3, 1), { unit: "cell", perLine: 14, now: 1, max: 5, slack: 159 });
+  // 칸 카드 본문 안 여백 좌우 5px → 3px(2026-10-21 REPORT_STYLE.boxPadX)로 칸 글 폭이 약 1mm 넓어져 19 → 20자(2026-10-28 한글 폭 실측으로 다시 19자)
+  assert.deepEqual(blockRoom(spec3, 2), { unit: "cell", perLine: 19, now: 1, max: 5, slack: 159 });
+  assert.equal(roomText(blockRoom(spec3, 0)), "한 줄 약 41자 · 지금 불릿 줄 합 1줄 · 판면 여유 159mm — 불릿 줄 합 최대 5줄까지");
+  assert.equal(roomText(blockRoom(spec3, 1)), "한 줄 약 14자 · 지금 가장 긴 칸 1줄 · 판면 여유 159mm — 칸마다 최대 5줄까지");
 });
 
 test("blockRoom: 경영관리 초안(spec.mg)은 주요사업 1쪽 예산이 아니라 배정 쪽 × 255mm − 경영관리 높이 어림 — 절 여러 개여도 「넘침」이 아님, 배정이 없으면 여유 문구 없이 「지금 줄 수 안팎」", () => {
@@ -283,7 +284,7 @@ test("blockRoom: 경영관리 초안(spec.mg)은 주요사업 1쪽 예산이 아
   const none = blockRoom(mgSpec(), 0);
   assert.equal(none?.slack, null);
   assert.equal(none?.max, none?.now, "여유를 모르면 늘리지 않음");
-  assert.equal(roomText(none), "한 줄 약 42자 · 지금 불릿 줄 합 1줄 — 지금 줄 수 안팎");
+  assert.equal(roomText(none), "한 줄 약 41자 · 지금 불릿 줄 합 1줄 — 지금 줄 수 안팎");
   // 배정보다 크게 넘친 경영관리 초안은 그 배정 기준으로 넘침
   assert.match(roomText(blockRoom(mgSpec(0.5), 0)), /넘침/);
 });

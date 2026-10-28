@@ -119,6 +119,8 @@ interface PS {
   line?: number;
   /** 문단 테두리/배경 */
   box?: Box;
+  /** 본문 글(글자 단위 줄 나눔 — 화면 section-css의 word-break: normal 갈래). 불릿 문단은 늘 본문 */
+  chars?: boolean;
 }
 
 const HAIR: Line = { pt: ST.line.hair, color: G.g4 };
@@ -205,8 +207,9 @@ class Shapes {
       align: p.align ?? "JUSTIFY",
       breakLatin: "KEEP_WORD",
       // HWPX breakNonLatinWord는 이름과 뜻이 반대: KEEP_WORD = 글자 단위, BREAK_WORD = 어절 단위(한글 11 저장본 3개 줄 배치: KEEP_WORD 낱말 가운데 끊김 317회 / BREAK_WORD 2회).
-      // 화면 word-break: keep-all과 같은 어절 단위가 목적. 영문 breakLatinWord는 이름 그대로(KEEP_WORD = 단어 단위)
-      breakNonLatin: "BREAK_WORD",
+      // 화면과 같은 갈래(2026-10-28): 본문 글(불릿·칸 글·표 글·추진성과 문장 — 2025 최종본처럼 글자 단위)은 KEEP_WORD, 제목·라벨·머리·칩은 BREAK_WORD(어절 단위 — 화면 keep-all).
+      // 영문 breakLatinWord는 이름 그대로(KEEP_WORD = 단어 단위)
+      breakNonLatin: p.bullet || p.chars ? "KEEP_WORD" : "BREAK_WORD",
       condense: 0,
       lineSpacingType: "PERCENT",
       lineSpacing: p.line ?? ST.lineSpacingPct,
@@ -568,7 +571,7 @@ class SectionWriter extends Writer {
         return [...title, this.host(this.voices(b.cells, w), px(3))];
       case "define": {
         const paras: Para[] = [this.para({ align: "LEFT" }, [this.run(" ", { ...HEAD, pt: F.label, shade: G.g4 }), ...this.rich(b.title, { ...HEAD, pt: F.label, color: WHITE, shade: G.g4 }), this.run("   ", { ...HEAD, pt: F.label, shade: G.g4 })], HEAD)];
-        if (b.text) paras.push(this.p(b.text));
+        if (b.text) paras.push(this.p(b.text, BODY, { chars: true }));
         if (b.items.length) {
           const chips: Inline[] = [];
           b.items.forEach((x, i) => {
@@ -678,7 +681,7 @@ class SectionWriter extends Writer {
       const headC: CS = to ? { ...HEAD, color: WHITE } : HEAD;
       const head = this.para({ align: "CENTER", line: pct(LH.panel) }, [...this.tag(TAG[k], to, headC), ...this.rich((b.items[k] ?? "").replace(LEAD_TAG, ""), headC)], HEAD);
       const items = b.rows.map((r, i) =>
-        this.para({ align: "JUSTIFY", left: 0, indent: -Math.round(1.3 * F.body * 100) }, [
+        this.para({ align: "JUSTIFY", left: 0, indent: -Math.round(1.3 * F.body * 100), chars: true }, [
           this.run(`${[...NUM[k]][i] ?? ""} `, { face: "num", pt: F.body }),
           ...(r.key ? this.tag(r.key) : []),
           ...this.rich((to ? r.after : r.before).join(" / ").replace(LEAD_NUM, ""), BODY),
@@ -808,7 +811,7 @@ class SectionWriter extends Writer {
         c: col,
         cs: 3,
         va: "TOP",
-        paras: [...c.bullets.map((x) => this.p(x, BODY, { align: "LEFT" })), ...(c.note ? [this.para({ align: "CENTER", before: px(2) }, this.rich(c.note, { face: "label", pt: 8.5, bold: true, box: all(HAIR5) }), BODY)] : [])],
+        paras: [...c.bullets.map((x) => this.p(x, BODY, { align: "LEFT", chars: true })), ...(c.note ? [this.para({ align: "CENTER", before: px(2) }, this.rich(c.note, { face: "label", pt: 8.5, bold: true, box: all(HAIR5) }), BODY)] : [])],
         m: [px(3), px(3), 0, px(3)],
       });
     });
@@ -834,7 +837,7 @@ class SectionWriter extends Writer {
         c: col,
         box: all(HAIR),
         m: [px(5), px(5), px(2), px(3)],
-        paras: [this.para({ align: "CENTER", line: pct(LH.hub), box: all(HAIR5, G.g0) }, this.rich(c.head, HEAD), HEAD), this.p(c.bullets.join(" / "), BODY, { align: "CENTER" })],
+        paras: [this.para({ align: "CENTER", line: pct(LH.hub), box: all(HAIR5, G.g0) }, this.rich(c.head, HEAD), HEAD), this.p(c.bullets.join(" / "), BODY, { align: "CENTER", chars: true })],
       });
       return [this.host(this.table(colW, [lineH()], [node(nodes[0], 0), link(0, 1), { r: 0, c: 2, paras: mid(colW[2]), box: all(HAIR), m: [px(5), px(5), 0, px(2)], va: "CENTER" }, link(0, 3), node(nodes[1], 4)]), px(3))];
     }
@@ -891,7 +894,7 @@ class SectionWriter extends Writer {
           continue;
         }
         out.push({ r, c: col, paras: [this.para({ align: "CENTER", line: pct(LH.voice) }, this.rich(c.head || "현장", { face: "dotumB", pt: 7.5, color: WHITE, shade: G.g4 }), BODY)], m: [0, mm(3), px(3), px(3)] });
-        out.push({ r, c: col + 1, paras: [this.para({ align: "CENTER" }, [this.run("“", BODY), ...this.rich(c.bullets[0] ?? "", BODY), this.run("”", BODY)])], box: all(HAIR), m: [px(6), px(6), px(2), px(2)] });
+        out.push({ r, c: col + 1, paras: [this.para({ align: "CENTER", chars: true }, [this.run("“", BODY), ...this.rich(c.bullets[0] ?? "", BODY), this.run("”", BODY)])], box: all(HAIR), m: [px(6), px(6), px(2), px(2)] });
       }
     }
     return this.table(colW, Array.from({ length: rows }, () => lineH()), out);
@@ -924,7 +927,7 @@ class SectionWriter extends Writer {
     const H11: CS = { face: "dotumB", pt: F.box };
     const items = b.items.map((x) => {
       const m = /^([^|:：]{1,8}?)\s*[|:：]\s+(.+)$/.exec(x);
-      return m ? this.para({ align: "JUSTIFY" }, [...this.tag(m[1]), ...this.rich(m[2], BODY)]) : this.para({ bullet: true }, this.rich(x, BODY));
+      return m ? this.para({ align: "JUSTIFY", chars: true }, [...this.tag(m[1]), ...this.rich(m[2], BODY)]) : this.para({ bullet: true }, this.rich(x, BODY));
     });
     const cells: TCell[] = [
       { r: 0, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.caseHead) }, [this.run(` ${flat(b.label || "우수사례")}  `, { ...H11, color: WHITE, shade: G.g4 }), this.run("  ", H11), ...this.rich(b.title, H11)], H11)], box: { fill: G.g1 }, m: [0, px(4), 0, 0] },
@@ -1001,7 +1004,7 @@ class SectionWriter extends Writer {
       out.push({ r: i * 2, c: 0, va: "TOP", paras: [mark("Q", false)], m: [px(6), 0, px(2), 0] });
       out.push({ r: i * 2, c: 1, va: "TOP", paras: [this.p(c.head, HEAD, { align: "LEFT", line: pct(LH.qa) })], m: [0, px(6), px(2), 0] });
       out.push({ r: i * 2 + 1, c: 0, va: "TOP", paras: [mark("A", true)], m: [px(6), 0, 0, mm(0.8)] });
-      out.push({ r: i * 2 + 1, c: 1, va: "TOP", paras: c.bullets.length === 1 ? [this.p(c.bullets[0])] : this.ul(c.bullets), m: [0, px(6), 0, mm(0.8)] });
+      out.push({ r: i * 2 + 1, c: 1, va: "TOP", paras: c.bullets.length === 1 ? [this.p(c.bullets[0], BODY, { chars: true })] : this.ul(c.bullets), m: [0, px(6), 0, mm(0.8)] });
     });
     return this.table(colW, cells.flatMap(() => [lineH(), lineH()]), out, { outline: HAIR });
   }
@@ -1032,7 +1035,7 @@ class SectionWriter extends Writer {
         const x = c.bullets[k] ?? "";
         const cw = inner(colW[k + 1], [px(4), px(4), px(1), px(1)]);
         const len = lens[k];
-        const paras = len == null ? (x ? [this.p(x, BODY, { align: chev ? "LEFT" : "CENTER" })] : [this.empty()]) : [this.barCell(x, len, cw)];
+        const paras = len == null ? (x ? [this.p(x, BODY, { align: chev ? "LEFT" : "CENTER", chars: true })] : [this.empty()]) : [this.barCell(x, len, cw)];
         cells.push({ r: i + 1, c: k + 1, paras, box: { b: bottom, l: HAIR3 }, va: chev ? "TOP" : "CENTER", m: [px(4), px(4), px(1), px(1)] });
       }
     });
@@ -1048,7 +1051,7 @@ class SectionWriter extends Writer {
     const bar = this.table(barParts, [mm(2.6)], barParts.map((_, i): TCell => ({ r: 0, c: i, paras: [this.empty()], m: M0, box: i === 0 ? { fill: G.g4, t: HAIR3, b: HAIR3, l: HAIR3, r: barParts.length === 1 ? HAIR3 : undefined } : { fill: G.g1, t: HAIR3, b: HAIR3, r: HAIR3 } })));
     return this.host(
       this.table(colW, [lineH()], [
-        { r: 0, c: 0, paras: [this.p(x, BODY, { align: "RIGHT" })], m: M0 },
+        { r: 0, c: 0, paras: [this.p(x, BODY, { align: "RIGHT", chars: true })], m: M0 },
         { r: 0, c: 1, paras: [], m: M0 },
         { r: 0, c: 2, paras: [this.host(bar)], m: M0 },
       ]),
@@ -1159,7 +1162,7 @@ class SectionWriter extends Writer {
           ...(c.tag ? [this.para({ align: "CENTER" }, this.tag(c.tag).slice(0, -1), BODY)] : []),
           // 큰 수치 자리의 【확인: …】은 화면(.k-stat__v .k-need)처럼 10.5pt 굵은 돋움으로 줄임
           this.para({ align: "CENTER", line: pct(LH.stat) }, this.rich(c.head, { face: "dotumB", pt: F.stat }, F.statNeed), { face: "dotumB", pt: F.stat }),
-          ...(c.bullets[0] ? [this.p(c.bullets[0], BODY, { align: "CENTER" })] : []),
+          ...(c.bullets[0] ? [this.p(c.bullets[0], BODY, { align: "CENTER", chars: true })] : []),
           ...(c.note ? [this.p(c.note, { face: "dotumB", pt: F.small, color: G.g5 }, { align: "CENTER", line: pct(LH.statNote) })] : []),
         ],
       });
@@ -1337,8 +1340,8 @@ class SectionWriter extends Writer {
           { r: 0, c: 0, paras: [this.p("추진 노력", LABEL, { align: "CENTER", line: pct(LH.act) })], box: { t: THICK, b: HAIR, fill: G.g2 }, m },
           { r: 0, c: 1, paras: [this.p("추진 성과", { ...LABEL, color: WHITE }, { align: "CENTER", line: pct(LH.act) })], box: { t: THICK, b: HAIR, fill: G.g4 }, m },
           ...d.actions.flatMap((a, i): TCell[] => [
-            { r: i + 1, c: 0, paras: [this.p(a.effort)], box: { b: HAIR }, m },
-            { r: i + 1, c: 1, paras: [this.p(a.result, BODY_B)], box: { b: HAIR, l: HAIR3 }, m },
+            { r: i + 1, c: 0, paras: [this.p(a.effort, BODY, { chars: true })], box: { b: HAIR }, m },
+            { r: i + 1, c: 1, paras: [this.p(a.result, BODY_B, { chars: true })], box: { b: HAIR, l: HAIR3 }, m },
           ]),
         ];
         return [...title, this.host(this.table(colW, [lineH(), ...d.actions.map(() => lineH())], cells), px(3))];

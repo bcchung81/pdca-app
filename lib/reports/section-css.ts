@@ -94,6 +94,7 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-frame li::before{content:"•";position:absolute;left:0.05em;top:0}
 .kca-dg-doc .k-frame b,.kca-dg-doc .k-frame strong{font-weight:700}
 .kca-dg-doc .k-small{font-size:var(--k-fs-small)}
+.kca-dg-doc .k-nb{white-space:nowrap} /* 괄호 + 조사 한 덩어리(section-html parenJosa) */
 .kca-dg-doc .k-sup{font-size:6.1pt;vertical-align:4pt;letter-spacing:0;line-height:0}
 .kca-dg-doc .k-tag{display:inline-block;font:700 var(--k-fs-tag)/1.35 var(--k-f-dotum);letter-spacing:0;border:var(--k-hair) solid var(--k-g5);
   padding:0 3px;margin-right:4px;vertical-align:1.5pt;white-space:nowrap;background:#fff}
@@ -166,7 +167,7 @@ ${fontSpacingCss()}
 .kca-dg-doc table.k-ba thead th.k-ba__after{background:var(--k-g4);color:#fff}
 .kca-dg-doc table.k-ba tbody th{font:700 ${F.box}pt/${LH.ba} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);text-align:center;border-bottom:var(--k-hair) solid var(--k-g3);width:19mm;border-right:var(--k-hair) solid var(--k-g3)}
 .kca-dg-doc table.k-ba td.k-ba__b{border-bottom:var(--k-hair) solid var(--k-g3);width:62mm}
-.kca-dg-doc table.k-ba .k-ba__arrow{width:9mm;padding:0;text-align:center}
+.kca-dg-doc table.k-ba .k-ba__arrow{width:9mm;padding:0;text-align:center;background:transparent} /* 화살표 열 머리는 바탕 없이(머리 줄 회색이 빈 칸처럼 보임) */
 .kca-dg-doc table.k-ba .k-ba__arrow svg{width:6mm;height:24mm;display:block;margin:auto}
 .kca-dg-doc table.k-ba td.k-ba__a{border-left:var(--k-thick) solid var(--k-g4);border-right:var(--k-thick) solid var(--k-g4);border-bottom:var(--k-hair) solid var(--k-g3)}
 .kca-dg-doc table.k-ba tbody tr:last-child td.k-ba__a{border-bottom:var(--k-thick) solid var(--k-g4)}
@@ -387,6 +388,10 @@ ${fontSpacingCss()}
 
 /* 칸 글 양쪽 정렬(한글 문서 관행 — 줄 끝이 칸 끝에 맞음, 마지막 줄은 왼쪽). 자간 맞춤(1~2글자 넘침은 자간을 줄여 한 줄로)은 fit-dom.ts가 그린 뒤 맞춤 */
 .kca-dg-doc .k-frame li{text-align:justify;text-justify:inter-character} /* 낱말 사이만 늘리면 keep-all 줄에서 빈칸이 크게 벌어짐 — 한글은 글자 사이로 고르게(한글 배분 관행) */
+/* 본문 글(불릿·칸 글·표 글·추진성과 문장)은 글자 단위로 끊음(2025 최종본 — 줄을 끝까지 채우고 양쪽 정렬, 2026-10-28). 제목·라벨·머리·칩은 .k-frame의 keep-all(어절 단위) 그대로.
+   한글(section-hwpx.ts)도 같은 갈래: 본문 문단 KEEP_WORD(글자 단위), 그 밖 BREAK_WORD(어절 단위). 판면 어림은 fit.ts bodyLayout·bodyLines */
+.kca-dg-doc .k-frame ul > li,.kca-dg-doc ol.k-panel__list > li,.kca-dg-doc .k-hub__role,.kca-dg-doc .k-dots__t,.kca-dg-doc .k-stat__d,.kca-dg-doc .k-dfn__body > p,
+.kca-dg-doc .k-voice blockquote,.kca-dg-doc table.k-tbl td:not(.k-res__r),.kca-dg-doc table.k-act td{word-break:normal;line-break:strict}
 .kca-dg-doc .k-frame li.k-left{text-align:left}
 .kca-dg-doc .k-frame li.k-fit-tight{letter-spacing:calc(var(--k-ls) + var(--k-fit, 0em))}
 /* 번호 As-Is/To-Be 패널 */

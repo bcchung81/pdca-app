@@ -24,7 +24,7 @@ import { LENS_GROUPS, type LensRef, SURVEY_TYPES } from "./lens.ts";
 import { type PriorPick, priorLabel } from "./prior.ts";
 import type { MgDraftMeta } from "./mg-types.ts";
 import type { LooseJson } from "../loose-json.ts";
-import { arrowTitleWarnings, subTitleIssues } from "./title-checks.ts";
+import { arrowTitleWarnings, bareBoxWarnings, subTitleIssues } from "./title-checks.ts";
 
 type Json = LooseJson;
 
@@ -825,9 +825,9 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   // 문장(읽히는 문장 — docs/plan/경평초안-문장품질-수정안.md P7): 교정 요청에도 넣음
   const prose = proseIssues(spec);
   warnings.push(...prose.map((x) => `문장: ${x}`));
-  // 제목(2026-10-28): 소항목 제목 한 줄 폭(자동 고치기 사유)·블록 제목 화살표(참고)
+  // 제목(2026-10-28): 소항목 제목 한 줄 폭(자동 고치기 사유)·블록 제목 화살표·표기 없는 상자(참고)
   const title = subTitleIssues(spec.sub);
-  warnings.push(...title, ...arrowTitleWarnings(blocks));
+  warnings.push(...title, ...arrowTitleWarnings(blocks), ...bareBoxWarnings(blocks));
   return { spec, unknownNumbers, warnings, yearIssues: issues, composeIssues: [...ownIssues, ...priorQuote, ...place], proseIssues: prose, titleIssues: title };
 }
 
@@ -936,7 +936,7 @@ export function recheckSection(spec: ReportSectionSpec, card: Json, extraText = 
   const where = extraText.trim() ? "카드·첨부 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);
   warnings.push(...proseIssues(next).map((x) => `문장: ${x}`));
-  warnings.push(...subTitleIssues(next.sub), ...arrowTitleWarnings(next.blocks ?? []));
+  warnings.push(...subTitleIssues(next.sub), ...arrowTitleWarnings(next.blocks ?? []), ...bareBoxWarnings(next.blocks ?? []));
   const repeat = resultRepeatOf(next);
   if (repeat) warnings.push(repeat);
   const planned = resultPlanWarning(next, today);

@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { BLOCK_KINDS, type Block, type BlockKind, FIGURE_KINDS, FIGURE_LABEL, FIGURE_POS, FIGURE_SIZES, type Figure, MAIN_STORIES, type MainStory, STORIES, type Story, VARIANTS, cleanFigures, isGridTable, isPanelCompare } from "./blocks.ts";
-import { type HeadMode, PAGE_MM, blockAreaMm, blockWidth, canonicalBlock, figuresWidth, fitLayout, fitReport, hangulPerLine, isBoxBlock, slotOf, stageHeadMm } from "./fit.ts";
+import { type HeadMode, PAGE_MM, blockAreaMm, blockWidth, bodyLayout, canonicalBlock, figuresWidth, fitReport, hangulPerLine, isBoxBlock, slotOf, stageHeadMm } from "./fit.ts";
 import { type BlockLayout, type BlockSpan, LAYOUT_LABEL, dropLoneSpans, layoutFields, layoutGroups } from "./layout.ts";
 import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeCode, shapeName, storyLabel } from "./frameworks.ts";
 import { bizVarietyIssue, isOwnKind } from "./diagram-hints.ts";
@@ -398,13 +398,16 @@ function stageRepeats(blocks: Block[]): number[] {
   return out;
 }
 
-/** 구성안 판면 어림(mm): 제목 38자·추진성과(모양대로 — 불릿 2줄, 3칸 + 불릿 1줄, 불릿 2줄 + 막대)를 넣은 보통 모양으로 */
+/**
+ * 구성안 판면 어림(mm): 한 줄을 거의 채운 제목·추진성과(모양대로 — 불릿 2줄, 3칸 + 불릿 1줄, 불릿 2줄 + 막대)를 넣은 보통 모양으로.
+ * 제목 자리는 빈칸 없는 한글 32자(+ titleMm이 붙여 세는 「지적개선 AI」) — 2026-10-28 돋움 글 폭 실측(한글 0.745 → 0.872em)으로 예전 38자와 같은 폭
+ */
 export function compositionFit(c: Composition, module: number, head: HeadMode = "all") {
   const shape = c.resultShape ?? "bullets";
   const results = shape === "cards" ? ["가".repeat(50)] : ["가".repeat(50), "가".repeat(50)];
   const resultCards = shape === "cards" ? [{}, {}, {}] : [];
   const resultChart = shape === "chart" ? { series: [{}, {}] } : null;
-  return fitReport({ sub: { title: "가".repeat(38), ...(c.split?.chip ? { chip: c.split.chip } : {}) }, head, blocks: planBlocks(c), results, resultCards, resultChart, module });
+  return fitReport({ sub: { title: "가".repeat(32), ...(c.split?.chip ? { chip: c.split.chip } : {}) }, head, blocks: planBlocks(c), results, resultCards, resultChart, module });
 }
 
 /**
@@ -525,7 +528,7 @@ export const limitText = (l: BlockLimit | null) =>
 
 /**
  * 집필 초안이 글 한도를 넘긴 블록(결정론 — 고치기 요청에 넣음). 구성안 블록과 같은 순서·종류로 맞은 블록만 봄.
- * 칸 글 줄 수 = 칸 불릿마다 실제 칸 폭으로 셈(fitLayout — 자간 맞춤 반영), 불릿 블록은 불릿 수
+ * 칸 글 줄 수 = 칸 불릿마다 실제 칸 폭으로 셈(bodyLayout — 글자 단위·자간 맞춤 반영), 불릿 블록은 불릿 수
  */
 export function planLimitIssues(c: Composition, blocks: Block[], module: number, head: HeadMode = "all"): string[] {
   const limits = blockLimits(c, module, head);
@@ -555,7 +558,7 @@ export function planLimitIssues(c: Composition, blocks: Block[], module: number,
     const slot = slotOf(b, width);
     // 수치 표는 값 칸 하나하나가 한 칸(한 행의 값들은 옆으로 나란함 — 추진실적 열·2단 라벨 표는 행마다 불릿 칸)
     const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.cells.map((x) => x.bullets);
-    const most = Math.max(0, ...cellLines.map((xs) => xs.reduce((n, x) => n + fitLayout(x, slot.body).lines, 0)));
+    const most = Math.max(0, ...cellLines.map((xs) => xs.reduce((n, x) => n + bodyLayout(x, slot.body).lines, 0)));
     if (most > l.lines) out.push(`글 한도: [${name}] 가장 긴 칸이 ${most}줄 → 칸마다 ${l.lines}줄 이하(한 줄 약 ${l.perLine}자)로`);
   });
   return out.slice(0, 4);

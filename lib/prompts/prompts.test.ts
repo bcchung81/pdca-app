@@ -278,7 +278,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-10-26 공통 지식 선별 방식(실험) 절 kb.select.*를 request.md에 더해 집필 판만 바뀜(@845bc269 → @02ce64ac) — 통째로 넣기 절 글은 그대로
   // 2026-10-27 카드 「정량 성과」 칸의 올해 실적 절 actuals.kpiOutcome·outcomeHead·outcomeItem을 더해 집필 판만 바뀜(@02ce64ac → @130db7d3)
   // 2026-10-28 공용 조각(report-draft/style.md·blocks.md#blocks·schema.md#block.title — 제목·화살표·수치 띠 규칙)으로 셋 다 바뀜(@130db7d3 → @98767749, @b1183426 → @2defbb8a, @db2b1b11 → @726705b8)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@98767749");
+  // 2026-10-28 공용 조각 schema.md#block.label(맨 상자 금지 — 상자형 도식은 라벨·머리 중 하나)로 집필 판만 바뀜(@98767749 → @d1beb140)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@d1beb140");
   assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@2defbb8a");
   assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@726705b8");
 });

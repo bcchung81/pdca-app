@@ -20,6 +20,7 @@ import {
   blockWidth,
   canonicalBlock,
   capacityLines,
+  bodyLayout,
   fitLayout,
   fitNeeded,
   fitReport,
@@ -57,6 +58,27 @@ test("lineCount: 띄어쓰기 단위로 넘기고 낱말은 쪼개지 않음(kee
   assert.equal(lineCount(w1, width), 1);
   // 두 낱말을 이으면 각 낱말은 쪼개지지 않고 통째로 다음 줄로 — 2줄(3줄이 아님)
   assert.equal(lineCount(`${w1} ${w2}`, width), 2);
+});
+
+test("본문 글자 단위(chars — 2026-10-28, 2025 최종본): 어절 안 한글 글자 사이에서도 넘겨 줄을 채우고, 영문·숫자 덩어리·닫는 부호는 떼지 않음", () => {
+  const width = 60;
+  const n = hangulPerLine(width);
+  const half = "가".repeat(Math.ceil(n * 0.6));
+  // 어절 단위: 둘째 어절이 통째로 다음 줄 — 첫 줄이 60%쯤만 참. 글자 단위: 첫 줄을 채우고 나머지만 다음 줄
+  const word = lineLayout(`${half} ${half}`, width);
+  const chars = lineLayout(`${half} ${half}`, width, undefined, false, true);
+  assert.equal(word.lines, 2);
+  assert.equal(chars.lines, 2);
+  assert.ok(chars.last < word.last, `글자 단위 마지막 줄 ${chars.last} < 어절 단위 ${word.last}`);
+  // 한 줄을 꼭 채우는 한글 n자는 한 줄, 영문 덩어리는 쪼개지 않고 통째로 다음 줄
+  assert.equal(lineCount("가".repeat(n), width, undefined, false, true), 1);
+  assert.equal(lineLayout(`${"가".repeat(n - 1)}ABCD`, width, undefined, false, true).lines, 2);
+  // 줄 끝 한글에 붙은 마침표는 그 글자와 함께 넘어감(줄 첫머리에 마침표 없음) — 같은 글이라도 마침표가 붙으면 줄이 늘 수 있음
+  assert.equal(lineCount(`${"가".repeat(n)}.`, width, undefined, false, true), 2);
+  // bodyLayout = 본문 크기·글자 단위·자간 맞춤
+  assert.deepEqual(bodyLayout(`${half} ${half}`, width), fitLayout(`${half} ${half}`, width, undefined, false, true));
+  // 돋움(머리)은 chars를 줘도 어절 단위 그대로
+  assert.deepEqual(lineLayout(`${half} ${half}`, width, 10.6, true, true), lineLayout(`${half} ${half}`, width, 10.6, true));
 });
 
 test("lineCount: 한 낱말이 줄보다 길면 글자 단위로 올림(ceil) 나눔", () => {

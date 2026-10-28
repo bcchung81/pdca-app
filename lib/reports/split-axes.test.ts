@@ -204,9 +204,9 @@ test("판면 어림: 칩이 없으면 그대로, 칩이 있으면 「[값] 」�
   const c = comp();
   const base = compositionFit(c, 0.5).total;
   assert.equal(compositionFit({ ...c, split: { axis: "재난 주기", chip: "" } }, 0.5).total, base, "칩 없는 축은 높이 그대로");
-  // 38자 제목은 한 줄에 가깝게 차 있어 긴 칩을 붙이면 줄이 늚
+  // 구성안 자리 제목(32자 — 2026-10-28 돋움 글 폭 실측 0.872em로 예전 38자와 같은 폭)은 한 줄에 가깝게 차 있어 긴 칩을 붙이면 줄이 늚
   assert.ok(compositionFit({ ...c, split: { axis: "대상 집단", chip: "가나다라마바사아자차카타" } }, 0.5).total > base);
-  const s = { sub: { title: "가".repeat(38), markers: [] as string[] }, blocks: [], results: ["결과"], module: 1 };
+  const s = { sub: { title: "가".repeat(32), markers: [] as string[] }, blocks: [], results: ["결과"], module: 1 };
   assert.equal(fitReport({ ...s, sub: { ...s.sub, chip: undefined } }).total, fitReport(s).total);
   assert.ok(fitReport({ ...s, sub: { ...s.sub, chip: "가나다라마바사아자차카타" } }).total > fitReport(s).total);
 });

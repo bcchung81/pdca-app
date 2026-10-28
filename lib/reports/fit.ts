@@ -12,6 +12,8 @@ const PT = 25.4 / 72;
 const PX = 25.4 / 96;
 /** 본문 글: KoPub바탕 10.6pt, 줄 간격 1.52 */
 const BODY_PT = 10.6;
+/** 라벨 글(맑은 고딕 굵게 10.4pt — 사다리 라벨·표 머리): 이 크기의 돋움 호출은 예전 글 폭 그대로(글꼴 실측 전) */
+const LABEL_PT = REPORT_STYLE.pt.label;
 export const LINE_MM = BODY_PT * 1.52 * PT;
 /** 불릿 들여쓰기 0.95em */
 const INDENT_MM = 0.95 * BODY_PT * PT;
@@ -21,33 +23,45 @@ const LADDER_TD_MM = PAGE_MM.width - 18 - 6 * PX;
 const ROW_CHART_MM = 42 + 2.5;
 
 // ---------------------------------------------------------------------------
-// 글 폭(em) — 화면 실측(2026-09-27, 미리보기 Chrome): 본문 바탕 한글 0.916em·숫자 0.556em·빈칸 0.41em(낱말 간격 포함),
-// 돋움 머리글 한글 0.745em(대체 글꼴 + KoPub 기준 자간 −0.12em — 2025 인쇄본 KoPub돋움은 0.874em라 화면보다 넓음)
+// 글 폭(em) — 2026-10-28 크롬 실측(KoPub바탕체 Light·Bold, KoPub돋움체 Bold, 자간 0 — 화면이 진짜 글꼴을 찾으면 자간 보정이 0, report-fonts.ts).
+// 바탕은 Light·Bold 폭이 같고, 영문은 초안 글의 글자 빈도로 가중한 평균. 라벨(맑은 고딕 10.4pt)·제목 띠(HY헤드라인M)는 이 Mac에 글꼴이 없어
+// 못 쟀음 — 라벨은 예전 화면 실측(2026-09-27, 대체 글꼴 + 자간 −0.12em) 값을 그대로 두고 기관 PC 실측이 필요함(제목 띠 높이는 HEAD_PART_MM 고정값)
 
 /**
- * 글자 폭(em, 자간·낱말 간격 포함) — [본문 바탕, 돋움]. 2026-09-27 화면 실측(미리보기 Chrome, .k-frame li·.k-sub):
- * 한글 0.916·0.745는 예전 값 그대로, 비한글은 돋움이 훨씬 좁음(빈칸 0.21·숫자 0.42·「AI」 0.70em — 예전엔 본문 폭을 써서 제목이 한 줄 더 나온다고 어림)
+ * 글자 폭(em) — [본문 바탕, 돋움, 라벨]. 본문·돋움은 2026-10-28 실측(자간 0), 라벨은 예전 돋움 값(2026-09-27 — 기관 PC 실측 필요).
+ * 대문자 I는 다른 대문자의 절반쯤이라 따로 둠(「AI」「ICT」를 대문자 평균으로 세면 소항목 제목이 2mm쯤 넓게 나옴)
  */
-const GLYPH: Array<[RegExp, number, number]> = [
-  [/[ \u00a0]/, 0.408, 0.212],
-  [/[0-9]/, 0.556, 0.422],
-  [/[A-Z]/, 0.619, 0.505],
-  [/[a-z]/, 0.41, 0.384],
-  [/[.,:;!|]/, 0.335, 0.149],
-  [/[’‘']/, 0.144, 0.102],
-  [/[()[\]]/, 0.417, 0.23],
-  [/[「」“”"]/, 0.622, 0.216],
-  [/[･·∙]/, 0.667, 0.282],
-  [/%/, 0.674, 0.758],
-  [/[~∼]/, 0.568, 0.528],
-  [/[-/]/, 0.417, 0.25],
+const GLYPH: Array<[RegExp, number, number, number]> = [
+  [/[ \u00a0]/, 0.312, 0.29, 0.212],
+  [/[0-9]/, 0.573, 0.563, 0.422],
+  [/I/, 0.352, 0.283, 0.505],
+  [/[A-Z]/, 0.663, 0.63, 0.505],
+  [/[a-z]/, 0.513, 0.479, 0.384],
+  [/[.,:;!|]/, 0.338, 0.32, 0.149],
+  [/[’‘']/, 0.312, 0.253, 0.102],
+  [/[()[\]]/, 0.312, 0.31, 0.23],
+  [/[「」“”"]/, 0.404, 0.408, 0.216],
+  [/[･·∙]/, 0.471, 0.473, 0.282],
+  [/%/, 0.745, 0.874, 0.758],
+  [/[~∼]/, 0.774, 0.714, 0.528],
+  [/[-/]/, 0.486, 0.508, 0.25],
 ];
+/** 한글(과 → ▶ ① 같은 기호) 폭 — [본문 바탕, 돋움, 라벨] */
+const HANGUL_EM = [0.936, 0.872, 0.745] as const;
 
-function charEm(ch: string, dotum: boolean): number {
+const isHangul = (ch: string) => {
   const c = ch.codePointAt(0) ?? 0;
-  if ((c >= 0xac00 && c <= 0xd7a3) || (c >= 0x3131 && c <= 0x318e) || (c >= 0x4e00 && c <= 0x9fff)) return dotum ? 0.745 : 0.916;
-  for (const [re, body, dot] of GLYPH) if (re.test(ch)) return dotum ? dot : body;
-  return dotum ? 0.745 : 0.916; // → ▶ ↑ ① ✚ 등(한글 폭과 같음)
+  return (c >= 0xac00 && c <= 0xd7a3) || (c >= 0x3131 && c <= 0x318e) || (c >= 0x4e00 && c <= 0x9fff);
+};
+
+/** 글꼴 갈래 번호: 0 본문 바탕 · 1 돋움 · 2 라벨(맑은 고딕 10.4pt — 예전 값) */
+const faceOf = (dotum: boolean, label: boolean) => (!dotum ? 0 : label ? 2 : 1);
+
+function charEm(ch: string, dotum: boolean, label = false): number {
+  const f = faceOf(dotum, label);
+  if (isHangul(ch)) return HANGUL_EM[f];
+  for (const [re, ...w] of GLYPH) if (re.test(ch)) return w[f];
+  return HANGUL_EM[f]; // → ▶ ↑ ① ✚ 등(한글 폭과 같음 — 2026-10-28 실측 화살표 0.87em)
 }
 
 /** 위첨자 표기 ^{…}(추진성과 전후 비교 — ^{’24년}100국 → ^{’25년}200국): 6.1pt라 본문 10.6pt 글자의 0.58배 폭 */
@@ -57,63 +71,106 @@ const SUP_SCALE = 6.1 / 10.6;
 /** 강조 표시(**…**)·위첨자 표기(^{…})를 뺀 글 */
 export const plainText = (s: string) => s.replace(/\*\*/g, "").replace(SUP_RE, "$1");
 
+/** 글자마다 폭(em) — 강조(**…**)는 돋움 폭, 위첨자는 줄인 폭, 표기 글자는 뺌(textEm과 같은 셈) */
+function glyphEms(s: string, dotum = false, label = false): Array<[string, number]> {
+  const out: Array<[string, number]> = [];
+  const segs = s.split("**");
+  segs.forEach((part, i) => {
+    const bold = dotum || (i % 2 === 1 && segs.length > 2);
+    let last = 0;
+    for (const m of part.matchAll(SUP_RE)) {
+      for (const ch of part.slice(last, m.index)) out.push([ch, charEm(ch, bold, label)]);
+      for (const ch of m[1]) out.push([ch, charEm(ch, bold, label) * SUP_SCALE]);
+      last = m.index + m[0].length;
+    }
+    for (const ch of part.slice(last)) out.push([ch, charEm(ch, bold, label)]);
+  });
+  return out;
+}
+
 /**
  * 글 폭(em). 강조(**…**)는 명조 본문 안에서 굵은 돋움으로 그려져(section-css .k-frame li b) 돋움 폭으로 셈 —
  * 2026-09-27 화면 실측: 「건당 25분」을 강조하면 한 줄이 약 1em 좁아짐(바탕 폭으로 세면 Q&A 답이 한 줄 더 나온다고 어림)
  */
-export function textEm(s: string, dotum = false): number {
-  let n = 0;
-  s.split("**").forEach((part, i) => {
-    const bold = dotum || (i % 2 === 1 && s.split("**").length > 2);
-    for (const m of part.matchAll(SUP_RE)) for (const ch of m[1]) n += charEm(ch, bold) * SUP_SCALE;
-    for (const ch of part.replace(SUP_RE, "")) n += charEm(ch, bold);
-  });
-  return n;
+export function textEm(s: string, dotum = false, label = false): number {
+  return glyphEms(s, dotum, label).reduce((n, [, w]) => n + w, 0);
 }
 
-/** 글 → 줄 수: 띄어쓰기 단위로 넘김(word-break: keep-all), 한 낱말이 줄보다 길면 글자 단위로 나눔 */
-export function lineCount(s: string, widthMm: number, pt = BODY_PT, dotum = false): number {
-  return lineLayout(s, widthMm, pt, dotum).lines;
+/** 줄 첫머리에 못 오는 글자(닫는 괄호·문장부호·가운데점 — 앞 글자에 붙음)와 줄 끝에 못 오는 여는 괄호 */
+const NO_START = /[.,:;!?)\]}”’」】%･·]/;
+const NO_END = /[(\[“‘「【]/;
+
+/**
+ * 한 어절을 줄을 넘길 수 있는 조각(em)으로(본문 글자 단위 — CSS word-break: normal·한글 「글자 단위」 줄 나눔):
+ * 한글 글자 사이에서 끊고, 영문·숫자·기호가 이어진 덩어리는 끊지 않으며, 닫는 부호는 앞에·여는 부호는 뒤에 붙임
+ */
+function wordPieces(w: string, dotum: boolean): number[] {
+  const out: number[] = [];
+  let prev = "";
+  for (const [ch, em] of glyphEms(w, dotum)) {
+    const cut = out.length > 0 && !NO_START.test(ch) && !NO_END.test(prev) && (isHangul(ch) || isHangul(prev));
+    if (cut) out.push(em);
+    else if (out.length) out[out.length - 1] += em;
+    else out.push(em);
+    prev = ch;
+  }
+  return out;
 }
 
-/** 줄 수와 마지막 줄 채움 비율(0~1) */
-export function lineLayout(s: string, widthMm: number, pt = BODY_PT, dotum = false): { lines: number; last: number } {
+/**
+ * 글 → 줄 수. chars = false(제목·라벨·머리·칩 — word-break: keep-all)는 띄어쓰기 단위로 넘기고 한 낱말이 줄보다 길면 글자 단위로 나눔,
+ * chars = true(본문 글 — 불릿·칸 글·표 글·추진성과 문장, 2025 최종본처럼 글자 단위)는 어절 안 한글 글자 사이에서도 넘김(wordPieces)
+ */
+export function lineCount(s: string, widthMm: number, pt = BODY_PT, dotum = false, chars = false): number {
+  return lineLayout(s, widthMm, pt, dotum, chars).lines;
+}
+
+/** 줄 수와 마지막 줄 채움 비율(0~1). 라벨(맑은 고딕 10.4pt 돋움 호출)은 예전 글 폭 그대로 */
+export function lineLayout(s: string, widthMm: number, pt = BODY_PT, dotum = false, chars = false): { lines: number; last: number } {
   // 위첨자는 폭을 줄여 셈(textEm) — 위첨자 안 빈칸은 줄을 넘기지 않게 붙임. 강조 표시는 낱말마다 다시 싸서 돋움 폭으로 셈
   const t = s.replace(SUP_RE, (m) => m.replace(/\s/g, "\u00a0")).replace(/\*\*([^*]+?)\*\*/g, (_, x: string) => x.split(/[ \t\n]+/).map((w) => `**${w}**`).join(" ")).trim();
   if (!plainText(t).trim()) return { lines: 0, last: 0 };
   const cap = widthMm / (pt * PT); // 줄 폭(em)
+  const label = dotum && pt === LABEL_PT;
   let lines = 1;
   let used = 0;
   for (const w of t.split(/[ \t\n]+/)) {
-    const we = textEm(w, dotum);
-    const need = used ? used + charEm(" ", dotum) + we : we;
-    if (need <= cap) {
-      used = need;
-      continue;
-    }
-    if (used) lines += 1;
-    if (we > cap) {
-      lines += Math.ceil(we / cap) - 1;
-      used = we % cap;
-    } else used = we;
+    (chars && !dotum ? wordPieces(w, dotum) : [textEm(w, dotum, label)]).forEach((we, k) => {
+      // 어절 첫 조각만 앞 빈칸을 셈(조각 사이에는 빈칸이 없음)
+      const need = used ? used + (k ? 0 : charEm(" ", dotum, label)) + we : we;
+      if (need <= cap) {
+        used = need;
+        return;
+      }
+      if (used) lines += 1;
+      if (we > cap) {
+        lines += Math.ceil(we / cap) - 1;
+        used = we % cap;
+      } else used = we;
+    });
   }
   return { lines, last: Math.min(1, used / cap) };
 }
 
 /**
- * 자간 맞춤: 한글 편집 관행대로 1~2글자 넘침은 문단 자간을 줄여 한 줄 덜 씀(fit-dom.ts가 화면에서 −0.06em까지 — 한글 0.916em의 약 6.5%).
+ * 자간 맞춤: 한글 편집 관행대로 1~2글자 넘침은 문단 자간을 줄여 한 줄 덜 씀(fit-dom.ts가 화면에서 −0.06em까지 — 본문 한글 0.936em의 약 6.4%).
  * 줄을 하나 줄일 수 있으면 그 줄 배치를, 아니면 그대로
  */
 export const SQUEEZE = 0.065;
-export function fitLayout(s: string, widthMm: number, pt = BODY_PT, dotum = false): { lines: number; last: number; squeezed: boolean } {
-  const base = lineLayout(s, widthMm, pt, dotum);
+export function fitLayout(s: string, widthMm: number, pt = BODY_PT, dotum = false, chars = false): { lines: number; last: number; squeezed: boolean } {
+  const base = lineLayout(s, widthMm, pt, dotum, chars);
   if (base.lines < 2) return { ...base, squeezed: false };
-  const tight = lineLayout(s, widthMm * (1 + SQUEEZE), pt, dotum);
+  const tight = lineLayout(s, widthMm * (1 + SQUEEZE), pt, dotum, chars);
   return tight.lines < base.lines ? { ...tight, squeezed: true } : { ...base, squeezed: false };
 }
 
-/** 줄 폭에 들어가는 한글 글자 수(요청 글 안내용 — 한글 기준, 빈칸·숫자는 더 좁음) */
-export const hangulPerLine = (widthMm: number, pt = BODY_PT, dotum = false) => Math.floor(widthMm / (pt * PT) / (dotum ? 0.745 : 0.916));
+/** 본문 칸 글(불릿 — 글자 단위 + 자간 맞춤, fit-dom.ts가 맞추는 .k-frame li)의 줄 배치 */
+export const bodyLayout = (s: string, widthMm: number) => fitLayout(s, widthMm, BODY_PT, false, true);
+/** 본문 글이지만 자간 맞춤이 없는 문단(협업 역할·시기 점 글·수치 설명·정의 글 — li가 아님)의 줄 수(글자 단위) */
+export const bodyLines = (s: string, widthMm: number) => lineCount(s, widthMm, BODY_PT, false, true);
+
+/** 줄 폭에 들어가는 한글 글자 수(요청 글 안내용 — 한글 기준, 빈칸·숫자는 더 좁음). 본문은 글자 단위라 이 수만큼 한 줄에 듦 */
+export const hangulPerLine = (widthMm: number, pt = BODY_PT, dotum = false) => Math.floor(widthMm / (pt * PT) / HANGUL_EM[faceOf(dotum, pt === LABEL_PT)]);
 
 // ---------------------------------------------------------------------------
 // 칸 폭(mm): 블록 종류·모양·칸 수·놓인 자리(사다리 칸 / 전폭 / 막대 옆)마다
@@ -266,12 +323,12 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
 const HEAD_MM = 10.6 * 1.5 * PT; // 돋움 10.6pt/1.5
 const HEAD11_MM = 11 * 1.5 * PT;
 // 칸 글(본문)은 자간 맞춤을 반영한 줄 수로 셈(화면과 같게)
-const lines = (xs: string[], w: number, pt = BODY_PT, dotum = false) => xs.reduce((s, x) => s + (dotum || pt !== BODY_PT ? lineCount(x, w, pt, dotum) : fitLayout(x, w).lines), 0);
+const lines = (xs: string[], w: number, pt = BODY_PT, dotum = false) => xs.reduce((s, x) => s + (dotum || pt !== BODY_PT ? lineCount(x, w, pt, dotum) : bodyLayout(x, w).lines), 0);
 const max = (xs: number[]) => (xs.length ? Math.max(...xs) : 0);
 
 /** 인용 한 칸의 줄 수: 인용 글(본문 크기, 자간 맞춤) 뒤에 출처(9.5pt 작은 글)가 이어 붙음 */
 function quoteLines(c: Block["cells"][number], w: number): number {
-  const q = fitLayout(`“${c.bullets[0] ?? ""}”`, w);
+  const q = bodyLayout(`“${c.bullets[0] ?? ""}”`, w);
   if (!c.note) return q.lines;
   const noteMm = textEm(`(${c.note})`) * 9.5 * PT;
   // 자간 맞춤(fit-dom fitTextLines)은 출처까지 한 칸 글로 줄이므로, 줄마다 SQUEEZE만큼 더 들어감
@@ -323,7 +380,7 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       return (b.title ? HEAD_MM + 1 : 0) + heads(11) + max(b.cells.map(cellBody)) + (notes ? notes + 0.8 : 0) + 2.6;
     case "timeline":
       // 연혁 점 칸 글은 문단 p(자간 맞춤 없음)
-      if (b.variant === "dots") return 4.6 + 5.6 + max(b.cells.map((c) => c.bullets.reduce((n, x) => n + lineCount(x, s.body), 0) * L + (c.note ? 5.2 : 0))) + 2.6;
+      if (b.variant === "dots") return 4.6 + 5.6 + max(b.cells.map((c) => c.bullets.reduce((n, x) => n + bodyLines(x, s.body), 0) * L + (c.note ? 5.2 : 0))) + 2.6;
       return (b.title ? HEAD_MM + 1 : 0) + heads(11) + max(b.cells.map((c) => cellBody(c) + (c.note ? lineCount(c.note, s.note) * L + 0.3 : 0))) + 1.8;
     case "compare":
       if (isPanelCompare(b)) {
@@ -333,7 +390,7 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
         const inside = (to: boolean) => figs.filter((f) => f.pos === (to ? "right" : "left"));
         const side = (to: boolean) =>
           Math.max(
-            max([lineCount(b.items[to ? 1 : 0] ?? "", s.head, 10.6, true), 1]) * HEAD_MM + b.rows.reduce((n, r) => n + lineCount(panelRowText(r, to), panelTextMm(b, s, to)) * L, 0) + 1.6,
+            max([lineCount(b.items[to ? 1 : 0] ?? "", s.head, 10.6, true), 1]) * HEAD_MM + b.rows.reduce((n, r) => n + bodyLines(panelRowText(r, to), panelTextMm(b, s, to)) * L, 0) + 1.6,
             ...inside(to).map((f) => HEAD_MM + figureBoxMm(f) + 1.2),
           );
         return (b.title ? HEAD_MM + 1 : 0) + Math.max(side(false), side(true), 18, center ? figureBoxMm(center) + 1 : 0) + 1;
@@ -345,19 +402,19 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       const [center, ...nodes] = b.cells;
       if (!center) return 0;
       const t = b.title ? HEAD_MM + 1 : 0;
-      if (nodes.length === 2) return t + max([HEAD_MM + lines(center.bullets, s.body) * L + centerExtra, ...nodes.map((c) => HEAD_MM + lineCount(c.bullets.join(" / "), s.note) * L + 1.3)]) + 1.2;
+      if (nodes.length === 2) return t + max([HEAD_MM + lines(center.bullets, s.body) * L + centerExtra, ...nodes.map((c) => HEAD_MM + bodyLines(c.bullets.join(" / "), s.note) * L + 1.3)]) + 1.2;
       const list = nodes.reduce((n, c) => n + Math.max(lineCount(c.head, s.head, 10.2, true) * 5, lines(c.bullets, s.note) * L) + 0.6, 0);
       return t + Math.max(HEAD_MM + lines(center.bullets, s.body) * L + 1 + centerExtra, list) + 1.2;
     }
     case "voices": {
       const cols = Math.min(2, b.cells.length);
       const rowsN = Math.ceil(b.cells.length / cols);
-      return (b.title ? HEAD_MM + 1 : 0) + rowsN * Math.max(15, max(b.cells.map((c) => lineCount(`“${c.bullets[0] ?? ""}”`, s.body) * L + 1.2))) + (rowsN - 1) * 4 + 1.6;
+      return (b.title ? HEAD_MM + 1 : 0) + rowsN * Math.max(15, max(b.cells.map((c) => bodyLines(`“${c.bullets[0] ?? ""}”`, s.body) * L + 1.2))) + (rowsN - 1) * 4 + 1.6;
     }
     case "quotes":
       return max(b.cells.map((c) => HEAD_MM + 0.3 + quoteLines(c, s.body) * L)) + 0.8;
     case "define":
-      return HEAD_MM + (b.text ? lineCount(b.text, s.body + INDENT_MM) * L : 0) + chipRowsMm(b.items, s.body + INDENT_MM) + 2.1;
+      return HEAD_MM + (b.text ? bodyLines(b.text, s.body + INDENT_MM) * L : 0) + chipRowsMm(b.items, s.body + INDENT_MM) + 2.1;
     case "band":
       return Math.max(1, lineCount(`▶ ${b.text} ◀`, s.body, 10.6, true)) * 10.6 * 1.6 * PT + 1.3;
     case "banner":
@@ -391,7 +448,7 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       }
       // 쉐브론 머리: 화살표 칸 위아래 여백 1px씩 더(section-css .k-chev)
       const head = max([lineCount(b.items[0] ?? "", s.note, 10.4, true), ...b.items.slice(1).map((x) => lineCount(x, s.head, 10.4, true))]) * TH + 2 * PX + (b.variant === "chevron" ? 2 * PX : 0);
-      const body = b.cells.reduce((n, c) => n + Math.max(lineCount(c.head, s.note, 10.4, true) * TH, max(c.bullets.map((x) => lineCount(x, s.body) * L))) + 2 * PX, 0);
+      const body = b.cells.reduce((n, c) => n + Math.max(lineCount(c.head, s.note, 10.4, true) * TH, max(c.bullets.map((x) => bodyLines(x, s.body) * L))) + 2 * PX, 0);
       return (b.title ? HEAD_MM + 1 : 0) + head + body + 1.2;
     }
     case "strategy": {
@@ -418,7 +475,7 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       // 수치 칸(설명은 문단 p라 자간 맞춤 없음 — 줄 수는 lineCount): 큰 수치 15pt, 자리표시(【확인: …】)는 10.5pt 노란 칸(section-css .k-stat__v .k-need), 출처 줄은 9.5pt/1.4 — 두 줄로 넘기도 함(2026-09-27 행별 실측)
       const value = (h: string) => (/【확인:/.test(h) ? lineCount(h.replace(/【확인:\s*([^】]*)】/g, "$1"), s.head - 8 * PX, 10.5, true) * 10.5 * 1.35 * PT + 1.3 : lineCount(h, s.head, 15, true) * 15 * 1.3 * PT);
       const note = (n: string) => (n ? lineCount(n, s.note, 9.5, true) * 9.5 * 1.4 * PT + 0.3 : 0);
-      return (b.title ? HEAD_MM + 1 : 0) + max(b.cells.map((c) => (c.tag ? 4.6 : 0) + value(c.head) + lineCount(c.bullets[0] ?? "", s.body) * L + note(c.note))) + 2.6;
+      return (b.title ? HEAD_MM + 1 : 0) + max(b.cells.map((c) => (c.tag ? 4.6 : 0) + value(c.head) + bodyLines(c.bullets[0] ?? "", s.body) * L + note(c.note))) + 2.6;
     }
   }
 }
@@ -568,8 +625,8 @@ export function titleMm(title: string, markers?: string[]): number {
   return (l.lines + (chips && l.last * PAGE_MM.width + chips > PAGE_MM.width ? 1 : 0)) * line;
 }
 
-/** 마커 칩 묶음 폭(mm — 11pt 굵은 돋움, 칩마다 안 여백·앞 6px). 마커 칩은 자간 0(돋움 −0.12em을 되돌림) — 「지적개선」 칩 17.7mm 실측 */
-export const markerChipsMm = (markers: readonly string[]) => markers.reduce((n, m) => n + (textEm(m, true) + 0.12 * [...m].length) * 11 * PT + (m === "BP" ? 27 : 10) * PX + 6 * PX, 0);
+/** 마커 칩 묶음 폭(mm — 11pt 굵은 돋움, 칩마다 안 여백·앞 6px). 마커 칩은 자간 0이고 돋움 폭이 자간 0 실측이라 그대로 — 「지적개선」 칩 17.7mm 실측 */
+export const markerChipsMm = (markers: readonly string[]) => markers.reduce((n, m) => n + textEm(m, true) * 11 * PT + (m === "BP" ? 27 : 10) * PX + 6 * PX, 0);
 
 /** 소항목 제목 글 크기(돋움 굵게 14pt — section-css .k-sub) */
 export const SUB_TITLE_PT = 14;
@@ -659,7 +716,7 @@ export function fitReport(spec: { sub: { title: string; markers?: string[]; chip
   const check = (text: string, w: number, where: string) => {
     if (!plainText(text).trim()) return;
     bullets += 1;
-    const l = fitLayout(text, w);
+    const l = bodyLayout(text, w);
     const line = { where, text, lines: l.lines, perLine: hangulPerLine(w), fill: Math.round(l.last * 100) / 100 };
     if (l.lines > 1) wrapped.push(line);
     if (l.lines > 1 && l.last < 0.35) ragged.push(line);
@@ -766,11 +823,11 @@ export function hollowBoxes(blocks: Block[], at?: string[]): HollowBox[] {
     const boxes = panel
       ? [false, true].map((to) => {
           const w = panelTextMm(b, s, to);
-          const ls = b.rows.map((r) => lineLayout(panelRowText(r, to), w));
+          const ls = b.rows.map((r) => lineLayout(panelRowText(r, to), w, BODY_PT, false, true));
           return { where: `${name} ${to ? "오른쪽" : "왼쪽"} 패널`, lines: ls.reduce((n, l) => n + l.lines, 0), used: ls.reduce((n, l) => n + filled(l), 0), w };
         })
       : b.cells.map((c, k) => {
-          const ls = [...c.bullets.map((x) => fitLayout(x, s.body)), lineLayout(c.note, s.note)];
+          const ls = [...c.bullets.map((x) => bodyLayout(x, s.body)), lineLayout(c.note, s.note)];
           return { where: `${name} ${k + 1}번째 칸`, lines: ls.reduce((n, l) => n + l.lines, 0), used: ls.reduce((n, l) => n + filled(l), 0), w: s.body };
         });
     const n = boxes.length;

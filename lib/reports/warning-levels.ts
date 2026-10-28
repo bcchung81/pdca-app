@@ -49,6 +49,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "목소리–해법": "info",
   "성과 축": "info",
   틀: "info",
+  "표기 없는 상자": "info", // 상자형 도식에 라벨·제목·칸 머리·칩이 하나도 없음(맨 상자 — lib/reports/title-checks.ts bareBoxWarnings, 2026-10-28)
   "블록 제목": "info", // 블록 제목 화살표 양쪽에 같은 대상이 없음(「사후 확인 → AI 사전예방 전환」 — lib/reports/title-checks.ts, 2026-10-28)
   "반복 수치": "info", // 같은 수치를 서로 다른 블록 3개 이상(경영관리는 절 2개 이상)에 되풀이(lib/reports/repeat-figures.ts, 2026-10-27)
   "계획→실적": "info", // 실적 칸 줄이 카드 계획 줄과 많이 겹치고 실행 근거와는 적게 겹침(lib/reports/result-plan.ts planAsResult, 2026-10-27)

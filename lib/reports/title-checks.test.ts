@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { reportDraftPrompts } from "../prompts/sets.ts";
 import { PAGE_MM, fitReport, subTitleMax, subTitleMm, textEm, titleMm } from "./fit.ts";
 import { type SectionContext, type SectionOutput, fitPrompt, sectionPrompt } from "./section.ts";
-import { arrowTitleWarnings, arrowWithoutSharedNoun, subTitleIssues } from "./title-checks.ts";
+import { arrowTitleWarnings, arrowWithoutSharedNoun, bareBoxWarnings, isBareBox, subTitleIssues } from "./title-checks.ts";
 import { warningLevel } from "./warning-levels.ts";
 
 const PT = 25.4 / 72;
@@ -14,10 +14,22 @@ const LINE = 14 * 1.3 * PT;
 /** 글자 구성만 같은 가상 제목: 낱말마다 한글 글자 수(영문 낱말은 문자열 그대로) */
 const fake = (words: Array<number | string>) => words.map((w) => (typeof w === "number" ? "가".repeat(w) : w)).join(" ");
 
-// 2025 최종본에서 가장 긴 축의 제목 꼴(마커 지적개선·BP, 38자 — 영문 낱말 하나 + 한글 낱말 11개): 2025 실측으로는 모두 한 줄
+// 2025 최종본에서 가장 긴 축의 제목 꼴(38자 — 영문 낱말 하나 + 한글 낱말 9개, 2025 인쇄본 마커 지적개선·BP로 166mm 한 줄).
+// 앱은 BP를 소항목이 아니라 실행과제 띠에 붙이므로(section.ts 소항목 마커는 지적개선·신규·AI뿐) 앱 화면 꼴은 지적개선만 — BP까지 소항목에 붙이면
+// 앱 BP 칩(좌우 27px)이 2025 인쇄본보다 넓어 화면 실측도 170.9mm로 넘침(2026-10-28 크롬)
 const LONG_2025 = fake(["ICT", 2, 2, 4, 4, 4, 4, 2, 2, 2]);
+// 2025 소항목 제목 중 앱 화면(마커 칩 포함) 기준 가장 긴 두 꼴 — 화면 실측 168.5mm(신규)·166.9mm(영문 「AI」 두 번, 마커 AI)
+const WIDE_2025 = fake([3, 2, 2, 6, 4, 5, 3, 3, 2, 2]);
+const AI_2025 = fake([3, 3, 3, 3, 3, 2, "가가,", "‘가가가", "AI", "가가가가’가가", 2]);
 // 운영 초안 1-다 꼴(48자, 마커 지적개선·AI — 실측 198mm로 두 줄)
 const BIZ_1DA = fake([3, 4, 3, 4, 2, 5, 3, 4, 3, 4, 3]);
+// 운영 초안(2026-10-28) 중 화면 실측으로 한 줄을 넘는 넷의 꼴(가운데점 ･ 포함): 1-다 198mm·1-라 183mm·1-가 176mm·1-나 170.5mm
+const OVER_2026: Array<[string, string, string[]]> = [
+  ["다", fake([8, "가가･가가", 3, 4, 2, 1, 2, 2, 2, 4, 2, 2]), ["지적개선"]],
+  ["라", fake([8, 4, 3, 2, 2, 4, 2, 2, 4, 2, 2]), ["신규"]],
+  ["가", fake([2, 2, 2, 3, 2, "가가･가가", 4, 2, 1, 3, 2, 2]), ["지적개선", "AI"]],
+  ["나", fake([2, "가가･가가가", 2, 4, "가가가･가가가가", 2, "가가･가가가", 2, 2]), ["신규"]],
+];
 
 test("subTitleMm: 「표지. 」 + 갈래 칩 + 제목 + 마커 칩 — 칩·마커를 더하면 넓어지고, 표지는 한글 한 자라 무엇이든 같은 폭", () => {
   const base = subTitleMm("가가가", { mark: "가" });
@@ -39,7 +51,10 @@ test("subTitleMm ↔ titleMm(판면 어림): 한 줄 폭이 판면 폭 안이면
 });
 
 test("subTitleIssues: 2025 가장 긴 제목 꼴은 한 줄(경고 없음), 1-다 꼴은 넘쳐 「제목 폭:」(막힘) — 한도 글자 수와 지금 글자 수를 적음", () => {
-  assert.deepEqual(subTitleIssues({ mark: "가", title: LONG_2025, markers: ["지적개선", "BP"] }), []);
+  assert.deepEqual(subTitleIssues({ mark: "가", title: LONG_2025, markers: ["지적개선"] }), []);
+  assert.deepEqual(subTitleIssues({ mark: "가", title: WIDE_2025, markers: ["신규"] }), []);
+  assert.deepEqual(subTitleIssues({ mark: "가", title: AI_2025, markers: ["AI"] }), []);
+  for (const [mark, title, markers] of OVER_2026) assert.equal(subTitleIssues({ mark, title, markers }).length, 1, `${mark} ${markers.join("·")} ${subTitleMm(title, { mark, markers }).toFixed(1)}mm`);
   const w = subTitleIssues({ mark: "다", title: BIZ_1DA, markers: ["지적개선", "AI"] });
   assert.equal(w.length, 1);
   assert.match(w[0], /^제목 폭: 소항목 제목 한 줄이 약 \d+mm\(「다\. 」·마커 지적개선·AI 포함\)로 판면 폭 170mm를 넘습니다 — 제목을 한글 \d+자 안\(지금 빈칸 포함 48자\)/);
@@ -50,9 +65,8 @@ test("subTitleIssues: 2025 가장 긴 제목 꼴은 한 줄(경고 없음), 1-�
 });
 
 // 글 폭 모델 대조(2026-10-28 크롬 실측 — KoPub돋움체 Bold 14pt 「디지털」 36.62pt = 2025 PDF, 한글 한 자 ≈ 0.872em).
-// 판면 어림의 돋움 한글 폭은 0.745em(fit.ts — 대체 글꼴 + 자간 −0.12em 시절 화면 실측)이라 다름: 제목 폭을 약 15% 작게 어림해
-// 실측 170~약 190mm 제목은 넘침으로 못 잡음. 모델을 바꿀지는 사용자 결정 — 새 글꼴 폭 표를 만들지 않고 이 차이를 할 일로 남김
-test("글 폭 모델 ↔ 실측: 14pt 돋움 굵게 「디지털」 = 36.62pt(한글 ≈ 0.872em)", { todo: "fit.ts 돋움 한글 0.745em ≠ 실측 0.872em — 모델 갱신은 사용자 결정 대기" }, () => {
+// 같은 날 사용자 결정으로 판면 어림의 돋움 한글 폭을 0.745 → 0.872em(fit.ts GLYPH·HANGUL_EM)으로 바꿈
+test("글 폭 모델 ↔ 실측: 14pt 돋움 굵게 「디지털」 = 36.62pt(한글 ≈ 0.872em)", () => {
   const pt = textEm("디지털", true) * 14;
   assert.ok(Math.abs(pt - 36.62) / 36.62 < 0.02, `모델 ${pt.toFixed(2)}pt`);
 });
@@ -97,4 +111,29 @@ test("arrowTitleWarnings: 걸린 블록 제목을 한 줄 「블록 제목:」(�
   assert.match(w[0], /^블록 제목: 「사후 확인 → AI 사전예방 전환」 — 화살표 양쪽에 같은 대상/);
   assert.equal(warningLevel(w[0]), "info");
   assert.deepEqual(arrowTitleWarnings([{ title: "고정형 OTA → 이동형 OTA" }]), []);
+});
+
+test("표기 없는 상자: 상자형 도식에 라벨·제목·칸 머리·칩이 모두 없으면 「표기 없는 상자:」(참고) — 하나라도 보이면 괜찮음, 상자형이 아닌 종류는 안 셈", () => {
+  const cell = (head = "", tag = "") => ({ head, tag, bullets: ["글"], note: "" });
+  const b = (kind: string, over: Record<string, unknown> = {}) => ({ kind, label: "", title: "", layout: undefined, cells: [cell(), cell()], ...over }) as unknown as Parameters<typeof isBareBox>[0];
+  // 맨 상자: 수치 띠(큰 수치 head는 표기가 아님)·카드·시기 흐름·협업·인용·정의·띠
+  for (const k of ["stats", "cards", "timeline", "hub", "quotes", "define", "band"]) assert.equal(isBareBox(b(k)), true, k);
+  assert.equal(isBareBox(b("stats", { cells: [cell("97%"), cell("3만국")] })), true, "수치 띠의 head는 큰 수치");
+  // 표기가 하나라도 보임: 사다리 라벨·블록 제목·칸 머리·칩
+  assert.equal(isBareBox(b("stats", { label: "핵심 성과" })), false);
+  assert.equal(isBareBox(b("stats", { title: "올해 실적" })), false);
+  assert.equal(isBareBox(b("stats", { cells: [cell("97%", "정확도"), cell("3만국")] })), false);
+  assert.equal(isBareBox(b("cards", { cells: [cell("현장"), cell()] })), false);
+  // 전폭 배치(layout full)·전폭 종류의 라벨은 그리지 않으므로 표기가 아님(band는 띠 안 라벨 칸에 그림), quotes·band는 제목을 그리지 않음
+  assert.equal(isBareBox(b("cards", { label: "추진내용", layout: "full" })), true);
+  assert.equal(isBareBox(b("quotes", { label: "현장 목소리", title: "제목" })), true);
+  assert.equal(isBareBox(b("band", { label: "핵심 가치" })), false);
+  assert.equal(isBareBox(b("band", { title: "제목" })), true);
+  // 상자형이 아닌 종류
+  for (const k of ["bullets", "compare", "steps", "table", "qa", "banner"]) assert.equal(isBareBox(b(k)), false, k);
+  const w = bareBoxWarnings([b("bullets"), b("stats"), b("cards", { title: "제목" }), b("hub")]);
+  assert.equal(w.length, 1);
+  assert.match(w[0], /^표기 없는 상자: 2번째 stats·4번째 hub 블록에 라벨·제목·칸 머리·칩이 하나도 없어/);
+  assert.equal(warningLevel(w[0]), "info");
+  assert.deepEqual(bareBoxWarnings([b("cards", { title: "제목" })]), []);
 });
