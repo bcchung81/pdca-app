@@ -300,8 +300,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 표지가 없으면(글꼴 없는 PC) 계산값은 예전과 같음(report-fonts.test.ts fontSpacingFor(""))
 // 2026-10-28 사용자 승인 화면 변경(dabe660f… → 335987e3…): 본문 글 글자 단위 규칙(word-break:normal — 불릿·패널·협업 역할·시기 점·수치 설명·정의·목소리·표 값 칸),
 // 괄호 + 조사 묶음 .k-nb(white-space:nowrap), 전후 비교 표 화살표 열 머리 바탕 투명
+// 2026-10-28 수치 띠를 2025 추진성과 행 모양으로(335987e3… → 771dac2d…): 수치 띠가 추진성과 상자(.k-result)를 같이 써서 큰 수치 칸 규칙(.k-stats·.k-stat·__v·__d·__n·__v .k-need)을 지우고
+// 그 자리에 안내 주석 한 줄 — REPORT_STYLE의 수치 칸 전용 값(pt.statNeed·lh.stat·lh.statNote)도 지움
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "335987e33e0ad4723f327bc34caa3d568f2779ee903d0ccb76ca206a698b8e19");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "771dac2d4cdf0155bda234b0f86760f0e1996cc452d37d927c1fc63adfdce4ab");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {
@@ -390,18 +392,23 @@ test("줄 나눔: 불릿·본문 문단은 breakNonLatinWord=KEEP_WORD(글자 �
   assert.doesNotMatch(head, /breakLatinWord="BREAK_WORD"/);
 });
 
-test("핵심 수치 칸: 머리의 【확인: …】만 10.5pt, 보통 큰 수치는 15pt 그대로", async () => {
-  assert.equal(REPORT_STYLE.pt.statNeed, 10.5);
-  const { doc } = await convert(makeSpec([SAMPLES.stats]));
+// 2026-10-28: 수치 띠 = 2025 추진성과 행(굵은 테두리 상자 + 진회색 라벨 칸 + 굵은 불릿 「뜻(수치)」) — 큰 수치 칸 띠는 버림
+test("수치 띠: 사다리 밖이면 추진성과 상자(라벨 칸 + 굵은 불릿), 소항목 추진성과가 따로 있으면 「추진실적」 사다리 행(상자 하나)", async () => {
+  const { doc, text } = await convert(makeSpec([SAMPLES.stats]));
   const runs = [...doc.sections[0].paras, ...allTables(doc.sections[0].paras).flatMap((t) => t.cells.flatMap((c) => c.paras))].flatMap((p) => p.items);
-  const size = (pred: (t: string) => boolean) => {
+  const run = (pred: (t: string) => boolean) => {
     const r = runs.find((it) => it.kind === "text" && pred(it.text));
     assert.ok(r && r.kind === "text");
-    return doc.charPrs[r.charPr].height;
+    return doc.charPrs[r.charPr];
   };
-  assert.equal(size((t) => t.includes("’26년 국수")), 1050);
-  assert.equal(size((t) => t.startsWith("【확인: ")), 1050);
-  assert.equal(size((t) => t === "97%"), 1500);
+  assert.equal(run((t) => t === "추진성과").height, REPORT_STYLE.pt.resultLabel * 100, "라벨 칸 = 추진성과 상자 라벨 글자");
+  assert.ok(text.includes("구분A 유형 수(24종, 기준일 9월)") && text.includes("신뢰도(97%)") && text.includes("무선국(【확인: ’26년 국수】)"), text);
+  assert.equal(run((t) => t.includes("유형 수(")).height, REPORT_STYLE.pt.body * 100, "불릿은 본문 크기");
+  assert.equal(run((t) => t.startsWith("【확인: ")).height, REPORT_STYLE.pt.body * 100, "【확인】도 본문 크기(큰 수치 칸 10.5pt 없음)");
+  assert.ok(!runs.some((it) => it.kind === "text" && it.text === "97%"), "큰 수치 칸 없음");
+  const own = await convert(makeSpec([SAMPLES.stats], { results: ["성과 줄"] }));
+  const labels = textOf(own.doc.sections[0].paras).filter((t) => t === "추진성과" || t === "추진실적");
+  assert.deepEqual(labels, ["추진실적", "추진성과"], "수치 띠는 사다리 행 「추진실적」, 추진성과 상자는 끝 하나");
 });
 
 test("빈칸 폭: 모든 글자 모양이 useFontSpace=1(글꼴의 빈칸 폭 — 화면과 같음)", async () => {
@@ -463,8 +470,7 @@ test("상자 머리·표 머리 칸·수치 칸 줄간격 = 화면 CSS line-heig
     ["case", (t) => t.endsWith("대통령상 수상"), ".k-case__h", LH.caseHead, 155],
     ["quotes", (t) => t.endsWith("정부 지시"), ".k-ctx__head", LH.ctx, 150],
     ["chart", (t) => t.startsWith("막대 제목"), ".k-chart figcaption", LH.chart, 145],
-    ["stats", (t) => t === "97%", ".k-stat__v", LH.stat, 130],
-    ["stats", (t) => t === "기준일 9월", ".k-stat__n", LH.statNote, 140],
+    ["stats", (t) => t === "추진성과", ".k-result__label", LH.result, 130],
   ];
   for (const [sample, pred, css, lh, want] of rows) {
     assert.equal(cssLh(css), lh, `${css} CSS`);

@@ -11,6 +11,7 @@ import {
   type FitReport,
   SUBMIT_OVER,
   HEAD_PART_MM,
+  LINE_MM,
   PAGE_MM,
   blockAreaMm,
   blockCosts,
@@ -37,6 +38,9 @@ import {
   plainText,
   resultWidth,
   slotOf,
+  statsBoxMm,
+  statsLine,
+  statsLines,
   textEm,
  figureBoxMm,
   fitVerdict } from "./fit.ts";
@@ -145,14 +149,39 @@ test("slotOf: 비교표(사다리 폭) 칸 글 폭은 약 52mm(±1.5mm), 카드 
   assert.ok(s4 < s3 && s3 < s2, `4칸(${s4}) < 3칸(${s3}) < 2칸(${s2})`);
 });
 
-test("slotOf/blockHeight: stats 칸도 칸 수가 늘수록 좁아지고(3칸 < 2칸) 높이는 0보다 큼", () => {
+test("수치 띠(2026-10-28 추진성과 모양): 칸 한 줄 = 「문장(^{시점}수치, 덧글)」, 시점뿐인 덧글은 위첨자(「기준」 뺌), 슬롯은 놓인 폭 한 줄", () => {
+  assert.equal(statsLine(cell("23.2%", ["인명피해 감소"], "", "’25년")), "인명피해 감소(^{’25년}23.2%)");
+  assert.equal(statsLine(cell("5.7억원 ↓", ["영업이익 감소"], "", "’26.8 기준")), "영업이익 감소(^{’26.8}5.7억원 ↓)");
+  assert.equal(statsLine(cell("1대 → 5대", ["측정 확대"], "", "’26.6월~")), "측정 확대(^{’26.6월~}1대 → 5대)");
+  assert.equal(statsLine(cell("751건", ["기록 추출"], "", "’26.9.25 시험 추출")), "기록 추출(751건, ’26.9.25 시험 추출)");
+  assert.equal(statsLine(cell("4개", ["신규사업 확보(목표)"], "칩", "’27년도 목표")), "칩 신규사업 확보(목표) (4개, ’27년도 목표)", "닫는 괄호 뒤는 띄움, 칩은 앞");
+  assert.equal(statsLine(cell("97%", [], "", "’25년")), "^{’25년}97%", "문장 없으면 괄호 없이");
+  assert.equal(statsLine(cell("", ["문장만"], "", "’25년")), "문장만(’25년)", "수치 없으면 덧글을 그대로 괄호에");
+  assert.equal(statsLine(cell("", [], "", "")), "");
+  assert.equal(statsLine(cell("^{’24년}164명 → ^{’25년}126명", ["인명피해 23.2% 감소"], "", "’25년")), "인명피해 23.2% 감소(^{’24년}164명 → ^{’25년}126명, ’25년)", "수치에 위첨자가 있으면 덧글은 뒤에");
   const width = blockWidth({ label: "라벨", kind: "stats" });
-  const statsBody = (n: number) => slotOf({ kind: "stats", variant: "", cells: Array.from({ length: n }, () => cell("")) }, width).body;
-  const body2 = statsBody(2);
-  const body3 = statsBody(3);
-  assert.ok(body3 < body2, `3칸(${body3}) < 2칸(${body2})`);
-  const b = blk("stats", { label: "A", cells: [cell("40,000건", ["설명"], "태그"), cell("98%", ["설명2"], "태그2"), cell("24종", ["설명3"])] });
-  assert.ok(blockHeight(b, width) > 0);
+  assert.equal(slotOf({ kind: "stats", variant: "", cells: [cell(""), cell(""), cell("")] }, width).body, slotOf({ kind: "stats", variant: "", cells: [cell("")] }, width).body, "칸 수와 상관없이 한 줄 폭");
+  const b = blk("stats", { label: "A", cells: [cell("40,000건", ["설명"], "태그"), cell("98%", ["설명2"], "태그2"), cell("", [])] });
+  assert.equal(statsLines(b).length, 2, "빈 칸은 뺌");
+  assert.ok(Math.abs(blockHeight(b, width) - (2 * LINE_MM + 0.5)) < 0.01, "불릿 목록: 줄당 LINE_MM");
+});
+
+test("수치 띠 어림: 수치 띠만 있는 행·사다리 밖 = 추진성과 상자 높이(frameHeight와 같은 셈), 소항목 추진성과가 있으면 「추진실적」 사다리 행", () => {
+  const st = blk("stats", { label: "추진성과", cells: [cell("23.2%", ["감소"], "", "’25년"), cell("97%", ["향상"], "", "’25년")] });
+  const head = frameHeight("", [], 0);
+  const box = fitReport({ sub: { title: "" }, blocks: [st], results: [], module: 1 }).rows[0];
+  assert.equal(box.mm, Math.round(statsBoxMm([st], PAGE_MM.width) * 10) / 10);
+  assert.ok(Math.abs(statsBoxMm([st], PAGE_MM.width) - (frameHeight("", ["감소(23.2%)", "향상(97%)"], 0) - head)) < 0.01, "추진성과 상자와 같은 높이");
+  const chart = blk("chart", { label: "추진성과", series: [{ label: "’24", value: "1" }, { label: "’25", value: "2" }] });
+  const withChart = fitReport({ sub: { title: "" }, blocks: [st, chart], results: [], module: 1 }).rows;
+  assert.equal(withChart.length, 1);
+  assert.equal(withChart[0].mm, Math.round(statsBoxMm([st], PAGE_MM.width, true) * 10) / 10, "막대가 붙으면 막대 높이 이상");
+  const full = fitReport({ sub: { title: "" }, blocks: [{ ...st, label: "" }], results: [], module: 1 }).rows[0];
+  assert.equal(full.label, "");
+  const own = fitReport({ sub: { title: "" }, blocks: [{ ...st, label: "" }], results: ["성과"], module: 1 }).rows[0];
+  assert.equal(own.label, "추진실적", "추진성과 상자가 따로 있으면 사다리 행");
+  const ownRow = fitReport({ sub: { title: "" }, blocks: [st], results: ["성과"], module: 1 }).rows[0];
+  assert.ok(ownRow.mm < box.mm, "라벨 행은 사다리 행 높이(상자 아님)");
 });
 
 test("fitReport 행 묶음: 같은 라벨 연속 블록은 한 행, 라벨 없는·전폭 블록은 따로, 행 끝 막대만 있으면 간이 막대 높이", () => {

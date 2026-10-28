@@ -15,7 +15,7 @@ import { type HwpxInput, hwpxFiles } from "../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, Bullet, Cell, CharPr, HwpDoc, Inline, LineType, PageDef, Para, ParaPr, Table } from "../hwp/model.ts";
 import { writeHwpxPackage } from "../hwpx/postprocess.ts";
 import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, blockTexts, figureMm, isPanelCompare, ladderGroups, tableBars } from "./blocks.ts";
-import { PAGE_MM, TABLE_SHAPE_MM, resultBandMm, resultRowHeadMm, tableRowHeadMm, textEm } from "./fit.ts";
+import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableRowHeadMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
 import { fontName } from "./report-fonts.ts";
 import { REPORT_STYLE } from "./section-css.ts";
@@ -497,6 +497,14 @@ class SectionWriter extends Writer {
     return this.withFigures(b, w, (x) => this.core(b, x), b.kind === "hub" ? ["center"] : []);
   }
 
+  /** 수치 띠 불릿(칸마다 한 불릿 — 칩(tag)은 화면처럼 칩, 글은 fit.ts statsLine — 위첨자 시점 ^{…}). c = 글자 모양(상자 안은 굵게) */
+  statsUl(b: Block, c: CS = BODY): Para[] {
+    return b.cells.flatMap((x) => {
+      const line = statsLine({ ...x, tag: "" });
+      return line ? [this.para({ bullet: true }, [...this.tag(x.tag.trim(), false, c), ...this.rich(line, c)], c)] : [];
+    });
+  }
+
   /** 칸 카드(머리·불릿·덧글) 세 행 — cards·pdca가 같이 씀 */
   cardColumns(cells: BlockCell[], w: number, gapMm: number, joiner: string, head: (c: BlockCell, i: number) => Inline[]): Table {
     const gap = mm(gapMm);
@@ -625,7 +633,8 @@ class SectionWriter extends Writer {
       case "strategy":
         return [...title, this.host(this.strategy(b, w), px(3))];
       case "stats":
-        return [...title, this.host(this.stats(b.cells, w), px(3))];
+        // 수치 띠 = 추진성과 불릿(화면 section-html statsUl — 칸마다 「성과 문장(^{시점}수치)」). 상자는 놓인 자리가 정함(blocksBody)
+        return [...title, ...this.statsUl(b)];
       default: {
         const kind = String((b as { kind?: unknown }).kind);
         if (!KNOWN_KINDS.has(kind)) this.warnings.push(`모르는 블록 종류 「${kind}」 — 글만 불릿으로 옮겼습니다.`);
@@ -1141,54 +1150,32 @@ class SectionWriter extends Writer {
     return this.table(colW, rowH, cells);
   }
 
-  /** 핵심 수치 띠: 칸 사이 3mm, 칸마다 위 굵은 선 + 칩·큰 수치(돋움 15pt)·설명·덧글 */
-  stats(cells: BlockCell[], w: number): Table {
-    const parts: Array<number | { fr: number }> = [];
-    cells.forEach((_, i) => {
-      if (i) parts.push(mm(3));
-      parts.push({ fr: 1 });
-    });
-    const colW = this.cols(w, parts.length ? parts : [{ fr: 1 }]);
-    const out: TCell[] = [];
-    cells.forEach((c, i) => {
-      const col = i * 2;
-      if (i) out.push({ r: 0, c: col - 1, paras: [], m: M0 });
-      out.push({
-        r: 0,
-        c: col,
-        box: { l: HAIR, r: HAIR, b: HAIR, t: { pt: ST.line.thick, color: G.g5 } },
-        m: [px(4), px(4), px(2), px(3)],
-        paras: [
-          ...(c.tag ? [this.para({ align: "CENTER" }, this.tag(c.tag).slice(0, -1), BODY)] : []),
-          // 큰 수치 자리의 【확인: …】은 화면(.k-stat__v .k-need)처럼 10.5pt 굵은 돋움으로 줄임
-          this.para({ align: "CENTER", line: pct(LH.stat) }, this.rich(c.head, { face: "dotumB", pt: F.stat }, F.statNeed), { face: "dotumB", pt: F.stat }),
-          ...(c.bullets[0] ? [this.p(c.bullets[0], BODY, { align: "CENTER", chars: true })] : []),
-          ...(c.note ? [this.p(c.note, { face: "dotumB", pt: F.small, color: G.g5 }, { align: "CENTER", line: pct(LH.statNote) })] : []),
-        ],
-      });
-    });
-    return this.table(colW, [lineH(F.stat)], out);
-  }
-
   // ───────────────────────── 본문 묶음·머리·추진성과
 
   /**
    * v3 본문(section-html.ts blocksBody와 같은 묶음 — layoutGroups): 라벨 사다리 행은 이어서 한 표(왼쪽 라벨 18mm), 단 띠는 띠 문단 + 그 아래 전폭,
    * 전폭은 그대로, 가로 반씩 짝은 두 칸 나란히(사이 4mm), 행 끝 막대는 행 오른쪽(42mm, 사이 2.5mm)
    */
-  blocksBody(blocks: Block[]): Para[] {
+  blocksBody(blocks: Block[], own = false): Para[] {
     const out: Para[] = [];
     let rows: Array<{ label: string; units: number[][] }> = [];
     const one = (j: number, w: number) => this.block(blocks[j], w);
-    const unit = (us: number[], w: number): Para[] => {
-      if (us.length === 1) return one(us[0], w);
+    // 수치 띠 상자(화면 statsBox — 소항목 추진성과 상자와 같은 틀, 굵은 불릿 + 오른쪽 막대). 사다리 밖 수치 띠도 상자(own이면 불릿 그대로)
+    const statsBox = (label: string, main: number[], chart: number | undefined, w: number) => {
+      const c = chart === undefined ? null : blocks[chart];
+      return this.resultBox(label, () => main.flatMap((j) => [...this.title(blocks[j]), ...this.statsUl(blocks[j], BODY_B)]), c && { title: c.title, series: c.series, badge: c.badge }, "", w);
+    };
+    const outer = (j: number, w: number) => (blocks[j].kind === "stats" && !own ? [statsBox(statsBoxLabel(blocks[j]), [j], undefined, w)] : one(j, w));
+    const unit = (us: number[], w: number, outside = false): Para[] => {
+      const pick = outside ? outer : one;
+      if (us.length === 1) return pick(us[0], w);
       const colW = this.cols(w, [{ fr: 1 }, mm(PAIR_GAP_MM), { fr: 1 }]);
       return [
         this.host(
           this.table(colW, [lineH()], [
-            { r: 0, c: 0, va: "TOP", m: M0, paras: one(us[0], colW[0]) },
+            { r: 0, c: 0, va: "TOP", m: M0, paras: pick(us[0], colW[0]) },
             { r: 0, c: 1, m: M0, paras: [] },
-            { r: 0, c: 2, va: "TOP", m: M0, paras: one(us[1], colW[2]) },
+            { r: 0, c: 2, va: "TOP", m: M0, paras: pick(us[1], colW[2]) },
           ]),
         ),
       ];
@@ -1227,16 +1214,27 @@ class SectionWriter extends Writer {
     };
     for (const g of layoutGroups(blocks)) {
       if (g.type === "row") {
-        rows.push({ label: g.label, units: g.units });
+        const box = statsRow(g, blocks, own);
+        if (!box) {
+          rows.push({ label: g.label, units: g.units });
+          continue;
+        }
+        flush();
+        out.push(statsBox(g.label, box.main, box.chart, BODY_W));
+        continue;
+      }
+      // 소항목 추진성과 상자가 따로 있으면 전폭 수치 띠는 「추진실적」 사다리 행(화면과 같음)
+      if (own && g.type === "full" && g.units[0].length === 1 && blocks[g.units[0][0]].kind === "stats") {
+        rows.push({ label: STATS_ROW_LABEL, units: g.units });
         continue;
       }
       flush();
       if (g.type === "stage") {
         out.push(this.stage(g.label));
-        for (const us of g.units) out.push(...unit(us, BODY_W));
+        for (const us of g.units) out.push(...unit(us, BODY_W, true));
         continue;
       }
-      out.push(...unit(g.units[0], BODY_W));
+      out.push(...unit(g.units[0], BODY_W, true));
     }
     flush();
     return out;
@@ -1255,15 +1253,15 @@ class SectionWriter extends Writer {
     const cards = spec.resultCards ?? [];
     const chart = spec.resultChart && spec.resultChart.series.length >= 2 ? spec.resultChart : null;
     if (!cards.length && !spec.results.length && !chart) return [];
-    const bandMm = spec.resultBand ? resultBandMm(spec.resultBand) + 4 : 0;
-    const colW = this.cols(BODY_W, [mm(21), { fr: 1 }, ...(bandMm ? [mm(bandMm)] : [])]);
-    const edge: Line = { pt: 1.2, color: G.g5 };
-    const bodyM: [number, number, number, number] = [px(6), px(6), px(3), px(3)];
-    const bw = inner(colW[1], bodyM);
-    const mainW = chart ? this.cols(bw, [{ fr: 1 }, mm(2.5), mm(42)]) : [bw];
+    return [this.resultBox("추진성과", (w) => this.resultMain(spec, w), chart, spec.resultBand)];
+  }
+
+  /** 추진성과 본문: 3칸(있으면) + 굵은 불릿 — w = 본문 글 칸 폭 */
+  resultMain(spec: ReportSectionSpec, w: number): Para[] {
+    const cards = spec.resultCards ?? [];
     const main: Para[] = [];
     if (cards.length) {
-      const cw = this.cols(mainW[0], cards.map(() => ({ fr: 1 })));
+      const cw = this.cols(w, cards.map(() => ({ fr: 1 })));
       main.push(
         this.host(
           this.table(
@@ -1281,6 +1279,21 @@ class SectionWriter extends Writer {
       );
     }
     main.push(...this.ul(spec.results, BODY_B));
+    return main;
+  }
+
+  /**
+   * 추진성과 상자 틀(2026-10-28 — 소항목 추진성과·수치 띠 상자 공용, 화면 .k-result): [라벨 21mm 진회색][본문(main — 글 칸 폭을 받음) · 막대(오른쪽 42mm)][강조 띠] — 굵은 테두리.
+   * width = 상자 폭(가로 반씩 짝이면 반 폭)
+   */
+  resultBox(label: string, mainOf: (w: number) => Para[], chart: MiniChart | null, band = "", width = BODY_W): Para {
+    const bandMm = band ? resultBandMm(band) + 4 : 0;
+    const colW = this.cols(width, [mm(21), { fr: 1 }, ...(bandMm ? [mm(bandMm)] : [])]);
+    const edge: Line = { pt: 1.2, color: G.g5 };
+    const bodyM: [number, number, number, number] = [px(6), px(6), px(3), px(3)];
+    const bw = inner(colW[1], bodyM);
+    const mainW = chart ? this.cols(bw, [{ fr: 1 }, mm(2.5), mm(42)]) : [bw];
+    const main = mainOf(mainW[0]);
     const body = chart
       ? [
           this.host(
@@ -1293,12 +1306,12 @@ class SectionWriter extends Writer {
         ]
       : main;
     const cells: TCell[] = [
-      { r: 0, c: 0, paras: [this.p("추진성과", { face: "dotumB", pt: F.resultLabel, color: WHITE }, { align: "CENTER", line: pct(LH.result) })], box: { l: edge, t: edge, b: edge, fill: G.g5 }, m: [px(2), px(2), 0, 0] },
+      { r: 0, c: 0, paras: [this.p(label, { face: "dotumB", pt: F.resultLabel, color: WHITE }, { align: "CENTER", line: pct(LH.result) })], box: { l: edge, t: edge, b: edge, fill: G.g5 }, m: [px(2), px(2), 0, 0] },
       { r: 0, c: 1, paras: body, box: { t: edge, b: edge, r: bandMm ? undefined : edge, fill: G.g1 }, m: bodyM },
     ];
-    if (bandMm && spec.resultBand)
-      cells.push({ r: 0, c: 2, paras: [this.p(spec.resultBand, { face: "dotumB", pt: F.box, color: WHITE, shade: G.g5 }, { align: "CENTER", line: pct(LH.resultBand) })], box: { t: edge, b: edge, r: edge }, m: [mm(2), px(5), 0, 0] });
-    return [this.host(this.table(colW, [lineH()], cells), px(6))];
+    if (bandMm && band)
+      cells.push({ r: 0, c: 2, paras: [this.p(band, { face: "dotumB", pt: F.box, color: WHITE, shade: G.g5 }, { align: "CENTER", line: pct(LH.resultBand) })], box: { t: edge, b: edge, r: edge }, m: [mm(2), px(5), 0, 0] });
+    return this.host(this.table(colW, [lineH()], cells), px(6));
   }
 
   /** 머리: 대상사업 상자 · 실행과제 띠(번호 칩·BP) · 소항목(가. [칩] 제목 + 마커) */
@@ -1395,7 +1408,7 @@ export function sectionHwpxInput(spec: ReportSectionSpec, opts: { title?: string
   const paras: Para[] = [...w.heads(spec)];
   if (spec.version === 3 && Array.isArray(spec.blocks)) {
     if (spec.mg) w.warnings.push("경영관리 초안은 한글(개조식)으로 내려받습니다 — 이 양식은 절 머리 없이 블록만 차례로 그렸습니다.");
-    paras.push(...w.blocksBody(spec.blocks));
+    paras.push(...w.blocksBody(spec.blocks, !spec.mg && ownResult(spec)));
   } else {
     w.warnings.push(`옛 초안 형식(v${spec.version}) — 행·도식을 화면과 같은 단순한 표 모양으로 옮겼습니다.`);
     paras.push(...w.oldBody(spec));

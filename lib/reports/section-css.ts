@@ -15,8 +15,8 @@ export const REPORT_STYLE = {
   need: { bg: "#fff1b8", line: "#c79a00", ink: "#4d3a00", label: "#8a6500" },
   /** 선 굵기(pt): 가는 선·굵은 선 */
   line: { hair: 0.48, thick: 1.68 },
-  /** 글자 크기(pt, PDF 실측): 본문·작은 글·라벨·소항목·머리·칩 + 상자 머리(시기·단계·비교·사례 머리)·대상사업 번호·실행과제 번호·큰 수치·소제목·추진성과 라벨·그림 자리 칩·설명·마커 + 큰 수치 칸의 【확인】 글자(화면·한글 공용) */
-  pt: { body: 10.6, small: 9.5, label: 10.4, sub: 14, head: 15, tag: 8, box: 11, bizNo: 12, taskNo: 14, stat: 15, subhead: 12, resultLabel: 10.9, figKind: 7.5, figDesc: 7.8, marker: 11, statNeed: 10.5 },
+  /** 글자 크기(pt, PDF 실측): 본문·작은 글·라벨·소항목·머리·칩 + 상자 머리(시기·단계·비교·사례 머리)·대상사업 번호·실행과제 번호·큰 수치(추진실적 열)·소제목·추진성과 라벨·그림 자리 칩·설명·마커(화면·한글 공용) */
+  pt: { body: 10.6, small: 9.5, label: 10.4, sub: 14, head: 15, tag: 8, box: 11, bizNo: 12, taskNo: 14, stat: 15, subhead: 12, resultLabel: 10.9, figKind: 7.5, figDesc: 7.8, marker: 11 },
   /** 화면 줄 높이(HWP 줄간격 lineSpacingPct의 근사 — 기준선 간격 16.8pt/10.6pt) */
   lineHeight: 1.52,
   /** 한글 줄간격(%) */
@@ -27,7 +27,7 @@ export const REPORT_STYLE = {
    * 상자 머리(.k-card__h·.k-ctx__head·.k-tl__h·.k-proc__h·table.k-ba th·.k-case__h·.k-panel__h·.k-zig__h·.k-hub__name) · 칸 사이 기호(.k-join·.k-vs·.k-zig__arr) ·
    * 협업 목록 머리(table.k-hub__list th)·목소리 이름(.k-voice__who span)·용어 칩(.k-chip)·가치 띠(.k-band__l·.k-band__t)·막대 머리(.k-chart figcaption)·PDCA 환류(.k-pdca__fb) ·
    * Q&A 질문(.k-qa dt > span)·표지(.k-qa__m) · 수치 표 머리 칸(table.k-tbl th)·노력/성과 표 머리(table.k-act th) · 전략체계도(th·__top·__head·__foot) ·
-   * 핵심 수치(.k-stat__v·.k-stat__n) · 추진실적 열(.k-res__h·__v·__l·__t) · 추진성과(.k-result__label·.k-result__band) · 그림 자리(.k-fig__kind·.k-fig__desc)
+   * 추진실적 열(.k-res__h·__v·__l·__t) · 추진성과(.k-result__label·.k-result__band) · 그림 자리(.k-fig__kind·.k-fig__desc)
    */
   lh: {
     biz: 1.3, task: 1.25, sub: 1.3, title: 1.5, subhead: 1.4, stage: 1.5, ladder: 1.3,
@@ -35,7 +35,7 @@ export const REPORT_STYLE = {
     join: 1, vs: 1, zigArr: 1,
     hubList: 1.4, voice: 1.4, chip: 1.5, band: 1.6, chart: 1.45, pdcaFb: 1.45, qa: 1.5, qaMark: 1.5,
     tbl: 1.45, act: 1.45, stratTh: 1.3, stratTop: 1.5, stratHead: 1.5, stratFoot: 1.45,
-    stat: 1.3, statNote: 1.4, resHead: 1.4, resValue: 1.3, resLine: 1.4, result: 1.3, resultBand: 1.3, figKind: 1.25, figDesc: 1.3,
+    resHead: 1.4, resValue: 1.3, resLine: 1.4, result: 1.3, resultBand: 1.3, figKind: 1.25, figDesc: 1.3,
   },
   /**
    * 칸 사이 기호 칸(2026-10-21 5mm → 3.5mm — 좁은 다단 칸 글 폭): 카드 묶음 ✚·▶·시기 흐름 ▶·PDCA ▶ 칸 폭(mm) · 기호 ✚·▶ 글자(pt) · 시기 흐름 화살표 그림 폭(mm).
@@ -362,7 +362,6 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-case__figslot{grid-column:2/3;grid-row:1/3;width:auto!important;border-width:0 0 0 1px}
 .kca-dg-doc .k-need{background:${N.bg};box-shadow:inset 0 0 0 1px ${N.line};border-radius:2px;padding:0 3px;color:${N.ink};font-weight:400;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .kca-dg-doc .k-need::before{content:"확인 ";font:700 .78em var(--k-f-dotum);color:${N.label}}
-.kca-dg-doc .k-stat__v .k-need{display:inline-block;max-width:100%;margin:2px 0 1px;padding:1px 4px;font:700 ${F.statNeed}pt/1.35 var(--k-f-dotum);letter-spacing:0}
 .kca-dg-doc .k-weak{text-decoration:underline dotted #8a8b8a;text-underline-offset:2px;text-decoration-thickness:1px}
 .kca-dg-doc .k-unv{text-decoration:underline dashed #c62828;text-underline-offset:2px;text-decoration-thickness:1.5px}
 .kca-dg-doc .k-result__body ul{width:100%}
@@ -390,7 +389,7 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-frame li{text-align:justify;text-justify:inter-character} /* 낱말 사이만 늘리면 keep-all 줄에서 빈칸이 크게 벌어짐 — 한글은 글자 사이로 고르게(한글 배분 관행) */
 /* 본문 글(불릿·칸 글·표 글·추진성과 문장)은 글자 단위로 끊음(2025 최종본 — 줄을 끝까지 채우고 양쪽 정렬, 2026-10-28). 제목·라벨·머리·칩은 .k-frame의 keep-all(어절 단위) 그대로.
    한글(section-hwpx.ts)도 같은 갈래: 본문 문단 KEEP_WORD(글자 단위), 그 밖 BREAK_WORD(어절 단위). 판면 어림은 fit.ts bodyLayout·bodyLines */
-.kca-dg-doc .k-frame ul > li,.kca-dg-doc ol.k-panel__list > li,.kca-dg-doc .k-hub__role,.kca-dg-doc .k-dots__t,.kca-dg-doc .k-stat__d,.kca-dg-doc .k-dfn__body > p,
+.kca-dg-doc .k-frame ul > li,.kca-dg-doc ol.k-panel__list > li,.kca-dg-doc .k-hub__role,.kca-dg-doc .k-dots__t,.kca-dg-doc .k-dfn__body > p,
 .kca-dg-doc .k-voice blockquote,.kca-dg-doc table.k-tbl td:not(.k-res__r),.kca-dg-doc table.k-act td{word-break:normal;line-break:strict}
 .kca-dg-doc .k-frame li.k-left{text-align:left}
 .kca-dg-doc .k-frame li.k-fit-tight{letter-spacing:calc(var(--k-ls) + var(--k-fit, 0em))}
@@ -403,13 +402,7 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-case__kv{padding-left:0}
 .kca-dg-doc .k-case__kv::before{content:none}
 .kca-dg-doc .k-case__kv .k-tag{margin-right:5px;min-width:13mm;text-align:center}
-/* 핵심 수치 띠 */
-.kca-dg-doc .k-stats{display:grid;gap:3mm;margin-top:3px}
-.kca-dg-doc .k-stat{border:var(--k-hair) solid var(--k-g4);border-top:var(--k-thick) solid var(--k-g5);text-align:center;padding:2px 4px 3px;min-width:0}
-.kca-dg-doc .k-stat .k-tag{margin:1px 0 0}
-.kca-dg-doc .k-stat__v{font:700 ${F.stat}pt/${LH.stat} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);margin:1px 0 0}
-.kca-dg-doc .k-stat__d{font-size:var(--k-fs-body);line-height:var(--k-lh);margin:0}
-.kca-dg-doc .k-stat__n{font:700 9.5pt/${LH.statNote} var(--k-f-dotum);color:var(--k-g5);margin:1px 0 0}
+/* 수치 띠(stats)는 2026-10-28부터 추진성과 상자(.k-result)와 같은 모양 — 따로 둔 규칙 없음(section-html blocksBody statsBox) */
 /* 3단계 표현 보강(2026-09-27, 2025 119~126쪽): VS 대립 2칸 · Q&A 상자 · 수치 표 · 추진성과 막대·강조 띠 · 위첨자 비교 */
 .kca-dg-doc .k-cards--vs{display:grid;grid-template-columns:minmax(0,1fr) 9mm minmax(0,1fr);gap:0;margin-top:3px}
 .kca-dg-doc .k-vs{align-self:center;justify-self:center;width:8mm;height:8mm;border-radius:50%;background:var(--k-g5);color:#fff;display:flex;align-items:center;justify-content:center;font:900 9pt/${LH.vs} var(--k-f-head);letter-spacing:var(--k-ls-head)}

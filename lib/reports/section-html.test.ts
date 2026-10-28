@@ -217,3 +217,49 @@ test("괄호 + 조사 묶음(2026-10-28): 「(…)」 바로 뒤 조사 1~2자�
   // 화면 글(태그를 걷은 글)은 그대로
   assert.ok(html.replace(/<[^>]+>/g, "").includes("통합(’26.9.)에 맞춰 운영"));
 });
+
+// 2026-10-28: 수치 띠(stats) = 2025 추진성과 행(굵은 테두리 상자 .k-result + 진회색 라벨 칸 + 굵은 불릿) — 큰 수치 칸 띠(.k-stat)는 버림
+const statCell = (head: string, text: string, note = "", tag = "") => ({ head, tag, bullets: text ? [text] : [], note });
+const statsB = (label: string, over: Partial<Block> = {}) => B("stats", label, { cells: [statCell("23.2%", "인명피해 감소", "’25년 기준"), statCell("【확인: ’26년 건수】", "검사 완료", "’26.12 확정 예정", "검사")], ...over });
+
+test("수치 띠: 수치 띠만 있는 사다리 행은 표를 닫고 추진성과 상자(라벨 = 행 라벨), 칸마다 「문장(^시점 수치, 덧글)」 한 불릿", () => {
+  const spec = base({ version: 3, blocks: [B("bullets", "추진내용", { items: ["내용"] }), statsB("추진성과")], results: [] });
+  const html = sectionBodyHtml(spec);
+  assert.match(html, /<\/table>\n<div class="k-result"><div class="k-result__label">추진성과<\/div><div class="k-result__body"><ul>/);
+  assert.match(html, /<li>인명피해 감소\(<sup class="k-sup">’25년<\/sup>23\.2%\)<\/li>/, "시점뿐인 덧글은 위첨자(「기준」 뺌)");
+  assert.match(html, /<li><span class="k-tag">검사<\/span>검사 완료\(<span class="k-need"[^>]*>’26년 건수<\/span>, ’26\.12 확정 예정\)<\/li>/, "시점이 아닌 덧글은 수치 뒤");
+  assert.ok(!html.includes("k-stat"), "큰 수치 칸 없음");
+  assert.equal(html.match(/<th scope="row">/g)?.length, 1, "수치 띠 행은 사다리에 없음");
+});
+
+test("수치 띠: 끝 막대는 상자 안 오른쪽, 다른 블록과 같은 행이면 그 행 안 불릿 목록, 사다리 밖이면 「추진성과」 상자", () => {
+  const chart = B("chart", "추진성과", { series: [{ label: "’24", value: "164명" }, { label: "’25", value: "126명" }] });
+  const withChart = sectionBodyHtml(base({ version: 3, blocks: [statsB("추진성과"), chart], results: [] }));
+  assert.match(withChart, /<div class="k-result__body k-result__body--chart"><div class="k-row2"><div><ul>.*<\/ul><\/div><figure class="k-chart">/);
+  const mixed = sectionBodyHtml(base({ version: 3, blocks: [B("bullets", "추진성과", { items: ["앞 불릿"] }), statsB("추진성과")], results: [] }));
+  assert.ok(!mixed.includes("k-result") && mixed.includes("<th scope=\"row\">추진성과</th>") && mixed.includes("인명피해 감소("), "같은 행의 다른 블록과 함께면 사다리 행 그대로");
+  const full = sectionBodyHtml(base({ version: 3, blocks: [statsB("")], results: [] }));
+  assert.match(full, /<div class="k-result"><div class="k-result__label">추진성과<\/div>/);
+  const titled = sectionBodyHtml(base({ version: 3, blocks: [statsB("", { title: "올해 실적" })], results: [] }));
+  assert.match(titled, /k-result__body k-result__body--cards"><p class="k-dg-title">올해 실적<\/p><ul>/, "제목이 있으면 세로로");
+});
+
+test("수치 띠: 소항목 추진성과 상자가 따로 있으면 상자를 두 번 그리지 않음 — 전폭 수치 띠는 「추진실적」 사다리 행, 라벨 행은 그대로", () => {
+  const html = sectionBodyHtml(base({ version: 3, blocks: [B("bullets", "추진내용", { items: ["내용"] }), statsB("")], results: ["성과"] }));
+  assert.equal(html.match(/k-result__label/g)?.length, 1);
+  assert.match(html, /<th scope="row">추진내용<\/th><td><ul><li>내용<\/li><\/ul><\/td><\/tr><tr><th scope="row">추진실적<\/th><td><ul><li>인명피해 감소/, "앞 사다리 표에 이어 붙음");
+  const labeled = sectionBodyHtml(base({ version: 3, blocks: [statsB("추진성과")], results: ["성과"] }));
+  assert.equal(labeled.match(/k-result__label/g)?.length, 1);
+  assert.ok(labeled.includes('<th scope="row">추진성과</th>'));
+});
+
+test("수치 띠 표지: 상자 하나가 블록 하나면 상자에 data-block, 고치기 표지는 칸 경로(덧글 위첨자는 원래 덧글), data-fit-row는 어림 행 수만큼", () => {
+  const spec = base({ version: 3, blocks: [B("bullets", "추진내용", { items: ["내용"] }), statsB("추진성과")], results: [] });
+  const html = sectionHtml(spec, [], { blockMarks: true, editMarks: true });
+  assert.match(html, /<div data-block="1" class="k-result">/);
+  assert.match(html, /<sup class="k-sup"><span class="k-t" data-t="blocks\.1\.cells\.0\.note" data-raw="’25년 기준">’25년<\/span><\/sup>/);
+  assert.match(html, /data-t="blocks\.1\.cells\.0\.bullets\.0" data-raw="인명피해 감소"/);
+  assert.match(html, /data-t="blocks\.1\.cells\.1\.head"/);
+  const fit = sectionHtml(spec, [], { marks: true });
+  assert.deepEqual([...fit.matchAll(/data-fit-row="(\d+)"/g)].map((m) => m[1]), ["0", "1"]);
+});

@@ -592,7 +592,7 @@ test("verifySection: 같은 소항목에 cards 도식을 두 번 쓰면 '도식:
   assert.ok(v.warnings.some((w) => w === "도식: 한 소항목에 같은 도식을 두 번 썼습니다(cards) — 다른 모양의 도식으로 바꿔 주세요."));
 });
 
-test("v3 HTML: stats(핵심 수치 띠 — 저장된 초안)는 k-stat__v로, compare panels는 As-Is ➀·To-Be ➊ 번호, case의 「라벨 | 글」 줄은 k-case__kv", { skip: NO_SEED_CARDS }, () => {
+test("v3 HTML: stats(수치 띠 — 저장된 초안)는 추진성과 상자가 따로 있으면 「추진실적」 사다리 행 불릿으로, compare panels는 As-Is ➀·To-Be ➊ 번호, case의 「라벨 | 글」 줄은 k-case__kv", { skip: NO_SEED_CARDS }, () => {
   const ctx = sectionContext(card, group("주요사업1"));
   const withEvidence = out({
     blocks: [
@@ -602,10 +602,11 @@ test("v3 HTML: stats(핵심 수치 띠 — 저장된 초안)는 k-stat__v로, co
   });
   const v = verifySection(withEvidence, card, ctx, "2025년 공모전 수상");
   assert.deepEqual(v.spec.blocks?.map((b) => b.kind), ["compare", "case"]);
-  // 2026-10-28부터 새 주요사업 초안은 수치 띠를 빼므로(verifySection) 저장된 초안처럼 spec에 직접 넣어 그림 — 렌더러는 예전 그대로
+  // 2026-10-28부터 새 주요사업 초안은 수치 띠를 빼므로(verifySection) 저장된 초안처럼 spec에 직접 넣어 그림 — 2026-10-28부터 추진성과 모양
   const stats = { kind: "stats" as const, label: "", title: "", variant: "", text: "", items: [], cells: [cell("40,000건", ["설명"]), cell("98%", ["설명2"])], rows: [], series: [], badge: "" };
   const html = sectionHtml({ ...v.spec, blocks: [stats, ...v.spec.blocks!] }, []);
-  assert.match(html, /<p class="k-stat__v">40,000건<\/p>/);
+  assert.match(html, /<th scope="row">추진실적<\/th><td><ul><li>설명\(40,000건\)<\/li><li>설명2\(98%\)<\/li><\/ul>/);
+  assert.equal(html.match(/k-result__label/g)?.length, 1, "추진성과 상자는 하나");
   assert.match(html, /➀/, "As-Is 번호");
   assert.match(html, /➊/, "To-Be 번호");
   assert.match(html, /<li class="k-case__kv"><span class="k-tag">공모명<\/span>2025년 공모전<\/li>/);

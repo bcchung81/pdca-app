@@ -189,6 +189,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/reports/diagram-hints.test.ts`(수치 띠 후보, 2026-10-15 후속 6) | 주요사업 stats는 `extras.yearFigures` 2개 이상일 때만(글의 단위 수치로는 안 켜짐), 경영관리는 글의 단위 수치 4개 이상 그대로; 시드 1-가는 stats 후보 없음, 시드 59장 stats 후보 29장 |
 | `lib/reports/mg-draft.test.ts`(수치 띠 실적 규칙, 2026-10-15 후속 6) | `verifyMgDraft`는 올해 실적 칸이 모자란 띠(’25 실적 2칸 + 자리표시)를 빼지 않고 「수치 띠:」 경고·주요사업 ② 문구도 없음 |
 | `lib/prompts/prompts.test.ts`(수치 띠 실적 규칙, 2026-10-15 후속 6) | 주요사업 `diagram.guide`에 「올해 실적 값 2개 이상일 때만·목표·예상·전년 값·자리표시로 채우지 않음」, 경영관리 경평 프롬프트에는 없음·`report-draft-mg@845bc269`·`report-outline-mg@b1183426`·`report-block-mg@db2b1b11` 고정(앞 둘은 2026-10-17 F2 닫기 관례 문구, 같은 날 서사 순서 S로 바뀜) |
+| `lib/reports/section-html.test.ts`·`fit.test.ts`·`section-hwpx.test.ts`·`title-checks.test.ts`(수치 띠 = 2025 추진성과 행, 2026-10-28) | 수치 띠만 있는 사다리 행·사다리 밖 수치 띠는 추진성과 상자(`.k-result` — 라벨 = 행 라벨, 비면 「추진성과」, 같은 라벨 막대는 상자 안 오른쪽), 다른 블록과 같은 행이면 그 행 불릿, 소항목 추진성과가 따로 있으면 전폭 수치 띠는 「추진실적」 사다리 행(상자 하나); 칸 한 줄 `statsLine`(「문장(^{시점}수치, 덧글)」, 시점뿐인 덧글만 위첨자·「기준」 뺌), 어림 `statsBoxMm` = 추진성과 상자 셈, data-fit-row 수 = 어림 행 수, 한글도 같은 상자·라벨; 수치 띠는 맨 상자 경고 대상 아님 |
 
 ## 품질 향상 1차(2026-10-17)가 더한 시험
 

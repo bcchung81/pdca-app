@@ -29,7 +29,7 @@
 블록 종류(적응문 「블록 사전」)
 
 <!-- @block.label -->
-왼쪽 라벨 = 이야기 단계 이름(10자 안팎, 예: 추진배경·Step 1 민관 협력·’25년 개발·핵심이슈·해결책 마련·국민 의견수렴). 전폭 블록은 빈 문자열 — 다만 라벨·머리·칸 머리·칩이 하나도 없는 맨 상자는 무엇을 말하는지 안 보이므로 만들지 않습니다: 상자형 도식(cards·timeline·hub·stats·define)을 전폭으로 두면 블록 머리(title)를 꼭 쓰고, band는 라벨을, quotes는 칸 head(인용 제목)를 꼭 씁니다
+왼쪽 라벨 = 이야기 단계 이름(10자 안팎, 예: 추진배경·Step 1 민관 협력·’25년 개발·핵심이슈·해결책 마련·국민 의견수렴). 전폭 블록은 빈 문자열 — 다만 라벨·머리·칸 머리·칩이 하나도 없는 맨 상자는 무엇을 말하는지 안 보이므로 만들지 않습니다: 상자형 도식(cards·timeline·hub·define)을 전폭으로 두면 블록 머리(title)를 꼭 쓰고, band는 라벨을, quotes는 칸 head(인용 제목)를 꼭 씁니다
 
 <!-- @block.title -->
 블록 머리(없으면 빈 문자열). define은 탭 글(「…란?」「왜 …?」), case는 사례 제목. 전후 비교(compare)·표(table)·칸 도식의 머리는 「무엇을」(대상 명사)이 든 한 줄로 쓰고, 라벨·표 머리(기존·개선·As-Is·To-Be)가 이미 전후를 말하면 빈 문자열로 둡니다. 「A → B」는 양쪽이 같은 대상을 가리킬 때만 씁니다(고정형 OTA → 이동형 OTA) — 대상이 다른 두 말을 화살표로만 잇거나(✗ 사후 확인 → AI 사전예방 전환) 화살표 뒤에 「전환」을 겹쳐 쓰지 않고, 대상을 넣어 풉니다(✓ (대상) 점검을 사후 확인에서 AI 사전예방으로)
@@ -44,7 +44,7 @@ banner·band·define·subhead 본문, strategy의 목표 띠·pdca의 환류 띠
 bullets의 불릿·case의 「라벨 | 내용」 줄, define의 칩 흐름, compare panels의 [As-Is 요지, To-Be 요지](diag는 [현황·문제 요지, 추진방향 요지]), table의 머리 줄 전체(첫째 = 행 머리 열 이름, 나머지 = 값 열 이름 2~5개), strategy의 왼쪽 층 이름 0~4개(띠·열 머리·과제·지표 행 순서). 그 밖은 빈 배열
 
 <!-- @block.cells -->
-cards·steps·timeline·hub·voices·quotes·stats·qa·table·strategy·pdca의 칸(stats는 head=큰 수치, bullets[0]=그 뜻 · qa는 head=질문, bullets=답 1~2개 · table은 head=행 머리, bullets=값을 열 순서대로 값 열 수만큼 · strategy는 열마다 head=전략목표, bullets=실행과제, note=성과지표 · pdca는 4칸, tag=단계 표지(비우면 P·D·C·A), head=단계 이름): head=칸 제목(시기·단계·기관·화자), tag=칩(기관명·Step·연도 등, 없으면 빈 문자열), bullets=칸 불릿(voices·quotes는 [원문 인용]), note=결과 줄·출처(quotes는 시점·출처, stats는 그 큰 수치의 시점 한 마디 — 필수, 비교 값은 bullets[0]에). 그 밖은 빈 배열
+cards·steps·timeline·hub·voices·quotes·stats·qa·table·strategy·pdca의 칸(stats는 bullets[0]=성과 문장, head=그 문장의 핵심 수치 — 앱이 「성과 문장(^{시점}수치)」 추진성과 불릿 한 줄로 이음 · qa는 head=질문, bullets=답 1~2개 · table은 head=행 머리, bullets=값을 열 순서대로 값 열 수만큼 · strategy는 열마다 head=전략목표, bullets=실행과제, note=성과지표 · pdca는 4칸, tag=단계 표지(비우면 P·D·C·A), head=단계 이름): head=칸 제목(시기·단계·기관·화자), tag=칩(기관명·Step·연도 등, 없으면 빈 문자열), bullets=칸 불릿(voices·quotes는 [원문 인용]), note=결과 줄·출처(quotes는 시점·출처, stats는 그 수치의 시점 한 마디 — 필수, 전후 비교 값은 head에 「164명 → 126명」). 그 밖은 빈 배열
 
 <!-- @block.rows -->
 compare의 행: key=구분(짧게), before=기존, after=개선(diag는 before=현황·문제, after=그 문제의 추진방향 — 행마다 한 짝). 그 밖은 빈 배열

@@ -241,7 +241,8 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-10-14 보정(과잉 교정 완화)으로 판 바뀜(@79786ba1 → @3a68f193)
   // 2026-10-15 후속 5 상자 채움(공용 문체 report-draft/style.md 「판면」 — 나란한 칸 줄 수 맞춤)으로 판 바뀜(@3a68f193 → @db2b1b11)
   // 2026-10-28 공용 조각(style.md 제목 한 줄·화살표 규칙, blocks.md#blocks 수치 띠는 경영관리 추진성과 행에서만, schema.md#block.title 블록 제목 규칙)으로 판 바뀜(@db2b1b11 → @726705b8)
-  assert.equal(mg.prompts.version, "report-block-mg@726705b8");
+  // 2026-10-28 수치 띠를 2025 추진성과 행 모양으로(공용 blocks.md#blocks stats·chart 설명, report-draft-mg/blocks.md#choose)으로 판 바뀜(@726705b8 → @387737ef)
+  assert.equal(mg.prompts.version, "report-block-mg@387737ef");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {
@@ -279,9 +280,11 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-10-27 카드 「정량 성과」 칸의 올해 실적 절 actuals.kpiOutcome·outcomeHead·outcomeItem을 더해 집필 판만 바뀜(@02ce64ac → @130db7d3)
   // 2026-10-28 공용 조각(report-draft/style.md·blocks.md#blocks·schema.md#block.title — 제목·화살표·수치 띠 규칙)으로 셋 다 바뀜(@130db7d3 → @98767749, @b1183426 → @2defbb8a, @db2b1b11 → @726705b8)
   // 2026-10-28 공용 조각 schema.md#block.label(맨 상자 금지 — 상자형 도식은 라벨·머리 중 하나)로 집필 판만 바뀜(@98767749 → @d1beb140)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@d1beb140");
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@2defbb8a");
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@726705b8");
+  // 2026-10-28 수치 띠 = 2025 추진성과 행(성과 문장 + 수치 + 시점 불릿, 같은 라벨 막대 — 공용 blocks.md#blocks·schema.md#block.label·block.cells, 경영관리 stories·blocks#choose·process)으로 셋 다 바뀜
+  // (@d1beb140 → @7433abde, @2defbb8a → @52cd2237, @726705b8 → @387737ef)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@7433abde");
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@52cd2237");
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@387737ef");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {

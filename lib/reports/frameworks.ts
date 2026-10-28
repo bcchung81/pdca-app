@@ -157,7 +157,7 @@ export const SHAPES: ShapeInfo[] = [
   { code: "cards:vs", kind: "cards", variant: "vs", name: "대비 2칸(VS)", group: "base", use: "두 입장·두 방식 맞세우기" },
   { code: "timeline:chevron", kind: "timeline", variant: "chevron", name: "연도 흐름", group: "base", use: "’24 → ’25 → ’26 단계(마지막이 올해)" },
   { code: "timeline:dots", kind: "timeline", variant: "dots", name: "연혁 점", group: "base", use: "해마다 쌓은 연혁·누적 수치" },
-  { code: "stats", kind: "stats", variant: "", name: "핵심 수치 띠", group: "base", use: "큰 수치 2~4칸 + 뜻 한 줄" },
+  { code: "stats", kind: "stats", variant: "", name: "핵심 수치 띠", group: "base", use: "추진성과 상자 — 칸마다 「성과 문장(시점 수치)」 굵은 불릿 2~4줄(2026-10-28 2025 추진성과 행 모양)" },
   { code: "table", kind: "table", variant: "", name: "수치 표", group: "base", use: "행·열 머리가 모두 있는 수치" },
   // 표 모양 4종(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 docs/analysis/2025-경영관리-경영실적보고서-분석.md 「블록 어휘 수준」)
   { code: "table:result", kind: "table", variant: "result", name: "추진실적 열 표", group: "base", use: "추진내용 행 옆 어두운 「추진실적」 칸(큰 수치 1~2 + 한 줄)" },

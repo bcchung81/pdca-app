@@ -5,7 +5,7 @@ import { fitTextLines } from "./fit-dom.ts";
 import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
 import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, tableBars } from "./blocks.ts";
-import { TABLE_SHAPE_MM, blockWidth, resultRowHeadMm, soloWidth, tableRowHeadMm } from "./fit.ts";
+import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableRowHeadMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
 import { type Diagram, type LadderRow, type MiniChart, type ReportSectionSpec, numberTokens } from "./section.ts";
 
@@ -248,6 +248,20 @@ function ladderTableHtml(b: Block, u: Marks, at: At, w: number): string {
   return `<table class="k-tbl k-tbl--lad"><colgroup><col style="width:${big}%">${sub ? `<col style="width:${subW}%">` : ""}<col></colgroup><tbody>${rows.join("")}</tbody></table>`;
 }
 
+/** 수치 띠 불릿 목록(칸마다 한 불릿 — 빈 칸은 뺌). 시점 위첨자는 덧글 칸 글(「기준」을 뺀 표시 — 고치기는 원래 덧글) */
+function statsUl(b: Block, u: Marks, at: At): string {
+  const li = b.cells.map((c, i) => {
+    const p = statsParts(c);
+    if (!p.text && !p.head && !p.rest) return "";
+    const note = at(`cells.${i}.note`);
+    const sup = p.sup ? `<sup class="k-sup">${tx(p.sup, u, note, undefined, c.note)}</sup>` : "";
+    const rest = p.rest ? `${p.head ? ", " : ""}${tx(c.note.trim(), u, note)}` : "";
+    const tag = p.tag ? `<span class="k-tag">${tx(p.tag, u, at(`cells.${i}.tag`), undefined, c.tag)}</span>` : "";
+    return `<li>${tag}${p.text ? tx(p.text, u, at(`cells.${i}.bullets.0`), undefined, c.bullets[0]) : ""}${p.open}${sup}${p.head ? tx(p.head, u, at(`cells.${i}.head`), undefined, c.head) : ""}${rest}${p.close}</li>`;
+  });
+  return li.some(Boolean) ? `<ul>${li.join("")}</ul>` : "";
+}
+
 function blockCore(b: Block, u: Marks, bp?: string, width?: number): string {
   // 고치기 표지 경로(bp = blocks.N — 과제별 초안 화면만)
   const at = (rest: string) => (bp ? `${bp}.${rest}` : undefined);
@@ -403,10 +417,9 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number): string {
       return `${title}<div class="k-pdca">${cells.join('<div class="k-join" aria-hidden="true">▶</div>')}${b.text ? `<p class="k-pdca__fb">↺ ${tx(b.text, u, at("text"))}</p>` : ""}</div>`;
     }
     case "stats":
-      // 핵심 수치 띠(2025 「유형 24종·제원 63종 | 검증 신뢰도 97% | 수도권 약 3만국」): 칸마다 수치(크게) + 설명
-      return `${title}<div class="k-stats" style="grid-template-columns:repeat(${b.cells.length},minmax(0,1fr))">${b.cells
-        .map((c, i) => `<div class="k-stat">${c.tag ? `<span class="k-tag">${tx(c.tag, u, at(`cells.${i}.tag`))}</span>` : ""}<p class="k-stat__v">${tx(c.head, u, at(`cells.${i}.head`))}</p>${c.bullets[0] ? `<p class="k-stat__d">${tx(c.bullets[0], u, at(`cells.${i}.bullets.0`))}</p>` : ""}${c.note ? `<p class="k-stat__n">${tx(c.note, u, at(`cells.${i}.note`))}</p>` : ""}</div>`)
-        .join("")}</div>`;
+      // 수치 띠 = 추진성과 불릿(2026-10-28 — 2025 추진성과 행): 칸마다 「[칩] 성과 문장(^{시점}수치, 덧글)」 한 불릿(fit.ts statsParts — 어림·한글과 같은 글).
+      // 상자(굵은 테두리 + 진회색 라벨 칸)는 놓인 자리가 정함(blocksBody statsBox — 사다리 행 안이면 행 라벨 칸이 라벨)
+      return `${title}${statsUl(b, u, at)}`;
   }
 }
 
@@ -443,21 +456,36 @@ function stageLabelHtml(label: string): string {
  * marks를 켜면 행마다 첫 요소에 data-fit-row(판면 어림 fitReport rows와 같은 번호)를 담 — 행별 실측용(개발 도구만, 속성이라 배치는 그대로).
  * blockMarks를 켜면 블록마다 맨 위 요소에 data-block(spec.blocks 순번 — 사다리 행 안 블록·행 옆 막대도 각자)을 담 — 과제별 초안 화면의 여백 메모 자리(속성이라 배치는 그대로)
  */
-function blocksBody(blocks: Block[], u: Marks, caption: string, marks = false, blockMarks = false, offset = 0): string {
+function blocksBody(blocks: Block[], u: Marks, caption: string, marks = false, blockMarks = false, offset = 0, own = false): string {
   const out: string[] = [];
   let rows: Array<{ label: string; units: number[][]; n: number }> = [];
   let n = 0;
   const mark = (i: number) => (marks ? ` data-fit-row="${i}"` : "");
   // offset: 경영관리 절마다 나눠 그릴 때 spec.blocks 안의 첫 순번(경로·data-block이 전체 순번을 가리키게)
   // width: 가로 반씩 짝이면 반 폭, 짝 없는 half면 그릇 폭(blockWidth는 짝이 있다고 보고 셈) — 그 밖은 블록이 스스로 셈(예전 그대로)
-  const one = (j: number, width?: number) => {
+  const raw = (j: number, width?: number) => {
     const b = blocks[j];
-    const i = j + offset;
-    const html = blockHtml(b, u, `blocks.${i}`, width ?? (b.span !== undefined ? soloWidth(b) : undefined));
-    return blockMarks ? markRoots(html, `data-block="${i}"`) : html;
+    return blockHtml(b, u, `blocks.${j + offset}`, width ?? (b.span !== undefined ? soloWidth(b) : undefined));
   };
-  // 단위: 블록 하나 또는 가로 반씩 짝(각 칸은 블록 하나 — 블록이 제목 문단 + 도식처럼 여러 요소여도 한 칸에)
-  const unit = (us: number[]) => (us.length === 1 ? one(us[0]) : `<div class="k-pair">${us.map((j) => `<div class="k-pair__c">${one(j, blockWidth(blocks[j]))}</div>`).join("")}</div>`);
+  const bmark = (j: number, html: string) => (blockMarks ? markRoots(html, `data-block="${j + offset}"`) : html);
+  const one = (j: number, width?: number) => bmark(j, raw(j, width));
+  // 수치 띠 상자(2026-10-28 — 2025 추진성과 행): 소항목 추진성과 상자와 같은 .k-result(굵은 테두리 + 진회색 라벨 칸 + 굵은 불릿), 막대는 상자 안 오른쪽.
+  // 블록 제목이 있거나 블록이 여럿이면 세로로 쌓음(--cards). 수치 띠 하나뿐이면 상자 전체가 그 블록(data-block)
+  const statsBox = (label: string, main: number[], chart?: number, width?: number) => {
+    const box = (lists: string) => {
+      const col = chart === undefined && (main.length > 1 || main.some((j) => blocks[j].title)) ? " k-result__body--cards" : "";
+      const body = chart === undefined ? lists : `<div class="k-row2"><div>${lists}</div>${one(chart)}</div>`;
+      return `<div class="k-result"><div class="k-result__label">${esc(label)}</div><div class="k-result__body${col}${chart === undefined ? "" : " k-result__body--chart"}">${body}</div></div>`;
+    };
+    return chart === undefined && main.length === 1 ? bmark(main[0], box(raw(main[0], width))) : box(main.map((j) => one(j, width)).join(""));
+  };
+  // 사다리 밖 블록: 수치 띠는 상자(소항목 추진성과 상자가 따로 있으면 불릿 목록 그대로)
+  const outer = (j: number, width?: number) => (blocks[j].kind === "stats" && !own ? statsBox(statsBoxLabel(blocks[j]), [j], undefined, width) : one(j, width));
+  // 단위: 블록 하나 또는 가로 반씩 짝(각 칸은 블록 하나 — 블록이 제목 문단 + 도식처럼 여러 요소여도 한 칸에). outside = 사다리 행 밖(전폭·단 띠)
+  const unit = (us: number[], outside = false) => {
+    const pick = outside ? outer : one;
+    return us.length === 1 ? pick(us[0]) : `<div class="k-pair">${us.map((j) => `<div class="k-pair__c">${pick(j, blockWidth(blocks[j]))}</div>`).join("")}</div>`;
+  };
   const flush = () => {
     if (!rows.length) return;
     const tr = rows.map((r) => {
@@ -466,7 +494,7 @@ function blocksBody(blocks: Block[], u: Marks, caption: string, marks = false, b
       const single = r.units.every((x) => x.length === 1);
       const withChart = single && flat.length > 1 && blocks[last].kind === "chart";
       const main = withChart ? flat.slice(0, -1) : flat;
-      const body = single ? main.map((j) => one(j)).join("") : r.units.map(unit).join("");
+      const body = single ? main.map((j) => one(j)).join("") : r.units.map((us) => unit(us)).join("");
       const cell = withChart ? `<div class="k-row2"><div>${body}</div>${one(last)}</div>` : body;
       return `<tr${mark(r.n)}><th scope="row">${labelHtml(r.label)}</th><td>${cell}</td></tr>`;
     });
@@ -474,19 +502,32 @@ function blocksBody(blocks: Block[], u: Marks, caption: string, marks = false, b
     rows = [];
   };
   for (const g of layoutGroups(blocks)) {
-    // 사다리 행(이어진 같은 라벨은 이미 한 묶음) — 이어진 행들은 한 표로(전폭·단 띠를 만나면 표를 닫음)
+    // 사다리 행(이어진 같은 라벨은 이미 한 묶음) — 이어진 행들은 한 표로(전폭·단 띠를 만나면 표를 닫음). 수치 띠(+ 끝 막대)만 있는 행은 표를 닫고 상자(라벨 = 행 라벨)
     if (g.type === "row") {
-      rows.push({ label: g.label, units: g.units, n: n++ });
+      const box = statsRow(g, blocks, own);
+      if (!box) {
+        rows.push({ label: g.label, units: g.units, n: n++ });
+        continue;
+      }
+      flush();
+      const html = statsBox(g.label, box.main, box.chart);
+      out.push(marks ? html.replace(/^<([a-z0-9]+)/i, `<$1${mark(n)}`) : html);
+      n++;
+      continue;
+    }
+    // 소항목 추진성과 상자가 따로 있으면 전폭 수치 띠는 「추진실적」 사다리 행(추진성과 상자를 두 번 그리지 않음 — 2025는 소항목 끝 하나)
+    if (own && g.type === "full" && g.units[0].length === 1 && blocks[g.units[0][0]].kind === "stats") {
+      rows.push({ label: STATS_ROW_LABEL, units: g.units, n: n++ });
       continue;
     }
     flush();
     if (g.type === "stage") {
       out.push(`<p class="k-stage"${mark(n)}><span class="k-stage__l">${stageLabelHtml(g.label)}</span></p>`);
-      for (const us of g.units) out.push(unit(us));
+      for (const us of g.units) out.push(unit(us, true));
       n++;
       continue;
     }
-    const html = unit(g.units[0]);
+    const html = unit(g.units[0], true);
     out.push(marks ? html.replace(/^<([a-z0-9]+)/i, `<$1${mark(n)}`) : html);
     n++;
   }
@@ -550,7 +591,7 @@ function sectionBodyInner(spec: ReportSectionSpec, unknownNumbers: string[], opt
       bizHtml,
       taskHtml,
       `<h5 class="k-sub">${esc(spec.sub.mark)}. ${chipHtml(spec.sub.chip)}${tx(spec.sub.title, u, "sub.title")}${spec.sub.markers.map((m) => MARKER_HTML[m] ?? "").join("")}</h5>`,
-      blocksBody(spec.blocks, u, spec.caption || `${spec.sub.title} 추진 내용`, opts.marks, opts.blockMarks),
+      blocksBody(spec.blocks, u, spec.caption || `${spec.sub.title} 추진 내용`, opts.marks, opts.blockMarks, 0, ownResult(spec)),
       resultHtml(spec, u, opts.resultMark),
     ]
       .filter(Boolean)

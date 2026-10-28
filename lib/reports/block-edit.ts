@@ -15,7 +15,7 @@ import { type ShapeRules, MG_ONLY_SHAPES, blockShapeCode, blockShapeName, shapeA
 import { mgSpecHeight } from "./business-layout.ts";
 import { isOwnKind } from "./diagram-hints.ts";
 import { canonicalJson } from "../cards/fixed.ts";
-import { PAGE_MM, blockWidth, bodyLayout, canonicalBlock, figuresWidth, fitReport, hangulPerLine, resultWidth, slotOf } from "./fit.ts";
+import { PAGE_MM, blockWidth, bodyLayout, canonicalBlock, figuresWidth, fitReport, hangulPerLine, resultWidth, slotOf, statsLine } from "./fit.ts";
 import { dropLoneSpans } from "./layout.ts";
 import { SHAPES, cellRange, clampCells, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
 import type { ReportSectionSpec } from "./section.ts";
@@ -138,7 +138,7 @@ export function blockRoom(spec: ReportSectionSpec, index: number): BlockRoom | n
   }
   if (!CELL_TEXT.has(b.kind)) return null;
   const slot = slotOf(b, width);
-  const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.cells.map((x) => x.bullets);
+  const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
   const now = Math.max(1, ...cellLines.map((xs) => xs.reduce((n, x) => n + bodyLayout(x, slot.body).lines, 0)));
   return { unit: "cell", perLine: hangulPerLine(slot.body), now, max: grow(now, (l) => rowOf(cellCount(b), l)), slack };
 }

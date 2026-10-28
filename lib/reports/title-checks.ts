@@ -58,18 +58,20 @@ export function arrowTitleWarnings(blocks: readonly Pick<Block, "title">[]): str
   return [`블록 제목: ${bad.slice(0, 3).map((t) => `「${t}」`).join("·")} — 화살표 양쪽에 같은 대상(낱말)이 없어 무엇이 바뀌었는지 안 보입니다. 대상 명사가 든 한 줄로 쓰거나(「…을 A에서 B로」), 라벨·표 머리가 이미 전후를 말하면 제목을 비웁니다`];
 }
 
-/** 상자형 도식(렌더러가 상자로 그리는 종류) — 라벨·제목·칸 머리·칩이 모두 없으면 맨 상자 */
-const BOX_KINDS: ReadonlySet<string> = new Set(["cards", "timeline", "hub", "quotes", "define", "band", "stats"]);
+/**
+ * 상자형 도식(렌더러가 상자로 그리는 종류) — 라벨·제목·칸 머리·칩이 모두 없으면 맨 상자.
+ * 수치 띠(stats)는 2026-10-28부터 늘 라벨 칸이 붙어(사다리 행 라벨 · 사다리 밖이면 상자 라벨 「추진성과」 · 소항목 추진성과가 따로 있으면 「추진실적」 행 — section-html blocksBody) 맨 상자가 될 수 없어 뺌
+ */
+const BOX_KINDS: ReadonlySet<string> = new Set(["cards", "timeline", "hub", "quotes", "define", "band"]);
 
 /**
- * 화면에 보이는 표기가 하나도 없는 상자형 블록인지(section-html.ts blockCore와 같은 규칙): 라벨은 사다리 행·단 띠일 때(band는 띠 안 라벨 칸), 제목은 quotes·band가 그리지 않음,
- * 칸 머리는 수치 띠(stats)에서는 큰 수치라 표기로 치지 않고 칩(tag)만 셈
+ * 화면에 보이는 표기가 하나도 없는 상자형 블록인지(section-html.ts blockCore와 같은 규칙): 라벨은 사다리 행·단 띠일 때(band는 띠 안 라벨 칸), 제목은 quotes·band가 그리지 않음
  */
 export function isBareBox(b: Pick<Block, "kind" | "label" | "title" | "layout" | "cells">): boolean {
   if (!BOX_KINDS.has(b.kind)) return false;
   const label = b.label.trim() && (b.kind === "band" || containerOf(b) !== "full");
   const title = b.title.trim() && b.kind !== "quotes" && b.kind !== "band";
-  const heads = b.cells.some((c) => c.tag.trim() || (b.kind !== "stats" && c.head.trim()));
+  const heads = b.cells.some((c) => c.tag.trim() || c.head.trim());
   return !label && !title && !heads;
 }
 

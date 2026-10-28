@@ -116,13 +116,15 @@ test("arrowTitleWarnings: 걸린 블록 제목을 한 줄 「블록 제목:」(�
 test("표기 없는 상자: 상자형 도식에 라벨·제목·칸 머리·칩이 모두 없으면 「표기 없는 상자:」(참고) — 하나라도 보이면 괜찮음, 상자형이 아닌 종류는 안 셈", () => {
   const cell = (head = "", tag = "") => ({ head, tag, bullets: ["글"], note: "" });
   const b = (kind: string, over: Record<string, unknown> = {}) => ({ kind, label: "", title: "", layout: undefined, cells: [cell(), cell()], ...over }) as unknown as Parameters<typeof isBareBox>[0];
-  // 맨 상자: 수치 띠(큰 수치 head는 표기가 아님)·카드·시기 흐름·협업·인용·정의·띠
-  for (const k of ["stats", "cards", "timeline", "hub", "quotes", "define", "band"]) assert.equal(isBareBox(b(k)), true, k);
-  assert.equal(isBareBox(b("stats", { cells: [cell("97%"), cell("3만국")] })), true, "수치 띠의 head는 큰 수치");
+  // 맨 상자: 카드·시기 흐름·협업·인용·정의·띠
+  for (const k of ["cards", "timeline", "hub", "quotes", "define", "band"]) assert.equal(isBareBox(b(k)), true, k);
+  // 수치 띠는 2026-10-28부터 늘 라벨 칸(「추진성과」·「추진실적」·행 라벨)이 붙은 추진성과 모양이라 맨 상자가 아님
+  assert.equal(isBareBox(b("stats")), false);
+  assert.equal(isBareBox(b("stats", { cells: [cell("97%"), cell("3만국")] })), false);
   // 표기가 하나라도 보임: 사다리 라벨·블록 제목·칸 머리·칩
-  assert.equal(isBareBox(b("stats", { label: "핵심 성과" })), false);
-  assert.equal(isBareBox(b("stats", { title: "올해 실적" })), false);
-  assert.equal(isBareBox(b("stats", { cells: [cell("97%", "정확도"), cell("3만국")] })), false);
+  assert.equal(isBareBox(b("cards", { label: "핵심 성과" })), false);
+  assert.equal(isBareBox(b("hub", { title: "올해 실적" })), false);
+  assert.equal(isBareBox(b("timeline", { cells: [cell("", "정확도"), cell()] })), false);
   assert.equal(isBareBox(b("cards", { cells: [cell("현장"), cell()] })), false);
   // 전폭 배치(layout full)·전폭 종류의 라벨은 그리지 않으므로 표기가 아님(band는 띠 안 라벨 칸에 그림), quotes·band는 제목을 그리지 않음
   assert.equal(isBareBox(b("cards", { label: "추진내용", layout: "full" })), true);
@@ -133,7 +135,7 @@ test("표기 없는 상자: 상자형 도식에 라벨·제목·칸 머리·칩�
   for (const k of ["bullets", "compare", "steps", "table", "qa", "banner"]) assert.equal(isBareBox(b(k)), false, k);
   const w = bareBoxWarnings([b("bullets"), b("stats"), b("cards", { title: "제목" }), b("hub")]);
   assert.equal(w.length, 1);
-  assert.match(w[0], /^표기 없는 상자: 2번째 stats·4번째 hub 블록에 라벨·제목·칸 머리·칩이 하나도 없어/);
+  assert.match(w[0], /^표기 없는 상자: 4번째 hub 블록에 라벨·제목·칸 머리·칩이 하나도 없어/);
   assert.equal(warningLevel(w[0]), "info");
   assert.deepEqual(bareBoxWarnings([b("cards", { title: "제목" })]), []);
 });
