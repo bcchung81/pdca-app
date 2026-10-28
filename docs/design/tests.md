@@ -251,6 +251,23 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/reports/unit-parts-edit.test.ts`(계량 행 짝 추가) | 경영관리 카드 밖 부분 계량 행: id가 안 맞으면 (카드·지표 이름)으로 짝지음(`pairKpiRows`), 이름이 바뀐 지표는 새 행 |
 | `lib/db/migrations.test.ts`(부서 직접 확정 추가) | 위 `migrations.test.ts` 행의 「부서 직접 확정」 사례 셋(원장·작성본과 이력·보고서) |
 
+## 한글(HWPX) 화면 DOM 변환·줄 나눔 통일(2026-10-28)이 더한 시험
+
+| 테스트 | 막는 것 |
+|---|---|
+| `lib/reports/dom-hwpx/convert.test.ts` | 화면 스냅숏 → 한글 변환: 세로 글 흐름 → 문단(사이 빈틈 = 위 간격)·가로로 나란한 상자 → 한 행 표·맞닿은 격자 → 한 표 칸 합치기(칸 자리 빠짐·겹침 0), 테두리·배경·칩·글머리표·그라데이션(색 평균 + 근사 기록)·덧그림 의사요소·바탕과 같은 채움은 꾸밈 아님, 한 줄 글 `SQUEEZE`·여러 줄 `BREAK`(카드 원본 배치 출력은 안 바뀜), 정렬 대응 표·어절 단위 양쪽 정렬 괄호 뒤 줄 나눔은 왼쪽 정렬, `word-break` 대응 표(keep-all → 어절 `BREAK_WORD`, normal → 글자 `KEEP_WORD`), SVG → 그림·원본 그림(글 속·블록·잘린 것·칸 배경)·옵션 없으면 예전 그대로, 줄 간격 잰 값·겹침 점검·글 보존 세 경우(버리지 않고 쌓음), 위첨자, `validateHwpx` 통과. **소스 규칙 시험**: 추출기·변환기·스냅숏·사본 뜨기·판정에 화면 클래스 이름(`k-…`)·블록 종류 이름·클래스 선택자가 없음(블록 이름 분기 금지를 코드가 강제) |
+| `lib/reports/dom-hwpx/policy.test.ts` | 쪽 본문 상수 = `section-hwpx.ts` 용지에서 나온 값(170×255mm), `validateSnapshot`(판·틀 폭 ±0.5mm·노드 수·깊이·PNG 서명·IHDR 크기·`<img>` 주소 모양), 라우트 판정 순서(401 → 413 → 400 → 404 → 409 → 200), 글꼴 정책(본문·돋움 없으면 막음 / 라벨·제목만 없으면 경고), 판면 넘침 mm(주요사업만, 경영관리는 재지 않음), 빠진 갈래의 흉내 자간 되돌리기, 여러 쪽의 맨 위 표 나눔, 과제관리카드 판정 `judgeSnapshotPost`, 고정 자료 둘이 한글 검증 통과 |
+| `lib/reports/dom-hwpx/pictures.test.ts` | 카드 원본 그림 받기(금기 4): 허용 주소 → 저장소 키(`<uid>/…`), 다른 uid 폴더·`..`·다른 호스트·프로토콜·포트·버킷은 받지 않음, 바이트 서명으로 PNG·JPEG·GIF·BMP 판별, CSS `url()` 읽기, 스냅숏 그림 주소 모으기, 못 받으면 자리만, 수·바이트 상한, 라우트가 서비스 키가 아니라 요청 사용자 권한 클라이언트를 씀 |
+| `lib/reports/dom-hwpx/read-body.test.ts` | 요청 본문 읽기: gzip 풀기·풀린 크기 상한·풀지 못하면 빈 글, content-type gzip이면 풀고 줄인 본문 2MB 넘으면 413 |
+| `lib/cards/hwpx-copy.test.ts` | 카드 숨은 사본: 원본 배치 용지·여백 → mm(가로 용지 폭·높이 바꿈), 부서 담당자 + 그 팀 카드 + 열린 작성본이면 작성본·그 밖은 원장, 59장 사본 본문 = 본문 틀 + 맨 위 묶음 제목 표 + 편집 표시 없음(카드 화면은 묶음 제목 표를 안 그림, 원본 필요) |
+| `scripts/eval/text-keep.test.ts` | 화면 글이 한글에 빠짐없이 갔는지 재는 도구: 화면 글 줄(담는 상자마다 이음·딱지·의사요소에서 끊음·공백 줄 뺌), 빠진 줄 찾기(공백 지우고 한 문단 안에서만 — 두 문단으로 갈라지면 빠짐) |
+| `lib/reports/title-checks.test.ts` | 소항목 제목 폭 `subTitleMm`(칩·마커를 더하면 넓어짐)과 판면 어림 `titleMm` 모순 없음, `subTitleIssues`(2025 가장 긴 제목은 통과·1-다 꼴은 「제목 폭」 막힘), 요청 머리의 제목 글자 한도·고치기 요청의 「제목만 N자 안으로」 절, `arrowWithoutSharedNoun`·`arrowTitleWarnings`(「블록 제목」 참고), 「표기 없는 상자」 참고 경고(`bareBoxWarnings`), 글 폭 실측(14pt 돋움 굵게 「디지털」 36.62pt — 한글 ≈ 0.872em) |
+| `lib/hwp/hwp5.test.ts`(줄 나눔 추가) | 문단 모양 비트 7 = 1(글자 단위) → `KEEP_WORD`, 0(어절 단위) → `BREAK_WORD`(HWPX 이름 — 뜻과 반대), 영문 비트 5~6은 단어·하이픈·글자 순 |
+| `lib/hwp/html.test.ts`(줄 나눔 추가) | `BREAK_WORD` → `word-break: keep-all`, `KEEP_WORD` → `normal` — 흘려 그리는 문단 인라인 값과 편집 흐름 변수 `--hw-wb` 둘 다 |
+| `lib/cards/layout-render.test.ts`(CSS 순서 추가) | `CARD_LAYOUT_CSS`의 `word-break: normal` 되돌림이 흐름·편집 문단의 줄 나눔 단위를 덮지 않음(되돌림 뒤에 물려받기·편집 규칙, 그 뒤에 `word-break`를 다시 정하는 규칙 없음) |
+| `lib/cards/layout-hwpx.test.ts`(줄 나눔 추가) | 59장: 내려받은 한글의 줄 나눔 단위가 원본과 같음 — 제목·라벨 문단 `BREAK_WORD`, 긴 본문 문단 `KEEP_WORD`(원본 필요) |
+| `lib/reports/section-hwpx.test.ts`(A안 보정 추가) | 모든 문단 모양이 `breakNonLatinWord = BREAK_WORD`(어절)·`breakLatinWord = KEEP_WORD`, 모든 글자 모양이 `useFontSpace = 1`, 머리 세 문단·상자 머리·표 머리 칸·수치 칸 줄 간격이 화면 CSS `line-height`(`REPORT_STYLE.lh`)와 같음, 핵심 수치 칸은 【확인】만 10.5pt이고 큰 수치는 15pt 그대로(`acca106`) |
+
 ## 원본 필요 시험(git 밖 — 없으면 이유를 적고 건너뜀)
 
 기관 원본과 그 파생물은 git에 넣지 않으므로(CLAUDE.md 「저장소 경계」) 아래 시험은 원본이 있는 컴퓨터에서만 돕니다. 원본이 없으면 통과가 아니라 **건너뜀**이고, `pnpm test`가 끝에 「■ 건너뛴 시험 N개」와 시험 이름·이유를 크게 출력합니다(보고기 `scripts/test/skip-summary.ts`, 2026-10-10 개선 계획 P2-1 — 이유 없는 `skip: true`도 「이유 없음」으로 드러남). 새 원본 시험은 `{ skip: !있음 && "무엇이 없음(경로)" }`처럼 이유를 적습니다. 공개 저장소로 옮기며(2026-10-26) 카드 59장 원본·지침 사본·초안 고정 자료도 git에서 뺐고, 이 셋의 경로·있음 여부·이유는 시험 도우미 `lib/testing/originals.ts`(`NO_SEED_CARDS`·`NO_PDCA_GUIDES`, 없으면 빈 값을 돌려줌) 한 곳에 둡니다 — 한 파일 안에서도 원본이 필요한 시험만 건너뜀. 익명화 표본(카드 1~2장)을 저장소에 넣을지는 기관 자료라 사용자 결정으로 남겨 둠.

@@ -85,6 +85,14 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 ### 2026-10-17 카드 작업 공간 나눔(품질 향상 D)
 `components/cards/card-workspace.tsx`에는 `WorkspaceProps`와 껍데기만 남고, 상태·효과는 `use-card-workspace.ts`, 머리·본문·막대(`ReviewBar`·`FixedChip`·`LockedChip`)는 `card-workspace-header/body/bars.tsx`로 나뉨(컴포넌트 375줄 → 21줄, 바깥 props 그대로). 머리 ↔ 막대 순환 import를 피하려고 막대를 따로 둠.
 
+### 2026-10-28 한글 줄 나눔 값 통일·카드 「한글(화면 그대로)」
+- **줄 나눔 값 통일**: HWPX `breakNonLatinWord`는 이름과 뜻이 반대(`KEEP_WORD` = 글자 단위, `BREAK_WORD` = 어절 단위). 예전에는 HWP 읽기(`hwp5.ts`)가 문단 모양 비트 7 = 1(글자 단위)을 `BREAK_WORD`로 반대로 이름 붙이고 화면(`html.ts`)이 다시 뒤집어, 화면은 맞는데 **한글 내려받기만** 102장 모두 본문이 어절·라벨이 글자로 뒤집혀 나갔음(「과제 개 / 요」). 이제 비트 7 = 1 → `KEEP_WORD`(HWPX 뜻 그대로), 화면은 `BREAK_WORD` → `word-break: keep-all`·`KEEP_WORD` → `normal`(흘려 그리는 문단 인라인 값, 편집 문단은 변수 `--hw-wb`). `CARD_LAYOUT_CSS`의 `word-break: normal` 되돌림 뒤에 흐름·편집 문단이 문단 값을 물려받게 규칙을 둠(`.hw-flow *`·`.hw-edit *` → `inherit`, 편집 문단 → `var(--hw-wb)`). 59장 한글 출력 차이는 `breakNonLatinWord`뿐(2,609건)
+- **운영 배치 102장 다시 채움(2026-10-28)**: `cards.layout`에 이미 저장된 값이 옛 이름이라 같은 날 다시 채움 — 주요사업 `pnpm db:layout --all`, 경영관리는 값 맞바꿈 일회용 스크립트(저장소 밖). 새 코드가 만든 배치와 운영 102장이 모두 같음을 확인
+- **카드 「한글(화면 그대로)」**(경평 초안과 같은 DOM 변환 `lib/reports/dom-hwpx` — 상세 `report-draft.md` 「한글(HWPX) 내려받기」): 카드 화면 더보기에 추가. 누르면 브라우저가 표지·편집 칸·잠금·검토 표지·도구가 없는 숨은 사본 `/cards/<uid>/hwpx-copy`(`app/(copy)` 묶음 — 앱 머리띠·메뉴 없음, `lib/cards/hwpx-copy.ts cardCopyBody`)를 화면 밖 iframe에 열고, 글자 간격 맞춤(`fit.ts`)이 끝나 `<html data-hwfit>`가 서면 스냅숏을 떠 gzip으로 `POST /cards/<uid>/hwpx`에 보내 서버가 변환. 내용 기준은 한글 내려받기와 같음(부서 담당자는 그 팀 카드의 열린 작성본, 그 밖은 원장 — `hwpxBasis`). 판정은 `judgeSnapshotPost`(404·409 판 다름·400 본문 틀 폭 ≠ 쪽 본문 폭, 글꼴 정책 없음)
+- **그림은 그 카드 폴더만, 사용자 권한으로**: 스냅숏의 `<img>`·배경 url 주소 중 **이 프로젝트 저장소의 `card-originals/<그 카드 uid>/…`**만 요청한 사용자의 권한(RLS)으로 받음(`dom-hwpx/pictures.ts resolvePictures` — 다른 uid 폴더·다른 호스트·다른 버킷·서비스 키는 받지 않고 자리만, 금기 4 지킴). 수 60개·합 30MB 상한. 59장 그림 494 = 494
+- **기본은 원본 배치 한글**: 「한글(화면 그대로)」 파일은 **다시 올리기 왕복이 0/59**(DOM 변환은 문단·표를 화면 기하로 다시 짓기 때문에 현행화가 읽는 구조와 다름) → 현행화용이 아님. 그래서 카드 한글 내려받기 기본은 원본 배치 그대로(`/cards/<uid>/hwpx` GET, 59장 왕복 불변)이고 DOM 파일은 화면 확인·인쇄용. 측정: 카드 59장 변환 검증 통과, 빠진 글 0(7,568줄), 겹침 0, 맥 한컴 뷰어 높이 차 평균 2.9mm(기존 10.5mm)
+- **맥 한컴 뷰어 위첨자 겹침**: 뷰어에서 위첨자가 앞 글자와 겹쳐 보이는 것은 파일 쓰기 오류가 아니라 **뷰어의 글꼴 대체**로 보임(위첨자는 카드 원본 방식 그대로 씀 — 위 첨자 속성 + 둘레 글 크기). 맥 뷰어만의 현상인지는 기관 PC(윈도 + 한글)에서 확인 필요
+
 ## CLAUDE.md에서 옮긴 상세 (2026-10-17)
 
 CLAUDE.md를 40KB 이하로 줄이면서 옮긴 날짜별 결정 배경·실측·이력·긴 근거입니다. 문장은 원문 그대로이고, 줄 앞 **[…]**는 CLAUDE.md 원래 줄의 머리말입니다(같은 줄의 빠진 문장만 모았음).
