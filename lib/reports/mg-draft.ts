@@ -26,6 +26,7 @@ import type { MgDraftMeta, MgPart } from "./mg-types.ts";
 import { proseIssues } from "./prose.ts";
 import { resultPlanWarning } from "./result-plan.ts";
 import { type Marker, type ReportFile, type ReportSectionSpec, cleanLine, knownNumbers, numberTokens, quoteFoundIn, resultRepeatIssue, sectionText, signalWarnings, sourceKey, styleWarnings } from "./section.ts";
+import { arrowTitleWarnings } from "./title-checks.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 type Json = LooseJson;
@@ -482,7 +483,8 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
   if (strange) warnings.push(`구성안: 구성안에 없는 절 ${strange}개를 답에 넣어 뺐습니다.`);
   const open = unclosedParts(used, blocks, at, strict);
   if (open.length) warnings.push(closeWarning(open, strict));
-  warnings.push(...guardFigures(blocks, at), ...dropped, ...mgShapeWarnings(spec), ...styleWarnings(spec));
+  // 블록 제목 화살표(참고 — 두 트랙 공용, lib/reports/title-checks.ts, 2026-10-28)
+  warnings.push(...guardFigures(blocks, at), ...dropped, ...mgShapeWarnings(spec), ...styleWarnings(spec), ...arrowTitleWarnings(blocks));
   if (year) warnings.push(...yearIssues(blocks, [], text, year, needsCap(used.length)).map((x) => `올해 실적: ${x}`));
   const where = extraText.trim() ? "카드·근거 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);
@@ -512,7 +514,7 @@ export function recheckMgSection(spec: ReportSectionSpec, card: Json, extraText 
   const strict = Boolean(next.mg?.strictClose);
   const open = next.mg ? unclosedParts(next.mg.parts, next.blocks ?? [], next.mg.at, strict) : [];
   if (open.length) warnings.push(closeWarning(open, strict));
-  warnings.push(...mgShapeWarnings(next), ...styleWarnings(next));
+  warnings.push(...mgShapeWarnings(next), ...styleWarnings(next), ...arrowTitleWarnings(next.blocks ?? []));
   if (year) warnings.push(...yearIssues(next.blocks ?? [], [], text, year, needsCap(next.mg?.parts.length ?? 1)).map((x) => `올해 실적: ${x}`));
   const where = extraText.trim() ? "카드·근거 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);

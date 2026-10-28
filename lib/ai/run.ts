@@ -393,7 +393,7 @@ export interface ReportSectionInput {
   /** 올해 실적 재료(카드 계량지표·월별 실적 + 부서 계량 실적 입력, lib/reports/actuals.ts) — 없으면 카드만으로 뽑음 */
   actuals?: YearActuals;
   /** 고치기: 앞서 쓴 초안과 그 판면 어림·올해 실적 문제 — 있으면 첫 요청 글 뒤에 「판면 맞추기」 또는 「고치기」를 붙여 다시 씀 */
-  fit?: { draft: SectionOutput; report: FitReport; need: FitNeed | null; year?: string[]; compose?: string[]; prose?: string[]; unknown?: string[] };
+  fit?: { draft: SectionOutput; report: FitReport; need: FitNeed | null; year?: string[]; compose?: string[]; prose?: string[]; unknown?: string[]; title?: string[] };
   /** 승인된 구성안(lib/reports/composition.ts) — 있으면 요청 글에 「승인된 구성안」(블록마다 높이 예산)을 붙여 그 짜임대로 씀 */
   plan?: Composition;
   /** 과제별 공통 지식 묶음(규칙 범위 전부 — 참고자료 설계 2단계). 있으면 ①~③을 요청 앞에, 목록표를 요청 글 첫머리에 */
@@ -454,14 +454,16 @@ export async function callReportSection(input: ReportSectionInput): Promise<Sect
   const { prompts, schema: anyStory } = reportDraftPrompts();
   // 승인된 구성안대로 쓸 때는 답의 이야기 틀을 문자열로 받고 값은 코드가 구성안 틀로 덮음(2026-09-28 구성안 틀로 묶음 → 2026-10-12 literal 대신 덮기)
   const schema = input.plan?.story ? sectionOutputSchema(prompts.schema, input.plan.story) : anyStory;
+  // 승인된 구성안의 갈래 칩은 요청 머리의 제목 글자 한도(subTitleMax)에도 셈(집필 검증이 spec.sub.chip으로 옮기는 값과 같음)
+  const ctx = input.plan?.split?.chip ? { ...input.ctx, chip: input.plan.split.chip } : input.ctx;
   const ask = (files: ReportFile[]) => {
-    const base = sectionPrompt(prompts, input.card, input.ctx, input.year, files, input.prior ?? [], input.siblings ?? [], input.lens ?? [], input.actuals);
+    const base = sectionPrompt(prompts, input.card, ctx, input.year, files, input.prior ?? [], input.siblings ?? [], input.lens ?? [], input.actuals);
     const plan = input.plan ? `\n\n${planPrompt(prompts, input.plan, input.ctx.module, input.ctx.head)}` : "";
     return `${base}${plan}`;
   };
   // 자동 고치기의 「고칠 점」은 요청 글 끝에 따로 붙는 블록 — 1차 요청 글(약 4만 토큰)이 바이트까지 같아 캐시 표지(1차는 cachePrompt, 고치기는 tail 앞)가 같은 자리에 오고 고치기는 캐시로 읽음.
   // 1차 요청은 자주 고치기로 이어져(2026-09-27~10-12 주요사업 집필 25건 중 19건, 10-10 이후 4건 중 3건) 웃돈(×0.25)보다 절감(×0.9)이 큼 — 구성안·경영관리·블록 고치기는 이 경로가 아님
-  const tail = input.fit ? fitPrompt(prompts, input.ctx, input.fit.draft, input.fit.report, input.fit.need, input.fit.year, input.fit.compose, input.fit.prose, input.fit.unknown) : undefined;
+  const tail = input.fit ? fitPrompt(prompts, ctx, input.fit.draft, input.fit.report, input.fit.need, input.fit.year, input.fit.compose, input.fit.prose, input.fit.unknown, input.fit.title) : undefined;
   // CLI 제한 10분: 2026-10-09 연기 시험 1-가 집필 2회 602초(한 번 약 300초 — 예전 7분 제한과 여유가 적음, effort xhigh)
   // 자동 고치기 호출은 기능 키를 따로(report_fix — effort·상한은 집필 report_section과 같음: 고치기만 high로 낮춘 B2c는 문장 품질이 떨어져 미채택, 그 뒤 B4로 구성안·집필·고치기를 함께 high)
   const r = await reportStructured(input.fit ? "report_fix" : "report_section", reportSystem(prompts), schema, input.files ?? [], ask, input.kb, { timeoutMs: 600_000, tail, cachePrompt: !input.fit });
@@ -647,6 +649,7 @@ export async function callReportSectionFitted(
   const year = best.check.yearIssues;
   const compose = best.check.composeIssues;
   const prose = best.check.proseIssues;
+  const title = best.check.titleIssues;
   // 고친 판 고르기 점수(lib/ai/fix-policy.ts draftScore — 없는 숫자·올해 실적·짜임·문장 무게)
   const score = draftScore;
   const note = (c: SectionCheck) => {
@@ -657,7 +660,7 @@ export async function callReportSectionFitted(
   const trace: FitTrace = { drafts: [note(best.check)], chose: 0, firstMs };
   let passes = 0;
   const deadline = opts.deadlineMs ?? fixDeadlineMs();
-  const decision = shouldFix({ need, year: year.length, compose: compose.length, prose: prose.length }, Date.now() - t0, firstMs, deadline);
+  const decision = shouldFix({ need, year: year.length, compose: compose.length, prose: prose.length, title: title.length }, Date.now() - t0, firstMs, deadline);
   if (!decision.fix) trace.skipped = decision.reason;
   // 고치기 전에 1차 초안을 먼저 저장(끊겨도 남게) — 저장이 멈추라고 하면(충돌) 고치지 않음
   const go = decision.fix && (opts.onFirst ? await opts.onFirst(best).catch((e) => (console.error("callReportSectionFitted onFirst", e), true)) : true);
@@ -665,7 +668,7 @@ export async function callReportSectionFitted(
   if (go) {
     const tFix = Date.now();
     try {
-      const again = await callReportSection({ ...input, fit: { draft: first.output, report, need, year, compose, prose, unknown: best.check.unknownNumbers } });
+      const again = await callReportSection({ ...input, fit: { draft: first.output, report, need, year, compose, prose, unknown: best.check.unknownNumbers, title } });
       trace.fixMs = Date.now() - tFix;
       passes = 1;
       usage.input += again.usage.input;
@@ -691,7 +694,7 @@ export async function callReportSectionFitted(
   if (passes && again2 && canFixAgain(Date.now() - t0, trace.fixMs ?? 0, deadline)) {
     const tAgain = Date.now();
     try {
-      const again = await callReportSection({ ...input, fit: { draft: best.call.output, report: left, need: again2, year: best.check.yearIssues, compose: best.check.composeIssues, prose: best.check.proseIssues, unknown: best.check.unknownNumbers } });
+      const again = await callReportSection({ ...input, fit: { draft: best.call.output, report: left, need: again2, year: best.check.yearIssues, compose: best.check.composeIssues, prose: best.check.proseIssues, unknown: best.check.unknownNumbers, title: best.check.titleIssues } });
       passes = 2;
       trace.againMs = Date.now() - tAgain;
       usage.input += again.usage.input;

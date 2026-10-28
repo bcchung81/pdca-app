@@ -197,7 +197,7 @@ const pb = (kind: PlanBlock["kind"], label: string, over: Partial<PlanBlock> = {
 
 test("구성안 AI 답: layout ladder·빈 span은 저장하지 않고, full·stage·half는 남김, 짝 없는 half는 지움(스키마는 두 필드를 선택으로 받음)", () => {
   const raw = (kind: string, label: string, layout?: string, span?: string) => ({ kind, variant: "", label, purpose: "p", cells: 3, materials: ["m1"], figures: [], alts: [], ...(layout ? { layout } : {}), ...(span !== undefined ? { span } : {}) });
-  const out = CompositionOut.parse({ message: "m", points: [], story: "단계 전개형", storyWhy: "", alternative: "", materials: [{ id: "m1", kind: "fact", text: "측정 기준 정비", when: "", source: "", quote: "측정 기준 정비" }], blocks: [raw("bullets", "도입", "stage", ""), raw("cards", "전개", "stage", "half"), raw("steps", "전개", "stage", "half"), raw("stats", "추진성과", "ladder", "half"), raw("table", "x")], results: "", resultShape: "bullets" });
+  const out = CompositionOut.parse({ message: "m", points: [], story: "단계 전개형", storyWhy: "", alternative: "", materials: [{ id: "m1", kind: "fact", text: "측정 기준 정비", when: "", source: "", quote: "측정 기준 정비" }], blocks: [raw("bullets", "도입", "stage", ""), raw("cards", "전개", "stage", "half"), raw("steps", "전개", "stage", "half"), raw("timeline", "추진성과", "ladder", "half"), raw("table", "x")], results: "", resultShape: "bullets" });
   const c = cleanComposition(out, "측정 기준 정비", new Set()).composition;
   assert.deepEqual(
     c.blocks.map((b) => [b.layout, b.span]),

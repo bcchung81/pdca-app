@@ -1,6 +1,6 @@
 // 경평 초안 블록 「모양 바꾸기」 규칙(순수, 2026-10-12 사용자 요구 「이야기 틀·개별 수정안이 요청에 따라 다양한 프레임워크로」 — 블록 층).
 // 블록 고치기(lib/reports/block-edit.ts)가 요청에 따라 블록 종류·모양(kind·variant)을 바꿀 때 코드가 정하는 것:
-//  - 이 트랙에서 쓸 수 있는 모양인지(짜임 사전 SHAPES — 표 모양 4종 table:result·bars·chevron·ladder는 경영관리만)
+//  - 이 트랙에서 쓸 수 있는 모양인지(짜임 사전 SHAPES — 표 모양 4종 table:result·bars·chevron·ladder와 핵심 수치 띠(2026-10-28)는 경영관리만)
 //  - 이 과제만의 요소(인용·말풍선·정의·우수사례·협업·막대)는 근거 조건이 있을 때만(구성안이 있으면 shapeAvailability, 없으면 집필 때의 도식 후보 — 집필과 같은 기준)
 //  - 바꿔 넣을 때 원래 블록의 내용 아닌 필드(배치 등 — 나중에 생길 필드 포함)는 그대로 둠(withContent)
 //  - 판면(주요사업)·분량(경영관리) 어림 차이
@@ -10,11 +10,14 @@ import type { Block, BlockKind } from "./blocks.ts";
 import { mgSpecHeight } from "./business-layout.ts";
 import { OWN_KINDS, type DiagramHint, isOwnKind } from "./diagram-hints.ts";
 import { PAGE_MM, fitReport } from "./fit.ts";
-import { type Availability, type EvidenceSource, SHAPES, type ShapeGroup, shapeAvailability, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
+import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, type EvidenceSource, SHAPES, type ShapeGroup, shapeAvailability, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
 import type { ReportSectionSpec } from "./section.ts";
 
-/** 경영관리 초안에서만 쓰는 모양 — 표 모양 4종(2025 경영관리 보고서 빈출, 주요사업 프롬프트에는 안 보임 — report-draft/blocks.md 머리 설명) */
-export const MG_ONLY_SHAPES: readonly string[] = SHAPES.filter((s) => s.kind === "table" && s.variant !== "").map((s) => s.code);
+/**
+ * 경영관리 초안에서만 쓰는 모양 — 표 모양 4종(2025 경영관리 보고서 빈출, 주요사업 프롬프트에는 안 보임 — report-draft/blocks.md 머리 설명)
+ * + 주요사업 새 초안에서 고르지 않는 모양(핵심 수치 띠 — frameworks.ts BIZ_RETIRED_SHAPES, 2026-10-28)
+ */
+export const MG_ONLY_SHAPES: readonly string[] = [...SHAPES.filter((s) => s.kind === "table" && s.variant !== "").map((s) => s.code), ...BIZ_RETIRED_SHAPES];
 
 /** 모양 바꾸기 규칙: 트랙 + 이 과제만의 요소 종류별 근거 조건 */
 export interface ShapeRules {
@@ -49,6 +52,7 @@ export function shapeAllowed(before: Pick<Block, "kind" | "variant">, kind: stri
   if (code === shapeCode(before.kind, before.variant)) return { ok: true };
   const info = shapeOf(code);
   if (!info) return { ok: false, why: `모르는 모양(${code})입니다` };
+  if (!rules.mg && BIZ_RETIRED_SHAPES.includes(code)) return { ok: false, why: `「${info.name}」 — ${BIZ_RETIRED_WHY}` };
   if (!rules.mg && MG_ONLY_SHAPES.includes(code)) return { ok: false, why: `「${info.name}」은 경영관리 보고서 표 모양이라 주요사업 초안에서는 쓰지 않습니다` };
   if (isOwnKind(info.kind) && info.kind !== before.kind) {
     const a = rules.avail[info.kind];
@@ -98,7 +102,7 @@ export interface ShapeMenuItem {
   why: string;
 }
 
-/** 이 트랙에서 고를 수 있는 모양 목록(경영관리 전용 표 모양은 경영관리만). rules가 없으면 이 과제만의 요소는 ok = null */
+/** 이 트랙에서 고를 수 있는 모양 목록(경영관리 전용 표 모양·핵심 수치 띠는 경영관리만). rules가 없으면 이 과제만의 요소는 ok = null */
 export function shapeMenu(mg: boolean, rules: ShapeRules | null): ShapeMenuItem[] {
   return SHAPES.filter((s) => mg || !MG_ONLY_SHAPES.includes(s.code)).map((s) => {
     if (!isOwnKind(s.kind)) return { code: s.code, name: s.name, group: s.group, use: s.use, ok: true, why: "" };

@@ -11,7 +11,7 @@ import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom
 import { BLOCK_KINDS, type Block, type BlockKind, FIGURE_KINDS, FIGURE_LABEL, FIGURE_POS, FIGURE_SIZES, type Figure, MAIN_STORIES, type MainStory, STORIES, type Story, VARIANTS, cleanFigures, isGridTable, isPanelCompare } from "./blocks.ts";
 import { type HeadMode, PAGE_MM, blockAreaMm, blockWidth, canonicalBlock, figuresWidth, fitLayout, fitReport, hangulPerLine, isBoxBlock, slotOf, stageHeadMm } from "./fit.ts";
 import { type BlockLayout, type BlockSpan, LAYOUT_LABEL, dropLoneSpans, layoutFields, layoutGroups } from "./layout.ts";
-import { type Availability, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeName, storyLabel } from "./frameworks.ts";
+import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeCode, shapeName, storyLabel } from "./frameworks.ts";
 import { bizVarietyIssue, isOwnKind } from "./diagram-hints.ts";
 import { type SiblingCard, type SiblingLayout, cleanLine, numberTokens, quoteFoundIn, readSection } from "./section.ts";
 import type { MgOutlineMeta } from "./mg-types.ts";
@@ -252,10 +252,19 @@ export function cleanComposition(out: CompositionOutput, hayKey: string, known: 
   const { materials, warnings } = cleanMaterials(out.materials, hayKey, known);
   const ids = new Set(materials.map((m) => m.id));
   const blocks: PlanBlock[] = [];
+  let retired = 0;
   for (const b of (out.blocks ?? []).slice(0, COMPOSITION_LIMITS.blocks)) {
     const x = cleanPlanBlock(b, ids);
-    if (x) blocks.push(x);
+    if (!x) continue;
+    // 핵심 수치 띠는 주요사업 구성안에 두지 않음(frameworks.ts BIZ_RETIRED_SHAPES, 2026-10-28) — 대안 모양에서도 뺌
+    if (BIZ_RETIRED_SHAPES.includes(shapeCode(x.kind, x.variant))) {
+      retired += 1;
+      continue;
+    }
+    if (x.alts) x.alts = x.alts.filter((a) => !BIZ_RETIRED_SHAPES.includes(shapeCode(a.kind, a.variant)));
+    blocks.push(x);
   }
+  if (retired) warnings.push(`구성: 핵심 수치 띠 ${retired}개를 뺐습니다 — ${BIZ_RETIRED_WHY}.`);
   dropLoneSpans(blocks);
   // 이야기 틀은 문자열로 받아 12종으로 맞춤(가운뎃점 변형·띄어쓰기·「주 + 보조」 표기 — 모르면 빈 글)
   const story = matchName(out.story, MAIN_STORIES);
@@ -600,6 +609,16 @@ const TEXT_KINDS = new Set<BlockKind>(["band", "banner", "subhead"]);
 // ---------------------------------------------------------------------------
 // 사람 편집(블록 순서·빼기·이야기 틀·그림 자리·메모) — 저장된 구성안 안에서만
 
+/**
+ * 구성안 편집·도식 목록의 모양 조건: 근거 조건(shapeAvailability) + 주요사업은 핵심 수치 띠를 새로 고르지 않음(BIZ_RETIRED_SHAPES, 2026-10-28 —
+ * 원래 그 모양이던 블록은 그대로 둘 수 있음: applyCompositionEdit·shapeChoices가 원래 종류를 허용). 경영관리는 근거 조건만
+ */
+function editAvailability(c: Composition): Record<BlockKind, Availability> {
+  const avail = shapeAvailability(c);
+  if (!c.mg) for (const kind of BLOCK_KINDS) if (BIZ_RETIRED_SHAPES.includes(kind)) avail[kind] = { ok: false, why: BIZ_RETIRED_WHY };
+  return avail;
+}
+
 /** 블록 한 개의 편집(화면이 새 순서대로 보냄) */
 export interface BlockEdit {
   /** 원래 블록 순번(저장된 구성안 기준) — 새로 더한 블록은 null. 같은 순번이 둘이면 뒤의 것은 복제 */
@@ -657,7 +676,7 @@ export const EDIT_LIMITS = { blocks: COMPOSITION_LIMITS.blocks, label: 24, purpo
  */
 export function applyCompositionEdit(c: Composition, e: CompositionEdit, maxBlocks: number = EDIT_LIMITS.blocks, hayKey = ""): { composition: Composition; notes: string[] } {
   const notes: string[] = [];
-  const avail: Record<BlockKind, Availability> = shapeAvailability(c);
+  const avail: Record<BlockKind, Availability> = editAvailability(c);
   const ids = new Set(c.materials.map((m) => m.id));
   const used = new Set<number>();
   const blocks: PlanBlock[] = [];
@@ -737,7 +756,7 @@ export interface ShapeChoice {
  * 편집을 적용한 구성안의 판면 어림 차이. 모양 29가지 × 판면 어림 1번씩
  */
 export function shapeChoices(c: Composition, e: CompositionEdit, target: { pos: number; mode: "change" | "add" }, module: number, head: HeadMode = "all"): ShapeChoice[] {
-  const avail = shapeAvailability(c);
+  const avail = editAvailability(c);
   const base = compositionFit(applyCompositionEdit(c, e).composition, module, head).total;
   const cur = e.blocks[target.pos];
   return SHAPES.map((sh) => {

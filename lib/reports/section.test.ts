@@ -592,18 +592,19 @@ test("verifySection: 같은 소항목에 cards 도식을 두 번 쓰면 '도식:
   assert.ok(v.warnings.some((w) => w === "도식: 한 소항목에 같은 도식을 두 번 썼습니다(cards) — 다른 모양의 도식으로 바꿔 주세요."));
 });
 
-test("v3 HTML: stats(핵심 수치 띠)는 k-stat__v로, compare panels는 As-Is ➀·To-Be ➊ 번호, case의 「라벨 | 글」 줄은 k-case__kv", { skip: NO_SEED_CARDS }, () => {
+test("v3 HTML: stats(핵심 수치 띠 — 저장된 초안)는 k-stat__v로, compare panels는 As-Is ➀·To-Be ➊ 번호, case의 「라벨 | 글」 줄은 k-case__kv", { skip: NO_SEED_CARDS }, () => {
   const ctx = sectionContext(card, group("주요사업1"));
   const withEvidence = out({
     blocks: [
-      blk({ kind: "stats", cells: [cell("40,000건", ["설명"]), cell("98%", ["설명2"])] }),
       blk({ kind: "compare", variant: "panels", items: ["기존 요약", "개선 요약"], rows: [{ key: "판독", before: ["현장 확인"], after: ["AI 판독"] }] }),
       blk({ kind: "case", label: "우수사례", title: "공모전 대상", items: ["공모명 | 2025년 공모전"], evidence: "2025년 공모전 수상" }),
     ],
   });
   const v = verifySection(withEvidence, card, ctx, "2025년 공모전 수상");
-  assert.deepEqual(v.spec.blocks?.map((b) => b.kind), ["stats", "compare", "case"]);
-  const html = sectionHtml(v.spec, []);
+  assert.deepEqual(v.spec.blocks?.map((b) => b.kind), ["compare", "case"]);
+  // 2026-10-28부터 새 주요사업 초안은 수치 띠를 빼므로(verifySection) 저장된 초안처럼 spec에 직접 넣어 그림 — 렌더러는 예전 그대로
+  const stats = { kind: "stats" as const, label: "", title: "", variant: "", text: "", items: [], cells: [cell("40,000건", ["설명"]), cell("98%", ["설명2"])], rows: [], series: [], badge: "" };
+  const html = sectionHtml({ ...v.spec, blocks: [stats, ...v.spec.blocks!] }, []);
   assert.match(html, /<p class="k-stat__v">40,000건<\/p>/);
   assert.match(html, /➀/, "As-Is 번호");
   assert.match(html, /➊/, "To-Be 번호");
@@ -1376,18 +1377,19 @@ test("빈 상자: 검증(verifySection)·다시 점검(recheckSection)이 「칸
   assert.ok(recheckSection(v.spec, card).warnings.some((x) => x.startsWith("칸 채우기: ")));
 });
 
-// 핵심 수치 띠 실적 규칙(2026-10-15 후속 6 — 주요사업): 정리에서 빼고, 도식 후보는 올해 실적 재료 수치 2개 이상일 때만
-test("verifySection(year): 올해 실적 칸이 2개 미만인 수치 띠(’25 실적·’26 목표·자리표시)는 빼고 경고, 판면·올해 실적 점검은 뺀 뒤 블록으로", { skip: NO_SEED_CARDS }, () => {
+// 핵심 수치 띠(주요사업): 2026-10-15 후속 6은 올해 실적 칸 2개 미만만 뺐고, 2026-10-28부터 새 초안은 띠를 모두 뺌(수치는 단계 결과 줄·추진성과로) — 도식 후보도 없음
+test("verifySection: 주요사업 새 초안의 수치 띠는 올해 실적 칸이 있어도 빼고 경고, 판면·올해 실적 점검은 뺀 뒤 블록으로(year 유무와 상관없음)", { skip: NO_SEED_CARDS }, () => {
   const ctx = sectionContext(card, group("주요사업1"));
   const bad = blk({ kind: "stats", cells: [cell("30,706건", ["대체 건수"], "", "’25년"), cell("45,000건", ["대체 건수"], "", "’26년 목표"), cell("【확인: ’26년 대체 건수】", ["대체 건수"])] });
-  const v = verifySection(out({ blocks: [...out().blocks, bad] }), card, ctx, "", [], "", 2026);
-  assert.ok(!v.spec.blocks!.some((b) => b.kind === "stats"), "수치 띠를 뺌");
-  assert.ok(v.warnings.some((w) => w.startsWith("수치 띠: 올해 실적 칸이 0개뿐")), v.warnings.join(" / "));
-  assert.ok(!v.yearIssues.some((x) => x.includes("핵심 수치 띠")), "뺀 띠는 올해 실적 점검(자동 고치기 사유)에 안 남음");
-  assert.equal(v.spec.fit!.total, verifySection(out(), card, ctx, "", [], "", 2026).spec.fit!.total, "판면 어림은 뺀 뒤 블록 기준");
   const good = blk({ kind: "stats", cells: [cell("720건", ["판독 건수"], "", "’26.9.21 기준"), cell("50건", ["신규 국소"], "", "’26.9")] });
-  assert.ok(verifySection(out({ blocks: [...out().blocks, good] }), card, ctx, "", [], "", 2026).spec.blocks!.some((b) => b.kind === "stats"), "올해 실적 2칸이면 남김");
-  assert.ok(verifySection(out({ blocks: [...out().blocks, bad] }), card, ctx).spec.blocks!.some((b) => b.kind === "stats"), "year를 주지 않으면 예전 그대로");
+  for (const stats of [bad, good]) {
+    const v = verifySection(out({ blocks: [...out().blocks, stats] }), card, ctx, "", [], "", 2026);
+    assert.ok(!v.spec.blocks!.some((b) => b.kind === "stats"), "수치 띠를 뺌");
+    assert.ok(v.warnings.some((w) => w.startsWith("수치 띠: 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않아 뺐습니다")), v.warnings.join(" / "));
+    assert.ok(!v.yearIssues.some((x) => x.includes("핵심 수치 띠")), "뺀 띠는 올해 실적 점검(자동 고치기 사유)에 안 남음");
+    assert.equal(v.spec.fit!.total, verifySection(out(), card, ctx, "", [], "", 2026).spec.fit!.total, "판면 어림은 뺀 뒤 블록 기준");
+  }
+  assert.ok(!verifySection(out({ blocks: [...out().blocks, good] }), card, ctx).spec.blocks!.some((b) => b.kind === "stats"), "year가 없어도 뺌");
 });
 
 test("recheckSection(year): 사람이 고친 주요사업 수치 띠에 올해 실적 칸이 모자라면 자리표시가 아니라 「수치 띠를 빼고 다른 도식으로」라고 알림", { skip: NO_SEED_CARDS }, () => {
@@ -1399,11 +1401,8 @@ test("recheckSection(year): 사람이 고친 주요사업 수치 띠에 올해 �
   assert.ok(!w.some((x) => x.includes("자리표시로 바꿉니다")));
 });
 
-test("sectionHints: 핵심 수치 띠(stats) 후보는 올해 실적 재료(월별 실적 줄 수치 + 부서 계량 실적)가 2개 이상일 때만", () => {
+test("sectionHints: 주요사업은 핵심 수치 띠(stats) 후보를 내지 않음 — 올해 실적 재료 수치가 2개 이상이어도(2026-10-28)", () => {
   const bare = { id: "x", taskNo: "1-1", title: "판독 1,240건 처리, 24종 분류, 63종 확인, 97% 신뢰도" };
-  const one: YearActuals = { today: "", kpi: [], monthly: [{ period: "1월~8월", line: "∙ AI 판독 1,416건 수행(목표 2,000건)" }] };
-  assert.ok(!sectionHints(bare, [], [], [], one, 2026).some((h) => h.kind === "stats"), "올해 실적 수치 1개(목표 값은 안 셈)면 후보 없음");
-  const two: YearActuals = { ...one, kpi: [{ name: "판독 정확도", unit: "%", prev: "90%", target: "95%", expected: "", input: "93.9" }] };
-  const hint = sectionHints(bare, [], [], [], two, 2026).find((h) => h.kind === "stats");
-  assert.ok(hint && hint.why.includes("올해 실적 수치 2개(1,416건·93.9%)"), hint?.why);
+  const two: YearActuals = { today: "", kpi: [{ name: "판독 정확도", unit: "%", prev: "90%", target: "95%", expected: "", input: "93.9" }], monthly: [{ period: "1월~8월", line: "∙ AI 판독 1,416건 수행(목표 2,000건)" }] };
+  assert.ok(!sectionHints(bare, [], [], [], two, 2026).some((h) => h.kind === "stats"));
 });

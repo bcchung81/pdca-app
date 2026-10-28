@@ -17,6 +17,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   첨부: "block", // AI가 읽지 못한 첨부를 빼고 씀(근거 빠짐)
   "빈 칸": "block", // 표·수치 띠의 값 칸이 비어 있음
   "실적 칸": "block", // 추진성과·추진실적 칸에 계획 표현(예정·할 계획)이나 아직 안 온 시점(lib/reports/result-plan.ts, 2026-10-17 F1)
+  "제목 폭": "block", // 소항목 제목이 한 줄(판면 폭 170mm)을 넘음 — 2025 소항목 제목은 모두 한 줄, 자동 고치기 사유(lib/reports/title-checks.ts, 2026-10-28)
   // ── info: 문장·표현·짜임
   문장: "info",
   문체: "info",
@@ -48,6 +49,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "목소리–해법": "info",
   "성과 축": "info",
   틀: "info",
+  "블록 제목": "info", // 블록 제목 화살표 양쪽에 같은 대상이 없음(「사후 확인 → AI 사전예방 전환」 — lib/reports/title-checks.ts, 2026-10-28)
   "반복 수치": "info", // 같은 수치를 서로 다른 블록 3개 이상(경영관리는 절 2개 이상)에 되풀이(lib/reports/repeat-figures.ts, 2026-10-27)
   "계획→실적": "info", // 실적 칸 줄이 카드 계획 줄과 많이 겹치고 실행 근거와는 적게 겹침(lib/reports/result-plan.ts planAsResult, 2026-10-27)
   계량지표: "info", // 카드 계량지표 이름이 초안에 없음 — 주요사업만(lib/reports/kpi-cover.ts, 2026-10-27)

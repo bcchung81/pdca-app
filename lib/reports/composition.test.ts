@@ -794,3 +794,37 @@ test("글 한도(2026-10-15 후속 5): 나란한 칸(상자 도식 2칸 이상·
   assert.equal(limits[1]?.side, true);
   assert.ok(planPrompt(reportDraftPrompts().prompts, c, 1).includes(limitText(limits[1])));
 });
+
+// ---------------------------------------------------------------------------
+// 핵심 수치 띠(2026-10-28 — 주요사업 새 구성안·초안에는 두지 않음, frameworks.ts BIZ_RETIRED_SHAPES)
+
+test("cleanComposition(주요사업): AI가 넣은 핵심 수치 띠 블록은 빼고 「구성:」 경고, 다른 블록의 대안에서도 뺌", () => {
+  const out = outBase({
+    blocks: [
+      { kind: "steps", variant: "row", label: "추진내용", purpose: "단계", cells: 3, materials: [], figures: [], alts: [{ kind: "stats", variant: "", why: "수치" }, { kind: "timeline", variant: "chevron", why: "시기" }] },
+      { kind: "stats", variant: "", label: "", purpose: "수치", cells: 3, materials: [], figures: [] },
+    ] as any,
+  });
+  const { composition, warnings } = cleanComposition(out, "", new Set());
+  assert.deepEqual(composition.blocks.map((b) => b.kind), ["steps"]);
+  assert.deepEqual(composition.blocks[0].alts?.map((a) => a.kind), ["timeline"]);
+  assert.ok(warnings.some((w) => /^구성: 핵심 수치 띠 1개를 뺐습니다 — 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다/.test(w)), warnings.join(" / "));
+});
+
+test("applyCompositionEdit·shapeChoices(주요사업): 핵심 수치 띠로 새로 바꾸거나 더할 수 없고(이유 notes), 원래 수치 띠 블록은 그대로 둘 수 있음 — 경영관리는 그대로 고름", () => {
+  const c = baseComposition({ blocks: [planBlock({ kind: "steps", variant: "row", cells: 3 }), planBlock({ kind: "stats", cells: 3 })] });
+  const e = editOf(c);
+  const changed = applyCompositionEdit(c, { ...e, blocks: e.blocks.map((b, i) => (i === 0 ? { ...b, kind: "stats", variant: "" } : b)) });
+  assert.deepEqual(changed.composition.blocks.map((b) => b.kind), ["steps", "stats"], "새로 바꾼 띠는 원래 모양으로, 원래 띠는 그대로");
+  assert.ok(changed.notes.some((n) => /^핵심 수치 띠: 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다/.test(n)), changed.notes.join(" / "));
+  const added = applyCompositionEdit(c, { ...e, blocks: [...e.blocks, { from: null, kind: "stats", variant: "", label: "", purpose: "", cells: 3, materials: [], memo: "", figures: [] }] });
+  assert.deepEqual(added.composition.blocks.map((b) => b.kind), ["steps", "stats", "bullets"], "새 블록은 불릿으로");
+  const pick = (pos: number, mode: "change" | "add") => shapeChoices(c, e, { pos, mode }, 1).find((x) => x.code === "stats")!;
+  assert.equal(pick(0, "add").ok, false);
+  assert.match(pick(0, "add").why, /따로 떨어진 수치 띠를 쓰지 않습니다/);
+  assert.equal(pick(0, "change").ok, false);
+  assert.equal(pick(1, "change").ok, true, "원래 수치 띠 블록은 그 모양을 지킬 수 있음");
+  const mg = baseComposition({ blocks: [planBlock({ kind: "steps", variant: "row", cells: 3 })], mg: { parts: [] } as any });
+  const me = editOf(mg);
+  assert.deepEqual(applyCompositionEdit(mg, { ...me, blocks: me.blocks.map((b) => ({ ...b, kind: "stats", variant: "" })) }).composition.blocks.map((b) => b.kind), ["stats"], "경영관리는 고를 수 있음");
+});

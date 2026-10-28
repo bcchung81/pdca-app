@@ -61,3 +61,14 @@ test("draftTimings: 집필 AI 기록에 전체·1차·고치기·한 번 더 ms�
   // 판면만 한 번 더까지(라운드 Y 2/6-가)
   assert.deepEqual(draftTimings(439_000, 2, { firstMs: 268_809, fixMs: 106_846, againMs: 63_501 }), { call: 439_000, passes: 2, first: 268_809, fix: 106_846, again: 63_501 });
 });
+
+test("shouldFix·draftScore(2026-10-28): 소항목 제목 한 줄 폭 문제만 있어도 고치고(제목만 줄이는 요청), 고친 판 고르기에 무게 20 — 옛 호출(title 없음)은 그대로", () => {
+  assert.deepEqual(shouldFix({ ...none, title: 1 }, 300_000, 290_000), { fix: true });
+  assert.deepEqual(shouldFix({ ...none, title: 1, prose: 2 }, 300_000, 290_000), { fix: true }, "문장 문제만이 아님");
+  assert.deepEqual(shouldFix({ ...none, title: 0 }, 300_000, 290_000), { fix: false, reason: "none" });
+  assert.deepEqual(shouldFix({ ...none, title: 1 }, 400_000, 380_000), { fix: false, reason: "time" }, "시간 규칙은 같음");
+  const spec = { version: 3, blocks: [], module: 1, head: "all", sub: { title: "t", markers: [] }, business: { no: 1, name: "b" }, task: { no: "1-1", title: "t", bp: false }, rows: [], results: [] } as never;
+  const base = { spec, unknownNumbers: [] as string[], yearIssues: [] as string[], composeIssues: [] as string[], proseIssues: [] as string[] };
+  assert.equal(draftScore({ ...base, titleIssues: ["제목 폭: …"] }) - draftScore(base), 20);
+  assert.equal(draftScore({ ...base, titleIssues: [] }), draftScore(base));
+});

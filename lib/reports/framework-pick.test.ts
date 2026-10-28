@@ -202,3 +202,12 @@ test("예시 절 조각 → 요청 재료·고르기 목록(같은 사업·지�
   );
   assert.deepEqual(items.map((x) => [x.key, x.same]), [["a", true], ["c", true], ["b", false]]);
 });
+
+test("patternPrompt(2026-10-28): 주요사업은 구성 패턴의 핵심 수치 띠 블록을 「수치 띠 자리 — 단계 결과 줄·추진성과에」로 적고, 경영관리는 그대로 stats", () => {
+  const p = reportOutlinePrompts().prompts;
+  const pat = FRAMEWORK_PATTERNS.find((x) => x.blocks.some((b) => b.kind === "stats"))!;
+  const biz = patternPrompt(p, pat, false);
+  assert.doesNotMatch(biz, /\(stats\)/);
+  assert.match(biz, /수치 띠 자리 — 주요사업은 수치 띠를 쓰지 않고 그 수치는 앞 블록의 단계 칸 결과 줄·표 결과 열·추진성과에/);
+  assert.match(patternPrompt(reportOutlinePromptsMg().prompts, pat, true), /\(stats\)/);
+});

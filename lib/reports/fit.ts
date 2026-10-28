@@ -564,10 +564,27 @@ export function titleMm(title: string, markers?: string[]): number {
   const line = 14 * 1.3 * PT;
   if (!markers) return lineCount(`가. ${title} 지적개선 AI`, PAGE_MM.width, 14, true) * line;
   const l = lineLayout(`가. ${title}`, PAGE_MM.width, 14, true);
-  // 마커 칩은 자간 0(돋움 −0.12em을 되돌림) — 「지적개선」 칩 17.7mm 실측
-  const chips = markers.reduce((n, m) => n + (textEm(m, true) + 0.12 * [...m].length) * 11 * PT + (m === "BP" ? 27 : 10) * PX + 6 * PX, 0);
+  const chips = markerChipsMm(markers);
   return (l.lines + (chips && l.last * PAGE_MM.width + chips > PAGE_MM.width ? 1 : 0)) * line;
 }
+
+/** 마커 칩 묶음 폭(mm — 11pt 굵은 돋움, 칩마다 안 여백·앞 6px). 마커 칩은 자간 0(돋움 −0.12em을 되돌림) — 「지적개선」 칩 17.7mm 실측 */
+export const markerChipsMm = (markers: readonly string[]) => markers.reduce((n, m) => n + (textEm(m, true) + 0.12 * [...m].length) * 11 * PT + (m === "BP" ? 27 : 10) * PX + 6 * PX, 0);
+
+/** 소항목 제목 글 크기(돋움 굵게 14pt — section-css .k-sub) */
+export const SUB_TITLE_PT = 14;
+
+/**
+ * 소항목 제목을 줄바꿈 없이 한 줄로 놓을 때의 폭(mm, 2026-10-28): 「{표지}. 」 + 갈래 칩 「[칩] 」 + 제목 + 마커 칩.
+ * 글 폭은 titleMm과 같은 모델(textEm 돋움 · markerChipsMm)이라 이 값이 PAGE_MM.width 안이면 titleMm도 한 줄로 셈(fit.test가 대조).
+ * 표지를 모르면 「가」(한글 한 자 — 표지마다 폭이 같음)
+ */
+export function subTitleMm(title: string, o: { mark?: string; chip?: string; markers?: readonly string[] } = {}): number {
+  return textEm(`${o.mark || "가"}. ${chipTitle(title, o.chip)}`, true) * SUB_TITLE_PT * PT + markerChipsMm(o.markers ?? []);
+}
+
+/** 소항목 제목에 쓸 수 있는 한글 글자 수(요청 글 안내 — 표지·갈래 칩·마커 칩을 뺀 폭 ÷ 한글 한 자 폭, 빈칸·숫자는 더 좁음) */
+export const subTitleMax = (o: { mark?: string; chip?: string; markers?: readonly string[] } = {}) => hangulPerLine(PAGE_MM.width - subTitleMm("", o), SUB_TITLE_PT, true);
 
 /** 제목부(대상사업 상자·실행과제 띠·소항목 제목 — 머리 모드대로) + 추진성과 상자(불릿 또는 3칸, 곁들임 막대·강조 띠). markers = 소항목 마커(모르면 생략) */
 export function frameHeight(title: string, results: string[], resultCards: number, x: ResultExtras = {}, markers?: string[], mode: HeadMode = "all"): number {
@@ -919,9 +936,10 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
 
 /**
  * 블록 종류별 어림 높이(mm) — 칸을 채운 보통 모양(칸 불릿 2개·각 한 줄, 머리·결과 줄 한 줄)을 blockHeight로 잰 값.
- * 요청 글 「판면 예산」에 넣어 AI가 블록 영역 안에서 블록 수·종류를 고르게 함(③ 평가 라운드: 0.5쪽에 인용 상자를 기본 도식에 더해 113~120%로 넘침)
+ * 요청 글 「판면 예산」에 넣어 AI가 블록 영역 안에서 블록 수·종류를 고르게 함(③ 평가 라운드: 0.5쪽에 인용 상자를 기본 도식에 더해 113~120%로 넘침).
+ * stats = 핵심 수치 띠 줄을 넣는지 — 주요사업 요청 글은 false(2026-10-28: 주요사업 새 초안은 수치 띠를 쓰지 않음 — frameworks.ts BIZ_RETIRED_SHAPES), 경영관리는 그대로
  */
-export function blockCosts(): string[] {
+export function blockCosts(stats = true): string[] {
   const fill = (mm: number, lines = 1) => "가".repeat(Math.max(4, Math.floor(hangulPerLine(mm) * 0.9 * lines)));
   const mk = (kind: Block["kind"], variant: string, cells: number, label = "라벨", o: Partial<Block> = {}): Block => {
     const base: Block = { kind, label, title: "", variant, text: "", items: [], cells: Array.from({ length: cells }, () => ({ head: "머리", tag: "", bullets: [], note: "" })), rows: [], series: [], badge: "", ...o };
@@ -942,7 +960,7 @@ export function blockCosts(): string[] {
   };
   const bullets = (n: number) => mm({ ...mk("bullets", "", 0), items: Array.from({ length: n }, () => fill(LADDER_TD_MM - INDENT_MM)) });
   const statCell = slotOf(mk("stats", "", 3, ""), PAGE_MM.width).body;
-  const stats = mm({ ...mk("stats", "", 3, ""), cells: Array.from({ length: 3 }, () => ({ head: "약 3만국", tag: "", bullets: [fill(statCell, 1.8)], note: "’26.8 기준" })) });
+  const statsMm = mm({ ...mk("stats", "", 3, ""), cells: Array.from({ length: 3 }, () => ({ head: "약 3만국", tag: "", bullets: [fill(statCell, 1.8)], note: "’26.8 기준" })) });
   const define = mm({ ...mk("define", "", 0, ""), text: fill(PAGE_MM.width - 12, 2), items: ["단계", "단계", "단계"] });
   const kase = mm({ ...mk("case", "", 0, ""), items: [fill(PAGE_MM.width - 12), fill(PAGE_MM.width - 12), fill(PAGE_MM.width - 12)] });
   const canon = (kind: Block["kind"], variant: string, n: number) => {
@@ -953,7 +971,7 @@ export function blockCosts(): string[] {
     `(칸 글을 채운 보통 모양 기준 — 칸 글이 길면 더 높음) bullets 줄당 약 ${LINE_MM.toFixed(1)}mm(3줄 ${bullets(3)}mm) · quotes 1개 ${quote(1)}mm·2개 나란히 ${quote(2)}mm · banner 약 ${mm({ ...mk("banner", "", 0, ""), text: "가".repeat(30) })}mm`,
     `cards 3칸 ${mm(mk("cards", "plain", 3))}mm · steps 3단계 ${mm(mk("steps", "row", 3))}mm·4단계 ${mm(mk("steps", "row", 4))}mm·zigzag ${mm(mk("steps", "zigzag", 4))}mm · timeline 3칸 ${mm(mk("timeline", "chevron", 3))}mm`,
     `compare 표 2행 ${cmp("table", 2)}mm·3행 ${cmp("table", 3)}mm · panels 3행 ${cmp("panels", 3)}mm · hub 기관 3곳 ${mm(mk("hub", "", 4))}mm`,
-    `stats 3칸 ${stats}mm · define ${define}mm · case 3줄 ${kase}mm · chart는 앞 블록 행 오른쪽(높이 0, 그 행 칸이 좁아짐)`,
+    `${stats ? `stats 3칸 ${statsMm}mm · ` : ""}define ${define}mm · case 3줄 ${kase}mm · chart는 앞 블록 행 오른쪽(높이 0, 그 행 칸이 좁아짐)`,
     `qa 2쌍 ${canon("qa", "", 2)}mm·3쌍 ${canon("qa", "", 3)}mm · table 3행(값 열 3) ${canon("table", "", 3)}mm·4행 ${canon("table", "", 4)}mm · cards vs 2칸 ${mm(mk("cards", "vs", 2))}mm · strategy ${canon("strategy", "", 3)}mm(3열·목표 띠·지표 줄) · pdca ${canon("pdca", "", 4)}mm(4칸·환류 띠)`,
     `그림 자리(figures)는 블록 옆에 붙어 그 블록 글 폭을 그림 폭 + ${FIGURE_GAP_MM}mm만큼 줄이고 높이는 그림 높이 이상: ${FIGURE_SIZES.map((k) => `${k} ${FIGURE_MM[k].w}×${FIGURE_MM[k].h}`).join(" · ")} · 로고 ${LOGO_MM.w}×${LOGO_MM.h}`,
   ];

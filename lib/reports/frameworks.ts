@@ -3,6 +3,7 @@
 // 담당자가 구성안에서 골라 쓰게 한 데이터(2026-09-28 사용자 결정 「분석한 프레임워크 중 선택 · AI 추천 도식을 골라 수정」).
 // 쓰는 곳: 구성안 화면의 틀 갤러리·블록 도식 고르기(견본 그림은 서버가 lib/reports/section-html.ts로 그림), 서버의 편집 검증(칸 범위·근거 조건).
 // 틀의 블록 순서는 stories.md 줄과 같은 순서여야 합니다(테스트가 대조).
+// 2026-10-28: 주요사업 틀에서 핵심 수치 띠(stats)를 뺌 — 2025 최종본·도식Pool에 따로 떨어진 수치 띠가 없음(BIZ_RETIRED_SHAPES). 수치는 단계 결과 줄·추진성과에
 
 import { BLOCK_KINDS, type BlockKind, STORIES, type Story, VARIANTS } from "./blocks.ts";
 import { orgNames } from "./diagram-hints.ts";
@@ -34,7 +35,7 @@ export const FRAMEWORKS: Framework[] = [
     story: "단계 전개형",
     no: "①",
     fit: "기술·시스템을 연구→개발→확산해 온 과제",
-    blocks: [{ kind: "quotes" }, { kind: "timeline", variant: "chevron", label: "추진방향" }, { kind: "steps", variant: "row", label: "추진내용" }, { kind: "stats" }, { kind: "compare", variant: "panels" }, { kind: "case" }],
+    blocks: [{ kind: "quotes" }, { kind: "timeline", variant: "chevron", label: "추진방향" }, { kind: "steps", variant: "row", label: "추진내용" }, { kind: "compare", variant: "panels" }, { kind: "case" }],
     example: "2025 1-1 가. AI 안테나 판독",
   },
   {
@@ -91,21 +92,21 @@ export const FRAMEWORKS: Framework[] = [
     story: "기존→개선형",
     no: "⑨",
     fit: "기존 방식·제도의 한계를 고쳐 바꾼 과제 — 한계 → 개선 노력 → 달라진 결과",
-    blocks: [{ kind: "cards", variant: "arrow", label: "개선 경과" }, { kind: "compare", variant: "panels", label: "기존→개선" }, { kind: "steps", variant: "row", label: "추진내용" }, { kind: "stats" }],
+    blocks: [{ kind: "cards", variant: "arrow", label: "개선 경과" }, { kind: "compare", variant: "panels", label: "기존→개선" }, { kind: "steps", variant: "row", label: "추진내용" }],
     example: "2025 2-1 나. 국가자격 품질 제고",
   },
   {
     story: "구분표 중심형",
     no: "⑩",
     fit: "갈래가 여럿인 실행을 「구분 | 추진노력 | 추진결과」 표 하나로 보이는 과제",
-    blocks: [{ kind: "banner" }, { kind: "table", label: "추진내용" }, { kind: "stats" }],
+    blocks: [{ kind: "banner" }, { kind: "table", label: "추진내용" }],
     example: "2025 2-2 나. AI·RPA 자산운용",
   },
   {
     story: "현황분석→대응형",
     no: "⑪",
     fit: "현장·데이터를 분석해 문제를 찾고 맞춤 대응한 과제",
-    blocks: [{ kind: "cards", variant: "plus", label: "현황분석" }, { kind: "table", label: "분석결과" }, { kind: "steps", variant: "row", label: "추진내용" }, { kind: "stats" }],
+    blocks: [{ kind: "cards", variant: "plus", label: "현황분석" }, { kind: "table", label: "분석결과" }, { kind: "steps", variant: "row", label: "추진내용" }],
     example: "2025 1-4 가. 마을방송 무전기 전파분석",
   },
   // ⑫는 2025 산업진흥군 타기관 보고서 짜임 분석(가3 — 2026-10-13)에서 뽑음. KCA 2025 예시는 없어 타기관 소항목을 적음
@@ -113,7 +114,7 @@ export const FRAMEWORKS: Framework[] = [
     story: "AX 전환형",
     no: "⑫",
     fit: "AI·자동화로 업무 절차를 바꾼 과제 — 기존 절차 → 전환 → 사람·AI 역할 분담 → 단축 성과",
-    blocks: [{ kind: "cards", variant: "arrow", label: "전환 배경" }, { kind: "compare", variant: "panels", label: "기존→AI 전환" }, { kind: "table", label: "역할 분담" }, { kind: "steps", variant: "row", label: "확산" }, { kind: "stats" }],
+    blocks: [{ kind: "cards", variant: "arrow", label: "전환 배경" }, { kind: "compare", variant: "panels", label: "기존→AI 전환" }, { kind: "table", label: "역할 분담" }, { kind: "steps", variant: "row", label: "확산" }],
     example: "타기관 2025 — 한국지능정보사회진흥원 지능화 확산(B+)·KEIT R&D시스템(B0)",
   },
   // 섞음을 고르면 AI가 주 틀 하나 + 보조 틀 하나를 고름(2026-10-09 — 구성안 답에는 섞음이 없음, report-outline/request.md story.mix)
@@ -194,6 +195,14 @@ export function shapeName(kind: string, variant: string): string {
 }
 
 export const shapeOf = (code: string) => SHAPES.find((s) => s.code === code) ?? null;
+
+/**
+ * 주요사업 새 구성안·초안에서 고르지 않는 모양(2026-10-28 사용자 결정): 핵심 수치 띠(stats) — 2025 주요사업 최종본(119·120·153·155·185쪽)과
+ * 도식Pool 어디에도 따로 떨어진 큰 수치 상자 띠가 없고, 수치는 단계 칸 결과 줄·추진성과 3칸·추진성과 막대·칸 끝 결과 줄·표 열에 녹여 씀.
+ * 경영관리는 절을 닫는 「추진성과」 행이라 그대로 씀. 이미 저장된 초안의 띠는 렌더러·한글 변환·판면 어림이 예전처럼 그림(데이터 이전 없음)
+ */
+export const BIZ_RETIRED_SHAPES: readonly string[] = ["stats"];
+export const BIZ_RETIRED_WHY = "주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다(2025 최종본에 없음) — 수치는 단계 칸 결과 줄·표 결과 열·추진성과에 씁니다";
 
 /** 전폭으로 그리는 종류(라벨이 있어도 사다리 행이 아님 — 렌더러 section-html의 FULL_KINDS와 같음) */
 export const FULL_WIDTH_KINDS: readonly BlockKind[] = ["band", "banner", "quotes", "subhead", "case"];

@@ -234,19 +234,16 @@ const STATS_KEEP: Array<[string, ReturnType<typeof stat>[]]> = [
   ["올해 실적 2칸", [stat("720건", "’26.9.21 기준"), stat("50건", "’26.9")]],
 ];
 
-test("cleanBlocks(statsYear — 주요사업): 올해 실적 칸이 2개 미만인 핵심 수치 띠는 빼고 dropped에 이유, 2개 이상이면 남김", () => {
-  for (const [name, cells] of STATS_DROP) {
-    const { blocks, dropped } = cleanBlocks([blk({ kind: "stats", cells })], line, () => true, { statsYear: 2026 });
+test("cleanBlocks(biz — 주요사업 집필, 2026-10-28): 핵심 수치 띠는 올해 실적 칸이 있어도 모두 빼고 dropped에 이유(수치는 단계 결과 줄·추진성과로)", () => {
+  for (const [name, cells] of [...STATS_DROP, ...STATS_KEEP]) {
+    const { blocks, dropped } = cleanBlocks([blk({ kind: "stats", cells })], line, () => true, { biz: true });
     assert.equal(blocks.length, 0, name);
-    assert.ok(dropped.some((d) => /^수치 띠: 올해 실적 칸이 [01]개뿐/.test(d)), `${name}: ${dropped.join(" / ")}`);
+    assert.ok(dropped.some((d) => /^수치 띠: 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않아 뺐습니다/.test(d)), `${name}: ${dropped.join(" / ")}`);
   }
-  for (const [name, cells] of STATS_KEEP) {
-    const { blocks, dropped } = cleanBlocks([blk({ kind: "stats", cells })], line, () => true, { statsYear: 2026 });
-    assert.equal(blocks.length, 1, name);
-    assert.deepEqual(dropped, [], name);
-  }
+  // 다른 블록은 그대로
+  assert.equal(cleanBlocks([blk({ kind: "steps", cells: [cell("1단계", ["준비"]), cell("2단계", ["실행"])] })], line, () => true, { biz: true }).blocks.length, 1);
 });
 
-test("cleanBlocks(statsYear 없음 — 경영관리·블록 고치기): 같은 수치 띠를 빼지 않음(예전 그대로)", () => {
-  for (const [name, cells] of STATS_DROP) assert.equal(cleanBlocks([blk({ kind: "stats", cells })], line, () => true).blocks.length, 1, name);
+test("cleanBlocks(biz 없음 — 경영관리·블록 고치기): 수치 띠를 빼지 않음(예전 그대로)", () => {
+  for (const [name, cells] of [...STATS_DROP, ...STATS_KEEP]) assert.equal(cleanBlocks([blk({ kind: "stats", cells })], line, () => true).blocks.length, 1, name);
 });

@@ -29,8 +29,6 @@ export interface HintExtras {
   series?: string[];
   /** 이 과제·사업의 '25 실사 질의(평가 근거 survey) — 평가위원이 물을 질문에 미리 답하는 Q&A 상자(질문 고르기 참고) */
   survey?: string[];
-  /** 올해 실적 재료의 수치(lib/reports/actuals.ts yearFigures) — 주요사업 핵심 수치 띠 후보는 이것이 2개 이상일 때만(없으면 후보 없음, 막대 series와 같은 선례) */
-  yearFigures?: string[];
 }
 
 /** 도식 후보 옵션 — track이 "mg"(경영관리)일 때만 경영관리 보고서의 짜임 신호를 더 켬. 없으면 주요사업 결과 그대로 */
@@ -110,11 +108,9 @@ export function diagramHints(fullText: string, extras: HintExtras = {}, opts: Hi
   const baLines = text.split("\n").filter((l) => BEFORE.test(l) && AFTER.test(l));
   if (baLines.length) push("compare:panels", `전후가 한 줄에 든 글 ${baLines.length}줄 — 번호 매긴 As-Is/To-Be`, 2 + baLines.length * 2);
   const nums = uniq(text.match(/\d[\d,.]*\s*(?:%|건|명|개|국|종|억|만|천|회|시간|일|km|곳|배|점|개소|원)/g) ?? []);
-  // 핵심 수치 띠: 주요사업은 올해 실적 수치 2개 이상일 때만 — 글의 단위 수치는 목표·전년 값도 세어 「’25 실적·’26 목표·자리표시」 띠를 부름(2026-10-15 블라인드 심사).
-  // 경영관리는 글의 단위 수치 4개 이상(예전 그대로 — 수치 띠가 절을 닫는 추진성과인 경우가 많음)
-  const yearNums = uniq(extras.yearFigures ?? []);
+  // 핵심 수치 띠: 경영관리만 — 글의 단위 수치 4개 이상(수치 띠가 절을 닫는 추진성과인 경우가 많음). 주요사업은 후보를 내지 않음(2026-10-28 — 새 초안은 수치 띠를 쓰지 않음,
+  // frameworks.ts BIZ_RETIRED_SHAPES. 예전 2026-10-15부터는 올해 실적 재료 수치 2개 이상일 때만 냈음)
   if (mg && nums.length >= 4) push("stats", `수치 ${nums.length}개(${nums.slice(0, 3).join("·")} …) — 핵심 수치 띠`, Math.min(4, nums.length / 4));
-  else if (!mg && yearNums.length >= 2) push("stats", `올해 실적 수치 ${yearNums.length}개(${yearNums.slice(0, 3).join("·")}${yearNums.length > 3 ? " …" : ""}) — 핵심 수치 띠`, Math.min(4, yearNums.length / 2));
   const stages = (text.match(/\d단계|Step\s?\d|[①②③④⑤]|~\d{1,2}월/g) ?? []).length;
   // ㄹ자(의견→한계→방향→해결)는 네 낱말이 모두 있을 때만
   const zig = stages >= 4 && ["의견", "한계", "방향", "해결"].every((w) => text.includes(w));

@@ -5,7 +5,6 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { inspectionCardText } from "../ai/inspect.ts";
-import { yearActuals, yearFigures } from "./actuals.ts";
 import type { Block } from "./blocks.ts";
 import { diagramHints, isOwnKind, orgNames, kindUsage, ownKindsIn, repeatedKinds } from "./diagram-hints.ts";
 import { NO_SEED_CARDS } from "../testing/originals.ts";
@@ -63,12 +62,9 @@ test("수치 신호(경영관리): 단위 붙은 서로 다른 수 4개 이상�
   assert.equal(diagramHints("민원 1,240건 처리, 24종 분류, 63종 확인, 97% 신뢰도", {}, { track: "mg" })[0]?.kind, "stats");
 });
 
-test("수치 신호(주요사업, 2026-10-15): 글의 단위 수치가 아니라 올해 실적 재료(extras.yearFigures)가 2개 이상일 때만 stats", () => {
+test("수치 신호(주요사업, 2026-10-28): 핵심 수치 띠(stats) 후보를 내지 않음 — 주요사업 새 초안은 수치 띠를 쓰지 않음", () => {
   const text = "민원 1,240건 처리, 24종 분류, 63종 확인, 97% 신뢰도";
-  assert.ok(!diagramHints(text).some((h) => h.kind === "stats"), "올해 실적 재료가 없으면 글에 수치가 많아도 후보 없음(목표·전년 값도 세던 것)");
-  assert.ok(!diagramHints(text, { yearFigures: ["1,416건"] }).some((h) => h.kind === "stats"), "올해 실적 수치 1개뿐이면 후보 없음");
-  const two = diagramHints(text, { yearFigures: ["1,416건", "93.9%"] }).find((h) => h.kind === "stats");
-  assert.ok(two && /올해 실적 수치 2개\(1,416건·93\.9%\)/.test(two.why), two?.why);
+  assert.ok(!diagramHints(text).some((h) => h.kind === "stats"));
 });
 
 test("단계 신호: 3개 이상이면 steps, 4개 이상이면서 의견·한계·방향·해결이 모두 있으면 steps:zigzag(ㄹ자)만", () => {
@@ -218,8 +214,8 @@ test("59장 시드 카드 분포(실측 2026-09-27): compare:panels는 20장 이
     const critiques = (Array.isArray(findings) ? findings : []).filter((x): x is string => typeof x === "string").map(stripBullet).filter((x) => x.length > 5);
     // 막대(series)는 ’25 실적과 ’26 실적(부서 입력)이 둘 다 있을 때만 — 시드 카드에는 ’26 실적이 없어 늘 빈 목록(예전: 목표로 채워 chart가 1순위 24장)
     const series: string[] = [];
-    // 수치 띠(stats)는 올해 실적 재료(월별 실적 줄 수치 — 시드엔 부서 입력이 없음)가 2개 이상일 때만
-    const hints = diagramHints(text, { critiques, series, yearFigures: yearFigures(yearActuals(card)) });
+    // 수치 띠(stats)는 주요사업 후보에 없음(2026-10-28)
+    const hints = diagramHints(text, { critiques, series });
     if (hints.some((h) => h.kind === "compare:panels")) compareCount += 1;
     if (hints.some((h) => h.kind === "stats")) statsCount += 1;
     if (hints[0]) rank1.set(hints[0].kind, (rank1.get(hints[0].kind) ?? 0) + 1);
@@ -230,7 +226,7 @@ test("59장 시드 카드 분포(실측 2026-09-27): compare:panels는 20장 이
   assert.equal(rank1.get("chart"), undefined);
   assert.equal(rank1.get("case"), 9);
   assert.equal(rank1.get("quotes"), 27);
-  assert.equal(statsCount, 29, "stats 후보(예전 글의 단위 수치 4개 이상 — 47장)");
+  assert.equal(statsCount, 0, "stats 후보 없음(2026-10-28 — 예전 글의 단위 수치 4개 이상 47장 → 2026-10-15 올해 실적 재료 2개 이상 29장)");
 });
 
 // 경영관리 전용 신호(C12) — track: "mg"일 때만 켜짐

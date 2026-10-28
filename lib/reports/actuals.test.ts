@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NEED_RE, NEEDS_MAX, TIMING_LABEL, dedupeNeedYear, hasFigure, kpiGaps, needsIn, outcomeActuals, planOnly, stripNeeds, timingOf, yearActuals, yearFigures, yearIssues } from "./actuals.ts";
+import { NEED_RE, NEEDS_MAX, TIMING_LABEL, dedupeNeedYear, hasFigure, kpiGaps, needsIn, outcomeActuals, planOnly, stripNeeds, timingOf, yearActuals, yearIssues } from "./actuals.ts";
 import { reportDraftPrompts, reportDraftPromptsMg } from "../prompts/sets.ts";
 import { cleanLine, sectionContext, sectionPrompt } from "./section.ts";
 import { mgMaterialsPrompt } from "./mg-draft.ts";
@@ -180,7 +180,6 @@ test("yearActuals: 정량 성과 줄은 이름 낱말이 맞는 계량지표에 
   assert.equal(yearActuals(OUTCOME_CARD).outcome, undefined);
   assert.equal(yearActuals(OUTCOME_CARD).kpi[0].outcome, undefined);
   assert.deepEqual(kpiGaps(a).map((k) => k.name), ["공공용 주파수 신속 공급 성과", "이용기관 만족도"], "채울 자료 목록은 그대로(부서 입력·예상 칸만 봄)");
-  assert.deepEqual(yearFigures(a), [], "도식 신호(월별·부서 입력)는 그대로");
 });
 
 test("요청 글: 정량 성과 칸 실적이 붙은 계량지표는 「없음 → 【확인】」 대신 그 줄로, 남은 줄은 따로 — 두 트랙", () => {

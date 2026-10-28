@@ -6,7 +6,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { BLOCK_KINDS, STORIES, VARIANTS } from "./blocks.ts";
+import { MG_FRAMEWORKS } from "./frameworks-mg.ts";
 import {
+  BIZ_RETIRED_SHAPES,
   FRAMEWORKS,
   SHAPES,
   SHAPE_NAMES,
@@ -182,4 +184,11 @@ test("stories.md 여는 블록: 여는 블록 재료가 없다고 틀을 바꾸�
   const sec = storiesMd.slice(storiesMd.indexOf("## 여는 블록"));
   assert.match(sec, /틀을 바꾸지 않습니다/);
   assert.match(sec, /왜-어떻게형/);
+});
+
+test("BIZ_RETIRED_SHAPES(2026-10-28): 주요사업 이야기 틀 12종에는 핵심 수치 띠가 없고, 경영관리 틀은 그대로 추진성과 행에 씀", () => {
+  assert.deepEqual([...BIZ_RETIRED_SHAPES], ["stats"]);
+  for (const fw of FRAMEWORKS) assert.ok(!fw.blocks.some((b) => BIZ_RETIRED_SHAPES.includes(shapeCode(b.kind, b.variant ?? ""))), fw.story);
+  assert.ok(MG_FRAMEWORKS.some((fw) => fw.blocks.some((b) => b.kind === "stats")));
+  assert.doesNotMatch(storiesMd.split("<!-- @stories -->")[1].split("\n").filter((l) => /^[①-⑫]/.test(l)).join("\n"), /stats/, "stories.md 틀 줄에도 없음");
 });

@@ -10,11 +10,11 @@ import { inspectionCardText } from "../ai/inspect.ts";
 import { BLOCK_OUT_FIELDS, type Block, STORIES, actualBars, blockBullets, blockOutSchema, blockSignature, blockTexts, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
-import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PAGE_MM, blockAreaMm, blockCosts, capacityLines, fitReport, guardFigures, hollowWarning } from "./fit.ts";
+import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PAGE_MM, blockAreaMm, blockCosts, capacityLines, fitReport, guardFigures, hollowWarning, subTitleMax } from "./fit.ts";
 import { isStory, storyLabel } from "./frameworks.ts";
 import { cardFindings } from "./findings.ts";
 import { type DiagramHint, type HintOptions, bizVarietyIssue, diagramHints, kindUsage, ownKindsIn, repeatedKinds } from "./diagram-hints.ts";
-import { NEEDS_MAX, NEED_RE, type YearActuals, dedupeNeedYear, stripNeeds, yearActuals, yearFigures, yearIssues } from "./actuals.ts";
+import { NEEDS_MAX, NEED_RE, type YearActuals, dedupeNeedYear, stripNeeds, yearActuals, yearIssues } from "./actuals.ts";
 import { GROUND_WEAK, groundScores } from "./ground.ts";
 import { proseIssues } from "./prose.ts";
 import { kpiMissingWarning } from "./kpi-cover.ts";
@@ -24,6 +24,7 @@ import { LENS_GROUPS, type LensRef, SURVEY_TYPES } from "./lens.ts";
 import { type PriorPick, priorLabel } from "./prior.ts";
 import type { MgDraftMeta } from "./mg-types.ts";
 import type { LooseJson } from "../loose-json.ts";
+import { arrowTitleWarnings, subTitleIssues } from "./title-checks.ts";
 
 type Json = LooseJson;
 
@@ -279,6 +280,7 @@ export const REQUEST_SECTIONS = [
   "fit.composeHead",
   "fit.proseHead",
   "fit.unknownHead",
+  "fit.titleHead",
   "lens.head",
   ...LENS_GROUPS.map((g) => `lens.group.${g}` as const),
   "lens.item",
@@ -383,6 +385,9 @@ export function sectionPrompt(
       module: ctx.module,
       moduleGuide: moduleGuide(p, ctx.module),
       markers: ctx.markers.join("·") || r("markers.none"),
+      // 소항목 제목 글자 한도(2026-10-28): 표지·갈래 칩·마커 칩을 뺀 한 줄 폭에 드는 한글 수(fit.ts subTitleMax — 판면 어림과 같은 글 폭 모델)
+      chip: ctx.chip ? `[${ctx.chip}] ` : "",
+      titleMax: subTitleMax(ctx),
       card: inspectionCardText(card),
     }),
   ];
@@ -409,7 +414,8 @@ export function sectionPrompt(
       height: Math.round(ctx.module * PAGE_MM.height),
       area: blockAreaMm(ctx.module, ctx.head),
       slots: capacityLines().map((x) => `  - ${x}`).join("\n"),
-      costs: blockCosts().map((x) => `  - ${x}`).join("\n"),
+      // 주요사업은 핵심 수치 띠를 쓰지 않아 그 높이 줄을 뺌(2026-10-28 — frameworks.ts BIZ_RETIRED_SHAPES)
+      costs: blockCosts(false).map((x) => `  - ${x}`).join("\n"),
     }),
   );
   // 도식 고르기: 카드·근거의 신호로 뽑은 후보 두 갈래(이 과제만의 요소·기본 도식) + 같은 주요사업 초안들이 이미 쓴 도식(lib/reports/diagram-hints.ts)
@@ -470,7 +476,7 @@ export const hintSource = (card: Json, prior: PriorPick[], files: ReportFile[]) 
  * 계량지표 ’25 실적과 ’26 실적(부서 입력)이 둘 다 숫자일 때만 — 목표만 있는 값은 실적 없는 목표 막대가 돼 후보에서 뺌, 2026-10-14).
  * 이 과제만의 요소(인용·말풍선·우수사례·정의·협업 구조)는 전년 절을 뺀 카드·첨부 글로만 셈 — 전년 절의 인용·현장 말·수상 낱말이 후보를 켜면
  * 짜임 검증(composeIssues)이 쓰라고 요구해 2025 보고서 글을 올해 초안에 다시 쓰게 됨(2026-10-14 블라인드 심사 「전년복제」 22건 중 10~11건). 기본 도식은 전년 절까지 봄.
- * 핵심 수치 띠(주요사업)는 올해 실적 재료(월별 실적 줄 수치 + 부서 계량 실적 입력 — actuals.ts yearFigures)에 수치가 2개 이상일 때만(2026-10-15)
+ * 핵심 수치 띠는 주요사업 후보에 없음(2026-10-28 — diagram-hints.ts)
  */
 export function sectionHints(card: Json, prior: PriorPick[], files: ReportFile[], lens: LensRef[], actuals: YearActuals, year: number, opts?: HintOptions): DiagramHint[] {
   const yy = (n: number) => String(n % 100).padStart(2, "0");
@@ -479,7 +485,6 @@ export function sectionHints(card: Json, prior: PriorPick[], files: ReportFile[]
     critiques: lens.filter((x) => x.group === "critiques").map((x) => x.text),
     series,
     survey: lens.filter((x) => x.group === "survey").map((x) => x.text),
-    yearFigures: yearFigures(actuals),
   };
   const all = diagramHints(hintSource(card, prior, files), extras, opts);
   if (!prior.length) return all;
@@ -509,9 +514,9 @@ export function composeIssues(blocks: Block[], own: DiagramHint[]): string[] {
 
 /**
  * 판면 맞추기 요청(첫 요청 글 뒤에 붙임): 어림 높이·예산, 넘침/빔, 행별 높이, 두 줄 넘는 칸 글, 앞서 쓴 초안 JSON.
- * need는 fitNeeded(report) — over·under·wrap
+ * need는 fitNeeded(report) — over·under·wrap. title = 소항목 제목 한 줄 폭 문제(title-checks.ts subTitleIssues — 2026-10-28, 제목만 줄이라고 알림)
  */
-export function fitPrompt(p: ReportPrompts, ctx: SectionContext, draft: SectionOutput, report: FitReport, need: FitNeed | null, year: string[] = [], compose: string[] = [], prose: string[] = [], unknown: string[] = []): string {
+export function fitPrompt(p: ReportPrompts, ctx: SectionContext, draft: SectionOutput, report: FitReport, need: FitNeed | null, year: string[] = [], compose: string[] = [], prose: string[] = [], unknown: string[] = [], title: string[] = []): string {
   const r = (key: (typeof REQUEST_SECTIONS)[number], vars: Record<string, string | number> = {}) => requestText(p, key, vars);
   const item = (x: FitLine) => r("fit.lineItem", { where: x.where, text: x.text, lines: x.lines, fill: Math.round(x.fill * 100), perLine: x.perLine, target: Math.round(x.perLine * (x.lines > 1 ? 2 : 1) * 0.9) });
   // 판면이 맞고 올해 실적 문제만 있으면 「고치기」 머리(판면·짜임 유지)
@@ -534,6 +539,7 @@ export function fitPrompt(p: ReportPrompts, ctx: SectionContext, draft: SectionO
   if (year.length) lines.push(r("fit.yearHead"), ...year.map((text) => r("fit.yearItem", { text })));
   if (compose.length) lines.push(r("fit.composeHead"), ...compose.map((text) => r("fit.yearItem", { text })));
   if (prose.length) lines.push(r("fit.proseHead"), ...prose.map((text) => r("fit.yearItem", { text })));
+  if (title.length) lines.push(r("fit.titleHead", { titleMax: subTitleMax(ctx) }), ...title.map((text) => r("fit.yearItem", { text })));
   lines.push("", r("fit.tail", { draft: JSON.stringify(draft) }));
   return lines.join("\n");
 }
@@ -700,6 +706,8 @@ export interface SectionCheck {
   composeIssues: string[];
   /** 문장 문제(lib/reports/prose.ts — 항목 나열·관리 정보·풀지 않은 약어·제목·라벨의 평가 대응 말). 교정 요청에 그대로 넣음 */
   proseIssues: string[];
+  /** 소항목 제목 한 줄 폭 문제(lib/reports/title-checks.ts subTitleIssues — 2026-10-28). 자동 고치기 사유 — 고치기 요청은 제목만 줄이라고 함 */
+  titleIssues: string[];
 }
 
 /**
@@ -713,7 +721,7 @@ export interface SectionCheck {
 export function verifySection(out: SectionOutput, card: Json, ctx: SectionContext, extraText = "", siblings: SiblingLayout[] = [], quoteOnly = "", year?: number, own: DiagramHint[] = [], placeBlocks?: (blocks: Block[]) => void, years?: { past: string; current: string }, today?: string): SectionCheck {
   // 인용·말풍선·우수사례·정의는 근거(카드 글 + 첨부·전년 절 글 + 평가 근거)에서 원문을 찾은 것만 — 지어낸 글을 막음
   const hay = sourceKey(`${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}\n${quoteOnly}`);
-  const { blocks, dropped } = cleanBlocks(out.blocks ?? [], cleanLine, (q) => quoteFoundIn(hay, q), { statsYear: year });
+  const { blocks, dropped } = cleanBlocks(out.blocks ?? [], cleanLine, (q) => quoteFoundIn(hay, q), { biz: true });
   placeBlocks?.(blocks);
   // 추진성과 3칸 글자 한도(칩 12·결과 줄 40·큰 수치 60 — schema.md resultCards) — 넘치면 자리표시·괄호를 깨지 않게 자르고 알림
   let clipped = 0;
@@ -817,7 +825,10 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   // 문장(읽히는 문장 — docs/plan/경평초안-문장품질-수정안.md P7): 교정 요청에도 넣음
   const prose = proseIssues(spec);
   warnings.push(...prose.map((x) => `문장: ${x}`));
-  return { spec, unknownNumbers, warnings, yearIssues: issues, composeIssues: [...ownIssues, ...priorQuote, ...place], proseIssues: prose };
+  // 제목(2026-10-28): 소항목 제목 한 줄 폭(자동 고치기 사유)·블록 제목 화살표(참고)
+  const title = subTitleIssues(spec.sub);
+  warnings.push(...title, ...arrowTitleWarnings(blocks));
+  return { spec, unknownNumbers, warnings, yearIssues: issues, composeIssues: [...ownIssues, ...priorQuote, ...place], proseIssues: prose, titleIssues: title };
 }
 
 /**
@@ -925,6 +936,7 @@ export function recheckSection(spec: ReportSectionSpec, card: Json, extraText = 
   const where = extraText.trim() ? "카드·첨부 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);
   warnings.push(...proseIssues(next).map((x) => `문장: ${x}`));
+  warnings.push(...subTitleIssues(next.sub), ...arrowTitleWarnings(next.blocks ?? []));
   const repeat = resultRepeatOf(next);
   if (repeat) warnings.push(repeat);
   const planned = resultPlanWarning(next, today);

@@ -240,7 +240,8 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-10-14 경영관리 근거 규칙 추가로 판 바뀜(@59b58f23 → @79786ba1)
   // 2026-10-14 보정(과잉 교정 완화)으로 판 바뀜(@79786ba1 → @3a68f193)
   // 2026-10-15 후속 5 상자 채움(공용 문체 report-draft/style.md 「판면」 — 나란한 칸 줄 수 맞춤)으로 판 바뀜(@3a68f193 → @db2b1b11)
-  assert.equal(mg.prompts.version, "report-block-mg@db2b1b11");
+  // 2026-10-28 공용 조각(style.md 제목 한 줄·화살표 규칙, blocks.md#blocks 수치 띠는 경영관리 추진성과 행에서만, schema.md#block.title 블록 제목 규칙)으로 판 바뀜(@db2b1b11 → @726705b8)
+  assert.equal(mg.prompts.version, "report-block-mg@726705b8");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {
@@ -268,16 +269,18 @@ test("구성안 틀 고르기 절: 여는 블록 재료가 없다는 이유로 �
   assert.match(op.request.storyHints, /여는 블록[^\n]*재료[^\n]*버리지 않/);
 });
 
-test("수치 띠 실적 규칙(2026-10-15 후속 6): 주요사업 집필 요청 「도식 고르기」에만 「올해 실적 값 2개 이상일 때만·목표·예상·전년 값·자리표시로 채우지 않음」, 경영관리 경평 판 셋은 그대로", () => {
-  const rule = /핵심 수치 띠\(stats\)는 카드·첨부의 올해 실적 값이 2개 이상일 때만 쓰고, 목표·예상·전년 값·자리표시로 칸을 채우지 않습니다\(실적이 모자라면 다른 도식으로/;
+test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청 「도식 고르기」에만 「따로 떨어진 수치 띠를 쓰지 않음 — 수치 자리로」, 경영관리 경평 판 셋은 공용 조각 변경만", () => {
+  const rule = /따로 떨어진 핵심 수치 띠\(stats\)는 쓰지 않습니다\(2025 주요사업 최종본에 없음 — 앱이 뺍니다\)\. 수치는 「블록 사전 › 도식 고르기」의 수치 자리/;
   assert.match(reportDraftPrompts().prompts.request["diagram.guide"], rule);
-  assert.doesNotMatch(JSON.stringify(reportDraftPromptsMg().prompts), /올해 실적 값이 2개 이상일 때만/);
+  assert.doesNotMatch(reportDraftPrompts().prompts.request["diagram.guide"], /올해 실적 값이 2개 이상일 때만/);
+  assert.doesNotMatch(JSON.stringify(reportDraftPromptsMg().prompts), /따로 떨어진 핵심 수치 띠\(stats\)는 쓰지 않습니다/);
   // 2026-10-17 서사 순서(S — 여는 블록·핵심 메시지는 이 과제의 가치에서, 지적은 해소 블록 하나로)로 앞 둘의 판 바뀜(@309828eb → @845bc269, @913804d5 → @b1183426)
   // 2026-10-26 공통 지식 선별 방식(실험) 절 kb.select.*를 request.md에 더해 집필 판만 바뀜(@845bc269 → @02ce64ac) — 통째로 넣기 절 글은 그대로
   // 2026-10-27 카드 「정량 성과」 칸의 올해 실적 절 actuals.kpiOutcome·outcomeHead·outcomeItem을 더해 집필 판만 바뀜(@02ce64ac → @130db7d3)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@130db7d3");
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@b1183426");
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@db2b1b11");
+  // 2026-10-28 공용 조각(report-draft/style.md·blocks.md#blocks·schema.md#block.title — 제목·화살표·수치 띠 규칙)으로 셋 다 바뀜(@130db7d3 → @98767749, @b1183426 → @2defbb8a, @db2b1b11 → @726705b8)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@98767749");
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@2defbb8a");
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@726705b8");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {

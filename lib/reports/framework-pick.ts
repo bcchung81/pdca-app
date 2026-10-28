@@ -9,7 +9,7 @@ import { estimateUsd } from "../ai/pricing.ts";
 import { type PromptSet, fillFrom } from "../prompts/template.ts";
 import { STORIES } from "./blocks.ts";
 import { MG_MAIN_STORIES } from "./frameworks-mg.ts";
-import { shapeCode, shapeName } from "./frameworks.ts";
+import { BIZ_RETIRED_SHAPES, shapeCode, shapeName } from "./frameworks.ts";
 import { type FrameworkPattern, type PatternBlock, type PatternClose, patternOf } from "./framework-patterns.ts";
 
 /** 담당자가 고른 짜임 하나(요청 — 화면 → 서버). auto = 여러 안에서 「AI가 서로 다르게」(다른 갈래와 함께 쓰지 않음) */
@@ -199,13 +199,16 @@ const CLOSE_NAME: Record<PatternClose, string> = { bullets: "불릿 1~3줄", car
 /** 마무리 글(주요사업은 추진성과 모양 resultShape, 경영관리는 절 끝 라벨 「추진성과」 블록 — 닫기 관례가 앞섬) */
 export const patternCloseText = (c: PatternClose, mg: boolean) => (mg ? `절 끝 라벨 「추진성과」 블록(${CLOSE_NAME[c]}) — 아래 「닫기 관례」가 앞섬` : `추진성과(resultShape ${c} — ${CLOSE_NAME[c]})`);
 
+/** 주요사업 구성 패턴의 핵심 수치 띠 자리(2026-10-28 — 주요사업은 수치 띠를 쓰지 않음, frameworks.ts BIZ_RETIRED_SHAPES): 블록 대신 수치를 둘 자리를 적음 */
+const bizRetiredText = (b: PatternBlock) => `${b.label ? `[${b.label}]` : "(전폭)"} 수치 띠 자리 — 주요사업은 수치 띠를 쓰지 않고 그 수치는 앞 블록의 단계 칸 결과 줄·표 결과 열·추진성과에`;
+
 export function patternPrompt(p: PromptSet, pat: FrameworkPattern, mg: boolean): string {
   return fillFrom(p, "request", "frame.pattern", {
     name: pat.name,
     source: pat.ref,
     when: `${pat.when}${pat.pages ? ` — 표준 분량 ${pat.pages}쪽` : ""}`,
     stages: pat.stages.map((s) => `${s.name}(${s.role})`).join(" → "),
-    blocks: pat.blocks.map(patternBlockText).join(" → "),
+    blocks: pat.blocks.map((b) => (!mg && BIZ_RETIRED_SHAPES.includes(shapeCode(b.kind, b.variant ?? "")) ? bizRetiredText(b) : patternBlockText(b))).join(" → "),
     close: patternCloseText(pat.close, mg),
   });
 }

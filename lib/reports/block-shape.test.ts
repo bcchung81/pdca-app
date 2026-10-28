@@ -53,15 +53,17 @@ test("shapeAllowed: 같은 모양은 늘 됨, 기본 도식(단계 흐름)은 �
   assert.deepEqual(shapeAllowed(cards, "steps", "row", BIZ), { ok: true });
 });
 
-test("shapeAllowed: 경영관리 표 모양 4종은 주요사업 초안에서 거절, 경영관리는 됨", () => {
-  assert.deepEqual([...MG_ONLY_SHAPES].sort(), ["table:bars", "table:chevron", "table:ladder", "table:result"]);
+test("shapeAllowed: 경영관리 표 모양 4종·핵심 수치 띠(2026-10-28)는 주요사업 초안에서 거절, 경영관리는 됨", () => {
+  assert.deepEqual([...MG_ONLY_SHAPES].sort(), ["stats", "table:bars", "table:chevron", "table:ladder", "table:result"]);
   for (const code of MG_ONLY_SHAPES) {
-    const [kind, variant] = code.split(":");
+    const [kind, variant = ""] = code.split(":");
     const r = shapeAllowed(cards, kind, variant, BIZ);
     assert.equal(r.ok, false, code);
-    if (!r.ok) assert.match(r.why, /경영관리 보고서 표 모양/);
+    if (!r.ok) assert.match(r.why, kind === "stats" ? /핵심 수치 띠」 — 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다/ : /경영관리 보고서 표 모양/);
     assert.deepEqual(shapeAllowed(cards, kind, variant, MG), { ok: true }, code);
   }
+  // 저장된 주요사업 초안의 수치 띠는 같은 모양이라 그대로 고칠 수 있음
+  assert.deepEqual(shapeAllowed(block({ kind: "stats", cells: [cell("720건", ["판독"]), cell("50건", ["신규"])] }), "stats", "", BIZ), { ok: true });
   // 수치 표(빈 모양)는 두 트랙 모두
   assert.deepEqual(shapeAllowed(cards, "table", "", BIZ), { ok: true });
 });

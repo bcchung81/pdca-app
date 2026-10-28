@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { type Descriptions, described } from "../prompts/template.ts";
-import { PLAN_BAR, STATS_ACTUAL_MIN, actualStatCells } from "./actuals.ts";
+import { PLAN_BAR } from "./actuals.ts";
 import type { BlockLayout, BlockSpan } from "./layout.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -185,10 +185,11 @@ export interface BlockClean {
 /**
  * AI 블록 → spec 블록. line = 글 정리(표기 통일 포함), found = 근거 원문 대조.
  * quotes·voices는 칸마다 원문을 찾은 것만, case·define은 evidence를 찾을 때만 남깁니다(지어낸 인용·수상·정의 차단).
- * opts.statsYear(주요사업 집필 검증만 — section.ts verifySection): 올해 실적 칸(actuals.ts actualStatCells)이 2개 미만인 핵심 수치 띠를 뺌.
- * 경영관리·블록 고치기는 주지 않음 — 경영관리 수치 띠는 절을 닫는 추진성과인 경우가 많아 빼면 「성과로 닫지 않은 절」이 생김
+ * opts.biz(주요사업 집필 검증만 — section.ts verifySection): 핵심 수치 띠를 뺌(2026-10-28 — 주요사업 새 초안은 수치 띠를 쓰지 않음, frameworks.ts BIZ_RETIRED_SHAPES.
+ * 예전 2026-10-15부터는 올해 실적 칸이 2개 미만인 띠만 뺐음). 경영관리·블록 고치기는 주지 않음 — 경영관리 수치 띠는 절을 닫는 추진성과라 빼면 「성과로 닫지 않은 절」이 생기고,
+ * 블록 고치기는 저장된 초안의 띠를 그대로 고침(모양 바꾸기로 새 띠를 만드는 것은 block-shape.ts shapeAllowed가 막음)
  */
-export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number) => string, found: (s: string) => boolean, opts: { statsYear?: number } = {}): BlockClean {
+export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number) => string, found: (s: string) => boolean, opts: { biz?: boolean } = {}): BlockClean {
   const dropped: string[] = [];
   const list = (a: unknown, max: number, len = 200) => (Array.isArray(a) ? a.map((x) => line(x, len)).filter(Boolean).slice(0, max) : []);
   const cells = (a: unknown, max: number) =>
@@ -262,13 +263,10 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       dropped.push("막대: 실적 값이 2개 미만(목표·계획 값만 더한 막대)이라 뺐습니다 — 실적 값이 쌓이면 다시 쓸 수 있습니다");
       continue;
     }
-    // 핵심 수치 띠(주요사업): 올해 실적 칸이 2개 미만(목표·예상·전년 값·자리표시로 채운 띠)이면 뺌(2026-10-15 블라인드 심사)
-    if (kind === "stats" && opts.statsYear) {
-      const actual = actualStatCells(x.cells, opts.statsYear).length;
-      if (actual < STATS_ACTUAL_MIN) {
-        dropped.push(`수치 띠: 올해 실적 칸이 ${actual}개뿐(${x.cells.map((c) => c.head).join("·")} — 목표·예상·전년 값·자리표시로 채운 띠)이라 뺐습니다 — 올해 실적 값이 ${STATS_ACTUAL_MIN}개 이상 쌓이면 다시 쓸 수 있습니다`);
-        continue;
-      }
+    // 핵심 수치 띠(주요사업): 새 초안에는 두지 않음 — 띠에 쓴 수치는 단계 결과 줄·추진성과로(2026-10-28 사용자 결정)
+    if (kind === "stats" && opts.biz) {
+      dropped.push(`수치 띠: 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않아 뺐습니다(${x.cells.map((c) => c.head).join("·")}) — 그 수치는 단계 칸 결과 줄·표 결과 열·추진성과에 씁니다`);
+      continue;
     }
     blocks.push(x);
   }

@@ -1,5 +1,5 @@
 // 경평 집필 자동 고치기 판단(순수, 2026-10-10 개선 계획 B2b·B2d — 병목 실측: 평가 라운드 28건 모두 고치기를 한 번 더 돌아 집필 중앙 490초·최대 744초).
-// ① 판면·올해 실적·짜임 문제만 고치기를 부름(문장 문제만이면 경고로 남김) ② 남은 시간이 1차 호출 시간 × 1.1보다 짧으면 건너뜀 —
+// ① 판면·올해 실적·짜임·제목 폭 문제만 고치기를 부름(문장 문제만이면 경고로 남김 — 제목 폭은 2026-10-28) ② 남은 시간이 1차 호출 시간 × 1.1보다 짧으면 건너뜀 —
 // 함수 시간 제한(maxDuration 800초)에서 끊기면 1차·2차 결과를 모두 잃으므로(1차 초안은 lib/ai/run.ts onFirst로 먼저 저장).
 
 import { fitReport, fitScore } from "../reports/fit.ts";
@@ -24,13 +24,15 @@ export interface FirstIssues {
   year: number;
   compose: number;
   prose: number;
+  /** 소항목 제목 한 줄 폭 문제 수(lib/reports/title-checks.ts subTitleIssues — 2026-10-28, 고치기 요청은 제목만 줄이라고 함). 없으면 0 */
+  title?: number;
 }
 
 export type FixDecision = { fix: true } | { fix: false; reason: "none" | "prose-only" | "time" };
 
 /** elapsedMs = 집필 호출 시작부터 지금까지, firstMs = 1차 호출에 걸린 시간 */
 export function shouldFix(issues: FirstIssues, elapsedMs: number, firstMs: number, deadlineMs = FIX_DEADLINE_MS): FixDecision {
-  const structural = Boolean(issues.need) || issues.year > 0 || issues.compose > 0;
+  const structural = Boolean(issues.need) || issues.year > 0 || issues.compose > 0 || (issues.title ?? 0) > 0;
   if (!structural) return { fix: false, reason: issues.prose > 0 ? "prose-only" : "none" };
   if (!canFixAgain(elapsedMs, firstMs, deadlineMs)) return { fix: false, reason: "time" };
   return { fix: true };
@@ -47,15 +49,16 @@ export function canFixAgain(elapsedMs: number, lastCallMs: number, deadlineMs = 
 /**
  * 고친 판 고르기 점수(낮을수록 좋음) = 판면 점수 + 문제 하나마다 무게. 기준 사다리(근거 > 판면 > 올해 실적 > 짜임 > 문장)를 따라
  * 없는 숫자 하나 = 50(≈ 넘침 25mm — 2026-10-10 계획서 §10 E3: 예전에는 없는 숫자를 안 셈 — 고치기가 근거 없는 숫자를 새로 만들어도 그 판을 고를 수 있었음),
- * 올해 실적 문제 40(판면이 조금 나빠져도 올해 실적을 고친 쪽), 짜임 문제(이 과제만의 요소 없음) 20, 문장 문제 10
+ * 올해 실적 문제 40(판면이 조금 나빠져도 올해 실적을 고친 쪽), 짜임 문제(이 과제만의 요소 없음) 20, 제목 폭(한 줄 넘침 — 2026-10-28) 20, 문장 문제 10
  */
-export const SCORE_WEIGHT = { unknown: 50, year: 40, compose: 20, prose: 10 } as const;
-export function draftScore(c: Pick<SectionCheck, "spec" | "unknownNumbers" | "yearIssues" | "composeIssues" | "proseIssues">): number {
+export const SCORE_WEIGHT = { unknown: 50, year: 40, compose: 20, title: 20, prose: 10 } as const;
+export function draftScore(c: Pick<SectionCheck, "spec" | "unknownNumbers" | "yearIssues" | "composeIssues" | "proseIssues"> & Partial<Pick<SectionCheck, "titleIssues">>): number {
   return (
     fitScore(fitReport(c.spec)) +
     c.unknownNumbers.length * SCORE_WEIGHT.unknown +
     c.yearIssues.length * SCORE_WEIGHT.year +
     c.composeIssues.length * SCORE_WEIGHT.compose +
+    (c.titleIssues?.length ?? 0) * SCORE_WEIGHT.title +
     c.proseIssues.length * SCORE_WEIGHT.prose
   );
 }

@@ -151,7 +151,8 @@ export const planOnly = (line: string, year: number) => /예상|목표|계획|�
 
 /**
  * 핵심 수치 띠 칸 중 올해 실적 칸 — 큰 수치(head)에 숫자가 있고, 자리표시(【확인…)가 없고, head·뜻 줄·시점(note)에 목표·계획·예상·전망 표시가 없고,
- * 시점이 올해(timingOf "now")인 칸. 주요사업은 이것이 2개 미만인 수치 띠를 뺌(blocks.ts cleanBlocks statsYear, 2026-10-15 블라인드 심사 「띠가 ’25 실적·’26 목표·자리표시뿐」)
+ * 시점이 올해(timingOf "now")인 칸. 주요사업은 이것이 2개 미만인 수치 띠를 뺐음(2026-10-15 블라인드 심사 「띠가 ’25 실적·’26 목표·자리표시뿐」 — 2026-10-28부터 새 초안은 띠를 모두 뺌,
+ * 이 셈은 저장된 초안 다시 점검의 yearIssues에 남음)
  */
 export function actualStatCells<T extends { head: string; bullets: string[]; note: string }>(cells: T[], year: number): T[] {
   return cells.filter((c) => {
@@ -162,16 +163,6 @@ export function actualStatCells<T extends { head: string; bullets: string[]; not
 
 /** 주요사업 수치 띠에 있어야 하는 올해 실적 칸 수(막대의 실적 값 2개와 같은 기준) */
 export const STATS_ACTUAL_MIN = 2;
-
-/**
- * 올해 실적 재료의 수치(도식 후보 「핵심 수치 띠」 신호 — 주요사업): 월별 실적 줄의 단위 수치(날짜·시점 빼고, 바로 앞에 목표·계획·예상·전망이 붙은 값 빼고)
- * + 부서가 넣은 올해 계량 실적. 중복 없이
- */
-export function yearFigures(a: YearActuals): string[] {
-  const out: string[] = a.monthly.flatMap((m) => actualFigures(m.line));
-  for (const k of a.kpi) if (/\d/.test(k.input)) out.push(`${k.input}${k.unit}`);
-  return [...new Set(out)];
-}
 
 /** 줄의 단위 수치 중 날짜·시점을 빼고 바로 앞(8자 안)에 목표·계획·예상·전망이 붙지 않은 것(빈칸 걷은 모양) */
 export function actualFigures(text: string): string[] {

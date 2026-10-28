@@ -22,6 +22,7 @@ const SOURCES = [
   "lib/reports/split-axes.ts",
   "lib/reports/diagram-hints.ts",
   "lib/reports/actuals.ts",
+  "lib/reports/title-checks.ts",
   "app/(app)/reports/cards/draft-write.ts",
 ];
 
