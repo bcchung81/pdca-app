@@ -15,7 +15,7 @@ import { type ShapeRules, MG_ONLY_SHAPES, blockShapeCode, blockShapeName, shapeA
 import { mgSpecHeight } from "./business-layout.ts";
 import { isOwnKind } from "./diagram-hints.ts";
 import { canonicalJson } from "../cards/fixed.ts";
-import { PAGE_MM, blockWidth, bodyLayout, canonicalBlock, figuresWidth, fitReport, hangulPerLine, resultWidth, slotOf, statsLine } from "./fit.ts";
+import { PAGE_MM, blockWidth, bodyLayout, canonicalBlock, figuresWidth, fitReport, hangulPerLine, mgBulletCell, mgBulletLines, resultWidth, slotOf, statsLine } from "./fit.ts";
 import { dropLoneSpans } from "./layout.ts";
 import { SHAPES, cellRange, clampCells, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
 import type { ReportSectionSpec } from "./section.ts";
@@ -66,10 +66,14 @@ export function resultEditSchema(desc?: Descriptions) {
 }
 export type ResultEditOutput = z.infer<ReturnType<typeof resultEditSchema>>;
 
-/** 블록 고치기 프롬프트 파일에 있어야 하는 절 — 경영관리(report-block-mg: 추진성과 상자가 없어 result 절 없음) */
-export const BLOCK_EDIT_MG_PROMPT_SPEC: PromptSpec = { system: ["system"], request: ["edit", "ask", "shapes", "block", "evidence"], schema: BLOCK_EDIT_OUT_FIELDS };
-/** 주요사업(report-block) — 경영관리 절 + 추진성과 고치기·질문(result·resultAsk)과 답 필드 */
-export const BLOCK_EDIT_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...BLOCK_EDIT_MG_PROMPT_SPEC.request, "result", "resultAsk"], schema: [...BLOCK_EDIT_OUT_FIELDS, ...RESULT_EDIT_OUT_FIELDS] };
+/** 두 트랙 블록 고치기 요청 절(고치기·질문·다른 모양으로 + 블록 JSON·근거) */
+const BLOCK_EDIT_REQUEST = ["edit", "ask", "shapes", "block", "evidence"] as const;
+/** 경영관리 「분량 채움 보강」 요청 글 조각(lib/reports/mg-fill.ts fillRequestText — 2026-10-29, 경영관리만: 주요사업 report-block 절·판은 그대로) */
+export const MG_FILL_SECTIONS = ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item"] as const;
+/** 블록 고치기 프롬프트 파일에 있어야 하는 절 — 경영관리(report-block-mg: 추진성과 상자가 없어 result 절 없음, 분량 채움 보강 절이 더 있음) */
+export const BLOCK_EDIT_MG_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...BLOCK_EDIT_REQUEST, ...MG_FILL_SECTIONS], schema: BLOCK_EDIT_OUT_FIELDS };
+/** 주요사업(report-block) — 공용 절 + 추진성과 고치기·질문(result·resultAsk)과 답 필드 */
+export const BLOCK_EDIT_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...BLOCK_EDIT_REQUEST, "result", "resultAsk"], schema: [...BLOCK_EDIT_OUT_FIELDS, ...RESULT_EDIT_OUT_FIELDS] };
 
 /** 추진성과 상자의 대상 번호(spec.blocks 밖 — 화면 메모·서버 요청·이력 block_index 모두 이 값) */
 export const RESULT_INDEX = -1;
@@ -112,23 +116,46 @@ export interface BlockRoom {
   max: number;
   /** 예산 − 초안 어림(mm, 음수면 넘침). 경영관리 초안에 배정 쪽수가 없으면 null(여유를 셈하지 않음 — 지금 줄 수 안팎) */
   slack: number | null;
+  /** 경영관리 칸 불릿 하나의 줄 수(fit.ts mgBulletLines — 집필 글 한도 「불릿 하나 약 T자」와 같은 셈, 2026-10-29). 주요사업·불릿 블록·인용 칸은 없음 */
+  bullet?: number;
 }
+
+/** 보강 블록 몫 경로에서 늘릴 줄 수 안전 상한(한 쪽 판면 255mm를 본문 한 줄 약 6mm로 나눈 줄 수 남짓 — 높이가 안 늘어나는 줄만 이어질 때 멈춤) */
+const SHARE_LINES_MAX = 40;
 
 /**
  * 고칠 블록의 글 한도 — AI는 높이(mm)를 셈하지 못해 「줄 수를 맞췄다」면서 블록을 키웠음(1-나 연기 시험: 판면 256 → 267mm).
  * 늘 수 있는 줄 = 표준 모양(canonicalBlock)으로 지금 줄 수에서 한 줄씩 늘릴 때 높이 증가가 판면 여유 안인 만큼(넘친 초안이면 늘리지 않음).
  * 경영관리 초안(spec.mg — 2026-10-12): 주요사업 판면(module × 255mm)이 아니라 여유 = 배정 쪽(spec.mg.pages) × 판면 높이 − 경영관리 높이 어림(mgSpecHeight — 절 머리 포함, 사업 조판과 같은 셈).
- * 배정이 없으면 여유를 셈하지 않음(slack null — 지금 줄 수 안팎). 예전에는 절 여러 개 초안에 1쪽 예산을 대 늘 「넘침 — 줄을 늘리지 않음」이 갔음
+ * 배정이 없으면 여유를 셈하지 않음(slack null — 지금 줄 수 안팎). 예전에는 절 여러 개 초안에 1쪽 예산을 대 늘 「넘침 — 줄을 늘리지 않음」이 갔음.
+ * share(경영관리 분량 채움 보강 — lib/reports/mg-fill.ts, 2026-10-29): 남은 분량을 보강할 블록에 나눈 이 블록 몫(mm). 주면 초안 전체 여유 대신 이 값까지 줄을 늘리고
+ * 「지금 줄 + 4줄」 상한도 두지 않음(1회차 실측 블록 몫 37~50mm 중 0~23mm만 늘었음 — 4줄이면 많아야 20mm 남짓) — 사람 요청은 주지 않아 예전 셈 그대로
  */
-export function blockRoom(spec: ReportSectionSpec, index: number): BlockRoom | null {
+export function blockRoom(spec: ReportSectionSpec, index: number, share?: number): BlockRoom | null {
   const b = spec.blocks?.[index];
   if (!b) return null;
   const width = blockWidth(b) - figuresWidth(b);
-  const slack = spec.mg ? (spec.mg.pages && spec.mg.pages > 0 ? Math.round(spec.mg.pages * PAGE_MM.height - mgSpecHeight(spec)) : null) : budgetSlack(spec);
+  const slack = share ?? (spec.mg ? (spec.mg.pages && spec.mg.pages > 0 ? Math.round(spec.mg.pages * PAGE_MM.height - mgSpecHeight(spec)) : null) : budgetSlack(spec));
   const rowOf = (n: number, lines?: number) => fitReport({ sub: { title: "" }, blocks: [canonicalBlock(b.kind, b.variant, n, b.label, b.figures, lines)], results: [], module: spec.module }).rows[0]?.mm ?? 0;
   const grow = (now: number, mm: (l: number) => number) => {
     let max = now;
-    while (slack !== null && slack > 0 && max < now + 4 && mm(max + 1) - mm(now) <= slack) max += 1;
+    if (share === undefined) {
+      while (slack !== null && slack > 0 && max < now + 4 && mm(max + 1) - mm(now) <= slack) max += 1;
+      return max;
+    }
+    // 보강(블록 몫 — 2026-10-29): 「지금 줄 + 4줄」 상한 없이 몫 mm까지. 표준 모양이 더 자라지 않는 줄 수(canonicalBlock 불릿 8개 상한)부터는
+    // 마지막으로 늘어난 한 줄 높이로 이어 셈(앞 줄들도 안 늘었으면 그림 높이 안이라 높이가 안 늘어나는 줄). 줄 수 안전 상한 SHARE_LINES_MAX
+    const seen = new Map<number, number>();
+    const at = (l: number) => seen.get(l) ?? (seen.set(l, mm(l)), seen.get(l)!);
+    const step = (l: number) => {
+      for (let j = l; j >= 1; j--) if (at(j + 1) > at(j)) return at(j + 1) - at(j);
+      return 0;
+    };
+    let used = 0;
+    while (share > 0 && max < now + SHARE_LINES_MAX && used + step(max) <= share) {
+      used += step(max);
+      max += 1;
+    }
     return max;
   };
   if (b.kind === "bullets" || b.kind === "case") {
@@ -140,7 +167,8 @@ export function blockRoom(spec: ReportSectionSpec, index: number): BlockRoom | n
   const slot = slotOf(b, width);
   const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
   const now = Math.max(1, ...cellLines.map((xs) => xs.reduce((n, x) => n + bodyLayout(x, slot.body).lines, 0)));
-  return { unit: "cell", perLine: hangulPerLine(slot.body), now, max: grow(now, (l) => rowOf(cellCount(b), l)), slack };
+  const perLine = hangulPerLine(slot.body);
+  return { unit: "cell", perLine, now, max: grow(now, (l) => rowOf(cellCount(b), l)), slack, ...(spec.mg && mgBulletCell(b) ? { bullet: mgBulletLines(perLine) } : {}) };
 }
 
 /** 주요사업 판면 여유(예산 − 어림) */
@@ -153,9 +181,11 @@ function budgetSlack(spec: ReportSectionSpec): number {
 export function roomText(r: BlockRoom | null): string {
   if (!r) return "칸 글 한도 없음(짧은 글 블록) — 글 길이를 크게 늘리지 않음";
   const what = r.unit === "line" ? "불릿 줄 합" : "가장 긴 칸";
-  if (r.slack === null) return `한 줄 약 ${r.perLine}자 · 지금 ${what} ${r.now}줄 — 지금 줄 수 안팎`;
+  // 경영관리 칸 블록은 칸 불릿 하나의 글자 수를 앞에(집필 글 한도와 같은 기준 — 좁은 칸에 한 줄 조각 불릿이 나오지 않게)
+  const per = r.bullet ? `칸마다 불릿 하나 약 ${r.bullet * r.perLine}자(한 줄 약 ${r.perLine}자 × ${r.bullet}줄)` : `한 줄 약 ${r.perLine}자`;
+  if (r.slack === null) return `${per} · 지금 ${what} ${r.now}줄 — 지금 줄 수 안팎`;
   const room = r.slack <= 0 ? `초안이 이미 ${-r.slack}mm 넘침 — 지금보다 줄을 늘리지 않음(줄일 수 있으면 줄임)` : r.max > r.now ? `판면 여유 ${r.slack}mm — ${r.unit === "line" ? "불릿 줄 합" : "칸마다"} 최대 ${r.max}줄까지` : `판면 여유 ${r.slack}mm로는 한 줄도 더 못 늘림 — 지금 줄 수 안에서`;
-  return `한 줄 약 ${r.perLine}자 · 지금 ${what} ${r.now}줄 · ${room}`;
+  return `${per} · 지금 ${what} ${r.now}줄 · ${room}`;
 }
 
 /** 블록 내용 개수(칸·행·줄·막대 — 모양을 바꿀 때 새 모양의 칸 수 어림) */
@@ -187,22 +217,25 @@ export function shapeMenuText(spec: ReportSectionSpec, index: number, rules: Sha
   return { shapes: ok.join(" · ") || "없음", blocked: no.join(" · ") || "없음" };
 }
 
-/** 블록 고치기·질문 요청 글 — 근거(카드 글·첨부 전체 글·전년 절·실사 답변)는 초안과 같이 자르지 않음(넘치면 lib/ai/budget.ts가 멈춤). rules가 없으면 모양 바꾸기 없음 */
-export function blockEditPrompt(p: PromptSet, spec: ReportSectionSpec, req: BlockEditRequest, evidence: { card: string; extra: string }, rules?: ShapeRules): string {
+/**
+ * 블록 고치기·질문 요청 글 — 근거(카드 글·첨부 전체 글·전년 절·실사 답변)는 초안과 같이 자르지 않음(넘치면 lib/ai/budget.ts가 멈춤). rules가 없으면 모양 바꾸기 없음.
+ * share = 글 한도의 여유를 이 블록 몫(mm)으로(경영관리 분량 채움 보강만 — blockRoom). 사람 요청은 주지 않음
+ */
+export function blockEditPrompt(p: PromptSet, spec: ReportSectionSpec, req: BlockEditRequest, evidence: { card: string; extra: string }, rules?: ShapeRules, share?: number): string {
   const blocks = spec.blocks ?? [];
   const b = blocks[req.blockIndex];
   const menu = rules ? shapeMenuText(spec, req.blockIndex, rules) : { shapes: "없음 — 이 요청은 모양을 바꾸지 않음", blocked: "없음" };
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
-  return [r(req.kind, { ...headVars(spec, req.blockIndex), quote: req.quote || "(고른 글 없음 — 블록 전체)", request: req.request, ...menu }), "", r("block", { block: JSON.stringify(b) }), "", r("evidence", { card: evidence.card, extra: evidence.extra || "없음" })].join("\n");
+  return [r(req.kind, { ...headVars(spec, req.blockIndex, share), quote: req.quote || "(고른 글 없음 — 블록 전체)", request: req.request, ...menu }), "", r("block", { block: JSON.stringify(b) }), "", r("evidence", { card: evidence.card, extra: evidence.extra || "없음" })].join("\n");
 }
 
 /** 요청 글 머리 공통 값(소항목·블록 자리·판면·글 한도) */
-function headVars(spec: ReportSectionSpec, index: number): Record<string, string | number> {
+function headVars(spec: ReportSectionSpec, index: number, share?: number): Record<string, string | number> {
   const blocks = spec.blocks ?? [];
   const fit = fitReport(spec);
   // 이 블록만 어림한 높이(구성안 블록 높이와 같은 셈 — 라벨 행 안 막대 등은 그 행 기준)
   const row = fitReport({ sub: { title: "" }, blocks: [blocks[index]], results: [], module: spec.module }).rows[0];
-  return { title: spec.sub.title, story: spec.story || "—", n: index + 1, total: blocks.length, around: around(blocks, index), fitTotal: fit.total, budget: fit.budget, rowMm: row ? Math.round(row.mm) : "—", room: roomText(blockRoom(spec, index)) };
+  return { title: spec.sub.title, story: spec.story || "—", n: index + 1, total: blocks.length, around: around(blocks, index), fitTotal: fit.total, budget: fit.budget, rowMm: row ? Math.round(row.mm) : "—", room: roomText(blockRoom(spec, index, share)) };
 }
 
 /** 블록 두 개에서 바뀐 글 수(뒤 블록의 글 중 앞 블록에 없던 것) — 고른 부분 밖을 얼마나 고쳤는지 알림 */

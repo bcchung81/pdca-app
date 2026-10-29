@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { type Block, type Figure, LOGO_MM } from "./blocks.ts";
+import { REPORT_STYLE } from "./section-css.ts";
 import { SUBMIT_OVER as SUBMIT_OVER_FROM_SUBMISSION } from "./submission.ts";
 import {
   FIT_BAND,
@@ -37,6 +38,8 @@ import {
   lineLayout,
   plainText,
   resultWidth,
+  CHART_MM,
+  sideChartMm,
   slotOf,
   statsBoxMm,
   statsLine,
@@ -158,6 +161,13 @@ test("수치 띠(2026-10-28 추진성과 모양): 칸 한 줄 = 「문장(^{시�
   assert.equal(statsLine(cell("97%", [], "", "’25년")), "^{’25년}97%", "문장 없으면 괄호 없이");
   assert.equal(statsLine(cell("", ["문장만"], "", "’25년")), "문장만(’25년)", "수치 없으면 덧글을 그대로 괄호에");
   assert.equal(statsLine(cell("", [], "", "")), "");
+  // 숫자 없는 머리에는 위첨자 시점을 붙이지 않음(자리표시 【확인】은 그대로)
+  assert.equal(statsLine(cell("활용 중심", ["수요 실현"], "", "’26년")), "수요 실현(활용 중심, ’26년)");
+  assert.equal(statsLine(cell("【확인: ’26 건수】", ["수요 실현"], "", "’26년")), "수요 실현(^{’26년}【확인: ’26 건수】)");
+  // 문장 괄호 안에 괄호가 겹치면 안쪽을 「·」로 풂
+  assert.equal(statsLine(cell("31건", ["신청 접수"], "", "’26.8 기준(진행 중)")), "신청 접수(31건, ’26.8 기준·진행 중)");
+  assert.equal(statsLine(cell("31건(진행 중)", ["신청 접수"], "", "")), "신청 접수(31건·진행 중)");
+  assert.equal(statsLine(cell("31건(진행 중)", [], "", "")), "31건(진행 중)", "문장이 없어 괄호로 안 감싸면 그대로");
   assert.equal(statsLine(cell("^{’24년}164명 → ^{’25년}126명", ["인명피해 23.2% 감소"], "", "’25년")), "인명피해 23.2% 감소(^{’24년}164명 → ^{’25년}126명, ’25년)", "수치에 위첨자가 있으면 덧글은 뒤에");
   const width = blockWidth({ label: "라벨", kind: "stats" });
   assert.equal(slotOf({ kind: "stats", variant: "", cells: [cell(""), cell(""), cell("")] }, width).body, slotOf({ kind: "stats", variant: "", cells: [cell("")] }, width).body, "칸 수와 상관없이 한 줄 폭");
@@ -175,7 +185,7 @@ test("수치 띠 어림: 수치 띠만 있는 행·사다리 밖 = 추진성과 
   const chart = blk("chart", { label: "추진성과", series: [{ label: "’24", value: "1" }, { label: "’25", value: "2" }] });
   const withChart = fitReport({ sub: { title: "" }, blocks: [st, chart], results: [], module: 1 }).rows;
   assert.equal(withChart.length, 1);
-  assert.equal(withChart[0].mm, Math.round(statsBoxMm([st], PAGE_MM.width, true) * 10) / 10, "막대가 붙으면 막대 높이 이상");
+  assert.equal(withChart[0].mm, Math.round(statsBoxMm([st], PAGE_MM.width, chart) * 10) / 10, "막대가 붙으면 막대 높이 이상");
   const full = fitReport({ sub: { title: "" }, blocks: [{ ...st, label: "" }], results: [], module: 1 }).rows[0];
   assert.equal(full.label, "");
   const own = fitReport({ sub: { title: "" }, blocks: [{ ...st, label: "" }], results: ["성과"], module: 1 }).rows[0];
@@ -637,7 +647,7 @@ test("slotOf: cards vs(2칸) 칸 폭은 평범한 2칸(plain)보다 좁음(가�
   assert.ok(vsSlot.body < plainSlot.body, `vs ${vsSlot.body} < plain ${plainSlot.body}`);
 });
 
-test("frameHeight: resultChart(막대)가 있으면 불릿이 짧아도 최소 CHART_MM 이상, resultBand(강조 띠)가 있으면 불릿 폭(resultWidth)이 좁아짐", () => {
+test("frameHeight: resultChart(막대)가 있으면 불릿이 짧아도 최소 막대 높이(sideChartMm) 이상, resultBand(강조 띠)가 있으면 불릿 폭(resultWidth)이 좁아짐", () => {
   const plain = frameHeight("제목", ["짧은 결과"], 0);
   const withChart = frameHeight("제목", ["짧은 결과"], 0, { chart: true });
   assert.ok(withChart > plain, `chart 있으면 더 높음: ${withChart} > ${plain}`);
@@ -645,6 +655,38 @@ test("frameHeight: resultChart(막대)가 있으면 불릿이 짧아도 최소 C
   const wideBand = resultWidth();
   const narrowBand = resultWidth({ band: "98% 달성" });
   assert.ok(narrowBand < wideBand, `강조 띠가 있으면 불릿 폭이 좁아짐: ${narrowBand} < ${wideBand}`);
+});
+
+test("추진성과 상자 안 막대 높이(sideChartMm, 2026-10-29 — 머리를 막대 왼쪽 세로 칸으로): max(머리 줄 수 × 줄 높이, 막대 그림) — 머리 줄은 글 길이·머리 칸 폭으로 셈, 보통 머리는 막대 그림이 정해 예전(머리 위) 어림보다 낮음 · 사다리 행 끝 막대는 예전 CHART_MM·42mm 칸 그대로", () => {
+  const PT = 25.4 / 72;
+  const PX = 25.4 / 96;
+  const SC = REPORT_STYLE.sideChart;
+  const bar = SC.barMm * (104 / 150) + 0.6;
+  assert.equal(sideChartMm(), bar, "머리를 모르면 막대 그림 높이");
+  const short = { title: "지표 건수", badge: "2배" };
+  assert.equal(sideChartMm(short), bar, "짧은 머리는 막대 그림이 정함");
+  // 예전 어림(CHART_MM — 42mm 칸 위 머리 한 줄 고정): 막대 그림 + 머리 한 줄. 머리가 두 줄로 접히면 화면은 그보다도 높았음
+  const old = 42 * (104 / 150) + 9.5 * 1.45 * PT + 0.6;
+  assert.ok(sideChartMm(short) < old - 4, `${sideChartMm(short)} < ${old}`);
+  // 긴 머리: 어절마다 한 줄 → 머리 높이가 정함(줄 수 = lineCount(머리, 머리 칸 안 폭, 돋움 9.5pt))
+  const long = Array.from({ length: 8 }, () => "가나다라").join(" ");
+  const n = lineCount(long, SC.headMm - 6 * PX - 0.2, 9.5, true);
+  assert.equal(n, 8);
+  assert.ok(Math.abs(sideChartMm({ title: long }) - (n * 9.5 * 1.45 * PT + 4 * PX + 0.6)) < 1e-9);
+  assert.ok(sideChartMm({ title: long }) > bar);
+  assert.ok(sideChartMm({ title: long, badge: "배지" }) > sideChartMm({ title: long }), "배지 줄을 더함");
+  // 상자 안 막대 칸(머리 + 막대 + 사이 2.5mm)만큼 추진성과 글 폭이 좁아짐 — 화면 .k-result__body--chart > .k-row2 오른쪽 열과 같은 값
+  assert.ok(Math.abs(resultWidth() - resultWidth({ chart: true }) - (SC.headMm + SC.barMm + 2.5)) < 1e-9);
+  // 수치 띠 상자 안 막대는 머리 길이를 셈
+  const chart = blk("chart", { label: "추진실적", title: long, series: [{ label: "’25", value: "1" }, { label: "’26", value: "2" }] });
+  const st = blk("stats", { label: "추진실적", cells: [cell("1건", ["짧은 성과"])] });
+  assert.ok(statsBoxMm([st], PAGE_MM.width, chart) > statsBoxMm([st], PAGE_MM.width, { title: "지표" }), "긴 머리는 상자를 높임");
+  // 사다리 행 끝 막대(도식·불릿 옆)는 예전 그대로: 위 머리 한 줄 고정 높이(CHART_MM)·42mm + 2.5mm 칸
+  assert.equal(CHART_MM, old);
+  const row = fitReport({ sub: { title: "" }, blocks: [blk("bullets", { label: "추진실적", items: ["짧은 글"] }), chart], results: [], module: 1 }).rows[0];
+  assert.equal(row.mm, Math.round((CHART_MM + 6 * PX + 0.3) * 10) / 10, "막대가 정하는 사다리 행 = CHART_MM + 칸 여백");
+  assert.ok(Math.abs(blockWidth(blk("bullets", { label: "가" })) - blockWidth(blk("bullets", { label: "가" }), true) - 44.5) < 1e-9, "사다리 행 끝 막대 칸 44.5mm");
+  assert.ok(frameHeight("제목", ["짧은 결과"], 0, { chart: { title: long } }) > frameHeight("제목", ["짧은 결과"], 0, { chart: true }), "추진성과 막대 머리가 길면 상자가 높음");
 });
 
 test("canonicalBlock: qa·table 모양 — qa는 cells에 head·bullets가 채워지고, table은 items(구분+값열 3개)·cells가 채워짐", () => {

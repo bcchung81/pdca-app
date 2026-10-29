@@ -20,6 +20,7 @@ import { flattenHtmlTables } from "../../lib/knowledge/rich-text.ts";
 import { fillFrom } from "../../lib/prompts/template.ts";
 import { matchPrompts } from "../../lib/prompts/sets.ts";
 import { trackSpecOfUnit } from "../../lib/tracks/index.ts";
+import { jevCard } from "../lib/jev-card.ts";
 
 const argv = process.argv.slice(2);
 const opt = (n: string): string | undefined => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : undefined);
@@ -74,14 +75,6 @@ const jevDone = (c: Card) => {
   const d = JSON.parse(readFileSync(jevFile(c), "utf8")) as JevFile;
   return d.variant === variant && d.scores.length === c.chunks.length && c.chunks.every((ch) => d.scores.some((s) => s.chunkKey === ch.chunk_key));
 };
-/** Jev 상태(cardState)는 주요사업 카드의 act.findings만 읽으므로 경영관리 카드의 「지적 및 개선방안」 지적 칸을 같은 자리에 옮겨 줌(typesafe.ts를 안 고치려고) */
-function jevCard(data: unknown): unknown {
-  const d = (data ?? {}) as { act?: { findings?: unknown }; findings?: { rows?: { finding?: unknown }[] } };
-  const mg = (Array.isArray(d.findings?.rows) ? d.findings!.rows! : []).map((r) => r?.finding).filter((x): x is string => typeof x === "string" && !!x.trim());
-  if (!mg.length) return data;
-  const own = Array.isArray(d.act?.findings) ? (d.act!.findings as unknown[]) : [];
-  return { ...d, act: { ...d.act, findings: [...own, ...mg] } };
-}
 async function runJev(c: Card) {
   const apiKey = process.env.TYPESAFE_API_KEY;
   if (!apiKey) throw new Error("TYPESAFE_API_KEY가 없습니다(.env.local)");

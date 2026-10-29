@@ -15,7 +15,7 @@ import { blockTexts } from "../../lib/reports/blocks.ts";
 import { loadCardBundle } from "../../lib/ai/context.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { pickPrior, scorePrior, toPriorSection } from "../../lib/reports/prior.ts";
-import { cleanLine, quoteFoundIn, readSection, recheckSection, sourceKey } from "../../lib/reports/section.ts";
+import { cleanLine, evidenceKey, quoteFoundIn, readSection, recheckSection } from "../../lib/reports/section.ts";
 import { isoDay } from "../../lib/format.ts";
 
 const dry = process.argv.includes("--dry");
@@ -94,7 +94,7 @@ if (req.kind === "ask") {
   console.log("답:\n" + call.output.answer);
 } else {
   const call = await callReportBlock({ kind: "edit", prompt, kb });
-  const hay = sourceKey(`${cardText}\n${known}\n${quoteOnly}`);
+  const hay = evidenceKey(card.data, known, quoteOnly);
   const v = verifyBlockEdit(before, call.output.block, cleanLine, (q) => quoteFoundIn(hay, q));
   console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round((Date.now() - t0) / 1000), usage: call.usage, reply: call.output.reply }, null, 1));
   if (!v.ok) {

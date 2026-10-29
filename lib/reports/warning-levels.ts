@@ -23,6 +23,11 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   문체: "info",
   "칸 채우기": "info",
   추진성과: "info", // 추진성과가 블록 수치를 되풀이
+  "추진성과 보강": "info", // 집필이 비운 추진성과를 원장 성과 줄로 채움(lib/reports/mg-close.ts, 2026-10-29)
+  "분량 보강": "info", // 경영관리 집필 뒤 분량 채움 보강이 다시 쓴 블록·채운 mm(lib/reports/mg-fill.ts, 2026-10-29) — 보탠 글 확인 신호
+  "분량 보강 실패": "info", // 보강하지 못해 1차 글을 유지한 블록과 까닭(근거 밖 숫자·모양 바뀜·시간·호출 한도) — 1차 초안의 경고는 따로 남음
+  "성과 배정": "info", // 경영관리 구성안: 두 절 추진성과가 같은 성과 재료 · 수치 없이 닫은 절이 있는데 수치 성과 재료가 남음(lib/reports/mg-outline.ts mgOutcomeIssues, 2026-10-29)
+  "데이터 블록": "info", // 경영관리 구성안: 수치 묶음 재료(같은 단위 값 3개 이상)를 맡은 절에 수치 표·막대 표가 없음(lib/reports/mg-outline.ts mgBundleIssues, 2026-10-29 S2)
   "추진성과 막대": "info",
   "추진성과 강조 띠": "info",
   그림: "info",
@@ -35,7 +40,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "자동 고치기": "info", // 실패·시간 부족 — 남은 문제는 각자 경고로 따로 나옴
   갈래: "info",
   "갈래 칩": "info",
-  막대: "info", // 블록 정리에서 뺀 막대
+  막대: "info", // 블록 정리에서 뺀 막대 · 글 블록 없이 막대만 있는 사다리 행(lib/reports/mg-close.ts, 2026-10-29)
   "수치 띠": "info", // 블록 정리에서 뺀 수치 띠
   "글 한도": "info",
   "칸 수": "info",
@@ -50,8 +55,10 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "성과 축": "info",
   틀: "info",
   "표기 없는 상자": "info", // 상자형 도식에 라벨·제목·칸 머리·칩이 하나도 없음(맨 상자 — lib/reports/title-checks.ts bareBoxWarnings, 2026-10-28)
+  "글 모양": "info", // 괄호 짝·쪼개진 문장·날짜만 있는 조각 불릿(lib/reports/text-shape.ts, 2026-10-28)
   "블록 제목": "info", // 블록 제목 화살표 양쪽에 같은 대상이 없음(「사후 확인 → AI 사전예방 전환」 — lib/reports/title-checks.ts, 2026-10-28)
   "반복 수치": "info", // 같은 수치를 서로 다른 블록 3개 이상(경영관리는 절 2개 이상)에 되풀이(lib/reports/repeat-figures.ts, 2026-10-27)
+  "반복 문장": "info", // 서로 다른 블록에 거의 같은 문장(textSimilarity ≥ 0.8 — lib/reports/repeat-figures.ts sentenceRepeatWarning, 2026-10-29)
   "계획→실적": "info", // 실적 칸 줄이 카드 계획 줄과 많이 겹치고 실행 근거와는 적게 겹침(lib/reports/result-plan.ts planAsResult, 2026-10-27)
   계량지표: "info", // 카드 계량지표 이름이 초안에 없음 — 주요사업만(lib/reports/kpi-cover.ts, 2026-10-27)
   // 블록 정리가 근거 없는 인용·사례·정의를 뺀 줄의 머리(블록 종류 또는 종류(라벨))

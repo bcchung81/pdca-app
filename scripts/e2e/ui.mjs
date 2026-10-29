@@ -227,8 +227,10 @@ try {
   // 오른쪽 패널은 늘 열려 있고 과제를 열면 「AI 작성지원」 탭(머리의 여닫는 버튼은 없앴음)
   check("오른쪽 패널: 「AI 작성지원 | 점검 결과」 탭, AI 작성지원이 기본", (await p.getByRole("tab", { name: "AI 작성지원", selected: true }).count()) === 1 && (await p.getByRole("tab", { name: "점검 결과" }).count()) === 1);
   const panel = p.getByRole("region", { name: "AI 작성지원" });
+  // 답 머리에는 요청 종류만 남아(2026-10-28 화면 단순화) 답 도착은 [data-answer] 수로 기다림
+  const answers0 = await panel.locator("[data-answer]").count();
   await panel.getByRole("button", { name: "개선 제안 요청" }).click();
-  await panel.getByText(/^개선 제안 · 근거 자료 \d+건/).waitFor({ timeout: 330000 });
+  await panel.locator("[data-answer]").nth(answers0).waitFor({ timeout: 330000 });
   const reviewText = await panel.innerText();
   console.log("AI 작성지원(개선 제안) 결론:", (await panel.locator("p.text-sm.font-bold").first().innerText().catch(() => "")).slice(0, 120));
   check("AI 작성지원 개선 제안: 근거 자료·지침 기호(◆▸)·카드 반영 제안(8건 이하)", /[◆▸]/.test(reviewText) && /카드 반영 제안 [1-8]건/.test(reviewText), reviewText.slice(0, 160).replace(/\s+/g, " "));
@@ -241,8 +243,9 @@ try {
   check("AI 작성지원 첨부: 파일 → 카드 전용 자료로 올리고 첨부 칩", true);
   // 실적 문장·수치는 요청 칸 하나에 붙여 넣음(따로 뜨던 붙여 넣기 칸은 없앴음)
   await panel.getByLabel("실적 자료·요청", { exact: true }).fill("9월 실적(결과보고 9.26.): 고속철도 LTE-R 준공검사 3건 완료(9.12.), 정기검사 2개 노선 12km 전파품질 측정 완료, 이동형 측정시스템 5대 운영으로 누적 측정 구간 1,240km");
+  const answers1 = await panel.locator("[data-answer]").count();
   await panel.getByRole("button", { name: "실적 반영(모드 A) 요청" }).click();
-  await panel.getByText(/^실적 반영\(모드 A\) · 근거 자료 \d+건/).waitFor({ timeout: 330000 });
+  await panel.locator("[data-answer]").nth(answers1).waitFor({ timeout: 330000 });
   const reflectText = await panel.innerText();
   const sixCols = ["월", "추진실적", "정량성과", "정성성과", "진도율", "리스크(대응)"].every((k) => reflectText.includes(k));
   check("AI 작성지원 실적 반영(모드 A): 월별 6열 표 + 원본자료 확인 문구(또는 되묻기)", (sixCols && /원본자료 수치와 일치하는지/.test(reflectText)) || /되묻|확인되지 않습니다/.test(reflectText), reflectText.slice(0, 160).replace(/\s+/g, " "));
@@ -307,13 +310,14 @@ try {
   await p.goto(`${BASE}/cards?peek=${own.uid}`, { waitUntil: "networkidle" });
   // 과제를 열면 오른쪽 패널의 「AI 작성지원」 탭
   const chat = p.getByRole("region", { name: "AI 작성지원" });
-  check("AI 작성지원 기록이 옆 창을 다시 열어도 남음(이 탭)", (await chat.getByText(/^개선 제안 · 근거 자료 \d+건/).count()) === 1);
+  check("AI 작성지원 기록이 옆 창을 다시 열어도 남음(이 탭)", (await chat.locator("[data-answer]").count()) >= 1);
   await chat.getByRole("radio", { name: "질문" }).click();
   await chat.getByLabel("질문", { exact: true }).fill("전략연계 점검: 국정과제·ESG·AI활용(AX) 연계가 카드에 제대로 적혀 있는지 보고, 빠지거나 약한 곳을 보완해 주세요.");
+  const answers2 = await chat.locator("[data-answer]").count();
   await chat.getByRole("button", { name: "질문 보내기" }).click();
-  await chat.getByText(/^질문 · 근거 자료 \d+건/).waitFor({ timeout: 330000 });
+  await chat.locator("[data-answer]").nth(answers2).waitFor({ timeout: 330000 });
   const chatText = await chat.locator("[data-answer]").last().innerText();
-  check("AI 작성지원 질문: 자유 질문 → 마크다운 답(지침 기호·근거 자료 수·복사)", /[◆▸□]/.test(chatText) && /근거 자료 \d+건/.test(chatText) && chatText.includes("복사"), chatText.slice(0, 160).replace(/\s+/g, " "));
+  check("AI 작성지원 질문: 자유 질문 → 마크다운 답(지침 기호·답 복사 단추)", /[◆▸□]/.test(chatText) && (await chat.locator("[data-answer]").last().getByRole("button", { name: /답 복사/ }).count()) === 1, chatText.slice(0, 160).replace(/\s+/g, " "));
   check("AI 작성지원 질문: 카드는 왼쪽에 그대로(편집 칸 있음)", (await p.locator("[data-p]").count()) > 0);
   await shot(p, "40-card-chat");
   const { count: chatRows } = await admin.from("ai_requests").select("id", { count: "exact", head: true }).eq("card_id", own.id).eq("feature", "card_chat").eq("status", "ok");

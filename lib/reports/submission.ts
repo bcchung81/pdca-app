@@ -26,6 +26,8 @@ export interface SubmitCard {
   pages: number | null;
   /** 원장 개정 번호(cards.data_rev) */
   dataRev: number | null;
+  /** 경영관리: 원장 정량 성과 줄 중 연도 언급 없이 올해 실적 재료로 받은 것(undatedOutcomeLines) — 자료 요청이 「기준 시점·출처 확인」으로 올림 */
+  undatedOutcome?: string[];
   draft: {
     spec: ReportSectionSpec | null;
     /** 초안을 만들 때 원장 개정 번호 — 지금과 다르면 다시 만들기 권장 */

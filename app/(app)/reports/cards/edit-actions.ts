@@ -16,10 +16,11 @@ import { blocksSampleHtml } from "../../../../lib/reports/section-html.ts";
 import { requireUser } from "../../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../../lib/auth/preview.ts";
 import { currentPeriod } from "../../../../lib/cards/view.ts";
-import { type ReportSectionSpec, cleanLine, quoteFoundIn, readSection, recheckSection, sourceKey } from "../../../../lib/reports/section.ts";
+import { type ReportSectionSpec, cleanLine, evidenceKey, quoteFoundIn, readSection, recheckSection } from "../../../../lib/reports/section.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { recheckMgSection } from "../../../../lib/reports/mg-draft.ts";
 import { type DraftSources, type Prepared, beginAi, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
+import { type DraftPick, mergeSources, readPick, specSources, withFileSources } from "../../../../lib/reports/draft-sources.ts";
 
 // ---------------------------------------------------------------------------
 // 블록 고치기(드래그 「AI 수정 요청」·「질문」 — lib/reports/block-edit.ts, 2026-09-27 사용자 결정 「블록 단위 · 이력은 DB · 도구줄은 수정 요청·질문」)
@@ -38,8 +39,11 @@ const fitNote = (was: { total: number } | undefined, now: ReportSectionSpec["fit
 const heightNote = (h: { before: number; after: number; budget: number | null }, mg: boolean) =>
   `${mg ? "분량 어림" : "판면"} ${h.before !== h.after ? `${h.before} → ` : ""}${h.after}${h.budget ? `/${h.budget}` : ""}mm${!mg && h.budget && h.after > h.budget * 1.04 ? " — 넘침, 다른 곳을 줄여 주세요" : ""}`;
 
-/** 초안 행과 그 근거(초안을 만들 때 고른 첨부·전년 절 그대로) */
-async function loadDraftForEdit(uid: string) {
+/**
+ * 초안 행과 그 근거: 초안을 만들 때 고른 첨부·전년 절(saved) ∪ 지금 고른 첨부(pick — 초안 뒤 새로 올린 자료 포함, 사람이 뺀 자료는 뺌 — lib/reports/draft-sources.ts mergeSources).
+ * pick이 없으면(직접 고침·되돌리기) 초안 근거 그대로
+ */
+async function loadDraftForEdit(uid: string, pick?: DraftPick) {
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id").eq("uid", uid).maybeSingle();
   if (!card) return null;
@@ -47,20 +51,17 @@ async function loadDraftForEdit(uid: string) {
   const { data: row } = await supabase.from("card_report_drafts").select("spec, updated_at, outline").eq("card_id", card.id).eq("year", year).maybeSingle();
   const spec = row?.spec ? readSection(row.spec) : null;
   if (!row || !spec || spec.version !== 3 || !spec.blocks?.length) return null;
-  const sources: DraftSources = {
-    card: (spec.sources ?? []).filter((x) => x.kind === "card").map((x) => x.id),
-    report: (spec.sources ?? []).filter((x) => x.kind === "report").map((x) => x.id),
-    prior: spec.priorKeys ?? (spec.sources ?? []).filter((x) => x.kind === "prior").map((x) => x.id),
-  };
+  const saved: DraftSources = specSources(spec.sources, spec.priorKeys);
+  const sources: DraftSources = mergeSources(saved, pick).sources;
   // 구성안(있으면) — 모양 바꾸기의 근거 조건(이 과제만의 요소)을 구성안 편집과 같은 기준으로(lib/reports/block-shape.ts shapeRules)
-  return { spec, version: String(row.updated_at), sources, composition: readComposition(row.outline) };
+  return { spec, version: String(row.updated_at), sources, saved, composition: readComposition(row.outline) };
 }
 
 /** 모양 바꾸기 규칙: 트랙 + 이 과제만의 요소 근거 조건(구성안이 있으면 그 재료, 없으면 집필 때의 도식 후보) */
 const rulesOf = (d: NonNullable<Awaited<ReturnType<typeof loadDraftForEdit>>>, p: Prepared): ShapeRules => shapeRules(Boolean(d.spec.mg), d.composition, p.own);
 
 /** 인용·말풍선·우수사례·정의 원문 대조 글(초안 검증과 같은 근거) */
-const quoteHay = (p: Prepared) => sourceKey(`${cardOutline(p.card.data)}\n${inspectionCardText(p.card.data)}\n${p.known}\n${p.quoteOnly}`);
+const quoteHay = (p: Prepared) => evidenceKey(p.card.data, p.known, p.quoteOnly);
 /** 다시 점검(숫자 대조) — 트랙별 */
 const recheck = (p: Prepared, spec: ReportSectionSpec) => (spec.mg ? recheckMgSection(spec, p.card.data, p.known, p.year, p.actuals.today) : recheckSection(spec, p.card.data, p.known, p.year, p.actuals.today));
 
@@ -68,7 +69,9 @@ const recheck = (p: Prepared, spec: ReportSectionSpec) => (spec.mg ? recheckMgSe
 /** 수정 이력 한 행(블록 하나 — 추진성과(blockIndex RESULT_INDEX)면 before·after가 추진성과 칸) */
 type EditLog = { blockIndex: number; kind: "edit" | "undo"; request: string; quote: string; reply: string; before: Block | ResultBox; after: Block | ResultBox; model: string | null; wasHuman: boolean; refId?: number };
 
-async function saveEditedDraft(p: Prepared, spec: ReportSectionSpec, version: string, edit: EditLog | EditLog[] | null): Promise<{ ok: true; version: string; editId: number | null; unknown: number; fit: ReportSectionSpec["fit"] | null } | { ok: false; message: string; conflict?: boolean }> {
+async function saveEditedDraft(p: Prepared, edited: ReportSectionSpec, version: string, edit: EditLog | EditLog[] | null): Promise<{ ok: true; version: string; editId: number | null; unknown: number; fit: ReportSectionSpec["fit"] | null } | { ok: false; message: string; conflict?: boolean }> {
+  // 블록 고치기에 새로 고른 자료를 넣었으면 초안 근거 목록에도 더함(다음 직접 고침·되돌리기의 숫자 대조 근거)
+  const spec: ReportSectionSpec = { ...edited, sources: withFileSources(edited.sources, p.files) };
   const checked = recheck(p, spec);
   const { data: saved, error } = await p.supabase
     .from("card_report_drafts")
@@ -92,17 +95,17 @@ async function saveEditedDraft(p: Prepared, spec: ReportSectionSpec, version: st
 
 /**
  * 블록 고치기·질문: 과제별 초안 미리보기에서 끌어 고른 글이 든 블록 하나를 담당자 요청대로 AI가 다시 씀(질문이면 답만).
- * 근거는 그 초안을 만들 때와 같음(카드 + 고른 첨부 + 전년 절 + 실사 답변). 고치기는 같은 종류 한 블록일 때만 받고(block-edit.ts verifyBlockEdit),
+ * 근거는 그 초안을 만들 때의 것(카드 + 고른 첨부 + 전년 절 + 실사 답변)에 지금 고른 첨부(pick — 초안 뒤 올린 자료, 뺀 자료 제외)를 더함. 고치기는 같은 종류 한 블록일 때만 받고(block-edit.ts verifyBlockEdit),
  * 초안을 다시 점검(recheckSection)해 저장 — version(불러온 초안 updated_at)이 지금과 다르면 거절. 이력 report_draft_edits, 호출 기록 feature = report_block.
  */
-export async function runDraftBlockEdit(uid: string, raw: { blockIndex: number; kind: "edit" | "ask"; request: string; quote: string; version: string }): Promise<DraftBlockResult> {
+export async function runDraftBlockEdit(uid: string, raw: { blockIndex: number; kind: "edit" | "ask"; request: string; quote: string; version: string; pick?: DraftPick }): Promise<DraftBlockResult> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
-  const d = await loadDraftForEdit(uid);
+  const d = await loadDraftForEdit(uid, readPick(raw?.pick));
   if (!d) return { ok: false, message: "고칠 초안이 없습니다(블록 목록 초안만 고칠 수 있음). 먼저 초안을 만들어 주세요." };
   if (String(raw?.version ?? "") !== d.version) return { ok: false, conflict: true, message: "그사이 초안이 바뀌었습니다. 화면을 새로 고친 뒤 다시 골라 주세요." };
   const req = readBlockEditRequest(raw, d.spec);
   if (typeof req === "string") return { ok: false, message: req };
-  const p = await prepareDraft(uid, d.sources, { lenient: true, readOnly: req.kind === "ask" });
+  const p = await prepareDraft(uid, d.sources, { loose: d.saved, readOnly: req.kind === "ask" });
   if (!p.ok) return { ok: false, message: p.message };
   if (req.blockIndex === RESULT_INDEX) return runResultEdit(uid, d, p, req);
   const before = d.spec.blocks![req.blockIndex];
@@ -217,13 +220,13 @@ export type BlockShapesResult =
  * 안마다 고치기와 같은 검증(트랙·근거 조건·원문 대조 — block-edit.ts cleanShapeOptions), 높이 어림 차이, 새로 생기는 근거 없는 숫자, 미리보기 HTML. 아무것도 저장하지 않음.
  * 호출 기록 feature = report_block(블록 고치기와 같은 1분 5회·동시 2건 제한)
  */
-export async function previewBlockShapes(uid: string, raw: { blockIndex: number; request?: string; want?: string | null; version: string }): Promise<BlockShapesResult> {
+export async function previewBlockShapes(uid: string, raw: { blockIndex: number; request?: string; want?: string | null; version: string; pick?: DraftPick }): Promise<BlockShapesResult> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
-  const d = await loadDraftForEdit(uid);
+  const d = await loadDraftForEdit(uid, readPick(raw?.pick));
   if (!d) return { ok: false, message: "고칠 초안이 없습니다(블록 목록 초안만 고칠 수 있음). 먼저 초안을 만들어 주세요." };
   if (String(raw?.version ?? "") !== d.version) return { ok: false, conflict: true, message: "그사이 초안이 바뀌었습니다. 화면을 새로 고친 뒤 다시 골라 주세요." };
   // 쓰기와 같은 권한(부서는 자기 부서·잠금 아님)일 때만 — 고른 안을 적용하려면 어차피 써야 함
-  const p = await prepareDraft(uid, d.sources, { lenient: true });
+  const p = await prepareDraft(uid, d.sources, { loose: d.saved });
   if (!p.ok) return { ok: false, message: p.message };
   const rules = rulesOf(d, p);
   const req = readBlockShapesRequest(raw, d.spec, rules);
@@ -270,16 +273,16 @@ export async function previewBlockShapes(uid: string, raw: { blockIndex: number;
  * 블록 고치기와 같은 저장 경로(version 조건 · 다시 점검 · 사람이 고친 블록 표시 · 수정 이력 한 행 「모양 바꾸기 — …」 — 되돌리기 그대로 됨).
  * 경영관리 초안도 같은 블록 순번이라 절 자리(spec.mg.at[i])는 그대로
  */
-export async function applyBlockShape(uid: string, raw: { blockIndex: number; out: BlockOutput; why?: string; request?: string; model?: string; version: string }): Promise<DraftBlockResult> {
+export async function applyBlockShape(uid: string, raw: { blockIndex: number; out: BlockOutput; why?: string; request?: string; model?: string; version: string; pick?: DraftPick }): Promise<DraftBlockResult> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
-  const d = await loadDraftForEdit(uid);
+  const d = await loadDraftForEdit(uid, readPick(raw?.pick));
   if (!d) return { ok: false, message: "고칠 초안이 없습니다." };
   if (String(raw?.version ?? "") !== d.version) return { ok: false, conflict: true, message: "그사이 초안이 바뀌었습니다(다시 만들기·다른 수정). 화면을 새로 고친 뒤 다시 만들어 주세요." };
   const blockIndex = Number(raw?.blockIndex);
   const before = Number.isInteger(blockIndex) ? d.spec.blocks?.[blockIndex] : undefined;
   if (!before) return { ok: false, message: "바꿀 블록을 찾지 못했습니다. 화면을 새로 고친 뒤 다시 골라 주세요." };
   if (!raw?.out || typeof raw.out !== "object") return { ok: false, message: "고른 안이 올바르지 않습니다." };
-  const p = await prepareDraft(uid, d.sources, { lenient: true });
+  const p = await prepareDraft(uid, d.sources, { loose: d.saved });
   if (!p.ok) return { ok: false, message: p.message };
   const hay = quoteHay(p);
   const v = checkBlock(before, raw.out, cleanLine, (q) => quoteFoundIn(hay, q), rulesOf(d, p));

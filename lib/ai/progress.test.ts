@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ASSIST_EXPECT, INSPECT_EXPECT, OUTLINE_RUNS, assistProgress, blockShapesProgress, draftExpect, draftProgress, expectLabel, fmtElapsed, overdue, rangeText } from "./progress.ts";
+import { MG_FILL } from "../reports/mg-fill-limits.ts";
 
 test("경과 시간 m:ss, 보통 걸리는 시간 글, 넘겼는지", () => {
   assert.equal(fmtElapsed(0), "0:00");
@@ -76,11 +77,15 @@ test("보완 점검 진행 줄: 카드·공통 지식 + 최종 점검표, 제목
   assert.deepEqual(p.sources.map((s) => s.label), ["카드", "공통 지식", "최종 점검표"]);
 });
 
-test("경평 초안 보통 걸리는 시간: 한곳(draftExpect)에서 — 경영관리 표는 따로(집필은 한 번 — 판면 고치기 없음), 단추 글은 rangeText(2026-10-10 effort high 실측)", () => {
+test("경평 초안 보통 걸리는 시간: 한곳(draftExpect)에서 — 경영관리 표는 따로(집필 한 번 + 분량 채움 보강), 단추 글은 rangeText(2026-10-10 effort high 실측)", () => {
   assert.equal(rangeText(draftExpect("outline")), "1~4분");
   assert.equal(rangeText(draftExpect("story")), "1~4분");
   assert.equal(rangeText(draftExpect("outline", true)), "1~4분", "경영관리 구성안 108·150초");
-  assert.equal(rangeText(draftExpect("plan", true)), "1~3분", "경영관리 집필 89·99초");
+  // 경영관리 집필 89·99초 + 분량 채움 보강(2026-10-29 — 보강 전체 상한 MG_FILL.maxSec(실측 블록 16~44초 × 두 라운드 약 20블록)까지, 사유가 없으면 집필 한 번으로 끝나 아래쪽 그대로)
+  assert.equal(rangeText(draftExpect("plan", true)), "1~13분");
+  assert.equal(draftExpect("plan", true).max, 180 + MG_FILL.maxSec);
+  assert.deepEqual(draftExpect("revise", true), draftExpect("plan", true), "자료 반영 고치기도 같은 보강");
+  assert.equal(rangeText(draftExpect("plan")), "1~3분", "주요사업 집필은 그대로");
   assert.equal(rangeText(draftExpect("draft")), "2~5분", "바로 만들기는 1차·고치기·판면만 한 번 더 196초");
   assert.equal(expectLabel(draftProgress("outline", { files: [], prior: [], lens: 0, mg: true }).expect), "보통 1~4분");
 });
@@ -120,4 +125,16 @@ test("경평 초안·다른 모양으로 진행 줄: 선별 방식이 적용되�
   const shapesOn = last(blockShapesProgress({ blockNo: 2, want: null, selected: 0 }));
   assert.equal(shapesOn.label, "공통 지식");
   assert.ok(shapesOn.detail.includes("고른 자료 0건"));
+});
+
+test("경영관리 집필 진행 줄(2026-10-29): 「분량 보강」 단계는 경영관리 구성안대로 집필·자료 반영 고치기에만(서버가 실제로 하는 단계 — 공통 지식은 그대로 끝), 주요사업·구성안 요청에는 없음", () => {
+  for (const kind of ["plan", "revise"] as const) {
+    const mg = draftProgress(kind, { files: [], prior: [], lens: 0, mg: true });
+    const fill = mg.sources.find((s) => s.label === "분량 보강");
+    assert.ok(fill, kind);
+    assert.match(fill.detail, new RegExp(`먼저 저장[^\n]*배정의 ${Math.round(MG_FILL.low * 100)}%[^\n]*반복 수치[^\n]*블록을 모두 하나씩 다시 쓰고[^\n]*최대 ${MG_FILL.rounds}회[^\n]*1차 글 그대로`));
+    assert.match(mg.sources.at(-1)!.label, /^공통 지식/, "공통 지식은 맨 끝 그대로");
+    assert.ok(!draftProgress(kind, { files: [], prior: [], lens: 0 }).sources.some((s) => s.label === "분량 보강"), `${kind}: 주요사업은 없음`);
+  }
+  assert.ok(!draftProgress("outline", { files: [], prior: [], lens: 0, mg: true }).sources.some((s) => s.label === "분량 보강"), "구성안 요청은 없음");
 });

@@ -61,10 +61,10 @@ export interface YearActuals {
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 /**
- * 카드 + 부서 계량 실적 입력 → 올해 실적 재료. inputs 키는 lib/reports/model.ts kpiKeyedRows(카드 id#지표 이름).
+ * 카드 + 부서 계량 실적 입력 → 올해 실적 재료. opts.wide(경영관리): 연도 언급이 없는 증감·「A → B」 성과 줄도 받아 「시점 미기재」 표지를 붙임(outcomeActualItems). inputs 키는 lib/reports/model.ts kpiKeyedRows(카드 id#지표 이름).
  * 계량지표는 원본 양식의 빈 자리표시("-") 행을 뺌(model.ts kpiRowsOf와 같은 규칙).
  */
-export function yearActuals(card: Json, inputs: Record<string, string> = {}, today = ""): YearActuals {
+export function yearActuals(card: Json, inputs: Record<string, string> = {}, today = "", opts: { wide?: boolean } = {}): YearActuals {
   const rows: Json[] = Array.isArray(card?.kpi?.rows) ? card.kpi.rows : [];
   const keyOf = new Map(kpiKeyedRows(String(card?.id), rows).map((k) => [k.i, k.key]));
   const kpi: KpiActual[] = rows
@@ -72,7 +72,11 @@ export function yearActuals(card: Json, inputs: Record<string, string> = {}, tod
     .filter((k) => k.name && !/^[-–—·]+$/.test(k.name));
   const monthly: YearActuals["monthly"] = [];
   for (const m of Array.isArray(card?.do?.monthly) ? card.do.monthly : []) {
-    for (const line of Array.isArray(m?.items) ? m.items : []) if (typeof line === "string" && hasFigure(line)) monthly.push({ period: str(m?.period), line: line.trim() });
+    for (const line of Array.isArray(m?.items) ? m.items : []) {
+      if (typeof line === "string") {
+        if (hasFigure(line)) monthly.push({ period: str(m?.period), line: line.trim() });
+      } else if (opts.wide) for (const t of tableMonthlyLines(line)) monthly.push({ period: str(m?.period), line: t });
+    }
   }
   const year = Number(/^(\d{4})-/.exec(today)?.[1] ?? 0);
   if (!year) return { today, kpi, monthly };
@@ -80,12 +84,66 @@ export function yearActuals(card: Json, inputs: Record<string, string> = {}, tod
   // 초안이 카드에 있는 실적을 자리표시로 비웠음(블라인드 심사). 지표 이름 낱말이 절반 넘게 든 줄은 그 지표에 붙이고, 나머지는 따로 알림
   const keys = kpiKeyWords(kpi.map((k) => k.name));
   const outcome: string[] = [];
-  for (const line of outcomeActuals(card, year)) {
+  for (const { line: raw, undated } of outcomeActualItems(card, year, Boolean(opts.wide))) {
+    const line = undated ? `${raw} ${UNDATED_NOTE}` : raw;
     const i = kpi.findIndex((k, j) => !k.outcome && wordCover(keys[j], line) >= KPI_COVER_MIN);
     if (i >= 0) kpi[i].outcome = line;
     else outcome.push(line);
   }
   return { today, kpi, monthly, outcome };
+}
+
+const cellText = (c: Json) => (Array.isArray(c?.lines) ? c.lines.join(" ") : typeof c?.text === "string" ? c.text : "").trim();
+
+/** 머리 칸의 시점 한 곳: 앞 「~」(선택)·따옴표(’·`·'·‘ 무엇이든)·연도 두 자리·월(1~12). 「2026.8」처럼 연도 앞에 숫자·점이 붙으면 시점이 아님 */
+const PERIOD_RE = /(?<![\d.])([~∼]?)\s*[’'‘`]?(\d{2})\.(1[0-2]|0?[1-9])(?!\d)/;
+
+/** 머리 칸 글에서 대괄호·백틱을 걷음(원문 링크 형식 「[`26.8.월](진행중)」) */
+const stripHeadMarks = (head: string) => head.replace(/[\[\]`]/g, "").replace(/\s+/g, " ").trim();
+
+/** 머리 칸 글의 시점 표기 「’YY.M」(앞 「~」는 유지, 예: 「~’26.7.월」 → 「~’26.7」). 시점이 없으면 null */
+export function periodOf(head: string): string | null {
+  const m = PERIOD_RE.exec(stripHeadMarks(head));
+  return m ? `${m[1]}’${m[2]}.${Number(m[3])}` : null;
+}
+
+/** 머리 칸 글을 시점 표기로 정리: 시점이 있으면 「’YY.M」, 없으면 대괄호·백틱만 걷은 머리 글(진행 표지·「월」 꼬리는 시점과 함께 빠짐) */
+export function periodLabel(head: string): string {
+  return periodOf(head) ?? stripHeadMarks(head);
+}
+
+/** 칸 글 끝에 이미 괄호 시점(「(’26.8 기준)」·「(2026년 3월)」)이 있는가 — 있으면 머리 시점을 또 붙이지 않음 */
+const TRAILING_PERIOD_RE = /\([^()]*(?:[’'‘`]\d{2}|20\d{2}\s*년?)(?:\.\d{1,2})?[^()]*\)\s*$/;
+
+/**
+ * 월별 실적의 표 항목(경영관리 — item.table.rows) → 열마다 「칸 글(’YY.M 기준)」 한 줄, 수치가 든 줄만.
+ * 시점을 못 찾은 머리는 「머리 글 칸 글」로 둠. 칸 글 끝에 괄호 시점이 있으면 머리 시점을 겹쳐 붙이지 않음.
+ * 머리(th) 칸에 「예정」이 든 열은 계획이라 뺌. 열 위치는 colspan을 따라 셈(채점 도구 mg-para-score-core ledgerLines와 같은 규칙)
+ */
+function tableMonthlyLines(item: Json): string[] {
+  const heads = new Map<number, string>();
+  const planCols = new Set<number>();
+  const out: string[] = [];
+  for (const row of Array.isArray(item?.table?.rows) ? item.table.rows : []) {
+    let col = 0;
+    for (const c of Array.isArray(row) ? row : []) {
+      const span = Math.max(1, Number(c?.colspan) || 1);
+      const text = cellText(c);
+      if (c?.th) {
+        for (let k = 0; k < span; k++) {
+          heads.set(col + k, text);
+          if (/예정/.test(text)) planCols.add(col + k);
+        }
+      } else if (text && !planCols.has(col)) {
+        const head = heads.get(col) ?? "";
+        const period = periodOf(head);
+        const line = period ? (TRAILING_PERIOD_RE.test(text) ? text : `${text}(${period} 기준)`) : [periodLabel(head), text].filter(Boolean).join(" ");
+        if (hasFigure(line)) out.push(line);
+      }
+      col += span;
+    }
+  }
+  return out;
 }
 
 /** 글머리 기호로 시작하는 줄 = 새 항목(아니면 앞 줄에 이어 붙음 — 「∙ … 성과 달성(’26.8)」 다음 줄 「(’26년 목표 … → ’26년 성과 2.000일)」) */
@@ -97,6 +155,22 @@ const ITEM_HEAD = /^[∙·•\-－○◦▪□■◆※*]/;
  * 운영 102장 중 잡히는 것: 주요사업1/7-가(「’26년 성과 2.000일」). 「목표 100% 초과 달성」(3/6-가)·「목표(40%) 100% 달성」(경영관리3/3-3)은 값이 목표 쪽이라, 「00% 증가(’26.12 예정)」(2/8-가)는 예정이라 뺌
  */
 export function outcomeActuals(card: Json, year: number): string[] {
+  return outcomeActualItems(card, year, false).map((x) => x.line);
+}
+
+/** 연도 언급 없이 받은 성과 줄 뒤에 붙는 표지(요청 글·부서 확인 요청이 같은 글을 알아봄) */
+export const UNDATED_NOTE = "(시점 미기재 — 부서 확인)";
+
+/** 증감·달성 낱말(「배」는 숫자 바로 뒤일 때만 — 배포·배치 제외) 또는 「A → B」 */
+const CHANGE_RE = /상승|증가|확대|달성|감소|단축|향상|\d\s*배|[^\s→]\s*(?:→|->)\s*\S/;
+/** 연도·시점 언급(’26·2026년 등) */
+const YEAR_RE = /[’']\d{2}(?!\d)|20\d{2}\s*(?:년|\.)/;
+
+/**
+ * outcomeActuals의 본체. wide(경영관리)이면 연도 언급이 없는 줄(올해 시점도 전년 시점도 없음)도 증감·달성 낱말이나 「A → B」와 단위 수치가 있고
+ * 예정·예상·목표가 없으면 받아 undated 표지를 켬(원장 정량 성과 칸 값을 부서가 적은 성과로 쓰되 시점은 부서에 확인 — 2026-10-29)
+ */
+export function outcomeActualItems(card: Json, year: number, wide = false): Array<{ line: string; undated: boolean }> {
   const items: string[] = [];
   for (const raw of Array.isArray(card?.outcome?.quantitative) ? card.outcome.quantitative : []) {
     if (typeof raw !== "string" || !raw.trim()) continue;
@@ -104,7 +178,18 @@ export function outcomeActuals(card: Json, year: number): string[] {
     if (items.length && !ITEM_HEAD.test(line)) items[items.length - 1] += ` ${line}`;
     else items.push(line);
   }
-  return items.filter((l) => mentionsNow(l, year) && actualFigures(l).length > 0 && /성과|실적|달성/.test(l) && !/예정|예상/.test(l)).map((l) => l.replace(new RegExp(`^${ITEM_HEAD.source.slice(1)}\\s*`), ""));
+  const strip = (l: string) => l.replace(new RegExp(`^${ITEM_HEAD.source.slice(1)}\\s*`), "");
+  const out: Array<{ line: string; undated: boolean }> = [];
+  for (const l of items) {
+    if (mentionsNow(l, year) && actualFigures(l).length > 0 && /성과|실적|달성/.test(l) && !/예정|예상/.test(l)) out.push({ line: strip(l), undated: false });
+    else if (wide && !YEAR_RE.test(l) && !/예정|예상|목표/.test(l) && CHANGE_RE.test(l) && hasFigure(l)) out.push({ line: strip(l), undated: true });
+  }
+  return out;
+}
+
+/** 시점 미기재로 받은 원장 성과 줄(경영관리 — 부서 자료 요청·채울 것 모음이 「기준 시점·출처 확인」으로 올림) */
+export function undatedOutcomeLines(card: Json, year: number): string[] {
+  return outcomeActualItems(card, year, true).filter((x) => x.undated).map((x) => x.line);
 }
 
 /** 계량지표 중 올해 실적이 아직 없는 것(부서 입력도 카드 예상 칸도 비었음) — 「채울 자료」 목록용 */

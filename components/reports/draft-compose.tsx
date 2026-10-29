@@ -25,9 +25,13 @@ import { T, Tag } from "../ui/kit";
 import { StatusMark } from "../ui/next-steps";
 import { MARK_TAG } from "../ui/status-tone.ts";
 import { type DraftSelection, type SourceFile, type SourceProps, kb, selectionLine } from "./draft-workbench";
+import { type DraftPick, mergeSources, pickOf } from "../../lib/reports/draft-sources.ts";
 
-/** plan = 구성안대로 집필(승인하고 집필과 같음) · outline = 구성안 (다시) 만들기 · draft = 구성안 없이 바로 만들기 */
-export type DraftMode = "plan" | "outline" | "draft";
+/**
+ * plan = 구성안대로 집필(승인하고 집필과 같음) · revise = 자료 반영 고치기(구성안대로 쓴 초안이 있을 때 — 같은 구성안대로 새 자료·요청 글을 더해 다시 씀, 2026-10-29) ·
+ * outline = 구성안 (다시) 만들기 · draft = 구성안 없이 바로 만들기
+ */
+export type DraftMode = "plan" | "revise" | "outline" | "draft";
 export type DraftBusy = false | DraftMode;
 export type DraftMsg = { ok: boolean; text: string } | null;
 
@@ -51,7 +55,7 @@ export interface DraftMeta {
 /** 구성안 메모 상한(서버와 같음) */
 const MEMO_MAX = 500;
 /** 요청 칸 메모의 접근 이름(레일 「구성안 (다시) 만들기」가 이 이름으로 찾아 초점) */
-const MEMO_LABEL = "요청 메모(구성안 만들기에만 씀)";
+const MEMO_LABEL = "요청 메모(구성안 만들기·집필에 씀)";
 /** 지금 시각(ms) — 확인 창 콜백(ask)에서 불리는 함수라 린트(react-hooks/purity)가 렌더 중 호출로 오인해 Date.now를 한 겹 감쌈 */
 const nowMs = () => Date.now();
 /** 구성안 패널 단추 중 AI 요청(판면 줄이기·저장은 결정론이라 진행 줄 없음) → 진행 줄의 요청 종류 */
@@ -103,8 +107,8 @@ export function DraftCompose(props: {
   outlineHuman: number;
   /** 모양 종류마다 근거 있음(구성안이 있을 때 — 틀 갤러리의 준비 정도) */
   avail: Record<string, { ok: boolean; why: string }> | null;
-  /** 구성안대로 집필(고친 구성안이 있으면 먼저 저장 → 승인하고 집필 — 작업 공간이 구성안 편집 상태로 함) */
-  onPlan: () => Promise<{ ok: boolean; message: string }>;
+  /** 구성안대로 집필·자료 반영 고치기(고친 구성안이 있으면 먼저 저장 → 승인하고 집필 — 작업 공간이 구성안 편집 상태로 함). pick = 지금 고른 근거, request = 요청 칸 글 */
+  onPlan: (o: { pick: DraftPick; request?: string }) => Promise<{ ok: boolean; message: string }>;
   /** 지금 구성안의 이야기 틀·차선 */
   currentStory: string | null;
   alternative: string | null;
@@ -114,7 +118,7 @@ export function DraftCompose(props: {
   outlineRun: { busy: string | null; at: number; msg: DraftMsg; frame?: { pattern?: string; example?: string } | null };
   /** 짜임 고르기에서 「여러 안 비교」(지금 고른 근거로 — 작업 공간이 대화 창을 엶) */
   onAlts?: (alts: FrameChoice[], request: string, sources: { card: string[]; report: string[]; prior: string[] }) => void;
-  /** 구성안에 저장된 근거(구성안대로 집필·다시 만들기가 씀 — 없으면 옛 구성안: 첨부 없이 전년 절 자동) */
+  /** 구성안에 저장된 근거(구성안대로 집필·자료 반영 고치기는 여기에 지금 고른 첨부를 더함, 구성안 패널의 다시 만들기는 그대로 씀 — 없으면 옛 구성안: 첨부 없이 전년 절 자동) */
   outlineSources: { card: string[]; report: string[]; prior: string[] } | null;
   /** 전년 절 이름·자동으로 고르는 절 */
   prior: SourceProps["prior"];
@@ -123,14 +127,15 @@ export function DraftCompose(props: {
 }) {
   const router = useRouter();
   const { sel, busy } = props;
-  // 구성안이 있으면 「구성안대로 집필」이 기본(2026-09-28 — 예전에는 「구성안 다시 만들기 | 바로 다시 만들기」뿐이라 바로 만들기로 써서 고른 틀이 무시됐음).
-  // 구성안이 새로 생기면(만들기 뒤 새로 고침) 그 칩으로 옮김
-  const defaultMode: DraftMode = props.hasOutline ? "plan" : "outline";
+  // 구성안이 있으면 「구성안대로 집필」이 기본(2026-09-28 — 예전에는 「구성안 다시 만들기 | 바로 다시 만들기」뿐이라 바로 만들기로 써서 고른 틀이 무시됐음),
+  // 구성안대로 쓴 초안이 있으면 「자료 반영 고치기」가 기본(2026-10-29 — 초안을 쓴 뒤 올린 첨부·요청 글로 같은 구성안대로 다시 씀).
+  // 기본이 바뀌면(구성안·초안이 새로 생기면 — 만들기 뒤 새로 고침) 기본을 따르던 요청 종류를 새 기본으로 옮김
+  const defaultMode: DraftMode = props.hasOutline ? (props.hasSpec && props.meta.plan ? "revise" : "plan") : "outline";
   const [mode, setMode] = useState<DraftMode>(defaultMode);
-  const [hadOutline, setHadOutline] = useState(props.hasOutline);
-  if (hadOutline !== props.hasOutline) {
-    setHadOutline(props.hasOutline);
-    setMode(defaultMode === "plan" ? "plan" : mode === "plan" ? "outline" : mode);
+  const [hadDefault, setHadDefault] = useState(defaultMode);
+  if (hadDefault !== defaultMode) {
+    setHadDefault(defaultMode);
+    setMode(mode === hadDefault || mode === "plan" || mode === "revise" ? defaultMode : mode);
   }
   const [memo, setMemo] = useState("");
   const [uploading, setUploading] = useState<string | null>(null);
@@ -140,8 +145,10 @@ export function DraftCompose(props: {
   const [frame, setFrame] = useState<FrameChoice | null>(null);
   const [gallery, setGallery] = useState(false);
 
+  const story = props.currentStory ? `(${props.currentStory})` : "";
   const MODES: Array<[DraftMode, string, string]> = [
-    ...(props.hasOutline ? [["plan", "구성안대로 집필", `지금 구성안${props.currentStory ? `(${props.currentStory})` : ""}의 틀·블록 순서·도식대로 초안을 씁니다 — 구성안을 승인합니다(${rangeText(draftExpect("plan", props.mg))})`] as [DraftMode, string, string]] : []),
+    ...(defaultMode === "revise" ? [["revise", "자료 반영 고치기", `지금 구성안${story}의 짜임(블록·라벨·재료)은 그대로 두고, 구성안 뒤 고른 첨부와 요청 글을 더해 초안을 다시 씁니다(${rangeText(draftExpect("revise", props.mg))})`] as [DraftMode, string, string]] : []),
+    ...(props.hasOutline ? [["plan", "구성안대로 집필", `지금 구성안${story}의 틀·블록 순서·도식대로 초안을 씁니다 — 구성안 뒤 고른 첨부와 요청 글도 넣고, 구성안을 승인합니다(${rangeText(draftExpect("plan", props.mg))})`] as [DraftMode, string, string]] : []),
     props.mg
       ? ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `이 카드가 맡을 평가내용·대주제·절과 절마다 이야기 틀·블록·재료를 먼저 만들어 보고 고친 뒤 승인하면 그 짜임대로 집필합니다(${rangeText(draftExpect("outline", true))})`]
       : ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `재료표·평가 논점·이야기 틀·블록 목록·그림 자리를 먼저 만들어 보고 고친 뒤 승인하면 그 짜임대로 집필합니다(${rangeText(draftExpect("outline", props.mg))})`],
@@ -157,7 +164,8 @@ export function DraftCompose(props: {
   const outlineKind = props.outlineRun.busy ? OUTLINE_BUSY[props.outlineRun.busy] : undefined;
   const run: { kind: DraftRunKind; at: number; own: boolean } | null = busy ? { kind: busy, at: startedAt, own: true } : outlineKind ? { kind: outlineKind, at: props.outlineRun.at, own: false } : null;
   const blocked = Boolean(run) || Boolean(uploading);
-  // 진행 줄의 「넣은 근거」: 구성안 만들기·바로 만들기는 지금 고른 근거, 구성안대로 집필·다시 만들기는 구성안에 저장된 근거(서버 prepareDraft와 같음)
+  // 진행 줄의 「넣은 근거」(서버 prepareDraft와 같음): 구성안 만들기·바로 만들기는 지금 고른 근거, 구성안대로 집필·자료 반영 고치기는 구성안에 저장된 근거 ∪ 지금 고른 첨부(뺀 자료 제외 —
+  // approveReportOutline mergeSources), 구성안 패널의 다시 만들기·짜임 다시 짜기는 구성안에 저장된 근거
   const priorNames = (keys: string[]) =>
     keys
       .map((k) => props.prior.options.find((o) => o.key === k)?.label)
@@ -165,6 +173,24 @@ export function DraftCompose(props: {
       .slice(0, 2);
   const namesOf = (files: SourceFile[], ids: string[]) => ids.map((id) => files.find((f) => f.id === id)?.fileName).filter((x): x is string => Boolean(x));
   const src = props.outlineSources;
+  // 지금 고른 근거(서버에 보내는 값)와 구성안 근거에 합친 결과 — 머리 줄·진행 줄·보내기가 같은 값을 씀
+  const pick = pickOf(
+    sel.card.map((f) => f.id),
+    sel.report.map((f) => f.id),
+    sel.off,
+  );
+  const merged = mergeSources(src, pick);
+  const planFiles = [...namesOf(props.cardFiles, merged.sources.card), ...namesOf(props.reportFiles ?? [], merged.sources.report)];
+  const addedFiles = [...namesOf(props.cardFiles, merged.added.card), ...namesOf(props.reportFiles ?? [], merged.added.report)];
+  // 구성안 근거 중 사람이 뺀 자료
+  const droppedSaved = (src?.card ?? []).filter((id) => sel.off.has(`c:${id}`)).length + (src?.report ?? []).filter((id) => sel.off.has(`r:${id}`)).length;
+  // 머리 줄 「근거:」 — 보내면 실제로 쓰는 첨부(구성안대로 집필·자료 반영 고치기는 구성안 근거 + 새 자료, 나머지는 지금 고른 첨부)
+  const basisLine =
+    mode === "plan" || mode === "revise"
+      ? `구성안 근거 ${planFiles.length - addedFiles.length}건 + 새 자료 ${addedFiles.length}건${droppedSaved ? ` · 뺀 자료 ${droppedSaved}건 제외` : ""}`
+      : `지금 고른 첨부 ${sel.count}건`;
+  // 이번 요청에 요청 글을 보냈는지(진행 줄 「담당자 요청」 — 보낼 때 정함)
+  const [sentRequest, setSentRequest] = useState(false);
   // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(서버가 요청 때와 같은 묶음으로 셈, null이면 통째로 넣기). 요청을 보낼 수 없으면 안 물음
   const [selected, setSelected] = useState<number | null>(null);
   useEffect(() => {
@@ -178,7 +204,9 @@ export function DraftCompose(props: {
       run.kind,
       run.kind === "outline" || run.kind === "draft"
         ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: run.own && run.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
-        : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: run.own ? undefined : (props.outlineRun.frame ?? undefined) },
+        : run.kind === "plan" || run.kind === "revise"
+          ? { files: planFiles, added: addedFiles, request: run.own && sentRequest, prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked }
+          : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: run.own ? undefined : (props.outlineRun.frame ?? undefined) },
     );
 
   // 스크롤(2026-09-29 사용자 결정): 요청을 보내면 진행 줄로, 끝나면 결과로 — 구성안을 만든 요청이 잘 끝나면 구성안 머리(맨 위), 초안·오류면 결과 알림.
@@ -216,7 +244,7 @@ export function DraftCompose(props: {
   }, [runKey, props.active]);
   useEffect(() => () => stopHold.current(), []);
 
-  /** 끌어 놓거나 고른 파일: AI가 읽는 형식·크기만 카드 전용 자료로 올림(새로 올린 자료는 곧바로 초안 근거에 들어감) */
+  /** 끌어 놓거나 고른 파일: AI가 읽는 형식·크기만 카드 전용 자료로 올림(새로 올린 자료는 곧바로 고른 근거에 들어감 — 다음 집필·자료 반영 고치기·블록 고치기가 씀) */
   const addFiles = async (list: FileList | File[]) => {
     if (!props.canWrite) return;
     setErr(null);
@@ -247,18 +275,20 @@ export function DraftCompose(props: {
   const { ask, dialog: askDialog } = useAsk();
   const doSend = async (m: DraftMode) => {
     const sources = { card: sel.card.map((f) => f.id), report: sel.report.map((f) => f.id), prior: sel.priorKeys };
+    // 요청 글은 요청 칸이 그 종류일 때 쓴 것만(레일 단추가 다른 종류를 보내면 다른 종류에 쓴 메모를 넣지 않음), 바로 만들기는 받지 않음
+    const own = m === mode && m !== "draft";
+    const request = own ? memo.trim() : "";
     // 쓰는 동안은 진행 줄(경과 시간·넣은 근거)이 알림을 대신함 — 지난 결과 알림은 지움
     setStartedAt(nowMs());
+    setSentRequest(Boolean(request));
     props.setBusy(m);
     props.setMsg(null);
     try {
-      const r = m === "outline" ? await runReportOutline(props.uid, sources, memo.trim() || undefined, frame ?? undefined) : m === "plan" ? await props.onPlan() : await runReportSectionDraft(props.uid, sources);
+      const r = m === "outline" ? await runReportOutline(props.uid, sources, request || undefined, frame ?? undefined) : m === "plan" || m === "revise" ? await props.onPlan({ pick, request: request || undefined }) : await runReportSectionDraft(props.uid, sources);
       props.setMsg({ ok: r.ok, text: r.message });
       if (r.ok) {
-        if (m === "outline") {
-          setMemo("");
-          setFrame(null);
-        }
+        if (own) setMemo("");
+        if (m === "outline") setFrame(null);
         router.refresh();
       }
     } catch {
@@ -285,7 +315,7 @@ export function DraftCompose(props: {
         confirmLabel: label("draft"),
       });
     }
-    if (m === "plan" && props.hasSpec) steps.push(...overwriteSteps(props.humanEdits));
+    if ((m === "plan" || m === "revise") && props.hasSpec) steps.push(...overwriteSteps(props.humanEdits));
     ask(steps, () => void doSend(m));
   };
 
@@ -320,7 +350,7 @@ export function DraftCompose(props: {
         ta.focus();
         ta.scrollIntoView({ block: "nearest" });
       });
-    } else if (a.key === "plan" || a.key === "draft") {
+    } else if (a.key === "plan" || a.key === "revise" || a.key === "draft") {
       // 요청 칸 mode는 바꾸지 않음(칩이 없고 이 단추가 바로 보냄)
       send(a.key);
     }
@@ -348,7 +378,7 @@ export function DraftCompose(props: {
     >
       {over && (
         <div className="pointer-events-none absolute inset-2 z-pop flex items-center justify-center rounded-xl border-2 border-dashed border-navy bg-paper/90 text-sm font-semibold text-navy">
-          놓으면 카드 전용 자료로 올려 초안 근거에 넣습니다 · {ATTACH_LABEL}
+          놓으면 카드 전용 자료로 올려 고른 근거에 넣습니다 — 다음 집필·자료 반영 고치기·블록 고치기가 씁니다 · {ATTACH_LABEL}
         </div>
       )}
 
@@ -386,7 +416,7 @@ export function DraftCompose(props: {
           head={
             <div aria-live="polite" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-[18px] text-muted-2">
               <span className="min-w-0">
-                보내면 <b className="font-semibold text-navy">{label(mode)}</b> <span>· {rangeText(draftExpect(mode, props.mg))}</span>
+                보내면 <b className="font-semibold text-navy">{label(mode)}</b> <span>· {rangeText(draftExpect(mode, props.mg))}</span> <span>· 근거: {basisLine}</span>
               </span>
               {mode !== defaultMode && (
                 <button
@@ -478,13 +508,13 @@ export function DraftCompose(props: {
               </div>
             )
           }
-          attach={{ accept: ATTACH_ACCEPT, disabled: Boolean(uploading) || Boolean(busy), title: `파일 첨부 — 카드 전용 자료로 올려 초안 근거에 넣음, 끌어 놓아도 됩니다(${ATTACH_LABEL})`, onFiles: (files) => void addFiles(files) }}
+          attach={{ accept: ATTACH_ACCEPT, disabled: Boolean(uploading) || Boolean(busy), title: `파일 첨부 — 카드 전용 자료로 올려 고른 근거에 넣음(다음 집필·자료 반영 고치기·블록 고치기가 씀), 끌어 놓아도 됩니다(${ATTACH_LABEL})`, onFiles: (files) => void addFiles(files) }}
           value={memo}
           onChange={setMemo}
           maxLength={MEMO_MAX}
-          disabled={mode !== "outline"}
+          disabled={mode === "draft"}
           ariaLabel={MEMO_LABEL}
-          placeholder={mode === "outline" ? "구성안에 바라는 점(선택) ⌘↵" : mode === "plan" ? "구성안 블록 메모대로 씁니다 — 보내기 ⌘↵" : "메모 없이 바로 만듭니다"}
+          placeholder={mode === "outline" ? "구성안에 바라는 점(선택) ⌘↵" : mode === "revise" ? "고칠 방향(선택 — 짜임은 그대로, 근거로는 쓰지 않음) ⌘↵" : mode === "plan" ? "집필에 바라는 점(선택 — 짜임은 그대로, 근거로는 쓰지 않음) ⌘↵" : "메모 없이 바로 만듭니다"}
           submitDisabled={blocked}
           submitLabel={`${label(mode)} 요청`}
           error={
@@ -576,7 +606,7 @@ function DraftRail(props: { stage: DraftStage; meta: DraftMeta; draftInfo: strin
           {a.label}
         </Link>
       );
-    const make = a.key === "outline" || a.key === "plan" || a.key === "draft";
+    const make = a.key === "outline" || a.key === "plan" || a.key === "revise" || a.key === "draft";
     return (
       <button key={a.key} type="button" disabled={make && props.blocked} title={a.key === "outline" ? `요청 칸에서 바라는 점·짜임을 정하고 보냅니다 — ${props.hint("outline") ?? ""}` : make ? props.hint(a.key as DraftMode) : SHOW_TITLE[a.key]} onClick={() => props.onAction(a)} className={cls}>
         {a.label}

@@ -19,7 +19,7 @@
 {{> report-draft/schema.md#block.kind}}
 
 <!-- @block.label -->
-{{> report-draft/schema.md#block.label}}
+{{> report-draft/schema.md#block.label}}. 경영관리는 구성안에 적힌 라벨 그대로 씁니다 — 2025 관례대로 왼쪽 라벨이 그 행의 주제 이름이어도 단계 이름으로 바꾸지 않습니다
 
 <!-- @block.title -->
 {{> report-draft/schema.md#block.title}}

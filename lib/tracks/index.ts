@@ -25,6 +25,11 @@ export interface TrackSpec {
   sharedUnits: readonly string[];
   /** 이 트랙 평가단위 보고서의 카드 밖 부분(장 순서) — 주요사업은 아직 없음(빈 목록) */
   unitParts: readonly UnitPartKey[];
+  /**
+   * 경평 초안 칸 불릿 하나의 기준 글자 수(2026-10-29) — 2025 그 트랙 보고서의 「∙•」 불릿 평균 글자 수 중앙값을 반올림.
+   * 집필 요청 글 한도 「불릿 하나 약 T자(한 줄 P자 × L줄)」의 L = max(1, round(이 값 ÷ P))(lib/reports/fit.ts bulletLines). 「한 줄 약 P자」만 주면 좁은 칸에 한 줄 조각 불릿이 나옴
+   */
+  reportBulletChars: number;
 }
 
 export const BIZ_TRACK = {
@@ -35,6 +40,8 @@ export const BIZ_TRACK = {
   inspectionForm: "biz14",
   sharedUnits: ["BZ-1", "BZ-2", "BZ-3"],
   unitParts: [],
+  // 2025 주요사업 보고서 평가내용2 과제 소항목 62개의 불릿 평균 중앙값 27.89자(소항목별 15.3~45.3자, scripts/eval/biz-bullet-baseline.ts 2026-10-29 측정)
+  reportBulletChars: 28,
 } as const satisfies TrackSpec;
 
 /** 경영관리 평가지표 14개(지침 08 지표 번호 1~14, 12~14는 혁신가점) — 공통 지식(`knowledge_chunks.business`)의 단위 id */
@@ -49,6 +56,8 @@ export const MGMT_TRACK = {
   inspectionForm: "mgmt13",
   sharedUnits: MGMT_INDICATOR_UNITS,
   unitParts: ["cover", "findings", "prior", "outcome"],
+  // 2025 경영관리 보고서 14건(지표마다)의 불릿 평균 중앙값 23.05자(지표별 19.2~30.2자, scripts/eval/mg-fill-baseline.ts 2026-10-29 측정)
+  reportBulletChars: 23,
 } as const satisfies TrackSpec;
 
 export const TRACK_SPECS: Record<TrackId, TrackSpec> = { 주요사업: BIZ_TRACK, 경영관리: MGMT_TRACK };

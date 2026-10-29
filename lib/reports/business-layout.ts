@@ -30,6 +30,7 @@ import { bigramSet, groundedSentences, textSimilarity } from "./ground.ts";
 import { PAGE_BUDGET, budgetState } from "./outline.ts";
 import { evalNoOf } from "./mg-page-plan.ts";
 import type { ReportSectionSpec } from "./section.ts";
+import { SAME_TEXT_MIN, SAME_TEXT_MIN_BIGRAMS } from "./same-text.ts";
 
 // 머리 모드·머리 조각 높이는 판면 규칙 한 곳(lib/reports/fit.ts)에 둠 — 과제별 초안도 목차 순서의 머리 모드로 판면을 맞춤(사용자 결정 2026-09-27)
 export { HEAD_PART_MM, type HeadMode, headCut } from "./fit.ts";
@@ -43,10 +44,8 @@ export const SUB_GAP_MM = 3;
 /** 쪽에 조금 넘쳐도(판면 어림 오차 안) 그 쪽에 두고 「넘침」으로 표시하는 한도 — 과제별 초안의 채움 목표 윗선(FIT_BAND.over 102%)과 같은 비율 */
 export const PAGE_TOLERANCE_MM = PAGE_MM.height * (FIT_BAND.over - 1);
 
-/** 같은 문장 기준: 두 문장의 닮은 정도(textSimilarity — 글자 두 개 묶음 겹침 ÷ 짧은 쪽 묶음 수)가 이 값 이상이면 같은 문장으로 봄(거의 그대로 옮긴 문장) */
-export const SAME_TEXT_MIN = 0.8;
-/** 같은 문장 찾기에서 짧은 문장은 뺌(글자 두 개 묶음이 이보다 적으면 — 「추진배경」 같은 라벨·「’25년 100국」 같은 수치 줄이 다른 문장에 들어 있어 1이 되는 것을 막음) */
-export const SAME_TEXT_MIN_BIGRAMS = 8;
+/** 같은 문장 기준값은 잎 모듈(same-text.ts)에 — 여기서 다시 내보냄(mg-close.ts·사업 조판 화면이 이 이름으로 가져감) */
+export { SAME_TEXT_MIN, SAME_TEXT_MIN_BIGRAMS };
 /** 같은 문장 목록 상한 */
 export const SAME_TEXT_MAX = 20;
 

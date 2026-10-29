@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NEED_RE, NEEDS_MAX, TIMING_LABEL, dedupeNeedYear, hasFigure, kpiGaps, needsIn, outcomeActuals, planOnly, stripNeeds, timingOf, yearActuals, yearIssues } from "./actuals.ts";
+import { NEED_RE, NEEDS_MAX, TIMING_LABEL, dedupeNeedYear, hasFigure, kpiGaps, needsIn, outcomeActualItems, outcomeActuals, periodLabel, periodOf, planOnly, stripNeeds, timingOf, UNDATED_NOTE, undatedOutcomeLines, yearActuals, yearIssues } from "./actuals.ts";
 import { reportDraftPrompts, reportDraftPromptsMg } from "../prompts/sets.ts";
 import { cleanLine, sectionContext, sectionPrompt } from "./section.ts";
 import { mgMaterialsPrompt } from "./mg-draft.ts";
@@ -217,4 +217,87 @@ test("yearActuals: 열쇠는 지표 이름 — 행을 끼우거나 순서를 바
   const moved = yearActuals(rows(["새 지표", "B 지표", "A 지표"]), inputs).kpi;
   assert.deepEqual(moved.map((k) => k.input), ["", "7건", ""]);
   assert.deepEqual(yearActuals(rows(["B 지표 (수정)"]), inputs).kpi.map((k) => k.input), [""]);
+});
+
+// ---------------------------------------------------------------------------
+// 시점 미기재 성과 줄(경영관리 wide — 2026-10-29): 증감 낱말·「A → B」와 수치가 있고 연도·예정·예상·목표가 없는 줄
+
+const UNDATED_CARD = {
+  outcome: {
+    quantitative: [
+      "∙ 처리 속도 3배 상승(20분 → 6분)",
+      "∙ 민원 접수 건수 증가 120건",
+      "∙ 처리 건수 80건 예정 증가",
+      "∙ 목표 대비 150% 달성",
+      "∙ ’25년 대비 확대 90건",
+      "∙ 배포 교육 40회",
+      "∙ 전문 인력 12명",
+    ],
+  },
+};
+
+test("outcomeActualItems(wide): 연도 없는 증감·「A → B」 성과 줄을 시점 미기재로 받고, 예정·목표·전년 시점·증감 낱말 없는 줄은 뺌", () => {
+  assert.deepEqual(outcomeActualItems(UNDATED_CARD, 2026, true), [
+    { line: "처리 속도 3배 상승(20분 → 6분)", undated: true },
+    { line: "민원 접수 건수 증가 120건", undated: true },
+  ]);
+  assert.deepEqual(outcomeActualItems(UNDATED_CARD, 2026, false), [], "wide가 아니면(주요사업) 예전 그대로");
+  assert.deepEqual(undatedOutcomeLines(UNDATED_CARD, 2026), ["처리 속도 3배 상승(20분 → 6분)", "민원 접수 건수 증가 120건"]);
+  // 올해 시점이 있는 줄은 시점 미기재가 아님
+  assert.deepEqual(outcomeActualItems(OUTCOME_CARD, 2026, true).filter((x) => x.undated), []);
+});
+
+test("yearActuals(wide): 시점 미기재 줄에는 표지가 붙고, wide가 아니면 들어오지 않음", () => {
+  const a = yearActuals(UNDATED_CARD, {}, "2026-10-29", { wide: true });
+  assert.deepEqual(a.outcome, [`처리 속도 3배 상승(20분 → 6분) ${UNDATED_NOTE}`, `민원 접수 건수 증가 120건 ${UNDATED_NOTE}`]);
+  assert.deepEqual(yearActuals(UNDATED_CARD, {}, "2026-10-29").outcome, []);
+});
+
+// 월별 실적 표 항목(경영관리 wide) — 가짜 글
+const th = (t: string, colspan = 1) => ({ th: true, lines: [t], colspan, rowspan: 1 });
+const td = (t: string, colspan = 1) => ({ lines: [t], colspan, rowspan: 1 });
+const tableCard = (rows: unknown[][]) => ({ id: "경영관리9/9-9", kpi: { rows: [] }, do: { monthly: [{ period: "26", items: ["가짜 문자열 120건 처리", { table: { rows } }] }] } });
+
+test("yearActuals: wide이면 월별 표 항목에서 「예정」 열을 빼고 수치 칸만 「머리 + 칸」 줄로 냄", () => {
+  const card = tableCard([[th("~’26.7월"), th("’26.8월(진행중)"), th("’26.9월(예정)")], [td("가짜 처리 30건"), td("설명만 있는 칸"), td("가짜 계획 50건")]]);
+  const a = yearActuals(card, {}, "2026-09-27", { wide: true });
+  assert.deepEqual(a.monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 처리 30건(~’26.7 기준)"]);
+});
+
+test("yearActuals: wide가 꺼지면 문자열 항목만 읽음", () => {
+  const card = tableCard([[th("’26.8월")], [td("가짜 처리 30건")]]);
+  assert.deepEqual(yearActuals(card, {}, "2026-09-27").monthly.map((m) => m.line), ["가짜 문자열 120건 처리"]);
+  assert.deepEqual(yearActuals(card, {}, "2026-09-27", { wide: false }).monthly.map((m) => m.line), ["가짜 문자열 120건 처리"]);
+});
+
+test("yearActuals: wide 표는 colspan을 따라 열을 맞춤(머리 colspan 2가 아래 두 칸의 머리)", () => {
+  const card = tableCard([[th("’26.6월", 2), th("’26.7월(예정)")], [td("가짜 10건"), td("가짜 20건"), td("가짜 30건")]]);
+  const a = yearActuals(card, {}, "", { wide: true });
+  assert.deepEqual(a.monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 10건(’26.6 기준)", "가짜 20건(’26.6 기준)"]);
+});
+
+// periodLabel(머리 칸 시점 정리 — 2026-10-29): 「’YY.M」로 줄이고 대괄호·백틱·「월」 꼬리·진행 표지를 뺌
+test("periodLabel: 원문 머리 형식을 ’YY.M으로(따옴표는 ’·`·'·‘ 무엇이든, 「~」는 유지)", () => {
+  assert.equal(periodLabel("[`26.8.월](진행중)"), "’26.8", "운영에서 본 원문 형식");
+  assert.equal(periodLabel("~’26.7.월"), "~’26.7");
+  assert.equal(periodLabel("’26.8월"), "’26.8");
+  assert.equal(periodLabel("'26.3월"), "’26.3", "작은따옴표");
+  assert.equal(periodLabel("‘26.10월"), "’26.10", "여는 작은따옴표(‘)·두 자리 월은 그대로 둠");
+  assert.equal(periodLabel("[’26.12.월]"), "’26.12");
+  assert.equal(periodLabel("26.08.월"), "’26.8", "01~09월은 한 자리 월로");
+  assert.equal(periodOf("~ ’26.7월"), "~’26.7", "~와 따옴표 사이 빈칸은 붙여 씀");
+});
+
+test("periodLabel: 시점이 없으면 대괄호·백틱만 걷은 머리 글 — 날짜처럼 보여도 연도 두 자리·월 1~12가 아니면 시점 아님", () => {
+  assert.equal(periodLabel("[공공데이터 개방]"), "공공데이터 개방");
+  assert.equal(periodLabel("`전반기`"), "전반기");
+  assert.equal(periodOf("2026.8월"), null, "연도 네 자리는 시점으로 안 봄");
+  assert.equal(periodOf("7.6."), null, "월·일 날짜는 시점 아님");
+  assert.equal(periodOf("’26.13월"), null, "13월은 시점 아님");
+  assert.equal(periodLabel("2026.8월"), "2026.8월", "시점 없음 → 머리 글 그대로(대괄호만 걷음)");
+});
+
+test("yearActuals(wide): 칸 글 끝에 괄호 시점이 있으면 머리 시점을 겹쳐 붙이지 않음", () => {
+  const card = tableCard([[th("’26.8월")], [td("가짜 처리 30건(’26.8 기준)")]]);
+  assert.deepEqual(yearActuals(card, {}, "", { wide: true }).monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 처리 30건(’26.8 기준)"]);
 });

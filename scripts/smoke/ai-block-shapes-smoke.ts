@@ -16,7 +16,7 @@ import { blockShapeName, shapeDelta, shapeRules } from "../../lib/reports/block-
 import { readComposition } from "../../lib/reports/composition.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { pickPrior, scorePrior, toPriorSection } from "../../lib/reports/prior.ts";
-import { cleanLine, quoteFoundIn, readSection, sectionHints, sourceKey } from "../../lib/reports/section.ts";
+import { cleanLine, evidenceKey, quoteFoundIn, readSection, sectionHints } from "../../lib/reports/section.ts";
 import { isoDay } from "../../lib/format.ts";
 
 const args = process.argv.slice(2);
@@ -71,7 +71,7 @@ if (dry) process.exit(0);
 
 const t0 = Date.now();
 const call = await callReportBlock({ kind: "shapes", prompt, kb, mg });
-const hay = sourceKey(`${cardText}\n${known}\n${quoteOnly}`);
+const hay = evidenceKey(card.data, known, quoteOnly);
 const r = cleanShapeOptions(before, call.output, cleanLine, (q) => quoteFoundIn(hay, q), rules, req.want);
 console.log(
   JSON.stringify(

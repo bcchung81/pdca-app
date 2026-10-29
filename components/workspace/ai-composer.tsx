@@ -50,8 +50,11 @@ export function AiComposer<K extends string>(props: {
   submitDisabled: boolean;
   submitLabel: string;
   error?: ReactNode;
+  /** ⌘↵ 안내를 보임(기본 보임 — 카드 AI 작성지원은 끔) */
+  keyHint?: boolean;
 }) {
   // 파일 입력은 이 부품 안에서만 만들고 씀(부르는 쪽에 ref를 넘기지 않음)
+  const keyHint = props.keyHint !== false;
   const fileRef = useRef<HTMLInputElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
   // 글에 맞춰 높이를 맞춤 — 입력뿐 아니라 바깥에서 값을 비울 때(보낸 뒤)도 줄어들도록 value가 바뀔 때마다.
@@ -139,14 +142,18 @@ export function AiComposer<K extends string>(props: {
               </button>
             </>
           )}
-          <span aria-hidden="true" className="min-w-0 grow truncate text-right text-xs text-muted">
-            ⌘↵
-          </span>
+          {keyHint ? (
+            <span aria-hidden="true" className="min-w-0 grow truncate text-right text-xs text-muted">
+              ⌘↵
+            </span>
+          ) : (
+            <span aria-hidden="true" className="grow" />
+          )}
           <button
             type="submit"
             disabled={props.submitDisabled}
             aria-label={props.submitLabel}
-            title={`${props.submitLabel} (⌘↵)`}
+            title={keyHint ? `${props.submitLabel} (⌘↵)` : props.submitLabel}
             className="flex size-8 shrink-0 items-center justify-center rounded-md bg-navy text-white hover:bg-navy/90 disabled:cursor-not-allowed disabled:text-white/50"
           >
             <BotMessageSquare size={18} aria-hidden="true" />

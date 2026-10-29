@@ -236,7 +236,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 
 | 테스트 | 막는 것 |
 |---|---|
-| `lib/reports/repeat-figures.test.ts` | 반복 수치 참고 경고: 수치 열쇠(쉼표·빈칸 제거, 값+단위, 날짜·시점·자리표시 안·단위 없는 숫자 제외, 화살표 앞 맨 숫자는 뒤 단위), 흔한 값(0·100%·한 자리 개수) 제외, 주요사업은 서로 다른 블록 3개 이상, 경영관리는 블록 3개 이상 또는 절 2개 이상 |
+| `lib/reports/repeat-figures.test.ts` | 반복 수치 참고 경고: 수치 열쇠(쉼표·빈칸 제거, 값+단위, 날짜·시점·자리표시 안·단위 없는 숫자 제외, 화살표 앞 맨 숫자는 뒤 단위), 흔한 값(0·100%·한 자리 개수) 제외, 주요사업은 서로 다른 블록 3개 이상, 경영관리는 블록 3개 이상 또는 절 2개 이상 · 되풀이 하이라이트 재료(2026-10-29): 원래 글의 수치 자리(`figureSpans` — 강조 안·위첨자 뒤·화살표 앞, 표기를 낀 수치는 없음), 반복 수치 열쇠 = 경고 기준, 반복 문장 쌍(서로 다른 블록·추진성과 상자, 짧은 글·자리표시만 같은 줄 제외, 경영관리 절 표지 이름)·「반복 문장」 참고 경고, `same-text.ts` 잎 모듈 · `section-html.test.ts`: k-rep이 모든 자리·흔한 값 제외·옵션 없으면 없음·반복 없으면 바이트 같음, 문장 k-rep--line title, k-unv와 겹침(k-rep 바깥), 경영관리·전후 비교 패널, 내려받기 기본 켬·한글 사본 끔 · `section-hwpx.test.ts`: A안 한글 입력에 노란 바탕 없음 |
 | `lib/reports/kpi-cover.test.ts` | 계량지표 누락 참고 경고(주요사업만): 지표 이름 낱말에서 일반어·같은 카드 다른 지표와 함께 쓰는 낱말을 빼고 대조, 없는 지표는 잡고 줄여 쓴 이름은 다룬 것으로 봄 |
 | `lib/reports/result-plan.test.ts`(계획→실적 추가) | 카드 계획 줄(plan.lines·환류·지적 행 개선방안)과 많이 겹치고 실행 근거(추진내용·월별 실적·성과 칸)와 적게 겹치는 실적 칸 줄만 참고 경고, 실행 근거·계획 표지·짧은 줄은 안 잡음, 다시 점검 두 트랙 |
 | `lib/reports/actuals.test.ts`(정량 성과 칸 추가) | 카드 「정량 성과」 칸의 올해 실적 줄(올해 시점·목표 아닌 수치·성과/실적/달성, 예정·예상 제외)을 계량지표 실적으로 붙이고 요청 글에서 「없음 → 【확인】」을 대신함(두 트랙, 작성일 없으면 보지 않음), `^{’26년}【확인: ’26년 …】`의 안쪽 같은 연도만 뺌 |
@@ -268,6 +268,34 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/cards/layout-hwpx.test.ts`(줄 나눔 추가) | 59장: 내려받은 한글의 줄 나눔 단위가 원본과 같음 — 제목·라벨 문단 `BREAK_WORD`, 긴 본문 문단 `KEEP_WORD`(원본 필요) |
 | `lib/reports/section-hwpx.test.ts`(A안 보정 추가) | 모든 문단 모양이 `breakNonLatinWord = BREAK_WORD`(어절)·`breakLatinWord = KEEP_WORD`, 모든 글자 모양이 `useFontSpace = 1`, 머리 세 문단·상자 머리·표 머리 칸·수치 칸 줄 간격이 화면 CSS `line-height`(`REPORT_STYLE.lh`)와 같음, 핵심 수치 칸은 【확인】만 10.5pt이고 큰 수치는 15pt 그대로(`acca106`) |
 | `lib/hwpx/hang.test.ts`·`dom-hwpx/convert.test.ts`·`section-hwpx.test.ts`·`lib/hwpx/hwpx.test.ts`(계층부호 내어쓰기, 2026-10-28) | 부호(□·ㅇ·-·•·∙·※) + 빈칸으로 시작하거나 글머리표인 문단은 음수 intent(= 부호 자리 + 빈칸 폭)로 둘째 줄이 글 첫 자 아래 — DOM은 화면 줄 기하·`::before` 글 시작에서, A안은 `REPORT_STYLE.bullet`(화면 CSS와 같은 값, 글머리표 자동 내어쓰기 끔), 개조식 표 칸은 kordoc 본문처럼 부호 + 탭 + 내어쓰기; 점검 `hangCheck`(내어쓰기 없는 부호 문단 수) — 경평 11·A안 8·개조식 8 = 0, 카드 DOM 59장 = 1(원본도 내어쓰지 않은 문단) |
+
+## 경평 초안 원장 채움·계산값(2026-10-29, `docs/plan/경평초안-원장채움-수정.md`)이 더한 시험
+
+| 테스트 | 막는 것 |
+|---|---|
+| `lib/reports/number-calc.test.ts` | `calcExplained`: 합·차·증감률·비율·달성률·배수를 같은 글 단위(불릿·칸, 표는 한 행)에 두 원값이 함께 있을 때만 인정, 단위가 다르면 불인정, 반올림은 표기 자릿수의 반까지, 원값 없이 결과만 있으면 그대로 없는 숫자 |
+| `lib/reports/mg-close.test.ts` | `fillClosingOutcome`: 추진성과 블록이 빠짐·빈 칸·목표뿐이면 원장 정량·월별·정성 줄(최대 4)로 채움, 구성안 kind(stats·bullets)를 따르고 그 밖은 안 넣음, 「추진성과 보강」 참고 경고, 이미 성과가 있으면 안 건드림 |
+| `lib/reports/mg-close.test.ts`(2026-10-29 후속) | 추진성과 행에 막대만 남으면 원장 줄 글 블록(구성안 모양, 없으면 stats)을 막대 앞에 넣어 화면이 [글 \| 막대](`k-row2`)로 그림; 다른 라벨의 막대만 행은 안 바꾸고 「막대:」 경고; 두 절이 같은 원장 줄을 받지 않음·다른 절에 같은 수치가 있는 줄 건너뜀·그 절 글과 겹치는 줄 먼저·그 절에 같은 문장이 있는 줄 건너뜀; 남은 줄이 없으면 빈 상자 없이 경고 |
+| `lib/reports/mg-close.test.ts`·`mg-outline.test.ts`·`mg-outcomes.test.ts`(2026-10-29 절 성과 배정) | 원장 성과 재료 목록(정량 → 월별 수치 줄 → 정성, 수치 유무, 「계획 대비」 줄을 빼지 않음); 구성안 요청 「절 성과 재료」(다시 짜기는 재료 번호·그 재료로 닫는 다른 절); 「성과 배정」 참고 경고(두 절이 같은 성과 재료·수치 없이 닫았는데 수치 재료가 남음); 보강이 구성안 배정 줄 먼저·다른 절 배정 줄은 안 가져감; 재료 ↔ 원장 줄 잇기; `mg-outcomes.ts`는 import 없음 + 고리 안 모듈을 새 프로세스에서 첫 모듈로 불러도 초기화 오류 없음(개발 서버 「Cannot access … before initialization」 재발 방지) |
+| `lib/reports/table-shapes.test.ts`(수치 표 열 폭, 2026-10-29) | `tableColsMm`: 긴 행 머리·짧은 값이면 행 머리 열이 넓어져 한 줄에 들고 colgroup 비율·높이 어림이 같은 폭을 씀(접히지 않으니 짧은 행 머리 표와 높이가 같음), 행 머리 상한 40%·값 열 최소·긴 글 열은 넓음·막대 표 최소; 기본 표 colgroup 기대값은 새 규칙(10.59·44.71·44.71%)으로 고침 |
+| `lib/reports/text-shape.test.ts` | 「글 모양」 참고 경고: 괄호 짝 안 맞음·쪼개진 불릿·날짜만 있는 불릿, 정상 글은 경고 0 |
+| `lib/reports/actuals.test.ts`(추가) | `outcomeActualItems(wide)`: 증감 낱말·「A → B」 정량 성과 줄은 연도 없이 받고 「(시점 미기재 — 부서 확인)」, 주요사업은 그대로; `tableMonthlyLines`: 표 월별 실적을 예정 열 빼고 colspan으로 열을 맞춰 읽음(wide만); `seriesLabel` 자르기 |
+| `lib/reports/mg-outline.test.ts`(추가) | `mgCloseRule` majority: 2025 같은 지표 절 과반이 추진성과로 닫혔으면 `close.majority`, 모두면 strict, 아니면 기존 loose·none |
+| `lib/reports/material-requests.test.ts`(추가) | `needRequestsOf`에 「원장 성과 「…」의 기준 시점·출처 확인」 요청이 오름 |
+| `lib/reports/blocks.test.ts`·`table-shapes.test.ts`·`composition.test.ts`·`fit.test.ts`·`warning-levels.test.ts`(추가) | `blockNumberTexts` 계산값, `tableBars` 목표·예상 열 막대 없음, `statsParts` 위첨자·겹친 괄호, `planAdherence`의 `droppedShapes` 제외, 「글 모양」·「추진성과 보강」 등급 등록, `pdcaMark` |
+| `lib/prompts/prompts.test.ts`(판 해시 갱신) | 경영관리 프롬프트 세 묶음의 판(`report-draft-mg@540c454f` 등)과 새 규칙 문구 |
+| `scripts/eval/mg-para-score-core.test.ts` | 문단 채점표 v2 순수 코어(A·B·C·D·E 항목 점수·합산) |
+| `lib/reports/draft-sources.test.ts`(자료 반영 고치기) | `mergeSources`: 구성안 근거 ∪ 고른 첨부(뺀 자료 제외)·중복 없음, `missingSources`: 구성안 뒤 추가된 자료 목록 |
+| `lib/reports/draft-stage.test.ts`·`lib/ai/progress`·`lib/prompts/prompts.test.ts`·`composition.test.ts`·`mg-draft.test.ts`(추가) | 「다시 쓰기」 첫 단추 「자료 반영 고치기」, 진행 줄 `revise`의 「새 자료 n건」·「담당자 요청」, 집필 요청 `@plan.added`·`@plan.request` 절과 판(`report-draft-mg@4bd0e241`·`report-draft@b0c5f746`), 합친 근거 저장, 경영관리 집필 반영 |
+| `lib/reports/mg-draft.test.ts`·`block-edit.test.ts`·`lib/prompts/prompts.test.ts`(경영관리 칸 글 한도, 2026-10-29) | 경영관리 칸 글 한도가 「칸마다 불릿 하나 약 T자(한 줄 약 P자 × L줄)」(8자 칸 → 24자·3줄, 41자 → 1줄, 나란한 칸은 불릿 수·글자 수, 불릿 블록·막대 표는 예전 글)이고 블록 고치기 글 한도도 같은 기준, 경영관리 높이 표만 새 기준(좁은 칸 PDCA가 더 높음) — 주요사업 `limitText`·`blockCosts(false)`·판은 그대로 |
+| `lib/reports/section-html.test.ts`·`fit.test.ts`·`section-hwpx.test.ts`(추진성과 상자 안 막대 머리 왼쪽, 2026-10-29) | 소항목 추진성과 막대·수치 띠 상자 안 막대만 `k-chart--side`(figcaption이 막대 왼쪽 칸)이고 사다리 행 끝 막대·홀로 놓인 막대는 위 머리 그대로; `sideChartMm` = max(머리 줄 수 × 줄 높이, 막대 그림) — 짧은 머리는 예전 고정 어림보다 낮고 긴 머리·배지는 줄 수만큼 높음, 상자 안 막대 칸(18 + 42 + 2.5mm)만큼 추진성과 글 폭이 좁아짐, 사다리 행 끝 막대는 `CHART_MM`·44.5mm 칸 그대로; A안 한글은 상자 안 막대만 머리가 두 행 합친 왼쪽 칸(폭 `REPORT_STYLE.sideChart.headMm`)·머리 없으면 막대 42mm만, 사다리 행 끝 막대는 머리 위·42mm; 화면 CSS 고정 해시 갱신(규칙 덩어리를 빼면 옛 해시) |
+| `lib/reports/mg-fill.test.ts`·`block-edit.test.ts`·`lib/ai/progress`·`lib/prompts/prompts.test.ts`·`warning-levels.test.ts`(경영관리 분량 채움 보강, 2026-10-29) | 보강 사유 셋(분량 < 배정 × 0.9·빈 칸·수치가 초안에 없는 원장 성과 줄)이 각각 켜지고 꺼짐, 사유가 없으면 AI를 부르지 않음; 고르기 순서(빈 칸 → 분량 모자란 절)·(상한 4는 2026-10-29 오후 풂 — 아래 줄)·막대·띠·소제목·인용·코드가 채운 추진성과 제외·여유 = 남은 분량 ÷ 블록 수·원장 사실은 블록 하나에만; 근거 밖 숫자·종류·칸 수가 바뀐 답·바꾸지 않은 답·호출 실패는 1차 글 유지, 호출 한도·기한이면 남은 블록 시작 안 함; 1차 저장 → 보강 → 1차 버전 조건 갱신(사람이 고쳤으면 건너뜀, 1차 충돌이면 보강 안 함); 사람 블록 고치기는 여유 값을 안 주면 같은 글(`blockRoom`·`blockEditPrompt`), `report-block-mg@63f470c1`·주요사업 `report-block@afffeff8` 그대로, 경고 「분량 보강」·「분량 보강 실패」는 참고 |
+| `lib/reports/mg-fill.test.ts`(보강 키우기·반복 수치, 2026-10-29 오후) | 라운드: 1회차 뒤 아직 배정 × 0.9 미만이면 2회차(받은 블록도 다시 후보), 1회차로 닿으면 2회차 없음(2회차 후보 규칙은 아래 S2 줄 — 예전 「몫의 절반 이상 늘린 블록은 빠짐」을 바꿈); 멈춤: Vercel 기한·로컬 상한 `MG_FILL.maxSec`이면 끝(2회차 없음), 호출 한도는 그 라운드만 끝냄; 블록 수 상한 없음(7블록 전부·몫 = 남은 분량 ÷ 전부); `blockRoom` 몫 경로는 +4줄 상한 없이 몫 mm까지(불릿 8개 넘어도), 사람 블록 고치기는 그대로 +4줄; 요청 글 「약 N mm — 칸마다 약 M줄(불릿 k개) 더」·「불릿 줄 합 약 M줄」·한 줄도 못 늘리면 「지금 높이 안에서」; 반복 수치 남길 자리(「추진성과」 블록 — 구성안 성과 배정 절 먼저 → 블록 순, 없으면 처음 블록)·대상(수치 띠·인용·코드가 채운 추진성과 제외)·반복 블록에 안 쓴 사실 먼저(두 블록에 같은 사실 없음)·요청 글 「이 블록의 ○○(이미 [n번 「추진성과」]에 있음)」; 받기: 높이 감소·배정 × 1.25 초과 거절, 반복 뺌(removed)·남겼어도 늘면 받고 경고 「반복 그대로」·남기고 그대로면 거절; `report-block-mg@e0653ee9` |
+| `lib/reports/section.test.ts`(원문 대조 모양, 2026-10-29) | `evidenceOf`·`evidenceKey`: HTML 표 원문 조각의 행을 편 글(「칸 \| 칸」·`<br>` → 「 / 」)로 인용한 구절·카드 계량지표 행을 칸 순서대로 이은 구절이 찾아지고 그런 재료가 `cleanMaterials`에서 「원문 확인」, 없는 값은 못 찾음, 예전 열쇠가 새 열쇠의 앞부분 그대로(찾던 구절이 못 찾음으로 바뀌지 않음) |
+| `lib/reports/composition.test.ts`·`mg-draft.test.ts`(칸 글 한도 불릿 기준·대조 열쇠, 2026-10-29) | 주요사업 글 한도 「칸마다 최대 N줄 · 불릿 하나 약 T자(한 줄 P자 × L줄)」 — L = min(N, round(28 ÷ P)), 불릿 블록·인용·막대 표는 예전 글, `BIZ_TRACK.reportBulletChars` 28·`MGMT_TRACK.reportBulletChars` = `MG_BULLET_CHARS` 23; 경영관리 집필 정리(`verifyMgDraft`)가 표 HTML을 편 글로 인용한 말풍선을 남기고 근거에 없으면 뺌 |
+| `lib/reports/mg-outline.test.ts`(절을 둔 이유 한도, 2026-10-29) | 구성안 절 `why`는 400자까지 그대로(160자 넘는 이유 보존), 넘으면 한도 안 마지막 문장 끝에서 자름 |
+| `lib/reports/blocks.test.ts`(수치 띠 칸 하나, 2026-10-29) | 수치 띠는 수치 칸 하나(+ 성과 문장 칸)여도 남고, 수치 칸이 없으면 빼며 「수치 띠: 수치가 든 칸이 없어 뺐습니다」(참고) 경고, 주요사업 집필(biz)은 칸 하나여도 빼되 까닭을 남김 |
+| `lib/reports/mg-bundles.test.ts`·`mg-outline.test.ts`·`mg-fill.test.ts`(S2 데이터 블록·2회차 후보, 2026-10-29) | 수치 묶음 = 같은 단위의 서로 다른 값 3개 이상(값 둘·단위 다름·같은 값·한 자리 개수는 아님): 카드 계량지표 행(맨 숫자에 지표 단위)·월별 실적 줄(표 칸 포함)·재료 하나의 글 + 원문 구절(자료 필요 제외); 구성안 요청 「수치 묶음 재료」(값·줄, 6줄 넘으면 「외 N줄」, 없으면 빈 글)·시스템 5번 문장; 「데이터 블록」 참고 경고(묶음 재료를 맡은 절에 table 기본·bars·result·chart가 없으면, 쉐브론 표는 아님); 분량 보강 2회차는 보강할 수 있는 블록 전부(몫을 다 쓴 블록·못 받은 블록 포함, 절 몫을 채운 절 블록은 뒤에 블록 순)·몫은 남은 분량을 다시 나눔; `report-outline-mg@e5deeb90` |
 
 ## 원본 필요 시험(git 밖 — 없으면 이유를 적고 건너뜀)
 

@@ -12,8 +12,11 @@ import { dropLoneSpans } from "./layout.ts";
 import { MG_MAIN_STORIES, MG_STORIES, type MgMainStory, type MgStory } from "./frameworks-mg.ts";
 import { matchName, shapeName, storyLabel } from "./frameworks.ts";
 import { type FrameInput, type OutlineFrame, framePrompt } from "./framework-pick.ts";
-import { type MgPart, mgPartKey } from "./mg-types.ts";
-import { cleanLine } from "./section.ts";
+import { hasFigure } from "./actuals.ts";
+import { CLOSE_LABEL, outcomeRefs } from "./mg-outcomes.ts";
+import { type MgBundle, materialBundle } from "./mg-bundles.ts";
+import { type MgOutcome, type MgPart, mgPartKey } from "./mg-types.ts";
+import { cleanLine, clipLine } from "./section.ts";
 import { cleanChip, matchAxis } from "./split-axes.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -242,7 +245,7 @@ export type MgOutlineOutput = z.infer<typeof MgOutlineOut>;
 /** 경영관리 구성안 프롬프트 파일(resources/prompts/report-outline-mg)에 있어야 하는 절 */
 export const MG_OUTLINE_PROMPT_SPEC: PromptSpec = {
   system: ["system"],
-  request: ["task", "memo", "storyHints", "storyHints.item", "storyHints.none", "storyHints.siblings", "siblings.head", "siblings.item", "diagram.head", "diagram.item", "part.head", "part.asked.story", "part.asked.free", "part.story", "part.storyFree", "part.item", "volume.head", "volume.part", "volume.tail", "close.strict", "close.loose", "close.none", ...INSPECTION_INPUT_SECTIONS, ...FRAME_INPUT_SECTIONS, ...SPLIT_INPUT_SECTIONS, "siblings.axis", "part.split"],
+  request: ["task", "memo", "storyHints", "storyHints.item", "storyHints.none", "storyHints.siblings", "siblings.head", "siblings.item", "diagram.head", "diagram.item", "part.head", "part.asked.story", "part.asked.free", "part.story", "part.storyFree", "part.item", "volume.head", "volume.part", "volume.tail", "close.strict", "close.majority", "close.loose", "close.none", ...INSPECTION_INPUT_SECTIONS, ...FRAME_INPUT_SECTIONS, ...SPLIT_INPUT_SECTIONS, "siblings.axis", "part.split", "outcomes.head", "outcomes.item", "outcomes.from.quantitative", "outcomes.from.monthly", "outcomes.from.qualitative", "outcomes.figure", "outcomes.plain", "outcomes.used", "outcomes.listed", "bundles.head", "bundles.item", "bundles.from.kpi", "bundles.from.monthly", "bundles.more"],
   schema: MG_OUTLINE_OUT_FIELDS,
 };
 
@@ -253,6 +256,21 @@ const cleanMark = (s: unknown) => {
   const m = String(s ?? "").replace(/[.\s]/g, "");
   return /^[가-하]$/.test(m) ? m : "";
 };
+
+/**
+ * 절을 둔 이유(why) 한도(2026-10-29): 160자였을 때 표본 구성안(docs/analysis/eval/2026-10-29-fill r0~r5b) 절 73개 중 55개(75%)가 정확히 160자에서 잘려
+ * 「값 어긋남: 두 값·출처·시점 → 쓴 값」 같은 집필 지시가 끊긴 채 집필 요청(mg-draft.ts mgPlanPrompt 절 줄)에 갔음. 저장본은 모두 잘린 값이라 원래 길이의 최대·95백분위는
+ * 잴 수 없음(CLI 호출은 답 원문을 남기지 않음) — 안 잘린 18개는 103~158자(항목 하나·둘). 스키마(part.why)가 이어진 절·고른 이유·값 어긋남·짜임 네 가지를 적게 하므로
+ * 항목 하나 약 100자 × 4 = 400자로 올리고, 넘으면 문장 끝에서 자름(clipSentences)
+ */
+const WHY_MAX = 400;
+
+/** 한도로 자르되 한도 안의 마지막 문장 끝(마침표·물음표·느낌표 뒤 빈칸이나 글 끝)에서 끊음. 한도 안에 문장 끝이 없으면 clipLine(닫히지 않은 괄호 앞) */
+function clipSentences(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const ends = [...s.slice(0, max + 1).matchAll(/[.?!](?=\s|$)/g)].map((m) => m.index + 1).filter((i) => i <= max);
+  return ends.length ? s.slice(0, ends.at(-1)).trim() : clipLine(s, max);
+}
 export const isMgStory = (s: unknown): s is MgStory => (MG_STORIES as readonly string[]).includes(String(s));
 /** 주 틀 12종인가(섞음 아님) — AI 답·절 다시 짜기·보조 틀은 이것만 */
 export const isMgMainStory = (s: unknown): s is MgMainStory => (MG_MAIN_STORIES as readonly string[]).includes(String(s));
@@ -284,8 +302,9 @@ export function sortByParts(blocks: PlanBlock[], parts: MgPart[]): PlanBlock[] {
  * 평가내용·대주제 제목은 전년 골격에 있으면 그 이름을 씀(전년 골격에 없는 평가내용 번호는 버리지 않고 경고 — 보고서에 빈 평가내용 상자가 나옴).
  * 이야기 틀은 주 틀 12종만(섞음·모르는 틀은 빈 글), 보조 틀은 주 틀과 다를 때만. 블록은 가리킨 절(1부터 세는 번호)이 없으면 버리고, 블록이 없는 절도 뺌.
  * 갈래 축은 사전 이름으로(모르면 버림 — ctx.axis를 주면(절 다시 짜기) AI 답 대신 그 축), 절 칩은 그 축의 표준 값이거나 근거 원문(hayKey)에 있는 낱말만(split-axes.ts cleanChip — 축이 없거나 절 표지가 없는 절은 칩 없음).
+ * ctx.outcomes(요청에 준 절 성과 재료 — mg-close.ts ledgerOutcomeItems)는 mg.outcomes에 남겨 구성안 점검 「성과 배정」이 씀.
  */
-export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: Set<string>, ctx: { indicator: string; prior: MgPriorSection[]; axis?: string }): { composition: Composition; warnings: string[] } {
+export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: Set<string>, ctx: { indicator: string; prior: MgPriorSection[]; axis?: string; outcomes?: MgOutcome[] }): { composition: Composition; warnings: string[] } {
   // 재료 상한의 절 수 = AI가 낸 절 중 번호가 맞는 서로 다른 절(절 상한까지)
   const partCount = Math.min(MG_LIMITS.parts, new Set((out.parts ?? []).filter((x) => Math.round(Number(x?.evalNo)) >= 1 && Math.round(Number(x?.themeNo)) >= 1).map((x) => mgPartKey(Math.round(Number(x.evalNo)), Math.round(Number(x.themeNo)), cleanMark(x.mark)))).size);
   const { materials, warnings } = cleanMaterials(out.materials, hayKey, known, mgMaterialCap(partCount));
@@ -325,7 +344,7 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
         title: mark ? cleanLine(raw?.title, 80) : "",
         story,
         ...(story && sub && sub !== story ? { subStory: sub } : {}),
-        why: cleanLine(raw?.why, 160),
+        why: clipSentences(cleanLine(raw?.why, Infinity), WHY_MAX),
         ...(chip ? { chip } : {}),
       });
     }
@@ -367,7 +386,7 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     resultShape: "bullets",
     materials,
     memo: "",
-    mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}) },
+    mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}), ...(ctx.outcomes?.length ? { outcomes: ctx.outcomes } : {}) },
   };
   return { composition, warnings };
 }
@@ -405,7 +424,59 @@ export function mgFindingOpenIssue(c: Composition): string {
   return where.length ? `구성안: 여는 블록이 '25 지적 대응에서 시작 — 이 과제의 가치(왜)에서 시작하고 지적 대응은 그것을 해소하는 블록 하나로(${where.join(" · ")}).` : "";
 }
 
-/** 구성안 점검(경영관리 — 화면 경고): 블록 없는 절, 추진성과로 닫지 않은 절, 지적으로 여는 절(mgFindingOpenIssue), 자료 필요, 재료·목적 없는 블록. 판면 어림은 하지 않음 */
+/** 경고에 보일 원장 줄 앞부분 */
+const clip = (s: string) => (s.length > 24 ? `${s.slice(0, 24)}…` : s);
+
+/**
+ * 구성안 점검 「성과 배정」(참고, 2026-10-29): 절마다 닫는 라벨 「추진성과」 블록의 재료가 가리키는 절 성과 재료(mg.outcomes — 재료 글·원문 구절로 이음, mg-outcomes.ts outcomeRefs).
+ * ① 두 절의 닫는 블록이 같은 성과 재료를 가리킴 ② 닫는 블록 재료에 수치가 하나도 없는데 어느 닫는 블록도 가리키지 않은 수치 성과 재료가 남음. mg.outcomes가 없으면 빈 목록
+ */
+export function mgOutcomeIssues(c: Composition): string[] {
+  const items = c.mg?.outcomes ?? [];
+  if (!items.length) return [];
+  const refs = outcomeRefs(c.materials, items.map((x) => x.text));
+  const used = new Map<number, string[]>();
+  const bare: string[] = [];
+  for (const p of c.mg!.parts) {
+    const ids = new Set(c.blocks.filter((b) => b.at === p.key && b.label.trim() === CLOSE_LABEL).flatMap((b) => b.materials));
+    if (!ids.size) continue;
+    for (const i of new Set([...ids].flatMap((id) => refs.get(id) ?? []))) used.set(i, [...(used.get(i) ?? []), mgPartLabel(p)]);
+    if (!c.materials.some((m) => ids.has(m.id) && m.kind !== "need" && hasFigure(m.text))) bare.push(mgPartLabel(p));
+  }
+  const out = [...used].filter(([, at]) => at.length > 1).map(([i, at]) => `성과 배정: ${at.join(" / ")}의 추진성과가 같은 성과 재료 「${clip(items[i].text)}」를 씁니다 — 절마다 다른 성과 재료로 닫아 주세요.`);
+  const left = items.filter((x, i) => x.figure && !used.has(i));
+  if (bare.length && left.length) out.push(`성과 배정: ${bare.join(" / ")}의 추진성과 재료에 수치가 없는데 어느 절 추진성과에도 배정되지 않은 수치 성과 재료 ${left.length}개가 남았습니다(${left.map((x) => `「${clip(x.text)}」`).join(" · ")}) — 그 재료로 닫아 주세요.`);
+  return out;
+}
+
+/**
+ * 데이터 블록(스타일 규칙 S2, 2026-10-29): 수치를 행·열이나 막대로 보이는 블록 — 수치·구분표(table 모양 빈 글)·값 옆 막대 표(table:bars)·추진실적 열 표(table:result — 큰 수치 칸)·막대(chart).
+ * 쉐브론 머리 표(chevron — 단계 이름 열의 한 명제)·2단 라벨 표(ladder — 불릿 칸)는 글 표라 아님(blocks.ts VARIANTS의 table 모양 설명)
+ */
+const DATA_TABLES = new Set(["", "bars", "result"]);
+export const isDataBlock = (b: Pick<PlanBlock, "kind" | "variant">) => b.kind === "chart" || (b.kind === "table" && DATA_TABLES.has(b.variant));
+
+/**
+ * 구성안 점검 「데이터 블록」(참고, 2026-10-29 S2): 절의 블록이 쓰는 재료 중 수치 묶음 재료(재료 하나의 글·원문 구절에 같은 단위 값 3개 이상 — mg-bundles.ts materialBundle)가 있는데
+ * 그 절에 데이터 블록(isDataBlock)이 하나도 없으면 절마다 한 줄. 재료가 근거 원문 그대로라 표를 지어내라는 뜻이 아님(그 묶음을 표·막대로 옮기라는 알림)
+ */
+export function mgBundleIssues(c: Composition): string[] {
+  const bundled = new Map(c.materials.flatMap((m) => {
+    const g = materialBundle(m);
+    return g ? [[m.id, g] as const] : [];
+  }));
+  if (!bundled.size) return [];
+  const out: string[] = [];
+  for (const p of c.mg?.parts ?? []) {
+    const bs = c.blocks.filter((b) => b.at === p.key);
+    if (bs.some(isDataBlock)) continue;
+    const ids = [...new Set(bs.flatMap((b) => b.materials))].filter((id) => bundled.has(id));
+    if (ids.length) out.push(`데이터 블록: ${mgPartLabel(p)}에 수치 묶음 재료 ${ids.map((id) => `${id}(${bundled.get(id)!.unit} 값 ${bundled.get(id)!.values.length}개)`).join(" · ")}가 있는데 수치 표·막대 표 같은 데이터 블록이 없습니다 — 그 묶음을 표(table·table:bars·table:result)나 같은 라벨 글 블록 오른쪽 막대(chart)로 보여 주세요.`);
+  }
+  return out;
+}
+
+/** 구성안 점검(경영관리 — 화면 경고): 블록 없는 절, 추진성과로 닫지 않은 절, 지적으로 여는 절(mgFindingOpenIssue), 성과 배정(mgOutcomeIssues), 데이터 블록(mgBundleIssues), 자료 필요, 재료·목적 없는 블록. 판면 어림은 하지 않음 */
 export function mgCompositionIssues(c: Composition): string[] {
   if (!c.blocks.length) return ["구성안에 블록이 없습니다."];
   const out: string[] = [];
@@ -422,6 +493,8 @@ export function mgCompositionIssues(c: Composition): string[] {
   out.push(...mgVarietyIssues(c.blocks, c.blocks.map((b) => b.at ?? ""), parts.map((p) => ({ key: p.key, name: mgPartLabel(p) }))));
   const opening = mgFindingOpenIssue(c);
   if (opening) out.push(opening);
+  out.push(...mgOutcomeIssues(c));
+  out.push(...mgBundleIssues(c));
   const need = c.materials.filter((m) => m.kind === "need");
   if (need.length) out.push(`자료 필요 ${need.length}건: ${need.map((m) => m.text).join(" · ")}`);
   const name = (b: PlanBlock, i: number) => `${i + 1}번 ${b.label || shapeName(b.kind, b.variant)}`;
@@ -588,6 +661,8 @@ const RESULT_ROW_RE = /(^|\n)\s*추진\s*성과\s*\|/;
 /** 이 지표 2025 보고서의 닫기 관례: 절(표지 있는 것 — 대주제 본문 제외)이 모두 「추진성과」 행을 가지면 엄격 */
 export interface MgCloseRule {
   strict: boolean;
+  /** 절반 이상이 닫혔으나 전부는 아님(과반 — 성과 있는 절은 모두 닫음). strict와 함께 true가 되지 않음 */
+  majority: boolean;
   /** 「추진성과」 행이 글에서 보인 절 수 · 절 수 */
   closed: number;
   total: number;
@@ -601,14 +676,17 @@ export interface MgCloseRule {
 export function mgCloseRule(prior: MgPriorSection[]): MgCloseRule {
   const secs = prior.filter((s) => s.mark);
   const closed = secs.filter((s) => RESULT_ROW_RE.test(s.text)).length;
-  return { strict: secs.length > 0 && closed === secs.length, closed, total: secs.length };
+  const strict = secs.length > 0 && closed === secs.length;
+  // 과반(2026-10-29 사용자 방향 「성과를 하나라도 더」): 상수가 아니라 그 지표 2025 절의 실측 비율(닫힘 ≥ 절반)로 판정 — 점검(unclosedPartKeys)은 loose와 같게 둠
+  return { strict, majority: !strict && closed * 2 >= secs.length && secs.length > 0, closed, total: secs.length };
 }
 
 /** 구성안·집필 요청의 「닫기 관례」 한 줄(report-outline-mg·report-draft-mg request.md close.*) */
 export function mgClosePrompt(p: PromptSet, prior: MgPriorSection[], indicator: string): string {
   const rule = mgCloseRule(prior);
   if (!rule.total) return fillFrom(p, "request", "close.none", { indicator });
-  return fillFrom(p, "request", rule.strict ? "close.strict" : "close.loose", { indicator, total: rule.total });
+  const key = rule.strict ? "close.strict" : rule.majority ? "close.majority" : "close.loose";
+  return fillFrom(p, "request", key, { indicator, total: rule.total, closed: rule.closed });
 }
 
 /**
@@ -639,6 +717,8 @@ export interface MgPartRedo {
   frame?: FrameInput;
   /** 카드의 갈래 축(구성안 mg.axis — 이 절 칩은 그 축의 값으로). 없으면 축 없음 */
   axis?: string;
+  /** 구성안의 절 성과 재료(mg.outcomes)와 지금 그것을 가리키는 재료 번호·그 재료로 닫는 다른 절(2026-10-29). mg.outcomes가 없으면 없음 */
+  outcomes?: Array<MgOutcome & { ids: string[]; parts: string[] }>;
 }
 
 /** 다시 짤 절과 다른 절 요약(구성안의 절·블록에서) */
@@ -649,7 +729,50 @@ export function mgPartRedo(c: Composition, key: string, story?: MgMainStory, fra
   const others = parts
     .filter((p) => p.key !== key)
     .map((p) => ({ key: p.key, label: mgPartLabel(p), story: storyLabel(p.story, p.subStory) || "—", blocks: c.blocks.filter((b) => b.at === p.key).map((b) => b.label || shapeName(b.kind, b.variant)).join(" → ") || "—" }));
-  return { part, ...(story ? { story } : {}), others, ...(frame ? { frame } : {}), ...(c.mg?.axis ? { axis: c.mg.axis } : {}) };
+  const items = c.mg?.outcomes ?? [];
+  const refs = outcomeRefs(c.materials, items.map((x) => x.text));
+  const outcomes = items.map((x, i) => {
+    const ids = [...refs].filter(([, at]) => at.includes(i)).map(([id]) => id);
+    const closing = parts.filter((p) => p.key !== key && c.blocks.some((b) => b.at === p.key && b.label.trim() === CLOSE_LABEL && b.materials.some((id) => ids.includes(id))));
+    return { ...x, ids, parts: closing.map((p) => `[${p.key}]`) };
+  });
+  return { part, ...(story ? { story } : {}), others, ...(frame ? { frame } : {}), ...(c.mg?.axis ? { axis: c.mg.axis } : {}), ...(outcomes.length ? { outcomes } : {}) };
+}
+
+/**
+ * 구성안 요청 「절 성과 재료」(report-outline-mg/request.md outcomes.* — 2026-10-29): 카드 원장에서 뽑은 성과 재료(mg-close.ts ledgerOutcomeItems)와 수치 유무.
+ * 절별 다시 짜기면 지금 구성안에서 그 재료를 가리키는 재료 번호와 그 재료로 닫는 다른 절을 붙임(겹치지 않게). 재료가 없으면 빈 글(닫기 관례의 「자료 필요」 규칙이 맡음)
+ */
+export function mgOutcomePrompt(p: PromptSet, items: ReadonlyArray<MgOutcome & { ids?: string[]; parts?: string[] }>): string {
+  if (!items.length) return "";
+  const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
+  return [
+    r("outcomes.head", { count: items.length, figured: items.filter((x) => x.figure).length }),
+    ...items.map((x) => r("outcomes.item", { from: r(`outcomes.from.${x.from}`), figure: r(x.figure ? "outcomes.figure" : "outcomes.plain"), text: x.text, used: x.ids?.length ? r(x.parts?.length ? "outcomes.used" : "outcomes.listed", { ids: x.ids.join("·"), parts: x.parts?.join("·") ?? "" }) : "" })),
+  ].join("\n");
+}
+
+/**
+ * 구성안 요청에 보이는 수치 묶음 한 개의 줄 수 상한 — 목록은 후보를 알리는 짧은 표지이고 줄 전체는 같은 요청의 「올해 실적 재료」(계량지표·월별 실적)에 이미 있음.
+ * 계량지표 표는 보통 1~3행이라 6이면 다 보이고, 월별 실적은 넘는 줄 수만 bundles.more로 알림
+ */
+const BUNDLE_LINES_SHOWN = 6;
+
+/**
+ * 구성안 요청 「수치 묶음 재료」(report-outline-mg/request.md bundles.* — 2026-10-29 S2): 카드 원장에서 찾은 같은 단위 값 3개 이상의 묶음(mg-bundles.ts cardBundles)과 그 값이 든 줄.
+ * 실사 답변·첨부의 표는 여기서 찾지 않음(머리 글이 그 묶음도 같게 다루라고 알림 — 구성안 뒤 점검 mgBundleIssues는 재료 글로 모든 출처를 봄). 후보가 없으면 빈 글
+ */
+export function mgBundlePrompt(p: PromptSet, bundles: readonly MgBundle[]): string {
+  if (!bundles.length) return "";
+  const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
+  return [
+    r("bundles.head", { count: bundles.length }),
+    ...bundles.map((b) => {
+      const shown = b.lines.slice(0, BUNDLE_LINES_SHOWN).join(" / ");
+      const more = b.lines.length > BUNDLE_LINES_SHOWN ? r("bundles.more", { n: b.lines.length - BUNDLE_LINES_SHOWN }) : "";
+      return r("bundles.item", { from: r(`bundles.from.${b.from}`), unit: b.unit, count: b.values.length, values: b.values.join("·"), lines: `${shown}${more}` });
+    }),
+  ].join("\n");
 }
 
 /**

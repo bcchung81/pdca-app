@@ -1,14 +1,14 @@
 // 경평 초안 과제별 초안(/reports/cards/<uid>) 「AI 초안」 탭의 단계 레일(순수): 구성안 · 초안 · 점검 + 주 행동 하나 + 「다시 쓰기」 묶음.
 // 단계는 저장된 값(구성안·구성안 승인·초안 spec·spec.plan·원장 개정·점검 건수)으로만 셈 — 탭을 누르거나 요청을 시작했다고 끝났다고 적지 않고 진행률도 없음.
-// 행동은 요청 칸의 요청 종류(DraftMode: outline·plan·draft)나 보기(구성안·점검 결과·보고서 상태)뿐 — 실행은 화면이 기존 경로(요청 칸 보내기·덮어쓰기 확인)로 함.
+// 행동은 요청 칸의 요청 종류(DraftMode: outline·plan·revise·draft)나 보기(구성안·점검 결과·보고서 상태)뿐 — 실행은 화면이 기존 경로(요청 칸 보내기·덮어쓰기 확인)로 함.
 // 종류를 고르는 곳은 레일 하나(요청 칸 칩 없음) — 그래서 쓸 수 있는 모든 상태에서 나머지 만들기 종류를 보조로 줌.
 // 10-13 정제 시안 05 STAGE_RULE + UI-UX 핸드오프 2026-10-21 6.5(UX-C). 톤 이름은 components/ui/next-steps.tsx MarkTone과 같음.
 
 /** 상태 표지 톤: idle 시작 전 · doing 우리 차례 · handoff 상대 차례 · done 끝 · alert 막힘 */
 export type StageTone = "idle" | "doing" | "handoff" | "done" | "alert";
 export type StageKey = "outline" | "draft" | "check";
-/** outline·plan·draft = 요청 칸의 요청 종류 그대로 · show-outline·show-check = 그 자리를 펼쳐 보임 · report = 보고서 상태(허브) */
-export type StageActionKey = "outline" | "plan" | "draft" | "show-outline" | "show-check" | "report";
+/** outline·plan·revise·draft = 요청 칸의 요청 종류 그대로 · show-outline·show-check = 그 자리를 펼쳐 보임 · report = 보고서 상태(허브) */
+export type StageActionKey = "outline" | "plan" | "revise" | "draft" | "show-outline" | "show-check" | "report";
 
 export interface StageAction {
   key: StageActionKey;
@@ -94,8 +94,9 @@ export function draftStage(i: DraftStageInput): DraftStage {
     const alt: StageAction[] = [{ key: "outline", label: "구성안 다시 만들기" }, ...(i.mg ? [] : [{ key: "draft" as const, label: "바로 만들기", quiet: true }])];
     return { ...none, primary: approved ? { key: "plan", label: "구성안대로 집필" } : { key: "show-outline", label: "구성안 보기" }, alt };
   }
+  // 구성안대로 쓴 초안이면 「자료 반영 고치기」(같은 구성안대로 새 자료·요청을 더해 다시 씀 — 2026-10-29), 바로 만들기 초안 뒤 구성안이면 「구성안대로 집필」
   const redo: StageAction[] = [
-    ...(hasOutline ? [{ key: "plan" as const, label: "구성안대로 집필" }] : []),
+    ...(hasOutline ? [i.draftFromOutline ? { key: "revise" as const, label: "자료 반영 고치기" } : { key: "plan" as const, label: "구성안대로 집필" }] : []),
     { key: "outline", label: hasOutline ? "구성안 다시 만들기" : "구성안 만들기" },
     ...(i.mg ? [] : [{ key: "draft" as const, label: "바로 다시 만들기", quiet: true }]),
   ];

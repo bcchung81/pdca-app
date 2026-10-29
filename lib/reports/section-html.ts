@@ -1,12 +1,14 @@
 // 보고서 소항목 spec → HTML(결정론, 순수). 모든 글은 이스케이프하고, 카드에 없는 숫자는 붉은 점선으로 표시합니다.
+// 되풀이한 수치·문장(repeat-figures.ts — 경고 「반복 수치」「반복 문장」과 같은 기준)은 옵션 repeats일 때 노란 바탕(k-rep)으로 — 한글 내려받기 사본(?for=hwpx)은 끔.
 // 클래스는 lib/reports/section-css.ts(2025 최종본 실측 회색조 도식 표본)와 같습니다. 제목 수준: 실행과제 h4 · 소항목 h5.
 
 import { fitTextLines } from "./fit-dom.ts";
 import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
-import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, tableBars } from "./blocks.ts";
-import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableRowHeadMm } from "./fit.ts";
+import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, pdcaMark, tableBars } from "./blocks.ts";
+import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
+import { type RepeatMarks, figureSpans, repeatMarks } from "./repeat-figures.ts";
 import { type Diagram, type LadderRow, type MiniChart, type ReportSectionSpec, numberTokens } from "./section.ts";
 
 /** 칸 사이 기호 칸(카드 묶음 ✚·▶·시기 흐름 ▶) — grid 열 템플릿에 끼우는 글(REPORT_STYLE.join.gapMm, fit.ts slotOf와 같은 값) */
@@ -14,14 +16,43 @@ const JOIN_GAP = ` ${REPORT_STYLE.join.gapMm}mm `;
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** 글 표시 모음: 모르는 숫자(붉은 점선) + 근거 약한 문장(옅은 점선 — 화면 미리보기만, lib/reports/ground.ts) */
-type Marks = Set<string> & { weak?: Set<string> };
-const marksOf = (unknownNumbers: string[], weak: string[] = []): Marks => Object.assign(new Set(unknownNumbers), { weak: new Set(weak) });
+/**
+ * 글 표시 모음: 모르는 숫자(붉은 점선) + 근거 약한 문장(옅은 점선 — 화면 미리보기만, lib/reports/ground.ts)
+ * + 되풀이(노란 바탕 — rep = 반복 수치 열쇠 → 블록 수, same = 글(sameKey) → 블록 순번 → 같은 문장이 있는 다른 블록 이름)
+ */
+type Marks = Set<string> & { weak?: Set<string>; rep?: RepeatMarks["figures"]; same?: RepeatMarks["sentences"] };
+const marksOf = (unknownNumbers: string[], weak: string[] = [], repeats?: RepeatMarks): Marks =>
+  Object.assign(new Set(unknownNumbers), { weak: new Set(weak) }, repeats ? { rep: repeats.figures, same: sameByKey(repeats.sentences) } : {});
 
-/** 글 → 이스케이프 + 모르는 숫자 표시 + 채울 자료 자리표시 + 강조(**…** → 굵게, AI가 핵심 수치·결과 어구에 붙임) + 위첨자(^{…}) + 근거 약함 */
+/** 반복 문장 모음을 찾기 열쇠(sameKey)로 — 번호만 다른 두 글이 한 열쇠가 되면 블록마다 이름을 합침 */
+function sameByKey(sentences: RepeatMarks["sentences"]): RepeatMarks["sentences"] {
+  const out: RepeatMarks["sentences"] = new Map();
+  for (const [t, byAt] of sentences) {
+    const k = sameKey(t);
+    const into = out.get(k) ?? new Map<number, string[]>();
+    for (const [at, names] of byAt) into.set(at, [...new Set([...(into.get(at) ?? []), ...names])]);
+    out.set(k, into);
+  }
+  return out;
+}
+
+/** 반복 문장 찾기 열쇠: 앞 동그라미 번호를 뗀 글(전후 비교 패널은 번호를 떼고 줄을 「 / 」로 이어 그림 — 이은 글은 조각마다 찾음) */
+const sameKey = (t: string) => t.replace(/^\s*[\u2460-\u2473\u2776-\u277F\u2780-\u2793]\s*/, "").trim();
+function sameOf(s: string, u: Marks): string[] {
+  if (!u.same) return [];
+  const whole = u.same.get(sameKey(s))?.get(UNIT);
+  return whole ?? [...new Set(s.split(" / ").flatMap((x) => u.same!.get(sameKey(x))?.get(UNIT) ?? []))];
+}
+
+/** 반복 문장 표시용: 지금 그리는 셈 단위(spec.blocks 순번 — blocksBody가 블록마다 정함, 추진성과 상자·그 밖 = -1). 렌더가 동기라 그리는 동안만 씀 */
+let UNIT = -1;
+
+/** 글 → 이스케이프 + 모르는 숫자 표시 + 채울 자료 자리표시 + 강조(**…** → 굵게, AI가 핵심 수치·결과 어구에 붙임) + 위첨자(^{…}) + 근거 약함 + 반복 문장 */
 function txt(s: string, unknown: Marks): string {
   const h = sup(emph(needs(parenJosa(marked(s, unknown)))));
-  return unknown.weak?.has(s) ? `<span class="k-weak" title="근거 글과 겹치는 말이 적은 문장 — 원자료로 확인(신호, 판정 아님)">${h}</span>` : h;
+  const w = unknown.weak?.has(s) ? `<span class="k-weak" title="근거 글과 겹치는 말이 적은 문장 — 원자료로 확인(신호, 판정 아님)">${h}</span>` : h;
+  const others = sameOf(s, unknown);
+  return others.length ? `<span class="k-rep k-rep--line" title="${esc(`비슷한 문장이 ${others.join("·")}에도 있음`)}">${w}</span>` : w;
 }
 
 /**
@@ -39,21 +70,52 @@ const needs = (h: string) => h.replace(/【확인:\s*([^】]{1,200})】/g, '<spa
 /** 이스케이프한 글의 **…** → <b>(짝이 없는 **는 걷음) */
 const emph = (h: string) => h.replace(/\*\*([^*]+?)\*\*/g, "<b>$1</b>").replace(/\*\*/g, "");
 
+/**
+ * 글 → 이스케이프 + 모르는 숫자(k-unv) + 반복 수치(k-rep, 그 수치의 모든 자리). 둘이 겹치면 k-rep이 바깥(「<k-rep><k-unv>1,922</k-unv>곳</k-rep>」) —
+ * 자리를 끊는 점마다 덮는 표시를 다시 정해 태그가 엇갈리지 않게 엶·닫음. 반복 수치가 없으면 예전과 같은 출력
+ */
 function marked(s: string, unknown: Marks): string {
-  if (!unknown.size) return esc(s);
-  let out = "";
-  let last = 0;
-  const toks = numberTokens(s);
+  const reps = unknown.rep?.size ? figureSpans(s).filter((x) => unknown.rep!.has(x.key)) : [];
+  if (!unknown.size && !reps.length) return esc(s);
+  const unv: Array<[number, number]> = [];
   let from = 0;
-  for (const t of toks) {
+  for (const t of numberTokens(s)) {
     const i = s.indexOf(t, from);
     if (i < 0) continue;
-    out += esc(s.slice(last, i));
-    out += unknown.has(t) ? `<span class="k-unv" title="카드에 없는 숫자 — 원자료로 확인">${esc(t)}</span>` : esc(t);
-    last = i + t.length;
-    from = last;
+    if (unknown.has(t)) unv.push([i, i + t.length]);
+    from = i + t.length;
   }
-  return out + esc(s.slice(last));
+  const cuts = [...new Set([0, s.length, ...unv.flat(), ...reps.flatMap((r) => [r.start, r.end])])].sort((a, b) => a - b);
+  let out = "";
+  let r0 = -1;
+  let u0 = -1;
+  const closeU = () => {
+    if (u0 >= 0) out += "</span>";
+    u0 = -1;
+  };
+  const closeR = () => {
+    closeU();
+    if (r0 >= 0) out += "</span>";
+    r0 = -1;
+  };
+  for (let k = 0; k + 1 < cuts.length; k++) {
+    const a = cuts[k];
+    const r = reps.findIndex((x) => x.start <= a && a < x.end);
+    const v = unv.findIndex(([x, y]) => x <= a && a < y);
+    if (r !== r0) {
+      closeR();
+      if (r >= 0) out += `<span class="k-rep" title="같은 수치 ${unknown.rep!.get(reps[r].key)}곳 반복 — 한 곳만 남기고 다른 실적으로">`;
+      r0 = r;
+    }
+    if (v !== u0) {
+      closeU();
+      if (v >= 0) out += `<span class="k-unv" title="카드에 없는 숫자 — 원자료로 확인">`;
+      u0 = v;
+    }
+    out += esc(s.slice(a, cuts[k + 1]));
+  }
+  closeR();
+  return out;
 }
 
 const ul = (items: string[], u: Marks, path?: string) => (items.length ? `<ul>${items.map((x, i) => `<li>${tx(x, u, path && `${path}.${i}`)}</li>`).join("")}</ul>` : "");
@@ -78,8 +140,12 @@ const LINK = `<div class="k-ctx__link" aria-hidden="true"><svg viewBox="0 0 20 1
 /** 막대 높이용 수(“3천만원”처럼 한글 단위가 섞이면 앞 숫자만 — 막대는 상대 높이일 뿐, 값 글은 원문 그대로 적음) */
 const barValue = (v: string) => Number((v.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ?? "0").replace(/,/g, ""));
 
-/** 행 오른쪽 막대(결정론 SVG): 값 → 높이, 마지막 막대 진하게, 배지(근거에 있을 때만)는 제목 줄 끝 */
-export function miniChartHtml(c: MiniChart): string {
+/**
+ * 막대(결정론 SVG): 값 → 높이, 마지막 막대 진하게, 배지(근거에 있을 때만)는 제목 줄 끝.
+ * side = 추진성과 상자 안 막대(.k-result__body--chart — 소항목 추진성과·수치 띠 상자, 2026-10-29): 머리를 막대 왼쪽 세로 칸으로(k-chart--side, 배지는 제목 아래 줄 — section-css REPORT_STYLE.sideChart).
+ * 사다리 행 끝 막대(도식·불릿 옆)와 홀로 놓인 막대(전폭·사다리 칸 단독·반 칸)는 머리가 위 그대로(42mm 칸)
+ */
+export function miniChartHtml(c: MiniChart, side = false): string {
   const w = 150;
   const h = 104;
   const top = 22;
@@ -106,7 +172,7 @@ export function miniChartHtml(c: MiniChart): string {
   // 증감 배지는 제목 줄 끝에(막대 값 글과 겹치지 않게)
   const badge = c.badge ? `<span class="k-chart__badge" aria-hidden="true">${esc(c.badge)}</span>` : "";
   const head = c.title || c.badge ? `<figcaption>${esc(c.title)}${badge}</figcaption>` : "";
-  return `<figure class="k-chart">${head}<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(alt)}" font-family="KoPubWorld돋움체, Noto Sans KR, sans-serif"><line x1="6" y1="${base}" x2="${w - 6}" y2="${base}" stroke="#7e7f7e" stroke-width="0.8"/>${bars}</svg></figure>`;
+  return `<figure class="k-chart${side ? " k-chart--side" : ""}">${head}<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(alt)}" font-family="KoPubWorld돋움체, Noto Sans KR, sans-serif"><line x1="6" y1="${base}" x2="${w - 6}" y2="${base}" stroke="#7e7f7e" stroke-width="0.8"/>${bars}</svg></figure>`;
 }
 
 /** 칸 사이 ✚로 잇는 행(2025: 현황 및 문제점·추진배경의 병렬 문제) */
@@ -202,8 +268,9 @@ function withSideFigures(b: Block, html: string, skip: FigurePos[] = []): string
 }
 
 /** 블록 하나(그림 자리표시 포함): 전후 비교 패널·우수사례는 블록 안에서, 협업 구조의 가운데 로고는 가운데 칸 안에서, 그 밖은 옆에. width = 놓인 폭(mm — 가로 반씩 짝·짝 없는 half만 줌, 없으면 blockWidth) */
-export function blockHtml(b: Block, u: Marks, bp?: string, width?: number): string {
-  const core = blockCore(b, u, bp, width);
+/** side = 추진성과 상자 안 막대(막대 블록만 뜻이 있음, miniChartHtml side) */
+export function blockHtml(b: Block, u: Marks, bp?: string, width?: number, side = false): string {
+  const core = blockCore(b, u, bp, width, side);
   if (isPanelCompare(b) || b.kind === "case") return core;
   return withSideFigures(b, core, b.kind === "hub" ? ["center"] : []);
 }
@@ -255,14 +322,14 @@ function statsUl(b: Block, u: Marks, at: At): string {
     if (!p.text && !p.head && !p.rest) return "";
     const note = at(`cells.${i}.note`);
     const sup = p.sup ? `<sup class="k-sup">${tx(p.sup, u, note, undefined, c.note)}</sup>` : "";
-    const rest = p.rest ? `${p.head ? ", " : ""}${tx(c.note.trim(), u, note)}` : "";
+    const rest = p.rest ? `${p.head ? ", " : ""}${tx(p.head ? p.rest.slice(2) : p.rest, u, note, undefined, c.note)}` : "";
     const tag = p.tag ? `<span class="k-tag">${tx(p.tag, u, at(`cells.${i}.tag`), undefined, c.tag)}</span>` : "";
     return `<li>${tag}${p.text ? tx(p.text, u, at(`cells.${i}.bullets.0`), undefined, c.bullets[0]) : ""}${p.open}${sup}${p.head ? tx(p.head, u, at(`cells.${i}.head`), undefined, c.head) : ""}${rest}${p.close}</li>`;
   });
   return li.some(Boolean) ? `<ul>${li.join("")}</ul>` : "";
 }
 
-function blockCore(b: Block, u: Marks, bp?: string, width?: number): string {
+function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false): string {
   // 고치기 표지 경로(bp = blocks.N — 과제별 초안 화면만)
   const at = (rest: string) => (bp ? `${bp}.${rest}` : undefined);
   // 표 열 폭을 셀 놓인 폭(fit.ts slotOf와 같은 값)
@@ -357,7 +424,7 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number): string {
       return `<aside class="k-case${fig ? "" : " k-case--nofig"}"${fig ? ` style="grid-template-columns:minmax(0,1fr) ${figureMm(fig).w}mm"` : ""}><div class="k-case__h"><span class="k-case__tab">${esc(b.label || "우수사례")}</span><span class="k-case__title">${tx(b.title, u, at("title"))}</span></div><div class="k-case__b"><ul>${b.items.map(item).join("")}</ul></div>${fig ? figHtml(fig, "k-case__figslot") : ""}</aside>`;
     }
     case "chart":
-      return miniChartHtml({ title: b.title, series: b.series, badge: b.badge });
+      return miniChartHtml({ title: b.title, series: b.series, badge: b.badge }, side);
     case "subhead":
       return `<p class="k-subh">${tx(b.text, u, at("text"))}</p>`;
     case "qa":
@@ -369,14 +436,13 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number): string {
       if (b.variant === "result") return `${title}${resultTableHtml(b, u, at, w)}`;
       if (b.variant === "ladder") return `${title}${ladderTableHtml(b, u, at, w)}`;
       // 수치 표(2025 복원지수·등급·로드맵·점검 비교 표): 머리 줄 = items(첫째 = 행 머리 열), 행마다 head = 행 머리·bullets = 값 열
-      // 행 머리 열 폭은 판면 어림(fit.ts slotOf)과 같은 규칙. 쉐브론 머리(chevron)는 값 열 머리를 단계 화살표로, 막대 표(bars)는 값 옆에 막대(tableBars — 같은 행·같은 단위끼리)
-      const head = (tableRowHeadMm(w) / w) * 100;
-      const each = ((100 - head) / (b.items.length - 1)).toFixed(2);
+      // 열 폭은 판면 어림과 같은 함수(fit.ts tableColsMm — 글 길이를 따름). 쉐브론 머리(chevron)는 값 열 머리를 단계 화살표로, 막대 표(bars)는 값 옆에 막대(tableBars — 같은 행·같은 단위끼리)
+      const cols = tableColsMm(b, w).map((x) => ((x / w) * 100).toFixed(2));
       const chev = b.variant === "chevron";
       const cls = chev ? "k-tbl k-tbl--chev" : b.variant === "bars" ? "k-tbl k-tbl--bars" : "k-tbl";
       const th = (x: string, i: number) => (chev && i > 0 ? `<th scope="col" class="k-chev${i === b.items.length - 1 ? " k-chev--last" : ""}"><span>${tx(x, u, at(`items.${i}`))}</span></th>` : `<th scope="col">${tx(x, u, at(`items.${i}`))}</th>`);
       const row = (c: Block["cells"][number], i: number) => {
-        const bars = b.variant === "bars" ? tableBars(c.bullets) : [];
+        const bars = b.variant === "bars" ? tableBars(c.bullets, b.items) : [];
         return c.bullets
           .map((x, k) => {
             const v = x ? tx(x, u, at(`cells.${i}.bullets.${k}`)) : "";
@@ -385,10 +451,7 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number): string {
           })
           .join("");
       };
-      return `${title}<table class="${cls}"><colgroup><col style="width:${head.toFixed(2)}%">${b.items
-        .slice(1)
-        .map(() => `<col style="width:${each}%">`)
-        .join("")}</colgroup><thead><tr>${b.items.map(th).join("")}</tr></thead><tbody>${b.cells
+      return `${title}<table class="${cls}"><colgroup>${cols.map((x) => `<col style="width:${x}%">`).join("")}</colgroup><thead><tr>${b.items.map(th).join("")}</tr></thead><tbody>${b.cells
         .map((c, i) => `<tr><th scope="row">${tx(c.head, u, at(`cells.${i}.head`))}</th>${row(c, i)}</tr>`)
         .join("")}</tbody></table>`;
     }
@@ -409,10 +472,9 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number): string {
     }
     case "pdca": {
       // P·D·C·A 순환(2025 경영관리 PDCA 체계 도식·생애주기 순환): 4칸 사이 ▶, 칸 머리 = 단계 표지(비우면 P·D·C·A) + 단계 이름, 아래 환류 띠
-      const DEF = ["P", "D", "C", "A"];
       const cells = b.cells.slice(0, 4).map(
         (c, i) =>
-          `<div class="k-card"><div class="k-card__h"><span class="k-pdca__m">${esc((c.tag || DEF[i]).slice(0, 2))}</span>${tx(c.head, u, at(`cells.${i}.head`))}</div><div class="k-card__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}</div>${c.note ? `<div class="k-card__f">${tx(c.note, u, at(`cells.${i}.note`))}</div>` : ""}</div>`,
+          `<div class="k-card"><div class="k-card__h"><span class="k-pdca__m">${esc(pdcaMark(c.tag, i))}</span>${tx(c.head, u, at(`cells.${i}.head`))}</div><div class="k-card__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}</div>${c.note ? `<div class="k-card__f">${tx(c.note, u, at(`cells.${i}.note`))}</div>` : ""}</div>`,
       );
       return `${title}<div class="k-pdca">${cells.join('<div class="k-join" aria-hidden="true">▶</div>')}${b.text ? `<p class="k-pdca__fb">↺ ${tx(b.text, u, at("text"))}</p>` : ""}</div>`;
     }
@@ -465,16 +527,22 @@ function blocksBody(blocks: Block[], u: Marks, caption: string, marks = false, b
   // width: 가로 반씩 짝이면 반 폭, 짝 없는 half면 그릇 폭(blockWidth는 짝이 있다고 보고 셈) — 그 밖은 블록이 스스로 셈(예전 그대로)
   const raw = (j: number, width?: number) => {
     const b = blocks[j];
+    UNIT = j + offset;
     return blockHtml(b, u, `blocks.${j + offset}`, width ?? (b.span !== undefined ? soloWidth(b) : undefined));
   };
   const bmark = (j: number, html: string) => (blockMarks ? markRoots(html, `data-block="${j + offset}"`) : html);
   const one = (j: number, width?: number) => bmark(j, raw(j, width));
+  // 수치 띠 상자 안 막대(머리가 왼쪽 세로 칸 — 사다리 행 끝 막대는 one 그대로)
+  const side = (j: number) => {
+    UNIT = j + offset;
+    return bmark(j, blockHtml(blocks[j], u, `blocks.${j + offset}`, undefined, true));
+  };
   // 수치 띠 상자(2026-10-28 — 2025 추진성과 행): 소항목 추진성과 상자와 같은 .k-result(굵은 테두리 + 진회색 라벨 칸 + 굵은 불릿), 막대는 상자 안 오른쪽.
   // 블록 제목이 있거나 블록이 여럿이면 세로로 쌓음(--cards). 수치 띠 하나뿐이면 상자 전체가 그 블록(data-block)
   const statsBox = (label: string, main: number[], chart?: number, width?: number) => {
     const box = (lists: string) => {
       const col = chart === undefined && (main.length > 1 || main.some((j) => blocks[j].title)) ? " k-result__body--cards" : "";
-      const body = chart === undefined ? lists : `<div class="k-row2"><div>${lists}</div>${one(chart)}</div>`;
+      const body = chart === undefined ? lists : `<div class="k-row2"><div>${lists}</div>${side(chart)}</div>`;
       return `<div class="k-result"><div class="k-result__label">${esc(label)}</div><div class="k-result__body${col}${chart === undefined ? "" : " k-result__body--chart"}">${body}</div></div>`;
     };
     return chart === undefined && main.length === 1 ? bmark(main[0], box(raw(main[0], width))) : box(main.map((j) => one(j, width)).join(""));
@@ -540,11 +608,12 @@ function resultHtml(spec: ReportSectionSpec, u: Marks, mark = false): string {
   const cards = spec.resultCards ?? [];
   const chart = spec.resultChart && spec.resultChart.series.length >= 2 ? spec.resultChart : null;
   if (!cards.length && !spec.results.length && !chart) return "";
+  UNIT = -1;
   const main = `${
     cards.length ? `<div class="k-rcards" style="grid-template-columns:repeat(${cards.length},minmax(0,1fr))">${cards.map((c, i) => `<div class="k-rcard"><p class="k-rcard__h">${c.tag ? `[${esc(c.tag)}] ` : ""}${tx(c.headline, u, `resultCards.${i}.headline`)}</p><p class="k-rcard__f">${tx(c.figure, u, `resultCards.${i}.figure`)}</p></div>`).join("")}</div>` : ""
   }${ul(spec.results, u, "results")}`;
-  // 곁들임: 막대(불릿 오른쪽 42mm — 2025 1-1 다), 강조 띠(상자 오른쪽 끝 칩 — 2025 1-2 다 「C → B」 향상!)
-  const body = chart ? `<div class="k-row2"><div>${main}</div>${miniChartHtml(chart)}</div>` : main;
+  // 곁들임: 막대(불릿 오른쪽 — 머리 칸 18mm + 막대 42mm, 2025 1-1 다), 강조 띠(상자 오른쪽 끝 칩 — 2025 1-2 다 「C → B」 향상!)
+  const body = chart ? `<div class="k-row2"><div>${main}</div>${miniChartHtml(chart, true)}</div>` : main;
   const band = spec.resultBand ? `<p class="k-result__band">${tx(spec.resultBand, u, "resultBand")}</p>` : "";
   return `<div${mark ? " data-result" : ""} class="k-result${band ? " k-result--band" : ""}"><div class="k-result__label">추진성과</div><div class="k-result__body${cards.length ? " k-result__body--cards" : ""}${chart ? " k-result__body--chart" : ""}">${body}</div>${band}</div>`;
 }
@@ -560,6 +629,8 @@ export interface SectionHtmlOptions {
   /** 추진성과 상자에 data-result(2026-10-13 — 과제별 초안 화면의 끌어 고르기 「AI 수정 요청」·「질문」 대상, 대상 번호 -1). data-block이 아니라서 블록 표지를 쓰는 다른 화면(검토 코멘트·구성안 메모)은 받지 않음 */
   resultMark?: boolean;
   weak?: string[];
+  /** 되풀이한 수치·문장 노란 바탕(k-rep — repeat-figures.ts, 2026-10-29): 과제별 초안 화면·보고서 화면·HTML 내려받기(sectionDocument 기본)만. 한글 내려받기 사본은 끔 */
+  repeats?: boolean;
   head?: "all" | "task" | "sub";
   /** 두 번 눌러 고치기 표지(글 조각마다 data-t·data-raw) — 과제별 초안 화면에서 고칠 수 있을 때만. v3 블록 목록 초안만 */
   editMarks?: boolean;
@@ -573,15 +644,17 @@ export interface SectionHtmlOptions {
 export function sectionBodyHtml(spec: ReportSectionSpec, unknownNumbers: string[] = [], opts: SectionHtmlOptions = {}): string {
   // 고치기 표지는 v3 블록 목록 초안만(렌더가 동기라 이 호출 동안만 켜고 끔)
   EDIT = Boolean(opts.editMarks) && spec.version === 3 && Array.isArray(spec.blocks);
+  UNIT = -1;
   try {
     return sectionBodyInner(spec, unknownNumbers, opts);
   } finally {
     EDIT = false;
+    UNIT = -1;
   }
 }
 
 function sectionBodyInner(spec: ReportSectionSpec, unknownNumbers: string[], opts: SectionHtmlOptions): string {
-  const u = marksOf(unknownNumbers, opts.weak);
+  const u = marksOf(unknownNumbers, opts.weak, opts.repeats ? repeatMarks(spec) : undefined);
   const head = opts.head ?? "all";
   const bizHtml = head === "all" ? `<p class="k-biz"><span class="k-biz__no">대상사업${spec.business.no}</span><span>${esc(spec.business.name)}</span></p>${opts.bizMap ? `\n${opts.bizMap}` : ""}` : "";
   const taskHtml = head !== "sub" ? `<h4 class="k-task"><span class="k-task__no">${esc(spec.task.no)}</span><span class="k-task__t">${esc(spec.task.title)}</span>${spec.task.bp ? MARKER_HTML.BP : ""}</h4>` : "";
@@ -703,8 +776,11 @@ export function blocksSampleHtml(blocks: Block[]): string {
   return `<div class="kca-dg-doc"><div class="k-paper"><div class="k-frame">${blocksBody(blocks, marksOf([]), "")}</div></div></div>`;
 }
 
-/** 내려받기용 HTML 문서(글꼴 파일·외부 링크 없이 한 파일) */
-export function sectionDocument(spec: ReportSectionSpec, unknownNumbers: string[] = [], meta: { year: number; generatedAt: string; model: string } = { year: 2026, generatedAt: "", model: "" }, opts: Pick<SectionHtmlOptions, "marks"> = {}): string {
+/** 내려받기용 HTML 문서(글꼴 파일·외부 링크 없이 한 파일). 되풀이 표시(repeats)는 기본으로 켬 — 한글 내려받기 사본(html?for=hwpx)만 { repeats: false } */
+export function sectionDocument(spec: ReportSectionSpec, unknownNumbers: string[] = [], meta: { year: number; generatedAt: string; model: string } = { year: 2026, generatedAt: "", model: "" }, opts: Pick<SectionHtmlOptions, "marks" | "repeats"> = {}): string {
+  const o = { repeats: true, ...opts };
+  const rm = o.repeats ? repeatMarks(spec) : null;
+  const repNote = rm && (rm.figures.size || rm.sentences.size) ? ` · 노란 바탕 = 되풀이한 수치·문장(한 곳만 남기기)` : "";
   return `<!doctype html>
 <html lang="ko">
 <head>
@@ -719,8 +795,8 @@ ${REPORT_CSS}
 </style>
 </head>
 <body>
-<p class="meta">${esc(`${meta.year}년도 경영실적보고서${spec.mg ? `(경영관리) ${spec.mg.indicator} 초안` : "(주요사업) 평가내용2 소항목 초안"} · 과제관리카드 ${spec.card.taskNo} · ${meta.model ? `AI 초안(${meta.model})` : "초안"}${meta.generatedAt ? ` · ${meta.generatedAt}` : ""}${unknownNumbers.length ? ` · 붉은 점선 = 카드에 없는 숫자(확인 필요)` : ""}`)}</p>
-<div class="wrap">${sectionHtml(spec, unknownNumbers, opts)}</div>
+<p class="meta">${esc(`${meta.year}년도 경영실적보고서${spec.mg ? `(경영관리) ${spec.mg.indicator} 초안` : "(주요사업) 평가내용2 소항목 초안"} · 과제관리카드 ${spec.card.taskNo} · ${meta.model ? `AI 초안(${meta.model})` : "초안"}${meta.generatedAt ? ` · ${meta.generatedAt}` : ""}${unknownNumbers.length ? ` · 붉은 점선 = 카드에 없는 숫자(확인 필요)` : ""}${repNote}`)}</p>
+<div class="wrap">${sectionHtml(spec, unknownNumbers, o)}</div>
 <script>/* 글꼴 표지(진짜 원본 글꼴이면 Noto 흉내 자간 보정을 끔 — report-fonts.ts) → 글꼴 준비 → 자간 맞춤(1~2글자 넘친 칸 글을 한 줄로) */${reportFontsScript()}.then(function () { return document.fonts ? document.fonts.ready : null; }).then(function () { (${fitTextLines.toString()})(document); });</script>
 </body>
 </html>

@@ -6,8 +6,9 @@
 
 import { z } from "zod";
 import { cardOutline } from "../ai/writer.ts";
+import { flattenHtmlTables } from "../knowledge/rich-text.ts";
 import { inspectionCardText } from "../ai/inspect.ts";
-import { BLOCK_OUT_FIELDS, type Block, STORIES, actualBars, blockBullets, blockOutSchema, blockSignature, blockTexts, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
+import { BLOCK_OUT_FIELDS, type Block, STORIES, actualBars, blockBullets, blockOutSchema, blockNumberTexts, blockSignature, blockTexts, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PAGE_MM, blockAreaMm, blockCosts, capacityLines, fitReport, guardFigures, hollowWarning, subTitleMax } from "./fit.ts";
@@ -18,12 +19,14 @@ import { NEEDS_MAX, NEED_RE, type YearActuals, dedupeNeedYear, stripNeeds, yearA
 import { GROUND_WEAK, groundScores } from "./ground.ts";
 import { proseIssues } from "./prose.ts";
 import { kpiMissingWarning } from "./kpi-cover.ts";
-import { figureRepeatWarning } from "./repeat-figures.ts";
+import { figureRepeatWarning, sentenceRepeatWarning } from "./repeat-figures.ts";
 import { planAsResultWarning, resultPlanWarning } from "./result-plan.ts";
 import { LENS_GROUPS, type LensRef, SURVEY_TYPES } from "./lens.ts";
 import { type PriorPick, priorLabel } from "./prior.ts";
 import type { MgDraftMeta } from "./mg-types.ts";
 import type { LooseJson } from "../loose-json.ts";
+import { textShapeWarnings } from "./text-shape.ts";
+import { calcExplained } from "./number-calc.ts";
 import { arrowTitleWarnings, bareBoxWarnings, subTitleIssues } from "./title-checks.ts";
 
 type Json = LooseJson;
@@ -306,6 +309,8 @@ export const REQUEST_SECTIONS = [
   "plan.materialsHead",
   "plan.material",
   "plan.tail",
+  "plan.added",
+  "plan.request",
   "plan.shape.bullets",
   "plan.shape.cards",
   "plan.shape.chart",
@@ -648,6 +653,21 @@ function addKnownNumbers(set: Set<string>, text: string): Set<string> {
   return set;
 }
 
+/**
+ * 글에서 근거에 없는 숫자 조각(중복 없음). 한 줄 안에 아는 숫자 두 개가 있고 모르는 숫자가 그 둘의 합·차·증감률·비율·달성률·배수이면 인정
+ * (lib/reports/number-calc.ts — 2025 보고서식 포장). 호출부는 【확인】 자리표시를 걷은 글을 넘김. 주요사업·경영관리 검증과 다시 점검이 함께 씀
+ */
+export function unknownNumbersIn(text: string, isKnown: (tok: string) => boolean): string[] {
+  const out = new Set<string>();
+  for (const line of text.split("\n")) {
+    const bad = numberTokens(line).filter((t) => !isKnown(t));
+    if (!bad.length) continue;
+    const explained = calcExplained(line, bad, isKnown);
+    for (const t of bad) if (!explained.has(numKey(t))) out.add(t);
+  }
+  return [...out];
+}
+
 /** 카드 글에 있는 숫자 모음(대조용) */
 export function cardNumbers(card: Json): Set<string> {
   return addKnownNumbers(new Set<string>(), `${cardOutline(card)}\n${inspectionCardText(card)}`);
@@ -689,8 +709,30 @@ export function chipless(title: string, chip?: string): string {
   return title.startsWith(head) ? title.slice(head.length).trim() : title;
 }
 
+/**
+ * 원문 대조 열쇠(구성안 재료 구절·초안 인용·말풍선·우수사례 대조 공용 — 2026-10-29): 카드 글 + 근거 글의 sourceKey에 모델이 읽는 모양을 더함.
+ *  ① 근거 글을 편 글(flattenHtmlTables — 공통 지식은 compact.ts·knowledgeBlock이 HTML 표를 「칸 | 칸」 줄로, <br>을 「 / 」로, 문자 참조를 풀어 모델에 줌).
+ *     HTML 원문만으로 대조하면 태그 이름(td·br)이 칸 사이에 끼어 편 글을 인용한 재료가 「원문 못 찾음」이 됐음(표본 r3~r5b 실사 답변 재료 3개)
+ *  ② 카드 표 행(경로에 rows.N이 든 칸 — 계량지표 행·칸 안 표 행)을 칸 순서대로 이은 한 줄. 카드 글(cardOutline)은 칸마다 경로 줄을 나눠
+ *     행을 이어 인용하면 경로 이름이 끼어 못 찾았음(표본 「지표명(단위) 전년 실적 목표」 재료 2개)
+ * 더한 글은 맨 뒤에만 붙여 예전 열쇠의 구절은 모두 그대로 찾음(찾음 → 못 찾음으로 바뀌는 일 없음). 원문 조각 글은 바꾸지 않음
+ */
+export function evidenceKey(card: Json, ...texts: string[]): string {
+  const outline = `${cardOutline(card)}\n${inspectionCardText(card)}`;
+  const text = texts.join("\n");
+  const flat = flattenHtmlTables(text);
+  return sourceKey(`${outline}\n${text}\n${cardRowLines(outline)}${flat === text ? "" : `\n${flat}`}`);
+}
+
+/** 카드 글의 표 행 줄: 「경로 | 글」 줄 중 경로에 rows.N이 든 것을 마지막 rows.N까지의 경로로 묶어 글을 칸 순서대로 「 | 」로 이음 */
+function cardRowLines(outline: string): string {
+  const rows = new Map<string, string[]>();
+  for (const m of outline.matchAll(/^(\S*\.rows\.\d+)\.\S* \| (.*)$/gm)) rows.set(m[1], [...(rows.get(m[1]) ?? []), m[2]]);
+  return [...rows.values()].map((cells) => cells.join(" | ")).join("\n");
+}
+
 export function evidenceOf(card: Json, extraText = "", quoteOnly = ""): { hayKey: string; known: Set<string> } {
-  const hayKey = sourceKey(`${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}\n${quoteOnly}`);
+  const hayKey = evidenceKey(card, extraText, quoteOnly);
   const known = knownNumbers(card, extraText);
   return { hayKey, known };
 }
@@ -708,6 +750,8 @@ export interface SectionCheck {
   proseIssues: string[];
   /** 소항목 제목 한 줄 폭 문제(lib/reports/title-checks.ts subTitleIssues — 2026-10-28). 자동 고치기 사유 — 고치기 요청은 제목만 줄이라고 함 */
   titleIssues: string[];
+  /** 앱이 정리하며 뺀 블록의 종류·모양(cleanBlocks) — 구성안 지킴 셈에서 덜어냄 */
+  droppedShapes: Array<{ kind: string; variant: string }>;
 }
 
 /**
@@ -720,8 +764,8 @@ export interface SectionCheck {
  */
 export function verifySection(out: SectionOutput, card: Json, ctx: SectionContext, extraText = "", siblings: SiblingLayout[] = [], quoteOnly = "", year?: number, own: DiagramHint[] = [], placeBlocks?: (blocks: Block[]) => void, years?: { past: string; current: string }, today?: string): SectionCheck {
   // 인용·말풍선·우수사례·정의는 근거(카드 글 + 첨부·전년 절 글 + 평가 근거)에서 원문을 찾은 것만 — 지어낸 글을 막음
-  const hay = sourceKey(`${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}\n${quoteOnly}`);
-  const { blocks, dropped } = cleanBlocks(out.blocks ?? [], cleanLine, (q) => quoteFoundIn(hay, q), { biz: true });
+  const hay = evidenceKey(card, extraText, quoteOnly);
+  const { blocks, dropped, droppedShapes } = cleanBlocks(out.blocks ?? [], cleanLine, (q) => quoteFoundIn(hay, q), { biz: true });
   placeBlocks?.(blocks);
   // 추진성과 3칸 글자 한도(칩 12·결과 줄 40·큰 수치 60 — schema.md resultCards) — 넘치면 자리표시·괄호를 깨지 않게 자르고 알림
   let clipped = 0;
@@ -752,7 +796,7 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
     ...(extras.band ? { resultBand: extras.band } : {}),
   };
   // 【확인: …】 자리표시 안의 시점·기간은 사실이 아니므로 대조에서 뺌
-  const unknownNumbers = [...new Set(numberTokens(stripNeeds(sectionText(spec))).filter((t) => !isKnown(t)))];
+  const unknownNumbers = unknownNumbersIn(stripNeeds(sectionText(spec, true)), isKnown);
   const warnings: string[] = [...extras.warnings];
   if (visualCount(blocks) < 2) warnings.push("도식 블록이 2개보다 적습니다 — 2025 최종본은 1쪽에 5~8개입니다.");
   // 그림 자리표시: 쪽 모듈 상한(0.5쪽 2·1쪽 4)을 넘으면 뒤 블록 것부터 뺌
@@ -783,7 +827,7 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   warnings.push(...ownIssues.map((x) => `도식: ${x}`));
   // 전년 인용: 2025 보고서 글에서만 찾은 인용·말풍선·우수사례 — 짜임 문제(자동 고치기 사유)로
   const caseEvidence = blocks.some((b) => b.kind === "case") ? (out.blocks ?? []).filter((b) => b?.kind === "case").map((b) => String(b.evidence ?? "")) : [];
-  const priorQuote = years ? priorQuoteIssues(blocks, caseEvidence, years.past, sourceKey(`${cardOutline(card)}\n${inspectionCardText(card)}\n${years.current}\n${quoteOnly}`)) : [];
+  const priorQuote = years ? priorQuoteIssues(blocks, caseEvidence, years.past, evidenceKey(card, years.current, quoteOnly)) : [];
   warnings.push(...priorQuote);
   // 판면: 쪽 예산(모듈 × 255mm)과 어림 높이
   const fit = fitReport(spec);
@@ -827,16 +871,16 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   warnings.push(...prose.map((x) => `문장: ${x}`));
   // 제목(2026-10-28): 소항목 제목 한 줄 폭(자동 고치기 사유)·블록 제목 화살표·표기 없는 상자(참고)
   const title = subTitleIssues(spec.sub);
-  warnings.push(...title, ...arrowTitleWarnings(blocks), ...bareBoxWarnings(blocks));
-  return { spec, unknownNumbers, warnings, yearIssues: issues, composeIssues: [...ownIssues, ...priorQuote, ...place], proseIssues: prose, titleIssues: title };
+  warnings.push(...title, ...arrowTitleWarnings(blocks), ...bareBoxWarnings(blocks), ...textShapeWarnings(blocks));
+  return { spec, unknownNumbers, warnings, yearIssues: issues, composeIssues: [...ownIssues, ...priorQuote, ...place], proseIssues: prose, titleIssues: title, droppedShapes };
 }
 
 /**
- * 참고 경고 셋(2026-10-27 품질 측정 후속 — 집필·다시 점검 공용, 두 트랙): 같은 수치 반복(repeat-figures.ts)·카드 계획을 실적처럼 쓴 줄(result-plan.ts planAsResult)·
+ * 참고 경고 넷(2026-10-27 품질 측정 후속 — 집필·다시 점검 공용, 두 트랙): 같은 수치 반복·같은 문장 반복(repeat-figures.ts, 문장은 2026-10-29)·카드 계획을 실적처럼 쓴 줄(result-plan.ts planAsResult)·
  * 카드 계량지표가 초안에 없음(kpi-cover.ts — 주요사업만, 경영관리는 지표가 많아 뺌). 경고만 — 자동 고치기 사유·점수(fix-policy.ts)에는 넣지 않음
  */
 export function signalWarnings(spec: ReportSectionSpec, card: Json): string[] {
-  const out = [figureRepeatWarning(spec), planAsResultWarning(spec, card)];
+  const out = [figureRepeatWarning(spec), sentenceRepeatWarning(spec), planAsResultWarning(spec, card)];
   if (!spec.mg) out.push(kpiMissingWarning(yearActuals(card).kpi.map((k) => k.name), sectionText(spec)));
   return out.filter((x): x is string => Boolean(x));
 }
@@ -848,7 +892,9 @@ export function signalWarnings(spec: ReportSectionSpec, card: Json): string[] {
  */
 export function priorQuoteIssues(blocks: Block[], caseEvidence: string[], pastText: string, currentKey: string): string[] {
   if (!pastText.trim()) return [];
-  const pastKey = sourceKey(pastText);
+  // 올해 쪽(currentKey — evidenceKey)과 같게 편 글도 대조(2026-10-29)
+  const flat = flattenHtmlTables(pastText);
+  const pastKey = sourceKey(flat === pastText ? pastText : `${pastText}\n${flat}`);
   const quotes = [...blocks.filter((b) => b.kind === "quotes" || b.kind === "voices").map((b) => b.cells.map((c) => c.bullets[0] ?? "")).flat(), ...caseEvidence].map((q) => q.trim()).filter(Boolean);
   const only = [...new Set(quotes.filter((q) => quoteFoundIn(pastKey, q) && !quoteFoundIn(currentKey, q)))];
   if (!only.length) return [];
@@ -923,7 +969,7 @@ export function resultExtras(out: Pick<SectionOutput, "resultChart" | "resultBan
 export function recheckSection(spec: ReportSectionSpec, card: Json, extraText = "", year?: number, today?: string): { spec: ReportSectionSpec; unknownNumbers: string[]; warnings: string[] } {
   const known = knownNumbers(card, extraText);
   const next: ReportSectionSpec = { ...spec };
-  const unknownNumbers = [...new Set(numberTokens(stripNeeds(sectionText(next))).filter((t) => !known.has(numKey(t)) && !known.has(numKey(t).replace(/(%|배)$/, ""))))];
+  const unknownNumbers = unknownNumbersIn(stripNeeds(sectionText(next, true)), (t) => known.has(numKey(t)) || known.has(numKey(t).replace(/(%|배)$/, "")));
   const warnings: string[] = [];
   const fit = fitReport(next);
   next.fit = { total: fit.total, budget: fit.budget, passes: spec.fit?.passes };
@@ -936,7 +982,7 @@ export function recheckSection(spec: ReportSectionSpec, card: Json, extraText = 
   const where = extraText.trim() ? "카드·첨부 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);
   warnings.push(...proseIssues(next).map((x) => `문장: ${x}`));
-  warnings.push(...subTitleIssues(next.sub), ...arrowTitleWarnings(next.blocks ?? []), ...bareBoxWarnings(next.blocks ?? []));
+  warnings.push(...subTitleIssues(next.sub), ...arrowTitleWarnings(next.blocks ?? []), ...bareBoxWarnings(next.blocks ?? []), ...textShapeWarnings(next.blocks ?? []));
   const repeat = resultRepeatOf(next);
   if (repeat) warnings.push(repeat);
   const planned = resultPlanWarning(next, today);
@@ -960,7 +1006,7 @@ export function siblingLayout(spec: ReportSectionSpec): SiblingLayout | null {
 }
 
 /** spec의 모든 글(숫자 대조·검색용) */
-export function sectionText(spec: ReportSectionSpec): string {
+export function sectionText(spec: ReportSectionSpec, rowUnits = false): string {
   const parts: string[] = [spec.sub.title];
   for (const r of spec.rows) {
     parts.push(...r.bullets, r.diagram.title);
@@ -975,7 +1021,7 @@ export function sectionText(spec: ReportSectionSpec): string {
   for (const c of spec.resultCards ?? []) parts.push(c.tag, c.headline, c.figure);
   if (spec.resultChart) parts.push(spec.resultChart.title, ...spec.resultChart.series.map((x) => `${x.label} ${x.value}`), spec.resultChart.badge);
   parts.push(spec.resultBand ?? "");
-  for (const b of spec.blocks ?? []) parts.push(...blockTexts(b));
+  for (const b of spec.blocks ?? []) parts.push(...(rowUnits ? blockNumberTexts(b) : blockTexts(b)));
   parts.push(...spec.results);
   return parts.filter(Boolean).join("\n");
 }

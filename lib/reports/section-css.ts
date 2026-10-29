@@ -49,6 +49,15 @@ export const REPORT_STYLE = {
    * (section-hwpx.ts — 첫 줄 부호 자리, 둘째 줄부터 글 시작 자리, lib/hwpx/hang.ts)
    */
   bullet: { padEm: 0.95, markEm: 0.05 },
+  /**
+   * 추진성과 상자 안 막대(.k-result__body--chart — 소항목 추진성과·수치 띠 상자, 2026-10-29): 머리(제목·배지) 세로 칸 폭 · 막대 그림 폭(mm). 사다리 행 끝 막대(도식 옆)는 예전 42mm 칸·위 머리 그대로
+   * (도식 옆에서 칸을 넓히면 도식이 18mm 좁아져 오히려 높아짐 — 2026-10-29 표본 측정).
+   * 머리를 막대 위에 두면 42mm 칸에서 제목이 두 줄로 접혀 상자가 막대 높이(머리 약 9mm + 막대 약 29mm)를 따라 커져 왼쪽 글 아래가 빔 → 머리를 왼쪽 칸으로.
+   * 칸 폭 = 머리 + 막대(42 → 60mm): 42mm 안에서 머리를 떼면 막대 그림이 약 28mm로 줄어 값 글(viewBox 9.5)이 약 5pt — 읽기 어려움.
+   * 막대 그림을 예전 폭(42mm — 값 7.5pt·시점 6.7pt)으로 두는 대가로 왼쪽 글 폭이 18mm 좁아지지만, 옆 글은 보통 2~4줄(23mm 안팎)이라 상자 높이는 막대 그림(약 29mm)이 정함.
+   * 머리 18mm = 돋움 굵게 9.5pt 한글 다섯 자(「공공데이터」 같은 낱말이 쪼개지지 않음) + 안 여백. 높이 어림 fit.ts sideChartMm, 한글 A안 section-hwpx.ts chart(side)
+   */
+  sideChart: { headMm: 18, barMm: 42 },
 } as const;
 const G = REPORT_STYLE.gray;
 const L = REPORT_STYLE.line;
@@ -57,6 +66,7 @@ const N = REPORT_STYLE.need;
 const J = REPORT_STYLE.join;
 const BX = REPORT_STYLE.boxPadX;
 const LH = REPORT_STYLE.lh;
+const SC = REPORT_STYLE.sideChart;
 const SP = FONT_SPACING.base;
 const A = { body: REPORT_FONTS.body.alias, dotum: REPORT_FONTS.dotum.alias, label: REPORT_FONTS.label.alias, head: REPORT_FONTS.head.alias, num: REPORT_FONTS.num.alias };
 
@@ -275,6 +285,14 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-chart figcaption{background:var(--k-g1);border-bottom:var(--k-hair) solid var(--k-g4);text-align:center;font:700 9.5pt/${LH.chart} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);padding:0 3px}
 .kca-dg-doc .k-chart svg{display:block;width:100%;height:auto}
 .kca-dg-doc .k-chart__badge{display:inline-block;margin-left:4px;background:var(--k-g5);color:#fff;border-radius:7pt;padding:0 5px;font-size:8pt;letter-spacing:0;vertical-align:1pt}
+/* 추진성과 상자 안 막대(2026-10-29 — REPORT_STYLE.sideChart, 소항목 추진성과·수치 띠 상자만): 막대 열 = 머리 칸 + 막대, 머리(제목 + 배지 아래 줄)는 막대 왼쪽 세로 칸(가운데),
+   막대 그림은 남은 42mm. 높이 = max(머리, 막대 그림) — fit.ts sideChartMm. 머리가 없으면 막대 그림 폭만 칸 오른쪽에(빈 머리 칸을 그리지 않음). 사다리 행 끝 막대는 위 42mm 칸 그대로 */
+.kca-dg-doc .k-result__body--chart > .k-row2{grid-template-columns:minmax(0,1fr) ${SC.headMm + SC.barMm}mm}
+.kca-dg-doc .k-chart--side{display:grid;grid-template-columns:${SC.headMm}mm minmax(0,1fr);align-items:center}
+.kca-dg-doc .k-chart--side figcaption{align-self:stretch;display:flex;flex-direction:column;align-items:center;justify-content:center;border-bottom:0;border-right:var(--k-hair) solid var(--k-g4);padding:2px 3px}
+.kca-dg-doc .k-chart--side .k-chart__badge{margin:1px 0 0;vertical-align:baseline}
+.kca-dg-doc .k-chart--side svg{grid-column:2}
+.kca-dg-doc .k-chart--side:not(:has(> figcaption)){display:block;width:${SC.barMm}mm;justify-self:end}
 .kca-dg-doc .k-ctx{margin:0 0 4px}
 .kca-dg-doc .k-ctx--one{grid-template-columns:1fr}
 .kca-dg-doc .k-ladder + .k-banner{margin-top:6px}
@@ -369,6 +387,10 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-need::before{content:"확인 ";font:700 .78em var(--k-f-dotum);color:${N.label}}
 .kca-dg-doc .k-weak{text-decoration:underline dotted #8a8b8a;text-underline-offset:2px;text-decoration-thickness:1px}
 .kca-dg-doc .k-unv{text-decoration:underline dashed #c62828;text-underline-offset:2px;text-decoration-thickness:1.5px}
+/* 되풀이 표시(2026-10-29 — section-html.ts k-rep): 형광펜 노란 바탕만(글자색·자리 그대로, 이유는 title). 문장은 옅게, 그 안 반복 수치는 짙게. 인쇄에는 안 나감 */
+.kca-dg-doc .k-rep{background:#ffe680}
+.kca-dg-doc .k-rep--line{background:#fff7cc}
+@media print{.kca-dg-doc .k-rep{background:none}}
 .kca-dg-doc .k-result__body ul{width:100%}
 
 /* 판면 맞추기(2026-09-27): 문단 기본 여백 없음(쓰는 곳마다 따로 정함 — :where로 뒤 규칙이 이김), 외톨이 줄 피하기, 머리 줄 고르게 */

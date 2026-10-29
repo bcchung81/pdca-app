@@ -248,8 +248,8 @@ export function DraftSources(props: SourceProps & { uid: string; canWrite: boole
                 {[...new Set(props.lens.map((x) => x.group))].map((g) => `${g} ${props.lens.filter((x) => x.group === g).length}`).join(" · ")}
               </summary>
               <ul className="flex flex-col border-t border-line">
-                {props.lens.map((x) => (
-                  <li key={`${x.group}|${x.title}`} className="flex min-w-0 items-center gap-2 border-b border-row-line px-2.5 py-1 last:border-b-0">
+                {props.lens.map((x, i) => (
+                  <li key={`${x.group}|${x.title}|${i}`} className="flex min-w-0 items-center gap-2 border-b border-row-line px-2.5 py-1 last:border-b-0">
                     <span className="shrink-0 text-xs text-muted">{x.group}</span>
                     <span className="min-w-0 truncate text-xs" title={x.title}>
                       {x.title}

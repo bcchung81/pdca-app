@@ -129,7 +129,7 @@ export function buildTodoBoard(input: TodoInput): TodoBoard {
       kpiTotal += rows2.length;
       kpiMissing += rows2.filter((r) => !filled(report?.inputs, r.key)).length;
       if (!c.submit.included) continue; // 목차에서 뺀 과제는 초안·자리표시를 따지지 않음(제출 조건과 같음)
-      requests += needRequestsOf(c.submit.draft?.outline).length;
+      requests += needRequestsOf(c.submit.draft?.outline, c.submit.undatedOutcome).length;
       const row = cardSubmitRow(c.submit);
       if (row.state === "none" || row.state === "outline") {
         noDraft++;

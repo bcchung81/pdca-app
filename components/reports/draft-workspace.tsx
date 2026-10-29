@@ -17,6 +17,7 @@ import { ZoomControl } from "../workspace/zoom-control";
 import { type DraftBusy, DraftCompose, type DraftMeta, type DraftMsg } from "./draft-compose";
 import { DraftComposer, DraftHistory, DraftReviewNote, DraftSelectionBar, RESULT_AT, flashBlock, hoverBlock, useDraftReview } from "./draft-review";
 import { DraftSources, type SourceProps, useDraftSelection } from "./draft-workbench";
+import { type DraftPick, mergeSources, pickOf } from "../../lib/reports/draft-sources.ts";
 import { approveReportOutline, saveReportOutline } from "../../app/(app)/reports/cards/outline-actions";
 import type { ToastSpec } from "../cards/review/use-card-review";
 import { AutosaveSwitch } from "../workspace/autosave";
@@ -122,6 +123,15 @@ export function DraftWorkspace(
   const [paneOpen, setPaneOpen] = useState(true);
   const side = other ?? tab;
   const sel = useDraftSelection(props);
+  // 지금 고른 근거(서버 액션에 보냄 — 구성안대로 집필·자료 반영 고치기·블록 고치기·모양 바꾸기가 저장된 근거에 더함, 뺀 자료는 뺌)
+  const pick = pickOf(
+    sel.card.map((f) => f.id),
+    sel.report.map((f) => f.id),
+    sel.off,
+  );
+  // 초안 근거에 없던 지금 고른 첨부(블록 고치기·모양 바꾸기 진행 줄 「새 자료」 — 서버 loadDraftForEdit와 같은 합치기)
+  const sinceDraft = mergeSources(props.used, pick).added;
+  const addedSinceDraft = [...props.cardFiles.filter((f) => sinceDraft.card.includes(f.id)).map((f) => f.fileName), ...(props.reportFiles ?? []).filter((f) => sinceDraft.report.includes(f.id)).map((f) => f.fileName)];
   const [busy, setBusy] = useState<DraftBusy>(false);
   const [msg, setMsg] = useState<DraftMsg>(null);
   // 「다른 짜임 여러 안」 대화 창(짜임 고르기에서 시작 — 요청 칸·구성안 패널·경영관리 절 모두 여기 하나)
@@ -158,7 +168,7 @@ export function DraftWorkspace(
   const shown = !outline ? "draft" : !props.hasSpec ? "outline" : view;
   // 블록 고치기(초안 판·블록 목록 초안): 끌어 고른 글 → 도구줄 → 여백 작성 카드 → 결과 메모. 여백 열은 좁은 창에서도 이때는 둠
   const reviewOn = shown === "draft" && Boolean(props.version) && !props.deptView;
-  const review = useDraftReview({ uid: props.uid, version: props.version, enabled: reviewOn, canEdit: props.canWrite, paper: paperRef, content: contentRef });
+  const review = useDraftReview({ uid: props.uid, version: props.version, enabled: reviewOn, canEdit: props.canWrite, paper: paperRef, content: contentRef, pick });
   // 왼쪽 열 폭 → 여백 메모를 둘 수 있는지(margin) · 맞춤 확대(종이는 늘 182mm 고정 폭 — docWidthPx)
   // 구성안 블록 메모(도식 구조)는 「구성안」 판에서만 여백에(2026-09-28 사용자 요구 — 초안 판에 도식 구조가 섞여 보였음). 초안 판의 여백은 블록 고치기 메모만
   const marginOf = (leftW: number) => Boolean(outline) && shown === "outline" && leftW > 0 && leftW >= PAPER_PX * FIT_ZOOM.min + NOTES_PX + PAD_PX;
@@ -336,13 +346,13 @@ export function DraftWorkspace(
     review.onPaperMouseDown(e);
   };
 
-  // 요청 칸 「구성안대로 집필」: 고친(저장 안 한) 구성안이 있으면 먼저 저장하고 승인하고 집필(구성안 패널의 「승인하고 집필」과 같음)
-  const planDraft = async () => {
+  // 요청 칸 「구성안대로 집필」·「자료 반영 고치기」: 고친(저장 안 한) 구성안이 있으면 먼저 저장하고 승인하고 집필(구성안 패널의 「승인하고 집필」과 같음) — 지금 고른 근거·요청 글을 함께
+  const planDraft = async (o: { pick: DraftPick; request?: string }) => {
     if (ed.dirty) {
       const saved = await saveReportOutline(props.uid, { edit: ed.edit });
       if (!saved.ok) return saved;
     }
-    return approveReportOutline(props.uid);
+    return approveReportOutline(props.uid, o);
   };
   // 종이의 블록을 누르면 그 구성안 블록 메모가 펼쳐짐(여백 메모가 없으면 오른쪽 구성안 목록에서) — 끌어 고른 글이 있으면(블록 고치기) 그대로 둠
   const openNoteAt = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -361,7 +371,7 @@ export function DraftWorkspace(
       ed.setOpen(true);
     }
   };
-  const outlinePanel = outline ? <OutlinePanel uid={props.uid} canWrite={props.canWrite} ed={ed} margin={margin} humanEdits={props.humanEdits} onShowMaterial={showMaterial} /> : null;
+  const outlinePanel = outline ? <OutlinePanel uid={props.uid} canWrite={props.canWrite} ed={ed} margin={margin} humanEdits={props.humanEdits} onShowMaterial={showMaterial} pick={pick} /> : null;
   // 구성안 판면(와이어프레임): 고치는 동안에도 서버 미리보기(previewReportOutline)가 다시 그린 판면 — 블록마다 data-block = 지금 순서
   const sheetView = ed.view ?? outline?.view ?? null;
   const sheet =
@@ -580,6 +590,8 @@ export function DraftWorkspace(
                 currentCode={props.blockCodes?.[shapeAt.blockIndex] ?? ""}
                 menu={props.shapeMenu}
                 mg={Boolean(props.mg)}
+                pick={pick}
+                added={addedSinceDraft}
                 onClose={() => setOther(null)}
                 onRefresh={review.refresh}
                 onApplied={(r, request) => {

@@ -23,6 +23,9 @@ const SOURCES = [
   "lib/reports/diagram-hints.ts",
   "lib/reports/actuals.ts",
   "lib/reports/title-checks.ts",
+  "lib/reports/text-shape.ts",
+  "lib/reports/mg-close.ts",
+  "lib/reports/mg-fill.ts",
   "app/(app)/reports/cards/draft-write.ts",
 ];
 

@@ -27,7 +27,7 @@ import { type FrameInput, framePrompt } from "../reports/framework-pick.ts";
 import type { Story } from "../reports/blocks.ts";
 import { frameworkOf, shapeCode, shapeName } from "../reports/frameworks.ts";
 import { type FitNeed, type FitReport, blockAreaMm, fitNeeded, fitReport } from "../reports/fit.ts";
-import { REPORT_HARNESS, type ReportFile, type ReportPrompts, type SectionCheck, type SectionContext, type SectionOutput, type SiblingLayout, fitPrompt, hintSource, moduleGuide, sectionHints, sectionOutputSchema, sectionPrompt, withPlanStory } from "../reports/section.ts";
+import { REPORT_HARNESS, type ReportFile, type ReportPrompts, type SectionCheck, type SectionContext, type SectionOutput, type SiblingLayout, cleanLine, fitPrompt, hintSource, moduleGuide, sectionHints, sectionOutputSchema, sectionPrompt, withPlanStory } from "../reports/section.ts";
 import { storyHints, storyHintsPrompt } from "../reports/story-hints.ts";
 import { mgStoryHintsFor } from "../reports/story-hints-mg.ts";
 import { outlineInspectionPrompt } from "../reports/inspection-input.ts";
@@ -42,8 +42,11 @@ import { type AiFeature, type Effort, FEATURE_MAX_TOKENS, specForFeature } from 
 import { isMgmtCard } from "../cards/mgmt-card.ts";
 import { type LinkIndexRow, parseLinkIndex } from "../inspections/biz-links.ts";
 import { type MgDraftContext, type MgDraftOutput, mgMaterialsPrompt, mgPlanPrompt, mgVolumePrompt } from "../reports/mg-draft.ts";
+import type { PlanRevise } from "../reports/draft-sources.ts";
 import type { UnitAiOutput } from "../reports/unit-parts-ai.ts";
-import { MG_LIMITS, type MgOutlineOutput, type MgPartRedo, type MgSibling, mgClosePrompt, mgDiagramPrompt, mgPartPrompt, mgSiblingsPrompt } from "../reports/mg-outline.ts";
+import { cardBundles } from "../reports/mg-bundles.ts";
+import { ledgerOutcomeItems } from "../reports/mg-close.ts";
+import { MG_LIMITS, type MgOutlineOutput, type MgPartRedo, type MgSibling, mgBundlePrompt, mgClosePrompt, mgDiagramPrompt, mgOutcomePrompt, mgPartPrompt, mgSiblingsPrompt } from "../reports/mg-outline.ts";
 import type { DiagramHint } from "../reports/diagram-hints.ts";
 import { DEFAULT_TRACK, MGMT_TRACK, type TrackSpec, trackSpecOfUnit } from "../tracks/index.ts";
 import { type InspectContext, type InspectOutput, inspectSystemText, inspectionPrompt } from "./inspect.ts";
@@ -396,6 +399,8 @@ export interface ReportSectionInput {
   fit?: { draft: SectionOutput; report: FitReport; need: FitNeed | null; year?: string[]; compose?: string[]; prose?: string[]; unknown?: string[]; title?: string[] };
   /** 승인된 구성안(lib/reports/composition.ts) — 있으면 요청 글에 「승인된 구성안」(블록마다 높이 예산)을 붙여 그 짜임대로 씀 */
   plan?: Composition;
+  /** 구성안 뒤 추가된 자료·담당자 요청(자료 반영 고치기 — plan이 있을 때만 「승인된 구성안」 끝에 붙음) */
+  revise?: PlanRevise | null;
   /** 과제별 공통 지식 묶음(규칙 범위 전부 — 참고자료 설계 2단계). 있으면 ①~③을 요청 앞에, 목록표를 요청 글 첫머리에 */
   kb?: KnowledgeBundle;
 }
@@ -458,7 +463,7 @@ export async function callReportSection(input: ReportSectionInput): Promise<Sect
   const ctx = input.plan?.split?.chip ? { ...input.ctx, chip: input.plan.split.chip } : input.ctx;
   const ask = (files: ReportFile[]) => {
     const base = sectionPrompt(prompts, input.card, ctx, input.year, files, input.prior ?? [], input.siblings ?? [], input.lens ?? [], input.actuals);
-    const plan = input.plan ? `\n\n${planPrompt(prompts, input.plan, input.ctx.module, input.ctx.head)}` : "";
+    const plan = input.plan ? `\n\n${planPrompt(prompts, input.plan, input.ctx.module, input.ctx.head, input.revise)}` : "";
     return `${base}${plan}`;
   };
   // 자동 고치기의 「고칠 점」은 요청 글 끝에 따로 붙는 블록 — 1차 요청 글(약 4만 토큰)이 바이트까지 같아 캐시 표지(1차는 cachePrompt, 고치기는 tail 앞)가 같은 자리에 오고 고치기는 캐시로 읽음.
@@ -569,6 +574,10 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
       // 분량 목표(배정 쪽 — 전체 구성안만)·이 지표의 닫기 관례(2026-10-12 사용자 결정 D1·D2)
       input.part ? "" : mgVolumePrompt(prompts, input.ctx.pages),
       mgClosePrompt(prompts, input.ctx.prior, input.ctx.indicator),
+      // 절 성과 재료(원장 성과 줄 · 수치 유무 — 절별 다시 짜기는 지금 구성안의 재료 번호·그 재료로 닫는 다른 절까지, 2026-10-29)
+      mgOutcomePrompt(prompts, input.part?.outcomes ?? ledgerOutcomeItems(input.card, cleanLine, Infinity)),
+      // 수치 묶음 재료(카드 계량지표 표·월별 실적 줄의 같은 단위 값 3개 이상 — 데이터 블록 후보, 스타일 규칙 S2, 2026-10-29)
+      mgBundlePrompt(prompts, cardBundles(input.card, input.actuals)),
       input.memo?.trim() ? fillFrom(prompts, "request", "memo", { memo: input.memo.trim() }) : "",
     ]
       .filter(Boolean)
@@ -582,10 +591,10 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
  * 경영관리 집필 한 번(카드당 1회 — 설계 결정 2026-10-09): 자료 블록(승인된 구성안의 평가내용 전년 절 글) 뒤에 「승인된 구성안」(닫기 관례·분량 목표·블록 글 한도 포함). 판면 맞추기·자동 고치기 없음(R4 보류 — 분량은 경고만, 2026-10-12 D1).
  * 절이 여럿이라 답이 길어 CLI 제한 시간을 늘림. 시스템 프롬프트 = report-draft-mg/system.md(+ report-harness 문체·규칙 — 주요사업과 같은 고르기)
  */
-export async function callReportDraftMg(input: MgReportInput & { plan: Composition }): Promise<{ output: MgDraftOutput; model: string; provider: AiProvider; usage: Usage; promptVersion: string }> {
+export async function callReportDraftMg(input: MgReportInput & { plan: Composition; revise?: PlanRevise | null }): Promise<{ output: MgDraftOutput; model: string; provider: AiProvider; usage: Usage; promptVersion: string }> {
   const { prompts, schema } = reportDraftPromptsMg();
   const evals = [...new Set((input.plan.mg?.parts ?? []).map((p) => p.evalNo))];
-  const ask = (files: ReportFile[]) => `${mgMaterialsPrompt(prompts, input.card, input.ctx, input.year, evals.length ? evals : input.ctx.evals, files, input.lens ?? [], input.actuals)}\n\n${mgPlanPrompt(prompts, input.plan, input.ctx)}`;
+  const ask = (files: ReportFile[]) => `${mgMaterialsPrompt(prompts, input.card, input.ctx, input.year, evals.length ? evals : input.ctx.evals, files, input.lens ?? [], input.actuals)}\n\n${mgPlanPrompt(prompts, input.plan, input.ctx, input.revise)}`;
   const r = await reportStructured("report_section", reportSystem(prompts), schema, input.files ?? [], ask, input.kb, { kbp: prompts, timeoutMs: 600_000 });
   return { ...r, promptVersion: prompts.version };
 }

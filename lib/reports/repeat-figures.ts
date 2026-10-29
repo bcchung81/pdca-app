@@ -5,10 +5,14 @@
 // 셈 단위: 주요사업 = 블록 하나씩 + 추진성과 상자(줄·3칸·막대·강조 띠) 하나 — 서로 다른 블록 3개 이상이면 경고.
 // 경영관리 = 카드 초안 전체의 블록 — 블록 3개 이상이거나 서로 다른 절 2개 이상이면 경고. 기준선 경영관리 3건의 심사 지적(TF 31명·포상 12→22명·교육 20→25명·12명)은
 // 모두 두 절에 한 번씩 나온 반복이라 「블록 3개」만으로는 하나도 안 잡혔음(절 2개 규칙: 지적 3건 모두 + 뜻이 다른 5% 한 건).
+// 2026-10-29 「되풀이되는 구간 하이라이트」: 경고와 같은 기준의 반복 수치 열쇠(repeatMarks)와 글 속 수치 자리(figureSpans), 서로 다른 블록의 같은 문장
+// (textSimilarity ≥ SAME_TEXT_MIN — 사업 조판의 같은 문장 규칙)을 화면 렌더러(section-html.ts k-rep)에 넘김. 경고 「반복 문장」도 참고.
 
-import { blockTexts } from "./blocks.ts";
-import { stripNeeds } from "./actuals.ts";
-import { plainText } from "./fit.ts";
+import { type Block, blockTexts } from "./blocks.ts";
+import { NEED_RE, stripNeeds } from "./actuals.ts";
+import { SUP_RE, plainText } from "./fit.ts";
+import { bigramSet, textSimilarity } from "./ground.ts";
+import { SAME_TEXT_MIN, SAME_TEXT_MIN_BIGRAMS } from "./same-text.ts";
 import type { ReportSectionSpec } from "./section.ts";
 
 /** 같은 수치가 이 수 이상의 서로 다른 블록에 나오면 경고 */
@@ -59,21 +63,23 @@ export interface FigureUnit {
   texts: string[];
 }
 
-/** 단위마다 수치를 세어 [모양, 블록 수, 절(묶음) 수] — 블록 수 minBlocks 이상이거나 묶음 수 minGroups 이상인 것만, 블록 수 많은 순 */
-export function repeatedFigures(units: FigureUnit[], minBlocks = REPEAT_MIN_BLOCKS, minGroups = Infinity): Array<[string, number, number]> {
-  const seen = new Map<string, { shown: string; n: number; groups: Set<string> }>();
+/** 단위마다 수치를 세어 기준을 넘은 것만(열쇠·모양·블록 수·묶음 수), 블록 수 많은 순 */
+function repeatedEntries(units: FigureUnit[], minBlocks: number, minGroups: number) {
+  const seen = new Map<string, { key: string; shown: string; n: number; groups: Set<string> }>();
   for (const u of units) {
     for (const [key, shown] of figureKeys(u.texts.join("\n"))) {
-      const x = seen.get(key) ?? { shown, n: 0, groups: new Set<string>() };
+      const x = seen.get(key) ?? { key, shown, n: 0, groups: new Set<string>() };
       x.n += 1;
       x.groups.add(u.group);
       seen.set(key, x);
     }
   }
-  return [...seen.values()]
-    .filter((x) => x.n >= minBlocks || x.groups.size >= minGroups)
-    .sort((a, b) => b.n - a.n)
-    .map((x) => [x.shown, x.n, x.groups.size]);
+  return [...seen.values()].filter((x) => x.n >= minBlocks || x.groups.size >= minGroups).sort((a, b) => b.n - a.n);
+}
+
+/** 단위마다 수치를 세어 [모양, 블록 수, 절(묶음) 수] — 블록 수 minBlocks 이상이거나 묶음 수 minGroups 이상인 것만, 블록 수 많은 순 */
+export function repeatedFigures(units: FigureUnit[], minBlocks = REPEAT_MIN_BLOCKS, minGroups = Infinity): Array<[string, number, number]> {
+  return repeatedEntries(units, minBlocks, minGroups).map((x) => [x.shown, x.n, x.groups.size]);
 }
 
 /** 초안의 셈 단위: 블록마다 글(경영관리는 절 열쇠를 묶음으로) + (주요사업) 추진성과 상자 하나 */
@@ -93,4 +99,123 @@ export function figureRepeatWarning(spec: ReportSectionSpec): string | null {
   const shown = hits.slice(0, 4).map(([f, n, g]) => `${f}(블록 ${n}개${mg ? `·절 ${g}개` : ""})`);
   const more = hits.length > 4 ? ` 외 ${hits.length - 4}개` : "";
   return `반복 수치: ${shown.join("·")}${more} — 같은 수치를 여러 블록에 되풀이함 — 한 블록에만 두고 남는 자리에는 다른 실적·효과를`;
+}
+
+// ───────────────────────── 화면 표시(2026-10-29 「되풀이되는 구간 하이라이트」)
+
+/** 글 → 표기를 걷은 글 + 글자마다 원래 자리. re에 맞은 조각은 빼고, keep이 돌려준 [시작, 끝)만 남김(위첨자 ^{…}의 안 글) */
+function cut(s: string, at: number[], re: RegExp, keep?: (m: RegExpMatchArray) => [number, number]): [string, number[]] {
+  let out = "";
+  const map: number[] = [];
+  let last = 0;
+  const take = (from: number, to: number) => {
+    for (let i = from; i < to; i++) {
+      out += s[i];
+      map.push(at[i]);
+    }
+  };
+  for (const m of s.matchAll(re)) {
+    take(last, m.index);
+    if (keep) {
+      const [a, b] = keep(m);
+      take(m.index + a, m.index + b);
+    }
+    last = m.index + m[0].length;
+  }
+  take(last, s.length);
+  return [out, map];
+}
+
+/**
+ * 원래 글(**강조**·^{위첨자}·【확인】 표기가 섞인 글)에서 수치 자리 [시작, 끝)와 열쇠 — figureKeys와 같은 규칙(자리표시 안·날짜·흔한 값 뺌,
+ * 화살표 앞 맨 숫자는 뒤 단위를 받아 그 숫자만). 표기를 사이에 낀 수치(「**12**명」)는 원래 글에서 이어지지 않아 자리를 내지 않음(감싸면 태그가 엇갈림)
+ */
+export function figureSpans(text: string): Array<{ start: number; end: number; key: string }> {
+  const s = String(text ?? "");
+  let [t, at] = cut(s, Array.from({ length: s.length }, (_, i) => i), NEED_RE);
+  [t, at] = cut(t, at, /\*\*/g);
+  [t, at] = cut(t, at, SUP_RE, (m) => [2, 2 + m[1].length]);
+  t = t.replace(DATE_RE, (d) => " ".repeat(d.length));
+  const hits: Array<{ from: number; to: number; key: string }> = [];
+  for (const m of t.matchAll(ARROW_RE)) {
+    const [, value, , unit] = m;
+    if (!common(value, unit)) hits.push({ from: m.index, to: m.index + value.length, key: `${value.replace(/,/g, "")}${unit}` });
+  }
+  for (const m of t.matchAll(FIGURE_RE)) {
+    const [, value, unit] = m;
+    if (!common(value, unit)) hits.push({ from: m.index, to: m.index + m[0].length, key: `${value.replace(/,/g, "")}${unit}` });
+  }
+  return hits
+    .filter((h) => at[h.to - 1] - at[h.from] === h.to - 1 - h.from)
+    .map((h) => ({ start: at[h.from], end: at[h.to - 1] + 1, key: h.key }))
+    .sort((a, b) => a.start - b.start);
+}
+
+/** 반복 문장을 세는 글(불릿·칸 글·전후 비교 줄·블록 본문) — 라벨·제목·칸 머리·막대 값은 뺌 */
+const sentenceTexts = (b: Block) => [b.text, ...b.items, ...b.cells.flatMap((c) => [...c.bullets, c.note]), ...b.rows.flatMap((r) => [...r.before, ...r.after])].filter(Boolean);
+
+/** 셈 단위(블록 = spec.blocks 순번, 추진성과 상자 = -1)와 화면·경고에 쓰는 이름. 경영관리는 절 표지를 앞에(「나. 추진내용」) */
+function sentenceUnits(spec: ReportSectionSpec): Array<{ at: number; name: string; texts: string[] }> {
+  const parts = new Map((spec.mg?.parts ?? []).map((p) => [p.key, p]));
+  const units = (spec.blocks ?? []).map((b, i) => {
+    const base = plainText(b.label || b.title).trim() || `블록 ${i + 1}`;
+    const mark = parts.get(spec.mg?.at[i] ?? "")?.mark;
+    return { at: i, name: mark ? `${mark}. ${base}` : base, texts: sentenceTexts(b) };
+  });
+  const box = [...spec.results, ...(spec.resultCards ?? []).flatMap((c) => [c.headline, c.figure]), spec.resultBand ?? ""].filter(Boolean);
+  if (box.length) units.push({ at: -1, name: "추진성과", texts: box });
+  return units;
+}
+
+/** 서로 다른 블록의 같은 문장 쌍(닮음 textSimilarity ≥ SAME_TEXT_MIN, 양쪽 다 글자 두 개 묶음 SAME_TEXT_MIN_BIGRAMS 이상 — 사업 조판 같은 문장과 같은 규칙). 닮음 큰 순 */
+export function repeatedSentences(spec: ReportSectionSpec): Array<{ a: { at: number; name: string; text: string }; b: { at: number; name: string; text: string }; score: number }> {
+  // 한 블록 안에 같은 글이 두 번 있어도 한 번만(같은 쌍이 겹쳐 나오지 않게)
+  const sents = sentenceUnits(spec).flatMap((u) => [...new Set(u.texts)].map((text) => ({ at: u.at, name: u.name, text, size: bigramSet(plainText(stripNeeds(text))).size })).filter((x) => x.size >= SAME_TEXT_MIN_BIGRAMS));
+  const out: ReturnType<typeof repeatedSentences> = [];
+  for (let x = 0; x < sents.length; x++) {
+    for (let y = x + 1; y < sents.length; y++) {
+      const [a, b] = [sents[x], sents[y]];
+      if (a.at === b.at) continue;
+      const score = textSimilarity(stripNeeds(a.text), stripNeeds(b.text));
+      if (score >= SAME_TEXT_MIN) out.push({ a: { at: a.at, name: a.name, text: a.text }, b: { at: b.at, name: b.name, text: b.text }, score });
+    }
+  }
+  return out.sort((p, q) => q.score - p.score);
+}
+
+/** 화면 표시 재료: figures = 반복 수치 열쇠 → 블록 수(경고와 같은 기준), sentences = 원래 글 → 블록 순번(추진성과 -1) → 같은 문장이 있는 다른 블록 이름 */
+export interface RepeatMarks {
+  figures: Map<string, number>;
+  sentences: Map<string, Map<number, string[]>>;
+}
+
+export function repeatMarks(spec: ReportSectionSpec): RepeatMarks {
+  const mg = Boolean(spec.mg);
+  const figures = new Map(repeatedEntries(figureUnits(spec), REPEAT_MIN_BLOCKS, mg ? REPEAT_MIN_PARTS : Infinity).map((x) => [x.key, x.n]));
+  const sentences = new Map<string, Map<number, string[]>>();
+  const add = (from: { at: number; text: string }, to: { name: string }) => {
+    const byAt = sentences.get(from.text) ?? new Map<number, string[]>();
+    const names = byAt.get(from.at) ?? [];
+    if (!names.includes(to.name)) names.push(to.name);
+    byAt.set(from.at, names);
+    sentences.set(from.text, byAt);
+  };
+  for (const p of repeatedSentences(spec)) {
+    add(p.a, p.b);
+    add(p.b, p.a);
+  }
+  return { figures, sentences };
+}
+
+/** 경고 한 줄(참고 — warning-levels.ts 「반복 문장」). 같은 문장 쌍이 없으면 null. 쌍 3개까지 보임 */
+export function sentenceRepeatWarning(spec: ReportSectionSpec): string | null {
+  const pairs = repeatedSentences(spec);
+  if (!pairs.length) return null;
+  const clip = (t: string) => {
+    const c = plainText(stripNeeds(t)).replace(/\s+/g, " ").trim();
+    return c.length > 24 ? `${c.slice(0, 24).trimEnd()}…` : c;
+  };
+  const shown = pairs.slice(0, 3).map((p) => `「${clip(p.a.text)}」(${p.a.name}·${p.b.name})`);
+  const more = pairs.length > 3 ? ` 외 ${pairs.length - 3}쌍` : "";
+  return `반복 문장: ${shown.join(" / ")}${more} — 비슷한 문장을 여러 블록에 되풀이함 — 한 블록에만 두고 남는 자리에는 다른 실적·효과를`;
 }

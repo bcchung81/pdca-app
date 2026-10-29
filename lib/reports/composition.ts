@@ -9,13 +9,15 @@
 import { z } from "zod";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { BLOCK_KINDS, type Block, type BlockKind, FIGURE_KINDS, FIGURE_LABEL, FIGURE_POS, FIGURE_SIZES, type Figure, MAIN_STORIES, type MainStory, STORIES, type Story, VARIANTS, cleanFigures, isGridTable, isPanelCompare } from "./blocks.ts";
-import { type HeadMode, PAGE_MM, blockAreaMm, blockWidth, bodyLayout, canonicalBlock, figuresWidth, fitReport, hangulPerLine, isBoxBlock, slotOf, stageHeadMm, statsLine } from "./fit.ts";
+import { type HeadMode, PAGE_MM, blockAreaMm, blockWidth, bodyLayout, bulletLines, canonicalBlock, figuresWidth, fitReport, hangulPerLine, isBoxBlock, mgBulletCell, slotOf, stageHeadMm, statsLine } from "./fit.ts";
+import { BIZ_TRACK } from "../tracks/index.ts";
 import { type BlockLayout, type BlockSpan, LAYOUT_LABEL, dropLoneSpans, layoutFields, layoutGroups } from "./layout.ts";
 import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeCode, shapeName, storyLabel } from "./frameworks.ts";
 import { bizVarietyIssue, isOwnKind } from "./diagram-hints.ts";
 import { type SiblingCard, type SiblingLayout, cleanLine, numberTokens, quoteFoundIn, readSection } from "./section.ts";
 import type { MgOutlineMeta } from "./mg-types.ts";
 import type { OutlineFrame } from "./framework-pick.ts";
+import type { PlanRevise } from "./draft-sources.ts";
 import { type SplitSibling, cleanSplit, matchAxis } from "./split-axes.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -484,6 +486,8 @@ export interface BlockLimit {
   unit: "cell" | "line";
   /** 나란한 칸(sideBySide) — 글 한도에 「나란한 칸은 같은 줄 수로」를 붙임 */
   side?: boolean;
+  /** 칸 불릿 하나의 줄 수 L(2026-10-29 — 주요사업 2025 불릿 기준 bulletLines, 칸 최대 줄 수 lines를 넘지 않음). 불릿 블록·인용·목소리·막대 표는 없음 */
+  bullet?: number;
 }
 
 /** 칸 글이 있는 블록 종류(칸마다 줄 수로 높이가 정해짐) */
@@ -503,7 +507,8 @@ export function blockLimits(c: Composition, module: number, head: HeadMode = "al
     const rowMm = (lines: number) => soloRowMm(canonicalBlock(b.kind, b.variant, b.cells, b.label, b.figures, lines, layoutFields(b)), module) - repeat[i];
     let lines = 1;
     while (lines < 8 && rowMm(lines + 1) <= budgets[i]) lines += 1;
-    return { lines, perLine: w.perLine, unit: "cell" as const, ...(sideBySide(b) ? { side: true } : {}) };
+    const bullet = mgBulletCell(b) ? { bullet: Math.min(lines, bulletLines(w.perLine, BIZ_TRACK.reportBulletChars)) } : {};
+    return { lines, perLine: w.perLine, unit: "cell" as const, ...(sideBySide(b) ? { side: true } : {}), ...bullet };
   });
 }
 
@@ -522,9 +527,12 @@ export function blockPerLine(b: Pick<PlanBlock, "kind" | "variant" | "cells" | "
  */
 export const sideBySide = (b: Pick<PlanBlock, "kind" | "variant" | "cells">) => isBoxBlock(b) && (isPanelCompare(b) || b.cells >= 2);
 
-/** 글 한도 글자(주요사업 집필 요청 plan.block). 나란한 칸이고 2줄 이상이면 가장 짧은 칸의 아래 한도(N−1줄)를 붙임 */
+/**
+ * 글 한도 글자(주요사업 집필 요청 plan.block). 나란한 칸이고 2줄 이상이면 가장 짧은 칸의 아래 한도(N−1줄)를 붙임.
+ * 칸 블록(bullet이 있으면, 2026-10-29): 「칸마다 최대 N줄 · 불릿 하나 약 T자(한 줄 P자 × L줄)」, T = L × P — 「한 줄 약 P자」만 주면 좁은 칸(4칸 격자 P 8~10)에 한 줄 조각 불릿이 나옴(경영관리 mg-draft.ts mgLimitText와 같은 결함)
+ */
 export const limitText = (l: BlockLimit | null) =>
-  !l ? "—" : l.unit === "line" ? `불릿 ${l.lines}줄 이하 · 한 줄 약 ${l.perLine}자` : `칸마다 최대 ${l.lines}줄 · 한 줄 약 ${l.perLine}자${l.side && l.lines >= 2 ? ` · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 ${l.lines - 1}줄 이상)` : ""}`;
+  !l ? "—" : l.unit === "line" ? `불릿 ${l.lines}줄 이하 · 한 줄 약 ${l.perLine}자` : `칸마다 최대 ${l.lines}줄 · ${l.bullet ? `불릿 하나 약 ${l.bullet * l.perLine}자(한 줄 ${l.perLine}자 × ${l.bullet}줄)` : `한 줄 약 ${l.perLine}자`}${l.side && l.lines >= 2 ? ` · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 ${l.lines - 1}줄 이상)` : ""}`;
 
 /**
  * 집필 초안이 글 한도를 넘긴 블록(결정론 — 고치기 요청에 넣음). 구성안 블록과 같은 순서·종류로 맞은 블록만 봄.
@@ -784,8 +792,21 @@ const blockKey = (b: PlanBlock) => JSON.stringify([b.kind, b.variant, b.label, b
 // ---------------------------------------------------------------------------
 // 집필 요청(승인된 구성안) · 집필 점검
 
-/** 집필 요청 글의 「승인된 구성안」(report-draft/request.md plan.*) */
-export function planPrompt(p: PromptSet, c: Composition, module: number, head: HeadMode = "all"): string {
+/**
+ * 집필 요청 글 끝의 「구성안 뒤 추가된 자료」(이름 목록 + 짜임은 그대로·근거 밖 숫자 금지)·「담당자 요청」(집필 지시일 뿐 근거 아님) — 두 트랙 공용(request.md plan.added·plan.request).
+ * 없으면 빈 글(예전 요청 글 그대로). 첨부 본문은 앞 「첨부 자료」(files.*)에 이미 들어 있어 이름만 적음
+ */
+export function planReviseText(p: PromptSet, revise?: PlanRevise | null): string {
+  if (!revise) return "";
+  const lines: string[] = [];
+  if (revise.added.length) lines.push(fillFrom(p, "request", "plan.added", { count: revise.added.length, names: revise.added.map((n) => `「${n}」`).join(", ") }));
+  const request = revise.request.trim();
+  if (request) lines.push(fillFrom(p, "request", "plan.request", { request }));
+  return lines.length ? `\n${lines.join("\n")}` : "";
+}
+
+/** 집필 요청 글의 「승인된 구성안」(report-draft/request.md plan.*) — revise = 구성안 뒤 추가된 자료·담당자 요청(자료 반영 고치기·구성안대로 집필, 없으면 예전 글 그대로) */
+export function planPrompt(p: PromptSet, c: Composition, module: number, head: HeadMode = "all", revise?: PlanRevise | null): string {
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   const budgets = blockBudgets(c, module, head);
   const limits = blockLimits(c, module, head);
@@ -813,7 +834,7 @@ export function planPrompt(p: PromptSet, c: Composition, module: number, head: H
   lines.push(r("plan.materialsHead"));
   for (const m of c.materials) lines.push(r("plan.material", { id: m.id, kind: MATERIAL_LABEL[m.kind], text: m.text, when: m.when || "—", source: m.source || "—", found: m.kind === "need" ? "자료 필요" : m.found ? "원문 확인" : "원문 못 찾음" }));
   lines.push(r("plan.tail", { results: c.results || "—", shape: r(`plan.shape.${c.resultShape ?? "bullets"}`), memo: c.memo || "없음" }));
-  return lines.join("\n");
+  return lines.join("\n") + planReviseText(p, revise);
 }
 
 /**
@@ -846,9 +867,16 @@ export function applyPlanLayout(c: Pick<Composition, "blocks">, blocks: Block[],
 /** 블록 종류(모양) 순서 */
 const sig = (xs: Array<{ kind: string; variant: string }>) => xs.map((b) => (b.variant && b.variant !== (VARIANTS[b.kind as BlockKind]?.[0] ?? "") ? `${b.kind}:${b.variant}` : b.kind));
 
-/** 집필 초안이 구성안 짜임을 따랐는지: 같은 순서로 맞은 블록 수(가장 긴 공통 부분열) / 구성안 블록 수 */
-export function planAdherence(c: Composition, blocks: Block[]): { matched: number; total: number; same: boolean } {
+/**
+ * 집필 초안이 구성안 짜임을 따랐는지: 같은 순서로 맞은 블록 수(가장 긴 공통 부분열) / 구성안 블록 수.
+ * droppedByApp = 앱이 정리하며 뺀 블록(cleanBlocks droppedShapes) — 같은 모양의 구성안 블록을 셈에서 덜어냄(앱이 뺀 것을 AI가 안 따랐다고 세지 않음)
+ */
+export function planAdherence(c: Composition, blocks: Block[], droppedByApp: Array<{ kind: string; variant: string }> = []): { matched: number; total: number; same: boolean } {
   const a = sig(c.blocks);
+  for (const s of sig(droppedByApp)) {
+    const i = a.indexOf(s);
+    if (i >= 0) a.splice(i, 1);
+  }
   const b = sig(blocks);
   const dp = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
   for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);

@@ -232,10 +232,26 @@ test("수치 띠: 수치 띠만 있는 사다리 행은 표를 닫고 추진성�
   assert.equal(html.match(/<th scope="row">/g)?.length, 1, "수치 띠 행은 사다리에 없음");
 });
 
+test("옆 막대(2026-10-29): 추진성과 상자 안 막대만 머리(figcaption)가 왼쪽 칸(k-chart--side) — 소항목 추진성과 막대·수치 띠 상자, 사다리 행 끝 막대와 홀로 놓인 막대(전폭·사다리 칸 단독)는 위 머리 그대로", () => {
+  const head = { title: "지표", series: [{ label: "’25", value: "1" }, { label: "’26", value: "2" }], badge: "2배" };
+  assert.match(miniChartHtml(head, true), /^<figure class="k-chart k-chart--side"><figcaption>지표<span class="k-chart__badge"/);
+  assert.match(miniChartHtml(head), /^<figure class="k-chart"><figcaption>/);
+  const sideOf = (html: string) => html.match(/<figure class="k-chart[^"]*">/g) ?? [];
+  // 추진성과 막대(resultChart)
+  assert.deepEqual(sideOf(sectionBodyHtml(base({ version: 3, blocks: [], results: ["성과"], resultChart: head }))), ['<figure class="k-chart k-chart--side">']);
+  // 수치 띠 상자 안 막대 = 옆 배치, 사다리 행 끝 막대(도식·불릿 옆) = 위 머리
+  const chart = B("chart", "추진성과", { title: "지표", series: head.series });
+  assert.deepEqual(sideOf(sectionBodyHtml(base({ version: 3, blocks: [statsB("추진성과"), chart], results: [] }))), ['<figure class="k-chart k-chart--side">']);
+  assert.deepEqual(sideOf(sectionBodyHtml(base({ version: 3, blocks: [B("bullets", "추진성과", { items: ["앞 글"] }), chart], results: [] }))), ['<figure class="k-chart">']);
+  // 홀로 놓인 막대: 전폭 · 사다리 칸 단독
+  assert.deepEqual(sideOf(sectionBodyHtml(base({ version: 3, blocks: [{ ...chart, label: "" }], results: [] }))), ['<figure class="k-chart">']);
+  assert.deepEqual(sideOf(sectionBodyHtml(base({ version: 3, blocks: [chart], results: [] }))), ['<figure class="k-chart">']);
+});
+
 test("수치 띠: 끝 막대는 상자 안 오른쪽, 다른 블록과 같은 행이면 그 행 안 불릿 목록, 사다리 밖이면 「추진성과」 상자", () => {
   const chart = B("chart", "추진성과", { series: [{ label: "’24", value: "164명" }, { label: "’25", value: "126명" }] });
   const withChart = sectionBodyHtml(base({ version: 3, blocks: [statsB("추진성과"), chart], results: [] }));
-  assert.match(withChart, /<div class="k-result__body k-result__body--chart"><div class="k-row2"><div><ul>.*<\/ul><\/div><figure class="k-chart">/);
+  assert.match(withChart, /<div class="k-result__body k-result__body--chart"><div class="k-row2"><div><ul>.*<\/ul><\/div><figure class="k-chart k-chart--side">/);
   const mixed = sectionBodyHtml(base({ version: 3, blocks: [B("bullets", "추진성과", { items: ["앞 불릿"] }), statsB("추진성과")], results: [] }));
   assert.ok(!mixed.includes("k-result") && mixed.includes("<th scope=\"row\">추진성과</th>") && mixed.includes("인명피해 감소("), "같은 행의 다른 블록과 함께면 사다리 행 그대로");
   const full = sectionBodyHtml(base({ version: 3, blocks: [statsB("")], results: [] }));
@@ -262,4 +278,51 @@ test("수치 띠 표지: 상자 하나가 블록 하나면 상자에 data-block,
   assert.match(html, /data-t="blocks\.1\.cells\.1\.head"/);
   const fit = sectionHtml(spec, [], { marks: true });
   assert.deepEqual([...fit.matchAll(/data-fit-row="(\d+)"/g)].map((m) => m[1]), ["0", "1"]);
+});
+
+// ───────────────────────── 되풀이 표시(2026-10-29 — repeat-figures.ts, k-rep)
+
+const v3 = (blocks: Block[], over: Partial<ReportSectionSpec> = {}) => base({ version: 3, blocks, ...over });
+const REP_FIG = /<span class="k-rep" title="같은 수치 (\d+)곳 반복 — 한 곳만 남기고 다른 실적으로">([^<]*)<\/span>/g;
+
+test("반복 수치: repeats일 때만 모든 자리를 k-rep으로 감쌈(강조 안·추진성과 상자 포함), 흔한 값·두 블록뿐인 값은 안 감쌈", () => {
+  const spec = v3([B("bullets", "추진내용", { items: ["취약시설 **1,922곳** 관리, 무재해 0건·준수율 100%·3명"] }), B("bullets", "추진실적", { items: ["1,922곳 점검 · 0건 · 100% · 3명 · 45건"] })], { results: ["1,922곳 관리 · 0건 · 100% · 3명 · 45건"] });
+  const off = sectionBodyHtml(spec);
+  assert.doesNotMatch(off, /k-rep/, "옵션이 없으면 예전 출력");
+  const on = sectionBodyHtml(spec, [], { repeats: true });
+  const hits = [...on.matchAll(REP_FIG)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(hits, [["3", "1,922곳"], ["3", "1,922곳"], ["3", "1,922곳"]]);
+  assert.match(on, /<b><span class="k-rep"[^>]*>1,922곳<\/span><\/b>/, "강조 안");
+  // 반복이 없으면 repeats를 켜도 바이트까지 같음
+  const plain = v3([B("bullets", "추진내용", { items: ["1,922곳 관리"] })], { results: ["12건"] });
+  assert.equal(sectionBodyHtml(plain, ["12"], { repeats: true }), sectionBodyHtml(plain, ["12"]));
+});
+
+test("반복 문장: 불릿 전체를 옅은 k-rep--line으로, title에 다른 블록 이름 — 그 안 반복 수치·없는 숫자 표시도 함께 보임(k-rep 바깥, k-unv 안)", () => {
+  const long = "지역 방송사 협업으로 재난방송 송출 체계를 1,922곳에 고도화";
+  const spec = v3([B("bullets", "추진내용", { items: [long] }), B("bullets", "추진실적", { items: [long] })], { results: [`${long} 완료`] });
+  const html = sectionBodyHtml(spec, ["1,922"], { repeats: true });
+  assert.match(html, /<span class="k-rep k-rep--line" title="비슷한 문장이 추진실적·추진성과에도 있음">/);
+  assert.match(html, /<span class="k-rep k-rep--line" title="비슷한 문장이 추진내용·추진실적에도 있음">/, "추진성과 상자 줄");
+  // 겹침: 반복 수치(k-rep)가 바깥, 없는 숫자(k-unv)가 안 — 둘 다 남음
+  assert.equal(html.match(/<span class="k-rep" title="같은 수치 3곳 반복[^"]*"><span class="k-unv" title="카드에 없는 숫자 — 원자료로 확인">1,922<\/span>곳<\/span>/g)?.length, 3);
+});
+
+test("경영관리도 같은 렌더러: 두 절의 같은 수치(절 2개)를 감싸고, 내려받기 문서는 기본으로 켜 범례를 달고 한글 사본({ repeats: false })은 표시가 없음", () => {
+  const p = (evalNo: number, themeNo: number, mark: string, key: string): MgPart => ({ key, evalNo, evalTitle: "평가", themeNo, themeTitle: "대주제", mark, title: `절${mark}`, story: "", why: "" });
+  const spec = v3([B("bullets", "추진내용", { items: ["포상 22명 확대"] }), B("bullets", "추진내용", { items: ["포상 인원 22명"] })], { mg: { indicator: "지표", parts: [p(1, 1, "가", "1.1.가"), p(1, 1, "나", "1.1.나")], at: ["1.1.가", "1.1.나"] } as ReportSectionSpec["mg"] });
+  assert.equal([...sectionBodyHtml(spec, [], { repeats: true }).matchAll(REP_FIG)].length, 2);
+  const doc = sectionDocument(spec);
+  assert.equal([...doc.matchAll(REP_FIG)].length, 2);
+  assert.match(doc, /노란 바탕 = 되풀이한 수치·문장/);
+  const copy = sectionDocument(spec, [], undefined, { repeats: false });
+  assert.doesNotMatch(copy.replace(/<style>[\s\S]*?<\/style>/, ""), /k-rep|노란 바탕/);
+});
+
+test("반복 문장: 번호를 떼고 줄을 「 / 」로 이어 그리는 전후 비교 패널도 그 줄을 감쌈", () => {
+  const long = "미정제 형태 개방이라 AI 학습용 즉시 활용 곤란";
+  const spec = v3([B("bullets", "현황", { items: [long] }), B("compare", "", { variant: "panels", items: ["기존", "개선"], rows: [{ key: "", before: [`① ${long}`, "다른 줄"], after: ["새 방식으로 개방"] }] })]);
+  const html = sectionBodyHtml(spec, [], { repeats: true });
+  assert.match(html, /<li><span class="k-panel__no"[^>]*>[^<]*<\/span><span class="k-rep k-rep--line" title="비슷한 문장이 현황에도 있음">/);
+  assert.match(html, /<span class="k-rep k-rep--line" title="비슷한 문장이 블록 2에도 있음">/, "라벨·제목 없는 블록은 순번 이름");
 });

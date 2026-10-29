@@ -285,6 +285,8 @@ test("blockRoom: 경영관리 초안(spec.mg)은 주요사업 1쪽 예산이 아
   assert.equal(none?.slack, null);
   assert.equal(none?.max, none?.now, "여유를 모르면 늘리지 않음");
   assert.equal(roomText(none), "한 줄 약 41자 · 지금 불릿 줄 합 1줄 — 지금 줄 수 안팎");
+  // 2026-10-29 칸 블록은 집필 글 한도와 같은 「불릿 하나 약 T자」(fit.ts mgBulletLines — 칸 14자면 round(23/14) = 2줄), 불릿 블록은 그대로
+  assert.equal(roomText(blockRoom(mgSpec(), 1)), "칸마다 불릿 하나 약 28자(한 줄 약 14자 × 2줄) · 지금 가장 긴 칸 1줄 — 지금 줄 수 안팎");
   // 배정보다 크게 넘친 경영관리 초안은 그 배정 기준으로 넘침
   assert.match(roomText(blockRoom(mgSpec(0.5), 0)), /넘침/);
 });

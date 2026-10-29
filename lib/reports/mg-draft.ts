@@ -12,10 +12,12 @@ import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { NEEDS_MAX, type YearActuals, stripNeeds, yearIssues } from "./actuals.ts";
 import { BLOCK_OUT_FIELDS, type Block, FIGURE_LABEL, blockOutSchema, blockTexts, cleanBlocks, isGridTable } from "./blocks.ts";
+import { fillClosingOutcome } from "./mg-close.ts";
 import { mgSpecHeight } from "./business-layout.ts";
-import { type Composition, MATERIAL_LABEL, applyPlanLayout, blockPerLine, planBlockCap, planLayoutText, sideBySide } from "./composition.ts";
+import { type Composition, MATERIAL_LABEL, applyPlanLayout, blockPerLine, planBlockCap, planLayoutText, planReviseText, sideBySide } from "./composition.ts";
+import type { PlanRevise } from "./draft-sources.ts";
 import { mgVarietyIssues, repeatedKinds } from "./diagram-hints.ts";
-import { HEAD_PART_MM, PAGE_MM, blockCosts, guardFigures, hollowBoxes, hollowWarning, plainText, tableShapeCosts, titleMm } from "./fit.ts";
+import { HEAD_PART_MM, PAGE_MM, blockCosts, guardFigures, hollowBoxes, hollowWarning, mgBulletCell, mgBulletLines, plainText, tableShapeCosts, titleMm } from "./fit.ts";
 import { isNoFindingLine } from "./findings.ts";
 import { MG_FRAMEWORKS } from "./frameworks-mg.ts";
 import { storyLabel } from "./frameworks.ts";
@@ -25,7 +27,8 @@ import { MG_LIMITS, type MgPriorSection, mgCloseRule, mgClosePrompt, mgPartLabel
 import type { MgDraftMeta, MgPart } from "./mg-types.ts";
 import { proseIssues } from "./prose.ts";
 import { resultPlanWarning } from "./result-plan.ts";
-import { type Marker, type ReportFile, type ReportSectionSpec, cleanLine, knownNumbers, numberTokens, quoteFoundIn, resultRepeatIssue, sectionText, signalWarnings, sourceKey, styleWarnings } from "./section.ts";
+import { type Marker, type ReportFile, type ReportSectionSpec, cleanLine, evidenceKey, knownNumbers, quoteFoundIn, resultRepeatIssue, sectionText, signalWarnings, styleWarnings, unknownNumbersIn } from "./section.ts";
+import { textShapeWarnings } from "./text-shape.ts";
 import { arrowTitleWarnings, bareBoxWarnings } from "./title-checks.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -161,6 +164,7 @@ export const MG_REQUEST_SECTIONS = [
   "plan.head",
   "volume.plan",
   "close.strict",
+  "close.majority",
   "close.loose",
   "close.none",
   "plan.part",
@@ -169,6 +173,8 @@ export const MG_REQUEST_SECTIONS = [
   "plan.materialsHead",
   "plan.material",
   "plan.tail",
+  "plan.added",
+  "plan.request",
 ] as const;
 type RequestKey = (typeof MG_REQUEST_SECTIONS)[number];
 
@@ -257,8 +263,8 @@ const targetPages = (pages: number | null | undefined) => (typeof pages === "num
 /** 절 머리만 있는 빈 초안 — mgSpecHeight(사업 조판과 같은 셈)로 머리 높이(평가내용 상자·대주제 띠·절 제목 줄 + 위아래 여백)를 잼 */
 const headOnly = (parts: MgPart[]): ReportSectionSpec => ({ version: 3, card: { id: "", taskNo: "", title: "" }, business: { no: 0, name: "" }, task: { no: "", title: "", bp: false }, sub: { mark: "", title: "", markers: [] }, rows: [], blocks: [], results: [], caption: "", module: 1, mg: { indicator: "", parts, at: [] } });
 
-/** 블록 종류별 어림 높이 줄(주요사업 「판면 예산」과 같은 표 — lib/reports/fit.ts blockCosts, 표 모양 4종 줄은 경영관리만 tableShapeCosts) */
-const costLines = () => [...blockCosts(), tableShapeCosts()].map((x) => `  - ${x}`).join("\n");
+/** 블록 종류별 어림 높이 줄(주요사업 「판면 예산」과 같은 표 — lib/reports/fit.ts blockCosts, 표 모양 4종 줄은 경영관리만 tableShapeCosts). 칸 불릿은 글 한도와 같은 「불릿 하나 = L줄」(2026-10-29) */
+const costLines = () => [...blockCosts(true, true), tableShapeCosts(true)].map((x) => `  - ${x}`).join("\n");
 
 /**
  * 구성안 요청 「분량 목표」(report-outline-mg/request.md volume.* — 2026-10-12 D1): 배정 쪽 · 판면 높이 · 머리 높이 · 블록 수 감 · 절 수(쪽당 2~3절 언저리)별 블록 영역과 절당 분량.
@@ -284,15 +290,23 @@ export function mgVolumePrompt(p: PromptSet, pages: number | null | undefined): 
 /** 머리 높이 어림용 절(평가내용 1·대주제 1, 제목 한 줄) */
 const part = (themeNo: number, mark: string): MgPart => ({ key: `1.${themeNo}.${mark}`, evalNo: 1, evalTitle: "", themeNo, themeTitle: "", mark, title: "", story: "", why: "" });
 
-/** 집필 요청 블록 줄의 글 한도(칸 폭으로 센 한 줄 글자 수 — composition.ts blockPerLine, 주요사업 글 한도와 같은 폭 셈). 나란한 칸은 줄 수 맞춤만(판면 맞추기가 없어 줄 수 상한은 안 둠) */
+/**
+ * 집필 요청 블록 줄의 글 한도(칸 폭으로 센 한 줄 글자 수 P — composition.ts blockPerLine, 주요사업 글 한도와 같은 폭 셈). 판면 맞추기가 없어 줄 수 상한은 안 둠.
+ * 칸 블록(2026-10-29): 「칸마다 불릿 하나 약 T자(한 줄 약 P자 × L줄)」 — L = mgBulletLines(P)(2025 경영관리 불릿 평균 글자 수 기준), T = L × P.
+ * 「한 줄 약 P자」만 주면 좁은 칸(4칸 격자 8자)에 한 줄짜리 조각 불릿이 나옴(6-2 초안). 나란한 칸은 줄 수가 아니라 불릿 수·글자 수를 맞춤(AI는 줄바꿈 자리를 못 셈).
+ * 인용·목소리(원문 길이)·막대 표(값 칸은 수치만)는 예전 글(한 줄 글자 수만 — fit.ts mgBulletCell)
+ */
 function mgLimitText(b: Composition["blocks"][number]): string {
   const w = blockPerLine(b);
   if (!w) return "없음(짧은 글)";
-  return w.unit === "line" ? `불릿 ${b.cells}줄 이하 · 한 줄 약 ${w.perLine}자` : `칸마다 한 줄 약 ${w.perLine}자${sideBySide(b) ? " · 나란한 칸은 줄 수를 같게(±1줄)" : ""}`;
+  if (w.unit === "line") return `불릿 ${b.cells}줄 이하 · 한 줄 약 ${w.perLine}자`;
+  if (!mgBulletCell(b)) return `칸마다 한 줄 약 ${w.perLine}자${sideBySide(b) ? " · 나란한 칸은 줄 수를 같게(±1줄)" : ""}`;
+  const l = mgBulletLines(w.perLine);
+  return `칸마다 불릿 하나 약 ${l * w.perLine}자(한 줄 약 ${w.perLine}자 × ${l}줄)${sideBySide(b) ? " · 나란한 칸은 불릿 수와 칸 글자 수를 같게" : ""}`;
 }
 
-/** 승인된 구성안 글(집필 요청 — 이 지표의 닫기 관례·분량 목표, 절마다 이야기 틀과 블록·글 한도) */
-export function mgPlanPrompt(p: PromptSet, c: Composition, ctx: Pick<MgDraftContext, "indicator" | "prior" | "pages">): string {
+/** 승인된 구성안 글(집필 요청 — 이 지표의 닫기 관례·분량 목표, 절마다 이야기 틀과 블록·글 한도). revise = 구성안 뒤 추가된 자료·담당자 요청(없으면 예전 글 그대로) */
+export function mgPlanPrompt(p: PromptSet, c: Composition, ctx: Pick<MgDraftContext, "indicator" | "prior" | "pages">, revise?: PlanRevise | null): string {
   const r = (key: RequestKey, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   const lines = [r("plan.head", { message: c.message || "—", points: c.points.join(" · ") || "—" })];
   lines.push(mgClosePrompt(p, ctx.prior, ctx.indicator));
@@ -318,7 +332,7 @@ export function mgPlanPrompt(p: PromptSet, c: Composition, ctx: Pick<MgDraftCont
   lines.push(r("plan.materialsHead"));
   for (const m of c.materials) lines.push(r("plan.material", { id: m.id, kind: MATERIAL_LABEL[m.kind], text: m.text, when: m.when || "—", source: m.source || "—", found: m.kind === "need" ? "자료 필요" : m.found ? "원문 확인" : "원문 못 찾음" }));
   lines.push(r("plan.tail", { memo: c.memo || "없음" }));
-  return lines.join("\n");
+  return lines.join("\n") + planReviseText(p, revise);
 }
 
 /** 【확인】 자리표시 상한 — 절마다 2개(report-draft-mg/inputs.md), 절이 둘 이하면 주요사업 소항목과 같은 4개 */
@@ -344,7 +358,7 @@ export function mgResultRepeats(spec: ReportSectionSpec): string[] {
   return out;
 }
 
-export const mgSpecText = (spec: ReportSectionSpec) => [sectionText(spec), ...(spec.mg?.parts ?? []).map((p) => `${p.themeTitle}\n${p.title}`)].join("\n");
+export const mgSpecText = (spec: ReportSectionSpec, rowUnits = false) => [sectionText(spec, rowUnits), ...(spec.mg?.parts ?? []).map((p) => `${p.themeTitle}\n${p.title}`)].join("\n");
 
 /** 성과로 닫지 않은 절(대주제 본문 제외) — 구성안 점검과 같은 규칙(mg-outline.ts unclosedPartKeys — 기본은 「추진실적」 열·대주제 공용 추진성과 인정, 엄격 지표는 마지막 블록 「추진성과」만) */
 function unclosedParts(parts: MgPart[], blocks: Block[], at: string[], strict: boolean): MgPart[] {
@@ -392,7 +406,8 @@ function mgShapeWarnings(spec: ReportSectionSpec): string[] {
       if (cols.size) out.push(`빈 칸: ${where}표의 ${[...cols].map(([name, n]) => `「${name}」 ${n}칸`).join("·")}이 비었습니다 — 값이 근거에 없으면 【확인: …】로 두고, 올해 값이 하나도 없는 열은 빼고 그 실적은 자리표시 한 줄로 알립니다.`);
     }
     if (b.kind === "stats") {
-      const n = b.cells.filter((c) => !c.head.trim()).length;
+      // 성과 문장(bullets[0])이 있으면 head가 비어도 정상(프롬프트: 수치가 아닌 성과는 head를 비우고 문장만) — 문장도 수치도 없는 칸만 빈 칸
+      const n = b.cells.filter((c) => !c.head.trim() && !(c.bullets[0] ?? "").trim()).length;
       if (n) out.push(`빈 칸: ${where}수치 띠의 큰 수치 ${n}칸이 비었습니다 — 값이 근거에 없으면 【확인: …】로 둡니다.`);
     }
   }
@@ -416,6 +431,10 @@ export interface MgDraftCheck {
   spec: ReportSectionSpec;
   unknownNumbers: string[];
   warnings: string[];
+  /** 앱이 정리하며 뺀 블록의 종류·모양(cleanBlocks) — 구성안 지킴 셈에서 덜어냄 */
+  droppedShapes: Array<{ kind: string; variant: string }>;
+  /** 추진성과 원장 보강(mg-close.ts fillClosingOutcome)으로 코드가 채운 절 열쇠 — 분량 채움 보강(mg-fill.ts)이 그 절 「추진성과」 블록을 다시 쓰지 않게 */
+  closed: string[];
 }
 
 /**
@@ -425,11 +444,13 @@ export interface MgDraftCheck {
  * 판면을 맞추지는 않음(자동 고치기 없음 — 경고만). 배정 쪽수·닫기 관례·지적개선 표지 자리는 spec.mg(pages·strictClose·finding)에 남겨 다시 점검·블록 고치기·렌더러가 씀
  */
 export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition, ctx: MgDraftContext, extraText = "", quoteOnly = "", year?: number, today?: string): MgDraftCheck {
-  const hay = sourceKey(`${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}\n${quoteOnly}`);
+  // 인용·말풍선 대조는 두 트랙 공용 대조 열쇠(section.ts evidenceKey — 표를 편 글·카드 표 행 한 줄까지, 2026-10-29)
+  const hay = evidenceKey(card, extraText, quoteOnly);
   const parts = plan.mg?.parts ?? [];
   const byKey = new Map(parts.map((p) => [p.key, p]));
   const got = new Map<string, { title: string; blocks: Block[] }>();
   const dropped: string[] = [];
+  const droppedShapes: MgDraftCheck["droppedShapes"] = [];
   let strange = 0;
   for (const op of out.parts ?? []) {
     const key = String(op?.key ?? "").trim();
@@ -442,7 +463,15 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
     // 배치(전폭·단 띠·가로 반씩)는 승인된 구성안의 이 절 블록에서 옮김(AI가 정하지 않음)
     applyPlanLayout({ blocks: plan.blocks.filter((b) => b.at === key) }, c.blocks);
     dropped.push(...c.dropped);
+    droppedShapes.push(...c.droppedShapes);
     got.set(key, { title: cleanLine(op.title, 80).replace(/^[가-하]\.\s*/, ""), blocks: c.blocks });
+  }
+  // 닫는 추진성과 원장 보강(집필이 빼거나 비운 추진성과 — 카드 원장 줄만, mg-close.ts)
+  const closed = fillClosingOutcome(plan, got, card, cleanLine);
+  // 앱이 정리하며 뺐다고 센 블록을 보강으로 되살렸으면 뺀 셈에서 덜어냄(구성안 따름 셈이 어긋나지 않게)
+  for (const sh of closed.shapes) {
+    const i = droppedShapes.findIndex((d) => d.kind === sh.kind && d.variant === sh.variant);
+    if (i >= 0) droppedShapes.splice(i, 1);
   }
   const blocks: Block[] = [];
   const at: string[] = [];
@@ -476,7 +505,7 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
   const known = knownNumbers(card, extraText);
   const isKnown = (t: string) => known.has(numKey(t)) || known.has(numKey(t).replace(/(%|배)$/, ""));
   const text = mgSpecText(spec);
-  const unknownNumbers = [...new Set(numberTokens(stripNeeds(text)).filter((t) => !isKnown(t)))];
+  const unknownNumbers = unknownNumbersIn(stripNeeds(mgSpecText(spec, true)), isKnown);
   const warnings: string[] = [];
   const missing = parts.filter((p) => !used.some((u) => u.key === p.key));
   if (missing.length) warnings.push(`구성안: 승인한 절 ${parts.length}개 중 ${missing.length}개(${missing.map(mgPartLabel).join(" / ")})를 쓰지 않았습니다 — 다시 만들거나 구성안을 고쳐 주세요.`);
@@ -484,7 +513,7 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
   const open = unclosedParts(used, blocks, at, strict);
   if (open.length) warnings.push(closeWarning(open, strict));
   // 블록 제목 화살표·표기 없는 상자(참고 — 두 트랙 공용, lib/reports/title-checks.ts, 2026-10-28)
-  warnings.push(...guardFigures(blocks, at), ...dropped, ...mgShapeWarnings(spec), ...styleWarnings(spec), ...arrowTitleWarnings(blocks), ...bareBoxWarnings(blocks));
+  warnings.push(...guardFigures(blocks, at), ...dropped, ...closed.warnings, ...mgShapeWarnings(spec), ...styleWarnings(spec), ...arrowTitleWarnings(blocks), ...bareBoxWarnings(blocks), ...textShapeWarnings(blocks));
   if (year) warnings.push(...yearIssues(blocks, [], text, year, needsCap(used.length)).map((x) => `올해 실적: ${x}`));
   const where = extraText.trim() ? "카드·근거 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);
@@ -498,7 +527,7 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
   const planned = resultPlanWarning(spec, today);
   if (planned) warnings.push(planned);
   warnings.push(...signalWarnings(spec, card));
-  return { spec, unknownNumbers, warnings };
+  return { spec, unknownNumbers, warnings, droppedShapes, closed: closed.keys };
 }
 
 /** 사람이 고친 경영관리 초안 다시 점검(블록 고치기·직접 고치기·되돌리기 뒤): 숫자 대조·문체·올해 실적·문장·근거 약함·추진성과로 닫기·빈 칸·그림 자리·도식 반복·분량(spec.mg.pages). 판면 맞추기 없음 */
@@ -509,12 +538,12 @@ export function recheckMgSection(spec: ReportSectionSpec, card: Json, extraText 
   // 지적개선 표지 자리도 고친 블록 글로 다시 정함(필드가 없던 초안도 이때 정해짐)
   withFinding(next, card);
   const text = mgSpecText(next);
-  const unknownNumbers = [...new Set(numberTokens(stripNeeds(text)).filter((t) => !known.has(numKey(t)) && !known.has(numKey(t).replace(/(%|배)$/, ""))))];
+  const unknownNumbers = unknownNumbersIn(stripNeeds(mgSpecText(next, true)), (t) => known.has(numKey(t)) || known.has(numKey(t).replace(/(%|배)$/, "")));
   const warnings: string[] = [];
   const strict = Boolean(next.mg?.strictClose);
   const open = next.mg ? unclosedParts(next.mg.parts, next.blocks ?? [], next.mg.at, strict) : [];
   if (open.length) warnings.push(closeWarning(open, strict));
-  warnings.push(...mgShapeWarnings(next), ...styleWarnings(next), ...arrowTitleWarnings(next.blocks ?? []), ...bareBoxWarnings(next.blocks ?? []));
+  warnings.push(...mgShapeWarnings(next), ...styleWarnings(next), ...arrowTitleWarnings(next.blocks ?? []), ...bareBoxWarnings(next.blocks ?? []), ...textShapeWarnings(next.blocks ?? []));
   if (year) warnings.push(...yearIssues(next.blocks ?? [], [], text, year, needsCap(next.mg?.parts.length ?? 1)).map((x) => `올해 실적: ${x}`));
   const where = extraText.trim() ? "카드·근거 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);

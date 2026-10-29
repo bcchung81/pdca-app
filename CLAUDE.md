@@ -204,7 +204,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 
 **경영관리 경평 초안**(`docs/plan/경영관리-경평초안-설계.md` §10): 지표 하나가 보고서 한 건, 「평가내용 → 대주제 → 절」 3단 — 카드 위치는 구성안이 정함(`MG_CARD_EVALS`는 추천 기본값).
 - 구성안 블록 목록은 한 줄 그대로 두고 블록마다 절 열쇠(`PlanBlock.at`)·골격(`Composition.mg`), 초안은 `spec.mg`. 블록은 늘 절 순서(`sortByParts`). 이야기 틀은 절마다 주 틀 + 보조 틀(`MgPart.subStory`), `regenerateMgPart` → `replaceMgPart`는 그 절 블록만 바꿈
-- **판면 맞추기·자동 고치기는 없음**(경고까지만). 쪽 수는 작성분량(규정) `lib/reports/mg-volume.ts MG_VOLUME`, 카드 쪽수(`loadMgCardPages`)가 「분량 목표」이고 `mgSpecHeight`가 ±25% 밖이면 경고만. 바로 만들기 없음(구성안부터, 서버도 막음), 집필은 카드당 1회, 절은 성과로 닫음(`mgCloseRule`)
+- **판면 맞추기(줄이기)는 없고** 모자라면 블록만 보강(`mg-fill.ts`). 쪽 수는 작성분량 `lib/reports/mg-volume.ts MG_VOLUME`, 카드 쪽수(`loadMgCardPages`)가 「분량 목표」이고 `mgSpecHeight`가 ±25% 밖이면 경고. 바로 만들기 없음(구성안부터, 서버도 막음), 집필은 카드당 1회, 절은 성과로 닫음(`mgCloseRule`)
 - 숫자 근거 = 카드·첨부·실사 답변·계량 실적 입력 + 연결된 공통 지식 조각(`relevantRefs(kb)`) + 그 지표 2025 보고서(`loadMgNumberEvidence`; 평가위원 지적 수치는 인용 대조에만)
 - **지표 단위 카드 밖 부분(R5)**: 표지·지적사항 조치실적·전년 대비·성과분석 및 환류는 지표 × 연도 × 부분 한 행(`eval_unit_report_parts`) — 표 틀·숫자는 코드(`lib/reports/unit-parts-mg.ts`, 칸마다 code·ai·human, 「재료로 다시 채우기」는 code 칸만 바꿈), 칸 문장은 AI(`report_unit_mg`, 로컬 CLI로만). **카드 전용 자료·보고서 추가자료 원문은 AI에 주지 않고**(금기 4 해석) 숫자 근거는 `unitAiKnownNumbers`뿐(평가위원 지적·시정조치 계획·편람 수치는 근거 아님). 화면 `/reports/business/<지표>/parts`, 한글 내려받기는 `sectionMarkdown`(과제별)·`unit-report-md.ts`(지표 한 파일)
 

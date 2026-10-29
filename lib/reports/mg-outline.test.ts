@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { editOf } from "./composition.ts";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { MgOutlineOut, type MgOutlineOutput, type MgPriorSection, applyMgCompositionEdit, cleanMgComposition, defaultEvals, isMgMainStory, isMgStory, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgFindingOpenIssue, mgOverlapIssues, mgPartPrompt, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart, skeletonLines, toMgPriorSection, unclosedPartKeys } from "./mg-outline.ts";
+import { MgOutlineOut, type MgOutlineOutput, type MgPriorSection, applyMgCompositionEdit, cleanMgComposition, defaultEvals, isMgMainStory, isMgStory, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, isDataBlock, mgBundleIssues, mgBundlePrompt, mgFindingOpenIssue, mgOutcomeIssues, mgOutcomePrompt, mgOverlapIssues, mgPartPrompt, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart, skeletonLines, toMgPriorSection, unclosedPartKeys } from "./mg-outline.ts";
 import { reportDraftPromptsMg, reportOutlinePromptsMg } from "../prompts/sets.ts";
 import { patternOf } from "./framework-patterns.ts";
 import { sourceKey } from "./section.ts";
@@ -342,11 +342,21 @@ test("절 다시 짜기 합치기(짜임 고르기): 틀을 고르지 않았으�
 
 test("닫기 관례: 2025 절(표지 있는 것) 글이 모두 「추진성과 |」 줄을 가지면 엄격, 하나라도 없으면 기본, 대주제 본문은 셈에서 뺌, 절이 없으면 기본(total 0)", () => {
   const closed = (mark: string) => sec(1, 2, mark, `${mark} 절`, `추진배경 | 배경\n\n추진성과 | ∙ 7분 → 1분`);
-  assert.deepEqual(mgCloseRule([sec(1, 1, "", ""), closed("가"), closed("나")]), { strict: true, closed: 2, total: 2 });
-  assert.deepEqual(mgCloseRule([closed("가"), sec(1, 2, "나", "나 절", "구분 | 주요활동 | 추진실적")]), { strict: false, closed: 1, total: 2 });
+  assert.deepEqual(mgCloseRule([sec(1, 1, "", ""), closed("가"), closed("나")]), { strict: true, majority: false, closed: 2, total: 2 });
+  assert.deepEqual(mgCloseRule([closed("가"), sec(1, 2, "나", "나 절", "구분 | 주요활동 | 추진실적")]), { strict: false, majority: true, closed: 1, total: 2 }, "절반(1/2)은 과반 단계");
   assert.deepEqual(mgCloseRule([closed("가"), sec(1, 2, "나", "나 절", "추진내용 | ∙ 추진성과 점검 체계 마련")]).strict, false, "줄머리가 아닌 「추진성과」 낱말은 안 셈");
-  assert.deepEqual(mgCloseRule(PRIOR.filter((x) => !x.mark)), { strict: false, closed: 0, total: 0 });
+  assert.deepEqual(mgCloseRule(PRIOR.filter((x) => !x.mark)), { strict: false, majority: false, closed: 0, total: 0 });
+  const open = (mark: string) => sec(1, 2, mark, `${mark} 절`, "구분 | 주요활동 | 추진실적");
+  assert.deepEqual(mgCloseRule([closed("가"), closed("나"), closed("다"), open("라"), open("마")]), { strict: false, majority: true, closed: 3, total: 5 }, "과반(3/5)");
+  assert.deepEqual(mgCloseRule([closed("가"), open("나"), open("다")]), { strict: false, majority: false, closed: 1, total: 3 }, "미만(1/3)은 loose");
   const op = reportOutlinePromptsMg().prompts;
+  for (const set of [op, reportDraftPromptsMg().prompts]) {
+    const t = mgClosePrompt(set, [closed("가"), closed("나"), closed("다"), open("라"), open("마")], "지표");
+    assert.match(t, /절 5개 중 3개가 「추진성과」 행으로 닫혔습니다/, set.feature);
+    assert.match(t, /성과가 없는 절만 추진내용으로 끝납니다/, set.feature);
+    assert.doesNotMatch(t, /\{\{\w+\}\}/);
+    assert.doesNotMatch(mgClosePrompt(set, [closed("가"), open("나"), open("다")], "지표"), /성과가 없는 절만/, "과반 미만은 loose 문구");
+  }
   assert.match(mgClosePrompt(op, [closed("가"), closed("나")], "AI 활용 혁신"), /^「닫기 관례」 이 지표\(「AI 활용 혁신」\)의 2025 보고서는 절 2개가 모두 라벨 「추진성과」 행으로 닫혔습니다/);
   assert.match(mgClosePrompt(op, PRIOR, "지표"), /절마다 닫는 모양이 다릅니다/);
   assert.match(mgClosePrompt(op, [], "지표"), /절 글이 없어 기본 규칙대로/);
@@ -521,4 +531,97 @@ test("평가내용 번호 확인(경영관리): 2025 골격에 없는 평가내�
   assert.match(w[0], /7번은 2025 보고서에 없는 번호입니다\(2025: 1·3·4·5\)/);
   assert.ok(!ask(3, PRIOR).warnings.some((x) => x.startsWith("평가내용:")), "골격에 있는 번호");
   assert.ok(!ask(7, []).warnings.some((x) => x.startsWith("평가내용:")), "2025 골격이 없으면 판단하지 않음");
+});
+
+// ── 절 성과 배정(2026-10-29): 구성안 요청 「절 성과 재료」·구성안 점검 「성과 배정」
+const OUTCOMES = [
+  { text: "신규 등록 31건(계획대비 3배)", from: "quantitative" as const, figure: true },
+  { text: "교육 과정 7건(’26.8 기준)", from: "monthly" as const, figure: true },
+  { text: "활용 중심으로 개방 기준을 전환", from: "qualitative" as const, figure: false },
+];
+const om = (id: string, text: string, kind: "figure" | "fact" = "figure") => ({ id, kind, text, when: "", source: "카드", quote: text, found: true });
+const ob = (at: string, label: string, materials: string[]) => ({ kind: "bullets" as const, variant: "", label, purpose: "목적", cells: 1, materials, figures: [], at });
+const oparts = ["1.2.가", "1.2.나"].map((key, i) => ({ key, evalNo: 1, evalTitle: "", themeNo: 2, themeTitle: "대주제", mark: "가나"[i], title: `절${i}`, story: "", why: "" }));
+const outcomePlan = (blocks: ReturnType<typeof ob>[]) =>
+  ({ version: 1, message: "", points: [], story: "", storyWhy: "", alternative: "", results: "", resultShape: "bullets", memo: "", materials: [om("m1", OUTCOMES[0].text), om("m2", OUTCOMES[1].text), om("m3", OUTCOMES[2].text, "fact"), om("m4", "체계 개편", "fact")], blocks, mg: { indicator: "지표", parts: oparts, outcomes: OUTCOMES } }) as unknown as Parameters<typeof mgOutcomeIssues>[0];
+
+test("성과 배정 점검: 두 절의 추진성과가 같은 성과 재료를 가리키면 참고 경고, 수치 없이 닫은 절이 있는데 수치 성과 재료가 남으면 참고 경고", () => {
+  const same = mgOutcomeIssues(outcomePlan([ob("1.2.가", "추진성과", ["m1"]), ob("1.2.나", "추진성과", ["m1", "m2"])]));
+  assert.equal(same.length, 1, same.join("\n"));
+  assert.match(same[0], /^성과 배정: .*가\. 절0 \/ .*나\. 절1의 추진성과가 같은 성과 재료 「신규 등록 31건\(계획대비 3배\)」를 씁니다/);
+  const bare = mgOutcomeIssues(outcomePlan([ob("1.2.가", "추진성과", ["m3"]), ob("1.2.나", "추진성과", ["m1"])]));
+  assert.equal(bare.length, 1, bare.join("\n"));
+  assert.match(bare[0], /^성과 배정: .*가\. 절0의 추진성과 재료에 수치가 없는데 어느 절 추진성과에도 배정되지 않은 수치 성과 재료 1개가 남았습니다\(「교육 과정 7건\(’26\.8 기준\)」\)/);
+  assert.equal(warningLevel(bare[0]), "info");
+  // 절마다 다른 수치 재료로 닫음 → 경고 없음. 추진성과가 아닌 블록이 쓰는 재료는 배정으로 안 셈
+  assert.deepEqual(mgOutcomeIssues(outcomePlan([ob("1.2.가", "추진성과", ["m2", "m3"]), ob("1.2.나", "추진성과", ["m1"])])), []);
+  assert.equal(mgOutcomeIssues(outcomePlan([ob("1.2.가", "추진내용", ["m1"]), ob("1.2.나", "추진성과", ["m1"])])).length, 0);
+  // mg.outcomes가 없는 옛 구성안은 점검 안 함, mgCompositionIssues에 들어감
+  const old = outcomePlan([ob("1.2.가", "추진성과", ["m3"]), ob("1.2.나", "추진성과", ["m1"])]);
+  assert.deepEqual(mgOutcomeIssues({ ...old, mg: { ...old.mg!, outcomes: undefined } }), []);
+  assert.ok(mgCompositionIssues(old).some((w) => w.startsWith("성과 배정:")));
+});
+
+test("구성안 요청 「절 성과 재료」: 원장 성과 재료와 수치 유무, 절별 다시 짜기는 지금 재료 번호·그 재료로 닫는 다른 절, 재료가 없으면 빈 글 · 구성안에 남김", () => {
+  const op = reportOutlinePromptsMg().prompts;
+  const text = mgOutcomePrompt(op, OUTCOMES);
+  assert.match(text, /^「절 성과 재료」 — 앱이 카드 원장에서 뽑은 성과 재료 3개\(수치 있음 2개\)/);
+  assert.match(text, /\n {2}- \[정량 성과 · 수치 있음\] 신규 등록 31건\(계획대비 3배\)\n {2}- \[월별 실적 · 수치 있음\] 교육 과정 7건\(’26\.8 기준\)\n {2}- \[정성 성과 · 수치 없음\] 활용 중심으로 개방 기준을 전환$/);
+  assert.equal(mgOutcomePrompt(op, []), "");
+  const redo = mgPartRedo(outcomePlan([ob("1.2.가", "추진성과", ["m3"]), ob("1.2.나", "추진성과", ["m1"])]), "1.2.가")!;
+  const lines = mgOutcomePrompt(op, redo.outcomes!).split("\n");
+  assert.match(lines[1], /31건\(계획대비 3배\) — 지금 재료 m1, 다른 절 \[1\.2\.나\]의 추진성과가 씀\(이 절에 다시 배정하지 않음\)$/);
+  assert.match(lines[2], /7건\(’26\.8 기준\) — 지금 재료 m2\(어느 다른 절 추진성과도 쓰지 않음\)$/);
+  assert.match(lines[3], /기준을 전환 — 지금 재료 m3\(어느 다른 절 추진성과도 쓰지 않음\)$/, "이 절이 쓰는 재료는 다른 절 표시 없음");
+  assert.deepEqual(cleanMgComposition(out(), "", new Set(), { indicator: "지표", prior: PRIOR, outcomes: OUTCOMES }).composition.mg?.outcomes, OUTCOMES);
+  assert.equal(cleanMgComposition(out(), "", new Set(), { indicator: "지표", prior: PRIOR }).composition.mg?.outcomes, undefined);
+});
+
+test("구성안 점검 「데이터 블록」(S2): 수치 묶음 재료(같은 단위 값 3개 이상)를 맡은 절에 수치 표·막대 표가 없으면 경고, 있으면 없음 — 참고 등급", () => {
+  const bundle = om("m5", "만족도 평가 총점: 가 항목 85점, 나 항목 88점, 다 항목 82점");
+  const plan = (blocks: Array<ReturnType<typeof ob> & { kind: string }>) => {
+    const c = outcomePlan(blocks as ReturnType<typeof ob>[]);
+    return { ...c, materials: [...c.materials, bundle] };
+  };
+  const tb = (at: string, variant: string, materials: string[]) => ({ ...ob(at, "평가 결과", materials), kind: "table" as never, variant });
+  const none = mgBundleIssues(plan([ob("1.2.가", "추진내용", ["m5", "m4"]), ob("1.2.가", "추진성과", ["m1"]), ob("1.2.나", "추진성과", ["m2"])]));
+  assert.equal(none.length, 1, none.join("\n"));
+  assert.match(none[0], /^데이터 블록: 평가내용 1 · 대주제 2 · 가\. 절0에 수치 묶음 재료 m5\(점 값 3개\)가 있는데 수치 표·막대 표 같은 데이터 블록이 없습니다/);
+  assert.equal(warningLevel(none[0]), "info");
+  assert.ok(mgCompositionIssues(plan([ob("1.2.가", "추진내용", ["m5"]), ob("1.2.나", "추진성과", ["m2"])])).some((w) => w.startsWith("데이터 블록:")));
+  for (const v of ["", "bars", "result"]) assert.deepEqual(mgBundleIssues(plan([tb("1.2.가", v, ["m5"]), ob("1.2.나", "추진성과", ["m2"])])), [], `table:${v || "기본"}이면 데이터 블록`);
+  assert.deepEqual(mgBundleIssues(plan([ob("1.2.가", "추진내용", ["m5"]), { ...ob("1.2.가", "평가 결과", ["m4"]), kind: "chart" as never }])), [], "막대(chart)도 데이터 블록");
+  assert.equal(mgBundleIssues(plan([tb("1.2.가", "chevron", ["m5"])])).length, 1, "쉐브론 머리 표는 글 표라 아님");
+  assert.deepEqual(mgBundleIssues(plan([ob("1.2.가", "추진내용", ["m4"]), ob("1.2.나", "추진성과", ["m1", "m2"])])), [], "묶음 재료를 어느 블록도 쓰지 않으면 없음");
+  assert.deepEqual(mgBundleIssues(outcomePlan([ob("1.2.가", "추진내용", ["m1", "m2", "m4"])])), [], "값이 흩어진 재료 여럿은 묶음이 아님(재료 하나 기준)");
+  assert.ok(isDataBlock({ kind: "table", variant: "" }) && !isDataBlock({ kind: "table", variant: "ladder" }) && !isDataBlock({ kind: "stats", variant: "" }));
+});
+
+test("구성안 요청 「수치 묶음 재료」: 카드 원장의 묶음과 그 값·줄, 줄이 많으면 「외 N줄」, 없으면 빈 글", () => {
+  const op = reportOutlinePromptsMg().prompts;
+  const text = mgBundlePrompt(op, [
+    { from: "kpi", unit: "점", values: ["71.4점", "85점", "85.3점"], lines: ["가 지표: 71.4점 · 85점", "나 지표: 85.3점"] },
+    { from: "monthly", unit: "명", values: ["1명0", "2명0", "3명0"], lines: Array.from({ length: 8 }, (_, i) => `줄${i}`) },
+  ]);
+  const lines = text.split("\n");
+  assert.match(lines[0], /^「수치 묶음 재료」 — 앱이 카드 원장에서 찾은 같은 단위 값 3개 이상의 묶음 2개입니다\. 그 내용을 다루는 절에 이 묶음을 재료로 뽑아 데이터 블록 하나에 담습니다/);
+  assert.equal(lines[1], "  - [계량지표 · 점 값 3개: 71.4점·85점·85.3점] 가 지표: 71.4점 · 85점 / 나 지표: 85.3점");
+  assert.match(lines[2], /^ {2}- \[월별 실적 · 명 값 3개: [^\]]+\] 줄0 \/ 줄1 \/ 줄2 \/ 줄3 \/ 줄4 \/ 줄5 외 2줄$/);
+  assert.equal(mgBundlePrompt(op, []), "");
+  assert.match(op.system.system, /근거에 같은 단위 값 3개 이상이 묶인 수치 묶음\(카드 계량지표 행·월별 실적 표·실사 답변 표·첨부 표 등, 요청의 「수치 묶음 재료」\)이 있으면 그 내용을 다루는 절에 그 묶음을 재료로 뽑아 데이터 블록\([^)]*table:bars[^)]*\) 하나를 두고, 근거에 없는 표는 만들지 않습니다/);
+});
+
+test("AI 답 정리: 절을 둔 이유(why)는 400자까지 그대로, 넘으면 문장 끝에서 자름(2026-10-29 — 160자에서 「값 어긋남 → 쓴 값」이 끊겼음)", () => {
+  const long = `카드 추진내용 ‘수요 기반 개방’이 2025 대주제 2와 이어져 평가내용 1･대주제 2로 둠. ${"기존(일괄 개방) → 개선(수요 기반 개방) 한 블록에 담음. ".repeat(3)}값 어긋남: 카드 140건(’26 목표)･첨부 120건(’26.8 기준) → 첨부 120건을 씀.`;
+  assert.ok(long.length > 160 && long.length <= 400, `시험 글 길이 ${long.length}`);
+  const at = (why: string) => {
+    const o = out();
+    o.parts[0] = { ...o.parts[0], why };
+    return cleanMgComposition(o, "", new Set(), { indicator: "지표", prior: PRIOR }).composition.mg?.parts.find((p) => p.key === "1.2.나")?.why;
+  };
+  assert.equal(at(long), long, "400자 안이면 자르지 않음");
+  const over = `${long} ${"이어지는 설명 문장을 덧붙임. ".repeat(20)}끝나지 않는 꼬리`;
+  const cut = at(over)!;
+  assert.ok(cut.length <= 400 && cut.startsWith(long), `문장 끝까지: ${cut.length}자`);
+  assert.ok(cut.endsWith("."), "문장 끝에서 자름");
 });

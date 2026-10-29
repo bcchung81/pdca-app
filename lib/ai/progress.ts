@@ -2,7 +2,9 @@
 // 서버가 단계를 알려 주지 않으므로 단계·진행률은 지어내지 않습니다: 경과 시간과 「보통 걸리는 시간」만 보이고, 넘기면 「조금 더 걸리고 있습니다」.
 // 「넣은 근거」는 서버 액션이 실제로 넣는 자료만 적습니다 — 과제원장은 app/(app)/cards/actions.ts(runCardAssist·runCardChat의 loadCardBundle — 규칙 범위 전부,
 // 선별 방식이 적용되는 기능은 getCardSelectPreview가 미리 알려 준 고른 수로 「공통 규칙 문서 + 고른 자료 + 제목 목록」),
-// 경평 초안은 app/(app)/reports/cards/draft-prepare.ts(prepareDraft — 고른 근거, 구성안대로 집필은 구성안에 저장된 근거, 선별 방식이면 getReportSelectPreview가 알려 준 고른 수). 자료 범위가 바뀌면 여기도 함께 고칩니다.
+// 경평 초안은 app/(app)/reports/cards/draft-prepare.ts(prepareDraft — 고른 근거, 구성안대로 집필·자료 반영 고치기는 구성안에 저장된 근거 ∪ 지금 고른 첨부(lib/reports/draft-sources.ts mergeSources),
+// 선별 방식이면 getReportSelectPreview가 알려 준 고른 수). 자료 범위가 바뀌면 여기도 함께 고칩니다.
+import { MG_FILL } from "../reports/mg-fill-limits.ts";
 import { CHAT_LIMITS } from "./chat.ts";
 import { WRITER_MODES, type WriterMode } from "./writer.ts";
 
@@ -83,9 +85,10 @@ export function assistProgress(mode: WriterMode | "chat", o: { files: string[]; 
 
 /**
  * outline = 구성안 만들기 · story = 고른 짜임(틀·구성 패턴·예시 절)으로 구성안 다시 짜기 · again = 메모 반영해 구성안 다시 만들기
- * plan = 구성안대로 집필(승인하고 집필) · draft = 구성안 없이 바로 만들기 · alts = 다른 짜임 여러 안(구성안 N번을 동시에 — 저장 안 함, 2026-10-12)
+ * plan = 구성안대로 집필(승인하고 집필) · revise = 자료 반영 고치기(초안이 있을 때 — 같은 구성안대로 새 자료·요청을 더해 다시 씀, 2026-10-29) ·
+ * draft = 구성안 없이 바로 만들기 · alts = 다른 짜임 여러 안(구성안 N번을 동시에 — 저장 안 함, 2026-10-12)
  */
-export type DraftRunKind = "outline" | "story" | "again" | "plan" | "draft" | "alts";
+export type DraftRunKind = "outline" | "story" | "again" | "plan" | "revise" | "draft" | "alts";
 
 /** 구성안을 만드는 요청(끝나면 구성안 머리로 옮김) */
 export const OUTLINE_RUNS = new Set<DraftRunKind>(["outline", "story", "again"]);
@@ -97,15 +100,21 @@ const DRAFT_EXPECT: Record<DraftRunKind, ProgressExpect> = {
   story: { min: 60, max: 240 },
   again: { min: 60, max: 240 },
   plan: { min: 60, max: 180 },
+  // 자료 반영 고치기 = 구성안대로 집필과 같은 호출(요청 글에 새 자료 이름·담당자 요청만 더함)
+  revise: { min: 60, max: 180 },
   draft: { min: 120, max: 300 },
   // 여러 안은 동시에 불러 가장 늦은 안을 기다림 — 구성안 한 번의 범위 위쪽을 조금 넓힘(실측 전 어림)
   alts: { min: 60, max: 300 },
 };
+// 경영관리 집필·자료 반영 고치기는 집필 한 번(89·99초) 뒤 분량 채움 보강(2026-10-29 — lib/reports/mg-fill.ts)이 보강할 수 있는 블록 전부를 하나씩, 모자라면 2회차까지 다시 씀.
+// 위쪽 = 집필 180초 + 보강 전체 상한 MG_FILL.maxSec(실측 블록 호출 16~44초·평균 약 27초 × 두 라운드 블록 약 20개 — mg-fill-limits.ts). 보강 사유가 없으면 집필 한 번으로 끝나 아래쪽은 그대로
+const MG_FILL_SEC = MG_FILL.maxSec;
 const DRAFT_EXPECT_MG: Partial<Record<DraftRunKind, ProgressExpect>> = {
   outline: { min: 60, max: 240 },
   story: { min: 60, max: 240 },
   again: { min: 60, max: 240 },
-  plan: { min: 60, max: 180 },
+  plan: { min: 60, max: 180 + MG_FILL_SEC },
+  revise: { min: 60, max: 180 + MG_FILL_SEC },
 };
 
 /** 경평 초안 요청의 보통 걸리는 시간(진행 줄·단추 글이 함께 씀) */
@@ -117,6 +126,7 @@ const DRAFT_TITLE: Record<DraftRunKind, string> = {
   story: "고른 짜임으로 구성안 짜는 중",
   again: "구성안 다시 만드는 중",
   plan: "구성안대로 초안 쓰는 중",
+  revise: "자료를 반영해 초안 다시 쓰는 중",
   draft: "초안 쓰는 중",
   alts: "여러 안을 동시에 짜는 중",
 };
@@ -132,7 +142,8 @@ function reportKnowledge(selected: number | undefined, tail = ""): ProgressSourc
 /**
  * 경평 초안 과제별 초안 한 요청의 진행 줄.
  * 근거(서버 prepareDraft): 원장 카드·올해 계량 실적(늘) + 첨부(카드 전용 자료·보고서 추가자료 이름) + 전년 보고서 같은 과제 절(이름) + 평가 기준·평가위원 관점 수(공통 지식에서 자동).
- * plan·story·again은 구성안에 저장된 근거로 씁니다(부르는 쪽이 그 근거를 넘김 — 근거 기록이 없는 옛 구성안이면 첨부 없이 전년 절은 자동).
+ * story·again은 구성안에 저장된 근거로, plan·revise는 구성안에 저장된 근거 ∪ 지금 고른 첨부로 씁니다(부르는 쪽이 그 근거를 넘김 — 근거 기록이 없는 옛 구성안이면 전년 절은 자동).
+ * added = 그중 구성안에 없던 첨부 이름(요청 글 「구성안 뒤 추가된 자료」), request = 담당자 요청이 있음(요청 글 「담당자 요청」 — 근거 아님)
  */
 export function draftProgress(
   kind: DraftRunKind,
@@ -148,6 +159,10 @@ export function draftProgress(
     alts?: number;
     /** 선별 방식이 실제로 적용될 때 고른 원문 수(서버 getReportSelectPreview — 없으면 통째로 넣기) */
     selected?: number;
+    /** 구성안 뒤 추가된 첨부 이름(plan·revise) */
+    added?: string[];
+    /** 담당자 요청 글이 있음(plan·revise) */
+    request?: boolean;
   },
 ): ProgressSpec {
   const sources: ProgressSource[] = [
@@ -155,6 +170,8 @@ export function draftProgress(
     { label: "올해 실적", detail: "부서가 넣은 올해 계량 실적(없으면 카드의 예상 칸)" },
   ];
   if (o.files.length) sources.push({ label: `첨부 ${o.files.length}건`, detail: o.files.join(" · ") });
+  if (o.added?.length) sources.push({ label: `새 자료 ${o.added.length}건`, detail: `구성안 뒤 추가된 자료(첨부 중) — ${o.added.join(" · ")} · 짜임은 그대로 두고 같은 블록의 사실·빈 칸·추진성과를 채우는 데 먼저 씀` });
+  if (o.request) sources.push({ label: "담당자 요청", detail: "요청 칸 글 — 쓰는 방향에 대한 지시로만 씀(근거 아님)" });
   if (o.prior.length) sources.push({ label: `전년 절 ${o.prior.length}`, detail: `2025 경영실적보고서 같은 과제 절 — ${o.prior.join(" · ")}` });
   if (o.lens) sources.push({ label: `평가 근거 ${o.lens}`, detail: "편람·평가 특징·지적·실사 질의응답 등 평가 기준·평가위원 관점(공통 지식에서 자동)" });
   // 원장 → 종합점검 → 경평 구성안(2026-10-09): 구성안을 만드는 요청만 최종 점검표의 미흡 행을 넣음(lib/reports/inspection-input.ts)
@@ -163,6 +180,9 @@ export function draftProgress(
   if (o.frame?.pattern) sources.push({ label: "구성 패턴", detail: `${o.frame.pattern} — 단 구성·블록 순서·배치의 뼈대(근거 아님)` });
   if (o.frame?.example) sources.push({ label: "2025 예시 절", detail: `${o.frame.example} — 짜임만 본뜸(사실·숫자 근거 아님, 숫자 대조에 안 씀)` });
   if (kind === "alts" && o.alts) sources.push({ label: `${o.alts}안`, detail: `안마다 구성안 한 번(같은 근거·같은 요청 글)을 동시에 부름 — 저장하지 않고, 고른 안만 구성안으로 저장` });
+  // 경영관리 집필 뒤 분량 채움 보강(서버 draft-write.ts writeMgDraft → lib/reports/mg-fill.ts runMgFill — 실제로 하는 단계만 적음: 사유가 없으면 이 단계 없이 끝남)
+  if (o.mg && (kind === "plan" || kind === "revise"))
+    sources.push({ label: "분량 보강", detail: `초안을 쓴 뒤 먼저 저장하고, 분량이 배정의 ${Math.round(MG_FILL.low * 100)}%보다 적거나 나란한 칸이 비거나 초안에 안 쓴 원장 성과·같은 수치 되풀이(반복 수치)가 있으면 보강할 수 있는 블록을 모두 하나씩 다시 쓰고, 아직 배정의 ${Math.round(MG_FILL.low * 100)}%에 못 미치면 한 번 더(최대 ${MG_FILL.rounds}회·${Math.round(MG_FILL.maxSec / 60)}분 안 — 블록 고치기와 같은 근거·검증, 받지 못한 블록은 1차 글 그대로)` });
   sources.push(reportKnowledge(o.selected, " — 평가 근거·전년 절은 그중 이 과제에 맞게 고른 것"));
   return { title: DRAFT_TITLE[kind], expect: draftExpect(kind, o.mg), sources };
 }
@@ -173,15 +193,16 @@ export function draftProgress(
 /** 보통 걸리는 시간 — 블록 고치기(한 블록, 보통 30~60초)의 안 2~3개 몫. 실측 전 어림(실제 호출은 사용자 승인 뒤 연기 시험으로 맞춤) */
 export const BLOCK_SHAPES_EXPECT: ProgressExpect = { min: 40, max: 150 };
 
-/** 「다른 모양으로」 진행 줄 — 근거는 서버가 실제로 넣는 것(블록 고치기와 같음: 초안을 만들 때 고른 근거 그대로, 그 뒤 지운 첨부는 빠짐) */
-export function blockShapesProgress(o: { blockNo: number; want: string | null; /** draftProgress와 같음 */ selected?: number }): ProgressSpec {
+/** 「다른 모양으로」 진행 줄 — 근거는 서버가 실제로 넣는 것(블록 고치기와 같음: 초안을 만들 때 고른 근거 + 지금 고른 새 첨부(added), 뺀 첨부·그 뒤 지운 첨부는 빠짐) */
+export function blockShapesProgress(o: { blockNo: number; want: string | null; /** draftProgress와 같음 */ selected?: number; /** 초안 근거에 없던 지금 고른 첨부 이름 */ added?: string[] }): ProgressSpec {
   return {
     title: o.want ? `${o.blockNo}번 블록을 「${o.want}」 모양으로 쓰는 중` : `${o.blockNo}번 블록을 다른 모양으로 쓰는 중`,
     expect: BLOCK_SHAPES_EXPECT,
     sources: [
       { label: "이 블록", detail: "지금 블록(JSON)·앞뒤 블록 이름·판면 어림·바꿀 수 있는 모양과 모양마다 한 줄 글자 수(코드가 셈)" },
       { label: "카드", detail: "확정 과제관리카드(원장)" },
-      { label: "초안 근거", detail: "초안을 만들 때 고른 첨부·전년 보고서 절·실사 답변·올해 계량 실적 입력(그 뒤 지운 첨부는 빠짐)" },
+      { label: "초안 근거", detail: "초안을 만들 때 고른 첨부·전년 보고서 절·실사 답변·올해 계량 실적 입력(그 뒤 지우거나 뺀 첨부는 빠짐)" },
+      ...(o.added?.length ? [{ label: `새 자료 ${o.added.length}건`, detail: `초안 뒤 고른 첨부 — ${o.added.join(" · ")}` }] : []),
       reportKnowledge(o.selected),
     ],
   };

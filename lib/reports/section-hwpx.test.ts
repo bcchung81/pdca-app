@@ -303,8 +303,11 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 괄호 + 조사 묶음 .k-nb(white-space:nowrap), 전후 비교 표 화살표 열 머리 바탕 투명
 // 2026-10-28 수치 띠를 2025 추진성과 행 모양으로(335987e3… → 771dac2d…): 수치 띠가 추진성과 상자(.k-result)를 같이 써서 큰 수치 칸 규칙(.k-stats·.k-stat·__v·__d·__n·__v .k-need)을 지우고
 // 그 자리에 안내 주석 한 줄 — REPORT_STYLE의 수치 칸 전용 값(pt.statNeed·lh.stat·lh.statNote)도 지움
+// 2026-10-29 추진성과 상자 안 막대 머리를 왼쪽 세로 칸으로(771dac2d… → ea9b9e37…): 주석 + .k-result__body--chart > .k-row2 오른쪽 열 60mm(REPORT_STYLE.sideChart 머리 18 + 막대 42)
+// + .k-chart--side 규칙 다섯 줄을 한 덩어리로 더함(사다리 행 끝 막대의 .k-row2 42mm는 그대로) — 이 덩어리를 뺀 글이 옛 고정값 771dac2d…과 같음을 확인
+// 2026-10-29 되풀이 표시(ea9b9e37… → a3166f1a…): .k-unv 다음에 주석 + .k-rep·.k-rep--line 바탕 + @media print 한 줄(화면 전용, 한글 양식 값 아님) — 이 네 줄을 뺀 글이 옛 고정값 ea9b9e37…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "771dac2d4cdf0155bda234b0f86760f0e1996cc452d37d927c1fc63adfdce4ab");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "a3166f1a3d4178c03a28a932e3698e13e411e0acb8864f47b00ffd6681463b5d");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {
@@ -506,6 +509,43 @@ test("막대: 막대 칸 높이 비율 = 값 비율, 값 글 칸이 막대 바�
   assert.equal(h(cols[2], 0), 1, "최대 막대 위 빈 칸은 최소");
 });
 
+test("옆 막대(A안, 2026-10-29 — 화면 k-chart--side): 추진성과 상자 안 막대는 머리가 왼쪽 세로 칸(두 행 합침·머리 칸 폭 sideChart.headMm), 막대는 남은 폭 · 머리 없으면 42mm 오른쪽 · 사다리 행 끝 막대·홀로 놓인 막대는 머리 위 행(42mm)", () => {
+  const SC = REPORT_STYLE.sideChart;
+  const headCell = (spec: ReportSectionSpec, title: string) => {
+    for (const t of allTables(sectionHwpxInput(spec).input.paras)) {
+      const c = t.cells.find((x) => textOf(x.paras)[0] === title);
+      if (c) return { t, c };
+    }
+    throw new Error(`머리 칸 없음: ${title}`);
+  };
+  const width = (t: Table) => t.pos.width;
+  // 소항목 추진성과 막대 · 수치 띠 상자 안 막대
+  const series = [{ label: "’25", value: "1" }, { label: "’26", value: "2" }];
+  const statsBox = makeSpec([block({ kind: "stats", label: "추진실적", cells: [cell("1건", ["성과"])] }), block({ kind: "chart", label: "추진실적", title: "옆 막대 머리", series, badge: "2배" })]);
+  for (const [spec, title] of [[chartResultSpec, "추이"], [statsBox, "옆 막대 머리"]] as const) {
+    const { t, c } = headCell(spec, title);
+    assert.deepEqual([c.row, c.col, c.rowSpan, c.colSpan], [0, 0, 2, 1], `${title}: 왼쪽 세로 칸`);
+    assert.equal(c.width, mm(SC.headMm), `${title}: 머리 칸 폭`);
+    assert.equal(t.rows, 2, `${title}: 머리 행 없음(막대·시점 두 행)`);
+    assert.ok(Math.abs(width(t) - mm(SC.headMm + SC.barMm)) <= 2, `${title}: 표 폭 = 머리 + 막대`);
+  }
+  assert.ok(textOf(headCell(statsBox, "옆 막대 머리").c.paras).includes("2배"), "배지는 머리 칸 안(제목 아래 문단)");
+  // 사다리 행 끝 막대(불릿 옆): 머리가 위 행 전체, 표 폭 42mm
+  const ladder = makeSpec([block({ kind: "bullets", label: "추진실적", items: ["앞 글"] }), block({ kind: "chart", label: "추진실적", title: "사다리 막대", series, badge: "" })]);
+  const lad = headCell(ladder, "사다리 막대");
+  assert.deepEqual([lad.c.row, lad.c.col, lad.c.colSpan], [0, 0, lad.t.cols], "사다리 행 끝 막대는 머리 위");
+  assert.ok(Math.abs(width(lad.t) - mm(42)) <= 2, "사다리 행 끝 막대 칸 42mm");
+  // 홀로 놓인 막대: 머리가 맨 위 행 전체
+  const loneT = allTables(sectionHwpxInput(makeSpec([SAMPLES.chart])).input.paras).find((t) => t.cells.some((c) => c.row === 0 && c.col === 0 && c.colSpan === t.cols && textOf(c.paras).join("").startsWith("막대 제목")));
+  assert.ok(loneT, "홀로 놓인 막대는 머리가 위 행(전체 합침)");
+  // 머리 없는 옆 막대: 막대 그림 폭(42mm)만, 머리 칸 없음
+  const bare = makeSpec([block({ kind: "bullets", items: ["본문"] })], { results: ["성과 글"], resultChart: { title: "", series: [{ label: "’25년", value: "10" }, { label: "’26년", value: "20" }], badge: "" } });
+  const bareT = allTables(sectionHwpxInput(bare).input.paras).filter((t) => t.cells.some((c) => textOf(c.paras).join("") === "’26년") && t.rows === 2);
+  assert.equal(bareT.length, 1);
+  assert.ok(Math.abs(width(bareT[0]) - mm(SC.barMm)) <= 2, "머리 없으면 막대 폭만");
+  assert.ok(!bareT[0].cells.some((c) => c.rowSpan === 2), "머리 칸 없음");
+});
+
 test("점 연혁: 점 칸은 두 반 행을 합치고 선(위쪽 테두리)은 두 반 행의 경계", async () => {
   const { doc } = await convert(makeSpec([block({ kind: "timeline", variant: "dots", cells: [cell("’24", ["가"]), cell("’25", ["나"])] })]));
   const t = allTables(doc.sections[0].paras).find((x) => x.rows === 4 && x.cols === 6)!;
@@ -538,4 +578,15 @@ test("글머리표 내어쓰기(2026-10-28): 화면 li(부호 0.05em·글 0.95em
   // 파일로 써서 다시 읽어도 같음
   const doc = await readHwpx((await sectionToHwpx(spec)).bytes);
   assert.equal(hangCheck({ doc, paras: doc.sections.flatMap((x) => x.paras) }).flat, 0);
+});
+
+test("되풀이 표시(k-rep)는 한글에 안 나감: 반복 수치·문장이 있는 spec도 글자 모양(charPr)·채움에 노란 바탕이 없고 글은 그대로", () => {
+  const long = "지역 방송사 협업으로 재난방송 송출 체계를 1,922곳에 고도화";
+  const spec = makeSpec([block({ kind: "bullets", label: "추진내용", items: [long] }), block({ kind: "bullets", label: "추진실적", items: [long] })], { results: [`${long} 완료`] });
+  assert.match(sectionBodyHtml(spec, [], { repeats: true }), /k-rep/, "화면에는 표시가 있음");
+  const { input } = sectionHwpxInput(spec);
+  const json = JSON.stringify(input).toLowerCase();
+  for (const c of ["ffe680", "fff7cc"]) assert.ok(!json.includes(c), `한글 양식에 되풀이 바탕(#${c})이 없음`);
+  assert.ok(!json.includes("k-rep"));
+  assert.ok(JSON.stringify(input.paras).includes("1,922곳"), "글은 그대로");
 });

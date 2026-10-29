@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { undatedOutcomeLines } from "./actuals.ts";
 import type { MaterialMatch } from "./material-match.ts";
 import type { ReportStatus } from "./model.ts";
 import { readSection } from "./section.ts";
@@ -185,6 +186,7 @@ interface SubmitCardDbRow {
   eval_unit_id: string;
   team_id: number;
   data_rev: number | null;
+  outcome?: unknown;
 }
 /** report_outline select 한 행 */
 interface OutlineDbRow {
@@ -212,7 +214,7 @@ export const submitKey = (evalUnitId: string, teamId: number) => `${evalUnitId}|
 export async function loadSubmitCards(supabase: SupabaseClient, year: number, filter: { evalUnitId?: string; teamId?: number; track?: TrackId } = {}): Promise<Map<string, SubmitCard[]>> {
   // 트랙: 평가단위를 주면 그 단위의 트랙(경영관리 MG-N — 2026-10-09 R3), 아니면 머리띠에서 고른 트랙(없으면 주요사업)
   const track = filter.evalUnitId ? trackOfUnit(filter.evalUnitId) : (filter.track ?? DEFAULT_TRACK.id);
-  let q = supabase.from("cards").select("id, uid, task_no, title, eval_unit_id, team_id, data_rev, unit:eval_units!inner(track)").eq("status", "active").eq("unit.track", track);
+  let q = supabase.from("cards").select("id, uid, task_no, title, eval_unit_id, team_id, data_rev, outcome:data->outcome->quantitative, unit:eval_units!inner(track)").eq("status", "active").eq("unit.track", track);
   if (filter.evalUnitId) q = q.eq("eval_unit_id", filter.evalUnitId);
   if (filter.teamId) q = q.eq("team_id", filter.teamId);
   const { data: cards } = await q.order("task_no");
@@ -238,6 +240,7 @@ export async function loadSubmitCards(supabase: SupabaseClient, year: number, fi
       included: inc.get(c.id)?.included !== false,
       pages: inc.has(c.id) ? Number(inc.get(c.id)?.pages) : null,
       dataRev: c.data_rev ?? null,
+      ...(track === "경영관리" ? { undatedOutcome: undatedOutcomeLines({ outcome: { quantitative: c.outcome } }, year) } : {}),
       draft: d ? { spec: d.spec ? readSection(d.spec) : null, sourceRev: d.source_rev ?? null, unknownNumbers: Array.isArray(d.unknown_numbers) ? d.unknown_numbers : [], outlineOnly: !d.spec && Boolean(d.outline), outline: d.outline ?? null } : null,
     };
     const k = submitKey(c.eval_unit_id, c.team_id);

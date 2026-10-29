@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { AttachmentError, loadMaterialTexts } from "../../../../lib/ai/attachments.ts";
 import { MATERIAL_COLS, type MaterialDoc, type MaterialRow } from "../../../../lib/ai/material-text.ts";
 import { fileRelation } from "../../../../lib/reports/material-match.ts";
+import { missingSources } from "../../../../lib/reports/draft-sources.ts";
 import { CliFailedError } from "../../../../lib/ai/cli-result.ts";
 import { loadCardBundle } from "../../../../lib/ai/context.ts";
 import { type KnowledgeBundle, relevantRefs } from "../../../../lib/knowledge/bundle.ts";
@@ -130,7 +131,7 @@ export async function loadSplitSiblings(supabase: Prepared["supabase"], card: { 
  * 근거 모으기(초안·구성안 공용): 사용자·권한 확인, 남용 방지(다른 AI 기능과 합쳐 1분 5번), 첨부 자료(이 카드의 전용 자료·이 카드가 속한 보고서의
  * 추가자료만 — 다른 카드·보고서 id는 안 읽힘), 목차·쪽 배정, 전년 절, 형제 짜임, 평가 근거, 올해 실적 재료.
  */
-export async function prepareDraft(uid: string, sources?: DraftSources, opts: { lenient?: boolean; readOnly?: boolean } = {}): Promise<({ ok: true } & Prepared) | { ok: false; message: string }> {
+export async function prepareDraft(uid: string, sources?: DraftSources, opts: { lenient?: boolean; readOnly?: boolean; loose?: DraftSources } = {}): Promise<({ ok: true } & Prepared) | { ok: false; message: string }> {
   const me = await requireUser("/reports/cards");
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id, eval_unit_id, data, status, data_rev, team_id, edition, updated_at").eq("uid", uid).maybeSingle();
@@ -160,8 +161,10 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
     const { data } = await supabase.from("report_materials").select(MATERIAL_COLS).eq("report_id", report.id).in("id", reportIds);
     reportRows.push(...((data ?? []) as MaterialRow[]));
   }
-  // lenient(블록 고치기): 초안을 만든 뒤 지운 자료는 빼고 남은 근거로
-  if (!opts.lenient && cardRows.length + reportRows.length < cardIds.length + reportIds.length) return { ok: false, message: "고른 자료 중 찾을 수 없는 것이 있습니다. 화면을 새로 고친 뒤 다시 골라 주세요." };
+  // lenient(직접 고침·되돌리기): 초안을 만든 뒤 지운 자료는 빼고 남은 근거로. loose(구성안대로 집필·블록 고치기 — 저장된 근거 + 지금 고른 근거): 저장된 근거만 지웠으면 빼고,
+  // 지금 고른 자료가 이 카드의 자료가 아니면(다른 카드·다른 보고서 id) 거절(lib/reports/draft-sources.ts missingSources)
+  const missing = missingSources({ card: cardIds, report: reportIds }, { card: cardRows.map((m) => String(m.id)), report: reportRows.map((m) => String(m.id)) }, opts.lenient ? true : opts.loose);
+  if (missing.length) return { ok: false, message: "고른 자료 중 찾을 수 없는 것이 있습니다. 화면을 새로 고친 뒤 다시 골라 주세요." };
   const picked: Picked[] = [...cardRows.map((m) => ({ kind: "card" as const, id: String(m.id), name: m.file_name })), ...reportRows.map((m) => ({ kind: "report" as const, id: String(m.id), name: m.file_name }))];
   // 올릴 때 읽어 둔 전체 글(아직 안 읽었거나 판이 다르면 여기서 읽어 채움). 못 읽은 자료는 빼고 경고로 남김
   const cardText = await loadMaterialTexts(supabase, "card_materials", cardRows);
@@ -249,7 +252,7 @@ async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "ye
     pages,
     cardAsOf: mgCardAsOf(card),
   };
-  const actuals = yearActuals(card.data, (x.report?.inputs?.kpi ?? {}) as Record<string, string>, isoDay());
+  const actuals = yearActuals(card.data, (x.report?.inputs?.kpi ?? {}) as Record<string, string>, isoDay(), { wide: true });
   const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
   // 숫자 근거 = 첨부·실사 답변·계량 실적 입력 + 이 과제에 연결된 공통 지식 조각 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치)
   const known = [ev.known, numbers].join("\n");

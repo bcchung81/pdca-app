@@ -39,6 +39,16 @@ export interface MgOutlineMeta {
   strictClose?: boolean;
   /** 갈래 축(lib/reports/split-axes.ts 사전 이름 — 절을 나누는 축, 2026-10-13). 없으면 축 없음(칩도 없음) */
   axis?: string;
+  /** 구성안을 만들 때 카드 원장에서 뽑은 절 성과 재료(mg-close.ts ledgerOutcomeItems, 2026-10-29) — 구성안 점검 「성과 배정」이 씀. 없으면(이 필드 전 구성안) 점검 안 함 */
+  outcomes?: MgOutcome[];
+}
+
+/** 원장 성과 재료 한 줄(mg-close.ts ledgerOutcomeItems): 어느 칸에서 왔는지와 수치(단위 붙은 숫자) 유무 */
+export interface MgOutcome {
+  text: string;
+  /** 정량 성과 칸 · 월별 실적의 수치 줄 · 정성 성과 칸 */
+  from: "quantitative" | "monthly" | "qualitative";
+  figure: boolean;
 }
 
 /** 초안 spec의 경영관리 골격 — at[i] = spec.blocks[i]가 놓인 절 열쇠 */

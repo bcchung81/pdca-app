@@ -4,6 +4,7 @@ import { RefreshCw, X } from "lucide-react";
 import { T } from "../ui/kit";
 import { useEffect, useId, useRef, useState } from "react";
 import { type BlockShapeOption, type BlockShapesResult, type DraftBlockResult, applyBlockShape, previewBlockShapes } from "../../app/(app)/reports/cards/edit-actions";
+import type { DraftPick } from "../../lib/reports/draft-sources.ts";
 import { getReportSelectPreview } from "../../app/(app)/reports/cards/actions";
 import { blockShapesProgress, rangeText } from "../../lib/ai/progress.ts";
 import type { ShapeMenuItem } from "../../lib/reports/block-shape.ts";
@@ -63,6 +64,9 @@ export function BlockShapes(props: {
   currentCode: string;
   menu: ShapeMenuItem[];
   mg: boolean;
+  /** 지금 고른 근거(서버가 초안 근거에 더함 — 뺀 자료는 뺌)와 그중 초안 근거에 없던 첨부 이름(진행 줄) */
+  pick?: DraftPick;
+  added?: string[];
   onClose: () => void;
   onApplied: (r: Extract<DraftBlockResult, { ok: true; kind: "edit" }>, request: string) => void;
   onRefresh: () => void;
@@ -98,7 +102,7 @@ export function BlockShapes(props: {
     setRun({ at: Date.now(), want: wantName });
     setError(null);
     try {
-      const r = await previewBlockShapes(props.uid, { blockIndex: props.blockIndex, request, want: want || null, version: props.version });
+      const r = await previewBlockShapes(props.uid, { blockIndex: props.blockIndex, request, want: want || null, version: props.version, pick: props.pick });
       if (!alive.current) return;
       if (r.ok) setResult(r);
       else setError({ message: r.message, conflict: r.conflict });
@@ -114,7 +118,7 @@ export function BlockShapes(props: {
     setApplying(o.code);
     setError(null);
     try {
-      const r = await applyBlockShape(props.uid, { blockIndex: result.blockIndex, out: o.out, why: o.why, request, model: result.model, version: result.version });
+      const r = await applyBlockShape(props.uid, { blockIndex: result.blockIndex, out: o.out, why: o.why, request, model: result.model, version: result.version, pick: props.pick });
       if (!alive.current) return;
       if (r.ok && r.kind === "edit") props.onApplied(r, `모양 바꾸기 — 「${result.current.name}」 → 「${o.name}」${request.trim() ? ` · ${request.trim()}` : ""}`);
       else if (!r.ok) setError({ message: r.message, conflict: r.conflict });
@@ -187,7 +191,7 @@ export function BlockShapes(props: {
             </div>
           </div>
         )}
-        {run && <AiProgress spec={blockShapesProgress({ blockNo: props.blockIndex + 1, want: run.want, selected: selected ?? undefined })} startedAt={run.at} />}
+        {run && <AiProgress spec={blockShapesProgress({ blockNo: props.blockIndex + 1, want: run.want, selected: selected ?? undefined, added: props.added })} startedAt={run.at} />}
 
         {error && (
           <div role="alert" className="flex min-w-0 flex-col gap-1.5 rounded-md bg-warn-bg px-3 py-2 text-xs break-keep text-warn">

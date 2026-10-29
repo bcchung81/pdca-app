@@ -9,8 +9,11 @@ import type { LensRef } from "./lens.ts";
 import type { PriorPick } from "./prior.ts";
 import { reportDraftPrompts } from "../prompts/sets.ts";
 import { markRoots, sectionDocument, sectionHtml } from "./section-html.ts";
-import { LADDER_LABELS, clipLine, composeIssues, draftEvidence, figureCap, figurePlaceIssues, fitPrompt, moduleGuide, quoteFoundIn, type SectionContext, recheckSection, resultExtras, resultRepeatIssue, sectionHints, sectionText, sourceKey, type SectionOutput, SectionOutputSchema, cardNumbers, numberTokens, readSection, reportTypography, sectionContext, sectionPrompt, siblingLayout, styleWarnings, verifySection } from "./section.ts";
+import { LADDER_LABELS, clipLine, composeIssues, draftEvidence, evidenceOf, figureCap, figurePlaceIssues, fitPrompt, moduleGuide, quoteFoundIn, type SectionContext, recheckSection, resultExtras, resultRepeatIssue, sectionHints, sectionText, sourceKey, type SectionOutput, SectionOutputSchema, cardNumbers, numberTokens, readSection, reportTypography, sectionContext, sectionPrompt, siblingLayout, styleWarnings, verifySection } from "./section.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
+import { cardOutline } from "../ai/writer.ts";
+import { cleanMaterials } from "./composition.ts";
+import { inspectionCardText } from "../ai/inspect.ts";
 
 const seed = { cards: seedCards<Record<string, any>>() };
 const group = (g: string) => seed.cards.filter((c) => c.group === g).map((c) => ({ id: c.id, taskNo: c.taskNo, targetBusiness: c.targetBusiness, executionTaskNo: c.executionTaskNo, executionTask: c.executionTask }));
@@ -1406,4 +1409,28 @@ test("sectionHints: 주요사업은 핵심 수치 띠(stats) 후보를 내지 �
   const bare = { id: "x", taskNo: "1-1", title: "판독 1,240건 처리, 24종 분류, 63종 확인, 97% 신뢰도" };
   const two: YearActuals = { today: "", kpi: [{ name: "판독 정확도", unit: "%", prev: "90%", target: "95%", expected: "", input: "93.9" }], monthly: [{ period: "1월~8월", line: "∙ AI 판독 1,416건 수행(목표 2,000건)" }] };
   assert.ok(!sectionHints(bare, [], [], [], two, 2026).some((h) => h.kind === "stats"));
+});
+
+// 원문 대조 모양(2026-10-29 — 표본 r3~r5b 「원문 못 찾음」 11개 중 5개가 모양 차이): 모델이 읽는 편 글(flattenHtmlTables)·카드 표 행을 인용해도 찾음
+test("evidenceOf: HTML 표 원문 조각의 행을 편 글(「칸 | 칸」·<br> → 「 / 」)로 인용해도 찾고, 카드 계량지표 행을 칸 순서대로 이어 인용해도 찾음 — 예전에 찾던 구절은 그대로", () => {
+  const card = { id: "경영관리9/9-9", group: "경영관리9", taskNo: "9-9", title: "서비스 등록", kpi: { columns: ["name", "prev", "target"], rows: [{ name: "등록건수", nameRaw: "데이터 등록건수(건, 누적)", prev: "46건", target: "58건" }] } };
+  const chunk = '실사 답변 표의 머리 글\n<table><tr><th>연번</th><th>구분</th><th>’24</th><th>’25</th></tr><tr><td>1</td><td>가 구분</td><td>22</td><td>27</td></tr><tr><td colspan="2">현장교육(만족도<br>89%, 실효성 81%)</td><td>11</td><td>13</td></tr></table>';
+  const { hayKey } = evidenceOf(card, chunk);
+  assert.ok(quoteFoundIn(hayKey, "1 | 가 구분 | 22 | 27"), "편 글의 표 행");
+  assert.ok(quoteFoundIn(hayKey, "현장교육(만족도 / 89%, 실효성 81%)"), "칸 안 줄바꿈은 편 글의 「 / 」");
+  assert.ok(quoteFoundIn(hayKey, "데이터 등록건수(건, 누적) 46건 58건"), "카드 계량지표 행(경로 줄을 칸 순서로 이음)");
+  assert.ok(quoteFoundIn(hayKey, "실사 답변 표의 머리 글"), "표 밖 원문 글도 그대로 찾음");
+  assert.ok(!quoteFoundIn(hayKey, "가 구분 | 26 | 28"), "없는 값은 못 찾음");
+  // 구성안 재료(cleanMaterials): 편 글 표 행·계량지표 행을 인용한 재료가 「원문 확인」
+  const { materials } = cleanMaterials(
+    [
+      { id: "m1", kind: "figure", text: "가 구분 27", when: "’25", source: "실사 질문", quote: "1 | 가 구분 | 22 | 27" },
+      { id: "m2", kind: "figure", text: "등록건수 58건 목표", when: "’26", source: "카드 kpi.rows.0", quote: "데이터 등록건수(건, 누적) 46건 58건" },
+    ],
+    hayKey,
+    new Set(["27", "58건", "58"]),
+  );
+  assert.deepEqual(materials.map((m) => m.found), [true, true]);
+  // 예전 열쇠(카드 글 + 근거 원문의 sourceKey)는 새 열쇠의 앞부분 그대로 — 예전에 찾던 구절은 모두 찾음
+  assert.ok(hayKey.startsWith(sourceKey(`${cardOutline(card)}\n${inspectionCardText(card)}\n${chunk}\n`)));
 });

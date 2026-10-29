@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { type BlockOutput, FIGURE_MM, LOGO_MM, actualBars, blockBullets, blockSignature, cleanBlocks, figureMm, figuresOf, layoutHints, logoNames, visualCount } from "./blocks.ts";
+import { type BlockOutput, FIGURE_MM, LOGO_MM, actualBars, pdcaMark, seriesLabel, blockBullets, blockSignature, cleanBlocks, figureMm, figuresOf, layoutHints, logoNames, visualCount } from "./blocks.ts";
+import { warningLevel } from "./warning-levels.ts";
 
 const blk = (b: Omit<Partial<BlockOutput>, "kind"> & { kind: any }): BlockOutput => ({ label: "", title: "", variant: "", text: "", items: [], cells: [], rows: [], series: [], badge: "", evidence: "", figures: [], ...b }) as BlockOutput;
 const cell = (head: string, bullets: string[] = []) => ({ head, tag: "", bullets, note: "" });
@@ -246,4 +247,35 @@ test("cleanBlocks(biz — 주요사업 집필, 2026-10-28): 핵심 수치 띠는
 
 test("cleanBlocks(biz 없음 — 경영관리·블록 고치기): 수치 띠를 빼지 않음(예전 그대로)", () => {
   for (const [name, cells] of [...STATS_DROP, ...STATS_KEEP]) assert.equal(cleanBlocks([blk({ kind: "stats", cells })], line, () => true).blocks.length, 1, name);
+});
+
+test("cleanBlocks: 수치 띠는 수치 칸 하나 + 성과 문장 칸이어도 남고, 수치 칸이 없으면 빼며 「수치 띠」 경고(2026-10-29 — 경영관리 닫는 추진성과가 소리 없이 빠졌음)", () => {
+  const one = cleanBlocks([blk({ kind: "stats", label: "추진성과", cells: [stat("158건", "’26.8", ["신규 등록"]), stat("", "", ["수요 기반 개방 체계 정착"])] })], line, () => true);
+  assert.equal(one.blocks.length, 1, "수치 칸 하나 + 성과 문장");
+  assert.equal(one.dropped.length, 0);
+  assert.equal(cleanBlocks([blk({ kind: "stats", cells: [stat("158건", "’26.8", ["신규 등록"])] })], line, () => true).blocks.length, 1, "수치 칸 하나뿐");
+  const none = cleanBlocks([blk({ kind: "stats", cells: [stat("", "", ["체계 정착"]), stat("활용 중심", "", ["개방 방식 전환"])] })], line, () => true);
+  assert.equal(none.blocks.length, 0);
+  assert.deepEqual(none.droppedShapes, [{ kind: "stats", variant: "" }]);
+  assert.ok(none.dropped.some((d) => d.startsWith("수치 띠: 수치가 든 칸이 없어 뺐습니다")), none.dropped.join(" / "));
+  assert.equal(warningLevel(none.dropped[0]), "info");
+  // 주요사업 집필(biz)은 수치 칸 하나여도 예전처럼 빼되(새 초안은 수치 띠를 쓰지 않음) 까닭을 남김
+  const biz = cleanBlocks([blk({ kind: "stats", cells: [stat("158건", "’26.8", ["신규 등록"])] })], line, () => true, { biz: true });
+  assert.equal(biz.blocks.length, 0);
+  assert.ok(biz.dropped.some((d) => d.startsWith("수치 띠: 주요사업 초안은")));
+});
+
+test("seriesLabel: 16자까지(낱말 가운데서 자르지 않음), 잘린 끝에 닫히지 않은 괄호가 남으면 괄호째 뺌(2026-10-28 표본 카드)", () => {
+  assert.equal(seriesLabel("고객 상담 접수 처리 현황(’26.6)"), "고객 상담 접수 처리 현황");
+  assert.equal(seriesLabel("공공데이터 신규 등록(’26.8 기준)"), "공공데이터 신규 등록");
+  assert.equal(seriesLabel("응답(’26.6)"), "응답(’26.6)");
+  assert.equal(seriesLabel("고객 상담 접수 건수 누적 합계"), "고객 상담 접수 건수 누적");
+  assert.equal(seriesLabel("민간 교육･데이터 제공 등 지원"), "민간 교육･데이터 제공 등");
+});
+
+test("pdcaMark: 칩이 두 글자 이하면 그대로, 비었거나 길면 P·D·C·A(2026-10-28 표본 카드 「Step 1」 → 「St」 방지)", () => {
+  assert.deepEqual([0, 1, 2, 3].map((i) => pdcaMark("", i)), ["P", "D", "C", "A"]);
+  assert.equal(pdcaMark("Step 1", 0), "P");
+  assert.equal(pdcaMark("①", 2), "①");
+  assert.equal(pdcaMark("계획", 0), "계획");
 });

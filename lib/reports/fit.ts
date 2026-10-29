@@ -4,6 +4,7 @@
 
 import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, figureMm, isGridTable, isPanelCompare, ladderGroups } from "./blocks.ts";
 import { type LayoutBlock, type LayoutGroup, PAIR_GAP_MM, cleanSpan, containerOf, layoutGroups } from "./layout.ts";
+import { MGMT_TRACK } from "../tracks/index.ts";
 import { REPORT_STYLE } from "./section-css.ts";
 
 /** 2025 최종본 판면: 본문 폭 172mm(CSS 170mm), 본문 높이 약 255mm(본문 시작 y≈25mm ~ 쪽번호 위 ≈280mm) */
@@ -19,8 +20,12 @@ export const LINE_MM = BODY_PT * 1.52 * PT;
 const INDENT_MM = REPORT_STYLE.bullet.padEm * BODY_PT * PT;
 /** 사다리 표: 라벨 열 18mm, 칸 안 여백 좌우 3px */
 const LADDER_TD_MM = PAGE_MM.width - 18 - 6 * PX;
-/** 행 오른쪽 막대 칸(42mm + 사이 2.5mm) */
+/** 사다리 행 끝 막대 칸(42mm + 사이 2.5mm — 머리는 막대 위) */
 const ROW_CHART_MM = 42 + 2.5;
+/** 추진성과 상자 안 막대(section-css REPORT_STYLE.sideChart — 머리 세로 칸 + 막대 그림, 2026-10-29) */
+const SIDE_CHART = REPORT_STYLE.sideChart;
+/** 추진성과 상자 안 막대 칸(머리 18mm + 막대 42mm + 사이 2.5mm) */
+const BOX_CHART_MM = SIDE_CHART.headMm + SIDE_CHART.barMm + 2.5;
 
 // ---------------------------------------------------------------------------
 // 글 폭(em) — 2026-10-28 크롬 실측(KoPub바탕체 Light·Bold, KoPub돋움체 Bold, 자간 0 — 화면이 진짜 글꼴을 찾으면 자간 보정이 0, report-fonts.ts).
@@ -172,6 +177,18 @@ export const bodyLines = (s: string, widthMm: number) => lineCount(s, widthMm, B
 /** 줄 폭에 들어가는 한글 글자 수(요청 글 안내용 — 한글 기준, 빈칸·숫자는 더 좁음). 본문은 글자 단위라 이 수만큼 한 줄에 듦 */
 export const hangulPerLine = (widthMm: number, pt = BODY_PT, dotum = false) => Math.floor(widthMm / (pt * PT) / HANGUL_EM[faceOf(dotum, pt === LABEL_PT)]);
 
+/**
+ * 칸 불릿 하나의 줄 수 L = max(1, round(불릿 기준 글자 수 ÷ 한 줄 글자 수))(2026-10-29, 두 트랙 공용 규칙 — 기준 글자 수는 트랙마다 TrackSpec.reportBulletChars).
+ * 2025에도 4칸 격자처럼 좁은 칸이 흔했지만 불릿 하나가 2~3줄을 채움 — 「한 줄 약 N자」만 주면 좁은 칸에 8자 조각 불릿이 나옴(경영관리 6-2 초안 20개 중 14개)
+ */
+export const bulletLines = (perLine: number, chars: number) => Math.max(1, Math.round(chars / Math.max(1, perLine)));
+/** 경영관리 칸 불릿 하나의 글자 수 = MGMT_TRACK.reportBulletChars(2025 경영관리 보고서 14건 불릿 평균의 지표별 중앙값 23.05자 — scripts/eval/mg-fill-baseline.ts, 지표별 19.2~30.2자, 10자 이하 2~14%) */
+export const MG_BULLET_CHARS = MGMT_TRACK.reportBulletChars;
+/** 경영관리 칸 불릿 하나의 줄 수(bulletLines의 경영관리 값) — 글 한도(mg-draft.ts mgLimitText)·높이 어림(canonicalBlock·blockCosts의 mg)·블록 고치기(block-edit.ts blockRoom) 공용 */
+export const mgBulletLines = (perLine: number) => bulletLines(perLine, MG_BULLET_CHARS);
+/** 불릿 글자 수 기준을 받는 칸 블록인지(두 트랙 — 주요사업 글 한도 composition.ts blockLimits도 씀) — 인용·목소리(원문 길이 그대로)와 막대 표(값 칸은 수치만 — report-draft-mg/blocks.md)는 아님 */
+export const mgBulletCell = (b: Pick<Block, "kind" | "variant">) => !(b.kind === "quotes" || b.kind === "voices" || (b.kind === "table" && b.variant === "bars"));
+
 // ---------------------------------------------------------------------------
 // 칸 폭(mm): 블록 종류·모양·칸 수·놓인 자리(사다리 칸 / 전폭 / 막대 옆)마다
 
@@ -188,8 +205,65 @@ export interface Slot {
 export const QA_MARK_MM = 6;
 /** VS 칸 사이(section-css .k-cards--vs 가운데 열) */
 const QA_VS_MM = 9;
-/** 수치 표 행 머리 열 폭(section-html tableHtml colgroup과 같은 값) */
+/** 추진실적 열 표의 행 머리 열 폭(예전 수치 표 규칙 그대로 — 폭의 22%, 18~34mm) */
 export const tableRowHeadMm = (width: number) => Math.max(18, Math.min(34, width * 0.22));
+
+/**
+ * 수치 표(기본·막대·쉐브론) 열 폭 규칙(2026-10-29 — 「표의 칸 간격은 글 길이에 따라」). 칸 안 여백은 좌우 4px(section-css table.k-tbl th·td).
+ * - headMin: 행 머리 열 최소(예전 규칙의 아래 끝 18mm)
+ * - headCap: 행 머리 열 상한 = 표 폭의 40% — 값 열이 셋이어도 한 열 20%(150mm 사다리 칸에서 30mm, 본문 한글 약 8자)가 남아 짧은 수치 값이 접히지 않는 선.
+ *   행 머리를 한 줄에 두는 것보다 값 칸을 지킴(이보다 긴 행 머리는 접힘)
+ * - valueMin: 값 열 최소 = 본문 한글 4자 + 칸 여백(「12,345건」 한 개가 한 줄에 드는 폭). 막대 표는 막대 칸(14mm + 사이 1.5mm)을 더함
+ * - slack: 어림과 화면 글꼴의 차이로 한 줄 글이 접히지 않게 자연 폭에 더하는 여유
+ */
+export const TABLE_COL = { headMin: 18, headCap: 0.4, valueMinChars: 4, slack: 1 } as const;
+
+/**
+ * 수치 표 열 폭(mm, [행 머리, 값 열…], 합 = width) — 그리기(section-html colgroup)·한글(section-hwpx gridTable)·높이 어림(blockHeight·slotOf)이 이 함수 하나를 씀.
+ * ① 열마다 자연 폭(한 줄로 둘 때 폭) = 가장 긴 머리 줄 글(맑은 고딕 10.4pt — 라벨 폭)·칸 글(행 머리는 돋움 10.4pt, 값은 본문 바탕) + 칸 여백 + slack.
+ *    행 머리(tbody th)는 화면에서 돋움(--k-f-dotum)으로 그려지므로 돋움 실측 폭으로 잼(라벨 폭 0.745em보다 넓은 0.872em — 좁게 재면 화면에서 접힘)
+ * ② 행 머리 열 = 자연 폭을 headMin~상한(headCap·값 열 최소 합을 뺀 폭 중 작은 것) 안으로
+ * ③ 값 열 = 남은 폭을 자연 폭(최소 valueMin)에 비례해 나눔 — 열 최소에 못 미치는 열은 최소로 묶고 나머지를 다시 비례 배분. 값이 모두 짧으면 모두 최소 → 균등
+ * 열 수 = 머리 줄(items)이 있으면 items − 1, 없으면 첫 행 칸 수(slotOf가 items 없이 부를 때)
+ */
+export function tableColsMm(b: Pick<Block, "variant" | "cells"> & Partial<Pick<Block, "items">>, width: number): number[] {
+  const items = b.items ?? [];
+  const nv = Math.max(1, items.length ? items.length - 1 : (b.cells[0]?.bullets.length ?? 2));
+  const pad = 8 * PX;
+  const mmOf = (s: string | undefined, pt: number, dotum: boolean, label: boolean) => (s?.trim() ? textEm(s.trim(), dotum, label) * pt * PT : 0);
+  const longest = (xs: Array<string | undefined>, pt: number, dotum: boolean, label: boolean) => max(xs.map((x) => mmOf(x, pt, dotum, label)));
+  const bar = b.variant === "bars" ? TABLE_SHAPE_MM.bar + TABLE_SHAPE_MM.barGap : 0;
+  const valueMin = TABLE_COL.valueMinChars * HANGUL_EM[0] * BODY_PT * PT + pad + bar;
+  // ② 행 머리 열
+  const headNat = Math.max(mmOf(items[0], LABEL_PT, true, true), longest(b.cells.map((c) => c.head), LABEL_PT, true, false)) + pad + TABLE_COL.slack;
+  const cap = Math.max(TABLE_COL.headMin, Math.min(width * TABLE_COL.headCap, width - nv * valueMin));
+  const head = Math.min(width, Math.max(TABLE_COL.headMin, Math.min(cap, headNat)));
+  // ③ 값 열: 머리 줄 글(쉐브론은 화살표 안 여백)·칸 글(막대 표는 막대 칸) 중 긴 것
+  const rest = Math.max(0, width - head);
+  const need = Array.from({ length: nv }, (_, k) => {
+    const th = mmOf(items[k + 1], LABEL_PT, true, true) + (b.variant === "chevron" ? TABLE_SHAPE_MM.chevronPad : pad);
+    const td = longest(b.cells.map((c) => c.bullets[k]), BODY_PT, false, false) + pad + bar;
+    return Math.max(valueMin, Math.max(th, td) + TABLE_COL.slack);
+  });
+  const floor = Math.min(valueMin, rest / nv);
+  const out = new Array<number>(nv).fill(0);
+  const free = new Set(need.keys());
+  let room = rest;
+  for (;;) {
+    const sum = [...free].reduce((n, k) => n + need[k], 0);
+    const low = [...free].filter((k) => (room * need[k]) / sum < floor);
+    if (!low.length || low.length === free.size) {
+      for (const k of free) out[k] = low.length === free.size ? room / free.size : (room * need[k]) / sum;
+      break;
+    }
+    for (const k of low) {
+      out[k] = floor;
+      room -= floor;
+      free.delete(k);
+    }
+  }
+  return [head, ...out];
+}
 /**
  * 표 모양(2026-10-12, section-html·section-css와 같은 값): 추진실적 열 표의 오른쪽 결과 칸 폭 · 막대 표의 막대 칸(막대 14mm + 사이 1.5mm) ·
  * 2단 라벨 표의 큰 라벨 열·하위 라벨 열 · 쉐브론 머리의 화살표 안 여백(좌우 합)
@@ -303,10 +377,10 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
         const sub = b.cells.some((c) => c.tag) ? TABLE_SHAPE_MM.ladderSub : 0;
         return { body: width - TABLE_SHAPE_MM.ladderBig - sub - pad(8) - INDENT_MM, head: TABLE_SHAPE_MM.ladderBig - pad(8), note: sub - pad(8) };
       }
-      // 수치 표: 행 머리 열(폭의 22%, 18~34mm) + 값 열(나머지를 똑같이) — 칸 안 여백 좌우 4px. 막대 표는 값 옆 막대 칸만큼 글이 좁고, 쉐브론 머리는 화살표 안 여백만큼 머리 글이 좁음
-      const cols = Math.max(1, b.cells[0]?.bullets.length ?? 2);
-      const rowHead = tableRowHeadMm(width);
-      const cell = (width - rowHead) / cols;
+      // 수치 표: 행 머리 열 + 값 열(tableColsMm — 글 길이를 따름, 여기 값 칸은 값 열 평균 폭) — 칸 안 여백 좌우 4px. 막대 표는 값 옆 막대 칸만큼 글이 좁고, 쉐브론 머리는 화살표 안 여백만큼 머리 글이 좁음.
+      // 높이 어림(blockHeight)은 열마다 폭을 따로 씀
+      const [rowHead, ...vals] = tableColsMm(b, width);
+      const cell = (width - rowHead) / vals.length;
       if (b.variant === "bars") return { body: cell - pad(8) - TABLE_SHAPE_MM.bar - TABLE_SHAPE_MM.barGap, head: cell - pad(8), note: rowHead - pad(8) };
       if (b.variant === "chevron") return { body: cell - pad(8), head: cell - TABLE_SHAPE_MM.chevronPad, note: rowHead - pad(8) };
       return { body: cell - pad(8), head: cell - pad(8), note: rowHead - pad(8) };
@@ -329,14 +403,20 @@ const TIME_NOTE = /^((?:’\d{2}|\d{4})(?:\.\d{1,2}){0,2}(?:년도?|월)?(?:\s?(
  */
 export function statsParts(c: Pick<Block["cells"][number], "tag" | "head" | "bullets" | "note">): { tag: string; text: string; open: string; sup: string; head: string; rest: string; close: string } {
   const text = (c.bullets[0] ?? "").trim();
-  const head = c.head.trim();
+  let head = c.head.trim();
   const note = c.note.trim();
-  // 수치에 이미 위첨자 시점이 있으면(전후 비교 「^{’24년}164명 → ^{’25년}126명」) 덧글은 위첨자로 겹쳐 쓰지 않고 뒤에
-  const time = head && !head.includes("^{") ? TIME_NOTE.exec(note) : null;
+  // 수치에 이미 위첨자 시점이 있으면(전후 비교 「^{’24년}164명 → ^{’25년}126명」) 덧글은 위첨자로 겹쳐 쓰지 않고 뒤에.
+  // 위첨자 시점은 2025 관례상 수치 앞에만 — 머리에 숫자가 없으면(「활용 중심」) 위첨자 없이 덧글을 평범하게 이음(【확인: …】 자리표시는 그대로 위첨자)
+  const time = head && !head.includes("^{") && /[\d【]/.test(head) ? TIME_NOTE.exec(note) : null;
   const sup = time ? time[1] : "";
-  const rest = time ? "" : note;
-  const inner = Boolean(head || rest);
-  const wrap = Boolean(text) && inner;
+  let rest = time ? "" : note;
+  const wrap = Boolean(text) && Boolean(head || rest);
+  // 문장 괄호 안에 또 괄호가 들면 겹치지 않게 안쪽 괄호를 「·」 잇기로 풂(「기준(진행 중)」 → 「기준·진행 중」). 【확인: …】 자리표시 안은 건드리지 않음
+  if (wrap) {
+    const flat = (s: string) => (s.includes("【") ? s : s.replace(/(^|\S)?\s*[(（]([^()（）]*)[)）]/g, (_, pre: string | undefined, x: string) => (pre ? `${pre}·${x}` : x)));
+    head = flat(head);
+    rest = flat(rest);
+  }
   return { tag: c.tag.trim(), text, open: wrap ? `${/[)\]】」]$/.test(text) ? " " : ""}(` : "", sup, head, rest: rest && head ? `, ${rest}` : rest, close: wrap ? ")" : "" };
 }
 
@@ -501,9 +581,13 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
           return n + Math.max(rows, lineCount(g.head, s.head, 10.4, true) * TH + 2 * PX);
         }, 0) + 1.2;
       }
-      // 쉐브론 머리: 화살표 칸 위아래 여백 1px씩 더(section-css .k-chev)
-      const head = max([lineCount(b.items[0] ?? "", s.note, 10.4, true), ...b.items.slice(1).map((x) => lineCount(x, s.head, 10.4, true))]) * TH + 2 * PX + (b.variant === "chevron" ? 2 * PX : 0);
-      const body = b.cells.reduce((n, c) => n + Math.max(lineCount(c.head, s.note, 10.4, true) * TH, max(c.bullets.map((x) => bodyLines(x, s.body) * L))) + 2 * PX, 0);
+      // 열마다 폭(tableColsMm — 그리기와 같은 값). 쉐브론 머리: 화살표 칸 위아래 여백 1px씩 더(section-css .k-chev)
+      const cols = tableColsMm(b, width);
+      const colAt = (k: number) => cols[k + 1] ?? cols.at(-1)!;
+      const headW = (k: number) => colAt(k) - (b.variant === "chevron" ? TABLE_SHAPE_MM.chevronPad : 8 * PX);
+      const bodyW = (k: number) => colAt(k) - 8 * PX - (b.variant === "bars" ? TABLE_SHAPE_MM.bar + TABLE_SHAPE_MM.barGap : 0);
+      const head = max([lineCount(b.items[0] ?? "", s.note, 10.4, true), ...b.items.slice(1).map((x, k) => lineCount(x, headW(k), 10.4, true))]) * TH + 2 * PX + (b.variant === "chevron" ? 2 * PX : 0);
+      const body = b.cells.reduce((n, c) => n + Math.max(lineCount(c.head, s.note, 10.4, true) * TH, max(c.bullets.map((x, k) => bodyLines(x, bodyW(k)) * L))) + 2 * PX, 0);
       return (b.title ? HEAD_MM + 1 : 0) + head + body + 1.2;
     }
     case "strategy": {
@@ -632,8 +716,25 @@ export function guardFigures(blocks: Block[], at?: string[]): string[] {
   return warnings;
 }
 
-/** 막대(행 옆 42mm 칸) 높이 — svg 150×104 비율 + 제목 줄 */
+/** 사다리 행 끝 막대(42mm 칸) 높이 — svg 150×104 비율 + 제목 줄 */
 export const CHART_MM = 42 * (104 / 150) + 9.5 * 1.45 * PT + 0.6;
+/** 막대 머리(제목·배지 — section-css .k-chart figcaption·.k-chart__badge) */
+export interface ChartHead {
+  title?: string;
+  badge?: string;
+}
+/**
+ * 추진성과 상자 안 막대 높이(2026-10-29 — 소항목 추진성과·수치 띠 상자, 머리를 막대 왼쪽 세로 칸으로, section-html miniChartHtml side): max(머리 칸 글 높이, 막대 그림 높이) + 테두리.
+ * 머리 칸 = 제목 줄 수(돋움 굵게 9.5pt × 1.45, 어절 단위) + 배지 줄(8pt × 1.45, 칩 안 여백 좌우 5px, 위 1px) + 위아래 여백 2px, 줄 수는 머리 글 길이와 칸 폭(안 여백 3px·오른쪽 가는 선을 뺀 폭)으로 셈.
+ * 막대 그림 = svg 150×104 비율 × 42mm. 머리가 없으면(또는 모르면 — 구성안 어림) 막대 그림 높이
+ */
+export function sideChartMm(c: ChartHead = {}): number {
+  const w = SIDE_CHART.headMm - 6 * PX - 0.2;
+  const title = c.title ? lineCount(c.title, w, 9.5, true) * 9.5 * 1.45 * PT : 0;
+  const badge = c.badge ? lineCount(c.badge, w - 10 * PX, 8, true) * 8 * 1.45 * PT + PX : 0;
+  const head = title || badge ? title + badge + 4 * PX : 0;
+  return Math.max(head, SIDE_CHART.barMm * (104 / 150)) + 0.6;
+}
 /** 라벨만 있는 막대(행에 다른 블록이 없음) — 가운데 48mm */
 const LONE_CHART_MM = 48 * (104 / 150) + 9.5 * 1.45 * PT + 2;
 
@@ -650,28 +751,28 @@ export const headCut = (head: HeadMode = "all") => (head === "all" ? 0 : head ==
 /** 추진성과 강조 띠(오른쪽 칩 — 돋움 11pt 굵게, 안 여백 좌우 6px) 폭: 한 줄에 들면 글 폭, 아니면 40mm에서 줄바꿈 */
 export const resultBandMm = (band: string) => Math.min(RESULT_BAND_MAX, textEm(band, true) * 11 * PT + 12 * PX + 1);
 const RESULT_BAND_MAX = 40;
-/** 추진성과 곁들임(막대·강조 띠) */
+/** 추진성과 곁들임(막대·강조 띠). chart = 막대 머리(높이를 셈 — sideChartMm) 또는 true(머리를 모름 — 구성안 어림) */
 export interface ResultExtras {
-  chart?: boolean;
+  chart?: boolean | ChartHead;
   band?: string;
 }
 
-/** 추진성과 불릿 한 줄 폭: 라벨 21mm·안 여백을 빼고, 막대(42mm + 2.5mm)·강조 띠(칩 + 2mm)가 있으면 그만큼 좁음. width = 상자 폭(수치 띠 상자가 반 폭에 놓일 때만 다름) */
+/** 추진성과 불릿 한 줄 폭: 라벨 21mm·안 여백을 빼고, 막대(머리 18mm + 막대 42mm + 2.5mm)·강조 띠(칩 + 2mm)가 있으면 그만큼 좁음. width = 상자 폭(수치 띠 상자가 반 폭에 놓일 때만 다름) */
 export function resultWidth(x: ResultExtras = {}, width: number = PAGE_MM.width): number {
-  return width - 21 - 12 * PX - INDENT_MM - (x.chart ? ROW_CHART_MM : 0) - (x.band ? resultBandMm(x.band) + 2 : 0);
+  return width - 21 - 12 * PX - INDENT_MM - (x.chart ? BOX_CHART_MM : 0) - (x.band ? resultBandMm(x.band) + 2 : 0);
 }
 
 /** 추진성과 상자 높이(본문 글 높이 mm → 상자 안팎 여백 포함): 추진성과(frameHeight)·수치 띠 상자(statsBoxMm) 공용 */
 const resultBoxMm = (body: number) => Math.max(12, body + 2.6) + 1.6;
 
 /**
- * 수치 띠 상자 높이(2026-10-28 — 2025 추진성과 행 모양): 라벨 21mm + 굵은 불릿(칸마다 statsLine 한 불릿, 블록 제목이 있으면 그 위) + 막대(있으면 오른쪽 42mm).
- * width = 상자 폭(사다리 행·전폭은 판면 폭, 가로 반씩이면 반 폭)
+ * 수치 띠 상자 높이(2026-10-28 — 2025 추진성과 행 모양): 라벨 21mm + 굵은 불릿(칸마다 statsLine 한 불릿, 블록 제목이 있으면 그 위) + 막대(있으면 오른쪽 — 머리 왼쪽 칸, sideChartMm).
+ * width = 상자 폭(사다리 행·전폭은 판면 폭, 가로 반씩이면 반 폭), chart = 상자 안 막대 블록(없으면 막대 없음)
  */
-export function statsBoxMm(main: Block[], width: number, chart = false): number {
-  const w = resultWidth({ chart }, width);
+export function statsBoxMm(main: Block[], width: number, chart?: ChartHead): number {
+  const w = resultWidth({ chart: Boolean(chart) }, width);
   const text = main.reduce((n, b) => n + (b.title ? HEAD_MM + 1 : 0) + lines(statsLines(b), w) * LINE_MM, 0);
-  return resultBoxMm(Math.max(text, chart ? CHART_MM : 0));
+  return resultBoxMm(Math.max(text, chart ? sideChartMm(chart) : 0));
 }
 
 /** 갈래 칩을 붙인 제목(렌더러 section-html.ts와 같은 글 — 「[값] 제목」, lib/reports/split-axes.ts). 칩이 없으면 제목 그대로 */
@@ -713,7 +814,7 @@ export function frameHeight(title: string, results: string[], resultCards: numbe
   const head = HEAD_PART_MM.biz + HEAD_PART_MM.task - headCut(mode) + titleMm(title, markers) + 2.4;
   const text = resultCards ? 16 + results.length * LINE_MM : lines(results, resultWidth(x), BODY_PT) * LINE_MM;
   const band = x.band ? lineCount(x.band, RESULT_BAND_MAX - 12 * PX, 11, true) * 11 * 1.3 * PT + 2 : 0;
-  const body = Math.max(text, x.chart ? CHART_MM : 0, band);
+  const body = Math.max(text, x.chart ? sideChartMm(x.chart === true ? {} : x.chart) : 0, band);
   // 상자 안팎 여백 2.6mm(2026-09-27 행별 실측 96장 — 예전 4.8mm는 상자마다 2.2mm 크게 어림)
   return head + (results.length || resultCards || x.chart ? resultBoxMm(body) : 0);
 }
@@ -770,7 +871,7 @@ export const stageHeadMm = (label: string) => Math.max(1, lineCount(label, PAGE_
  * 블록 목록 → 행(렌더러 blocksBody와 같은 묶음 — lib/reports/layout.ts layoutGroups: 라벨 있는 연속 블록은 사다리 행, 같은 라벨은 한 행, 행 끝 막대는 오른쪽,
  * 단 띠는 띠 머리 + 그 아래 블록, 가로 반씩 짝은 반 폭으로 두 블록을 각각 어림한 뒤 큰 쪽). 경영관리 spec은 mg.at으로 짝·단 띠가 절을 넘지 않게
  */
-export function fitReport(spec: { sub: { title: string; markers?: string[]; chip?: string }; head?: HeadMode; blocks?: Block[]; results: string[]; resultCards?: unknown[]; resultChart?: { series: unknown[] } | null; resultBand?: string; module: number; mg?: { at: string[] } }): FitReport {
+export function fitReport(spec: { sub: { title: string; markers?: string[]; chip?: string }; head?: HeadMode; blocks?: Block[]; results: string[]; resultCards?: unknown[]; resultChart?: ({ series: unknown[] } & ChartHead) | null; resultBand?: string; module: number; mg?: { at: string[] } }): FitReport {
   const blocks = spec.blocks ?? [];
   const rows: FitRow[] = [];
   const wrapped: FitLine[] = [];
@@ -836,7 +937,7 @@ export function fitReport(spec: { sub: { title: string; markers?: string[]; chip
     // 수치 띠(+ 끝 막대)만 있는 사다리 행 = 추진성과 상자(라벨 = 행 라벨, 판면 폭)
     const box = statsRow(g, blocks, own);
     if (box) {
-      rows.push({ label: g.label, kinds: flat.map((k) => blocks[k].kind).join("+"), mm: statsBoxMm(box.main.map((k) => blocks[k]), PAGE_MM.width, box.chart !== undefined) });
+      rows.push({ label: g.label, kinds: flat.map((k) => blocks[k].kind).join("+"), mm: statsBoxMm(box.main.map((k) => blocks[k]), PAGE_MM.width, box.chart === undefined ? undefined : blocks[box.chart]) });
       continue;
     }
     // 같은 라벨 연속 블록 = 한 행(짝 없는 블록만이면 예전과 같은 셈 — 행 끝 막대는 오른쪽)
@@ -853,7 +954,7 @@ export function fitReport(spec: { sub: { title: string; markers?: string[]; chip
     const content = g.units.reduce((n, u) => n + unitMm(u, g.label), 0);
     rows.push({ label: g.label, kinds: kindsOf(g.units), mm: Math.max(labelMm(g.label), content) + 6 * PX + 0.3 });
   }
-  const extras: ResultExtras = { chart: (spec.resultChart?.series.length ?? 0) >= 2, band: spec.resultBand || "" };
+  const extras: ResultExtras = { chart: spec.resultChart && spec.resultChart.series.length >= 2 ? spec.resultChart : false, band: spec.resultBand || "" };
   const total = frameHeight(chipTitle(spec.sub.title, spec.sub.chip), spec.results, spec.resultCards?.length ?? 0, extras, spec.sub.markers, spec.head) + rows.reduce((n, r) => n + r.mm, 0) + 1.3;
   for (const x of spec.results) check(x, resultWidth(extras), "추진성과");
   return { budget: spec.module * PAGE_MM.height, total: Math.round(total), rows: rows.map((r) => ({ ...r, mm: Math.round(r.mm * 10) / 10 })), wrapped, ragged, sparse, hollow: hollowBoxes(blocks, spec.mg?.at), bullets };
@@ -975,12 +1076,16 @@ export function capacityLines(): string[] {
 
 /**
  * 칸을 채운 보통 모양의 블록(구성안 판면 어림용 — lib/reports/composition.ts). n = 칸·행·줄·막대 수(종류마다 뜻이 다름),
- * 칸 불릿 2개 × 약 1.4줄(칸 채우기 규칙), 인용 1.6줄, 수치 띠 뜻 1.8줄, 전후 비교 행마다 1.5줄 — blockCosts와 같은 채움
+ * 칸 불릿 2개 × 약 1.4줄(칸 채우기 규칙), 인용 1.6줄, 수치 띠 뜻 1.8줄, 전후 비교 행마다 1.5줄 — blockCosts와 같은 채움.
+ * mg = 경영관리 높이 어림(2026-10-29): 칸 불릿 하나를 그 칸 폭의 mgBulletLines줄로 채움(불릿 수는 그대로, mgBulletCell이 아닌 인용·목소리·막대 표는 그대로). lines를 주면 lines가 앞섬
  */
-export function canonicalBlock(kind: Block["kind"], variant: string, n: number, label: string, figures: Figure[] = [], lines?: number, place: Pick<Block, "layout" | "span"> = {}): Block {
+export function canonicalBlock(kind: Block["kind"], variant: string, n: number, label: string, figures: Figure[] = [], lines?: number, place: Pick<Block, "layout" | "span"> = {}, mg = false): Block {
   // lines를 주면 칸(전후 비교는 기존·개선 칸, 인용·수치 띠는 뜻 줄) 글이 그 줄 수를 채운 모양 — 구성안 글 한도 셈(lib/reports/composition.ts blockLimits)
   // place = 배치·폭(lib/reports/layout.ts) — 칸 글을 놓인 폭(전폭·반 폭)으로 채움
   const fill = (mm: number, lines = 1) => "가".repeat(Math.max(4, Math.floor(hangulPerLine(mm) * 0.9 * lines)));
+  // 칸 불릿 하나의 보통 줄 수(경영관리 불릿 칸이면 칸 폭으로 센 불릿 줄 수)
+  const bl = mg && mgBulletCell({ kind, variant });
+  const per = (mm: number, usual: number) => (bl ? mgBulletLines(hangulPerLine(mm)) : usual);
   const count = Math.max(1, Math.min(8, Math.round(n)));
   const base: Block = { kind, label, title: "", variant, text: "", items: [], cells: [], rows: [], series: [], badge: "", figures, ...(place.layout ? { layout: place.layout } : {}), ...(place.span ? { span: place.span } : {}) };
   const cells = (k: number) => Array.from({ length: k }, () => ({ head: "머리", tag: "", bullets: [] as string[], note: "" }));
@@ -990,7 +1095,7 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       return { ...base, items: Array.from({ length: count }, () => fill(inner(base) - INDENT_MM)) };
     case "compare": {
       const sl = slotOf(base, inner(base));
-      return { ...base, items: isPanelCompare({ kind: "compare", variant }) ? ["기존", "개선"] : [], rows: Array.from({ length: count }, () => ({ key: "구분", before: [fill(sl.body, lines ?? 1.5)], after: [fill(sl.body, lines ?? 1.5)] })) };
+      return { ...base, items: isPanelCompare({ kind: "compare", variant }) ? ["기존", "개선"] : [], rows: Array.from({ length: count }, () => ({ key: "구분", before: [fill(sl.body, lines ?? per(sl.body, 1.5))], after: [fill(sl.body, lines ?? per(sl.body, 1.5))] })) };
     }
     case "quotes":
     case "voices": {
@@ -1002,7 +1107,7 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       // 칸마다 추진성과 불릿 한 줄(statsLine): 성과 문장은 줄 수의 85%만 채워 뒤 「(’26.8약 3만국)」까지 그 줄 수 안에
       const b = { ...base, cells: cells(Math.min(4, Math.max(2, count))) };
       const sl = slotOf(b, inner(b));
-      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "약 3만국", bullets: [fill(sl.body, (lines ?? 1) * 0.85)], note: "’26.8 기준" })) };
+      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "약 3만국", bullets: [fill(sl.body, (lines ?? per(sl.body, 1)) * 0.85)], note: "’26.8 기준" })) };
     }
     case "define":
       return { ...base, title: "무엇인가?", text: fill(inner(base) - 12, 2), items: ["단계", "단계", "단계"] };
@@ -1018,50 +1123,50 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       // 쌍마다 질문 한 줄 + 답 불릿 1개(약 1.6줄)
       const b = { ...base, cells: cells(Math.min(3, count)) };
       const sl = slotOf(b, inner(b));
-      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "왜 이 일이 필요한가?", bullets: [fill(sl.body, lines ?? 1.6)] })) };
+      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "왜 이 일이 필요한가?", bullets: [fill(sl.body, lines ?? per(sl.body, 1.6))] })) };
     }
     case "strategy": {
       // 목표 띠 한 줄 + 층 이름 넷 + 열마다 머리·과제 불릿 2개(약 1.2줄)·지표 한 줄
       const b = { ...base, text: "가".repeat(24), items: ["목표", "전략", "과제", "지표"], cells: cells(Math.min(4, Math.max(2, count))) };
       const sl = slotOf(b, inner(b));
-      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "전략목표", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, 1.2), fill(sl.body, 1.2)], note: "성과지표" })) };
+      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "전략목표", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.2)), fill(sl.body, per(sl.body, 1.2))], note: "성과지표" })) };
     }
     case "pdca": {
       // 4칸(불릿 2개 × 약 1.4줄) + 환류 띠 한 줄
       const b = { ...base, text: "가".repeat(30), cells: cells(4) };
       const sl = slotOf(b, inner(b));
-      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "계획수립", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, 1.4), fill(sl.body, 1.4)] })) };
+      return { ...b, cells: b.cells.map((c) => ({ ...c, head: "계획수립", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))] })) };
     }
     case "table": {
       // 추진실적 열 표: 행(구분 + 추진내용 불릿 2개 × 약 1.2줄) 1~4개 + 오른쪽 큰 수치 2개·결과 줄
       if (variant === "result") {
         const b = { ...base, cells: Array.from({ length: Math.min(4, count) }, () => ({ head: "구분", tag: "", bullets: [] as string[], note: "" })), series: [{ label: "결과의 뜻", value: "약 3만국" }, { label: "결과의 뜻", value: "97%" }], text: "가".repeat(12) };
         const sl = slotOf(b, inner(b));
-        return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, 1.2), fill(sl.body, 1.2)] })) };
+        return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.2)), fill(sl.body, per(sl.body, 1.2))] })) };
       }
       // 2단 라벨 표: 큰 라벨 하나에 하위 라벨 행 둘씩(행마다 내용 불릿 1개 × 약 1.4줄)
       if (variant === "ladder") {
         const b = { ...base, cells: Array.from({ length: Math.min(6, Math.max(2, count)) }, (_, i) => ({ head: `${"①②③"[Math.floor(i / 2)]} 큰 라벨`, tag: `${"①②③"[Math.floor(i / 2)]}-${(i % 2) + 1} 하위 라벨`, bullets: [] as string[], note: "" })) };
         const sl = slotOf(b, inner(b));
-        return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: [fill(sl.body, lines ?? 1.4)] })) };
+        return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: [fill(sl.body, lines ?? per(sl.body, 1.4))] })) };
       }
       // 쉐브론 머리 표: 단계 머리 3개 + 행마다 단계별 내용(약 1.5줄)
       if (variant === "chevron") {
         const b = { ...base, items: ["구분", "현황", "개선방향", "적용 결과"], cells: Array.from({ length: Math.min(4, count) }, () => ({ head: "행 머리", tag: "", bullets: ["", "", ""], note: "" })) };
         const sl = slotOf(b, inner(b));
-        return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => fill(sl.body, lines ?? 1.5)) })) };
+        return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => fill(sl.body, lines ?? per(sl.body, 1.5))) })) };
       }
       // 머리 줄(구분 + 값 열 3개) + 행마다 값(짧은 수치 — lines를 주면 그 줄 수를 채운 글). 막대 표도 같은 모양(값 옆 막대 칸만큼 글이 좁음)
       const b = { ...base, items: ["구분", "’24년", "’25년", "’26년"], cells: Array.from({ length: Math.max(2, count) }, () => ({ head: "행 머리", tag: "", bullets: ["", "", ""], note: "" })) };
       const sl = slotOf(b, inner(b));
-      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => (lines ? fill(sl.body, lines) : "12,345건")) })) };
+      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => (lines ? fill(sl.body, lines) : bl ? fill(sl.body, per(sl.body, 1)) : "12,345건")) })) };
     }
     default: {
       // cards·steps·timeline·hub: 칸마다 불릿 2개 × 약 1.4줄(단계·시기는 결과 줄)
       const b = { ...base, cells: cells(kind === "hub" ? Math.max(3, count) : Math.max(2, count)) };
       const sl = slotOf(b, inner(b));
       const note = ["steps", "timeline"].includes(kind) ? fill(sl.note) : "";
-      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, 1.4), fill(sl.body, 1.4)], note })) };
+      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))], note })) };
     }
   }
 }
@@ -1069,21 +1174,23 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
 /**
  * 블록 종류별 어림 높이(mm) — 칸을 채운 보통 모양(칸 불릿 2개·각 한 줄, 머리·결과 줄 한 줄)을 blockHeight로 잰 값.
  * 요청 글 「판면 예산」에 넣어 AI가 블록 영역 안에서 블록 수·종류를 고르게 함(③ 평가 라운드: 0.5쪽에 인용 상자를 기본 도식에 더해 113~120%로 넘침).
- * stats = 핵심 수치 띠 줄을 넣는지 — 주요사업 요청 글은 false(2026-10-28: 주요사업 새 초안은 수치 띠를 쓰지 않음 — frameworks.ts BIZ_RETIRED_SHAPES), 경영관리는 그대로
+ * stats = 핵심 수치 띠 줄을 넣는지 — 주요사업 요청 글은 false(2026-10-28: 주요사업 새 초안은 수치 띠를 쓰지 않음 — frameworks.ts BIZ_RETIRED_SHAPES), 경영관리는 그대로.
+ * mg = 경영관리 분량 안내(2026-10-29): 칸 불릿 하나를 칸 폭의 mgBulletLines줄로 채운 모양(글 한도 「불릿 하나 약 T자」와 같은 셈, 인용은 그대로) — 주요사업(false)은 예전 글 그대로
  */
-export function blockCosts(stats = true): string[] {
+export function blockCosts(stats = true, mg = false): string[] {
   const fill = (mm: number, lines = 1) => "가".repeat(Math.max(4, Math.floor(hangulPerLine(mm) * 0.9 * lines)));
+  const per = (mm: number, usual: number) => (mg ? mgBulletLines(hangulPerLine(mm)) : usual);
   const mk = (kind: Block["kind"], variant: string, cells: number, label = "라벨", o: Partial<Block> = {}): Block => {
     const base: Block = { kind, label, title: "", variant, text: "", items: [], cells: Array.from({ length: cells }, () => ({ head: "머리", tag: "", bullets: [], note: "" })), rows: [], series: [], badge: "", ...o };
     const sl = slotOf(base, blockWidth(base));
     const note = ["steps", "timeline"].includes(kind) ? fill(sl.note) : "";
-    return { ...base, cells: base.cells.map((c) => ({ ...c, bullets: [fill(sl.body, 1.4), fill(sl.body, 1.4)], note })), ...o };
+    return { ...base, cells: base.cells.map((c) => ({ ...c, bullets: [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))], note })), ...o };
   };
   const mm = (b: Block) => Math.round(blockHeight(b, blockWidth(b)));
   const cmp = (variant: string, rows: number) => {
     const b = mk("compare", variant, 0);
     const sl = slotOf(b, blockWidth(b));
-    return mm({ ...b, items: isPanelCompare({ kind: "compare", variant }) ? ["기존", "개선"] : [], rows: Array.from({ length: rows }, () => ({ key: "구분", before: [fill(sl.body, 1.5)], after: [fill(sl.body, 1.5)] })) });
+    return mm({ ...b, items: isPanelCompare({ kind: "compare", variant }) ? ["기존", "개선"] : [], rows: Array.from({ length: rows }, () => ({ key: "구분", before: [fill(sl.body, per(sl.body, 1.5))], after: [fill(sl.body, per(sl.body, 1.5))] })) });
   };
   const quote = (n: number) => {
     const b = mk("quotes", "", n, "");
@@ -1091,15 +1198,15 @@ export function blockCosts(stats = true): string[] {
     return mm({ ...b, cells: b.cells.map((c) => ({ ...c, bullets: [fill(sl.body, 1.6)], note: "’25.6, 출처" })) });
   };
   const bullets = (n: number) => mm({ ...mk("bullets", "", 0), items: Array.from({ length: n }, () => fill(LADDER_TD_MM - INDENT_MM)) });
-  const statsMm = Math.round(statsBoxMm([canonicalBlock("stats", "", 3, "추진성과")], PAGE_MM.width));
+  const statsMm = Math.round(statsBoxMm([canonicalBlock("stats", "", 3, "추진성과", [], undefined, {}, mg)], PAGE_MM.width));
   const define = mm({ ...mk("define", "", 0, ""), text: fill(PAGE_MM.width - 12, 2), items: ["단계", "단계", "단계"] });
   const kase = mm({ ...mk("case", "", 0, ""), items: [fill(PAGE_MM.width - 12), fill(PAGE_MM.width - 12), fill(PAGE_MM.width - 12)] });
   const canon = (kind: Block["kind"], variant: string, n: number) => {
-    const b = canonicalBlock(kind, variant, n, "라벨");
+    const b = canonicalBlock(kind, variant, n, "라벨", [], undefined, {}, mg);
     return Math.round(blockHeight(b, blockWidth(b)));
   };
   return [
-    `(칸 글을 채운 보통 모양 기준 — 칸 글이 길면 더 높음) bullets 줄당 약 ${LINE_MM.toFixed(1)}mm(3줄 ${bullets(3)}mm) · quotes 1개 ${quote(1)}mm·2개 나란히 ${quote(2)}mm · banner 약 ${mm({ ...mk("banner", "", 0, ""), text: "가".repeat(30) })}mm`,
+    `(${mg ? `칸 불릿 하나가 「글 한도」의 불릿 글자 수(약 ${MG_BULLET_CHARS}자 — 좁은 칸은 2~3줄)를 채운 모양 기준` : "칸 글을 채운 보통 모양 기준"} — 칸 글이 길면 더 높음) bullets 줄당 약 ${LINE_MM.toFixed(1)}mm(3줄 ${bullets(3)}mm) · quotes 1개 ${quote(1)}mm·2개 나란히 ${quote(2)}mm · banner 약 ${mm({ ...mk("banner", "", 0, ""), text: "가".repeat(30) })}mm`,
     `cards 3칸 ${mm(mk("cards", "plain", 3))}mm · steps 3단계 ${mm(mk("steps", "row", 3))}mm·4단계 ${mm(mk("steps", "row", 4))}mm·zigzag ${mm(mk("steps", "zigzag", 4))}mm · timeline 3칸 ${mm(mk("timeline", "chevron", 3))}mm`,
     `compare 표 2행 ${cmp("table", 2)}mm·3행 ${cmp("table", 3)}mm · panels 3행 ${cmp("panels", 3)}mm · hub 기관 3곳 ${mm(mk("hub", "", 4))}mm`,
     `${stats ? `stats 3칸(추진성과 상자 — 칸마다 굵은 불릿 한 줄) ${statsMm}mm · ` : ""}define ${define}mm · case 3줄 ${kase}mm · chart는 앞 블록 행 오른쪽(높이 0, 그 행 칸이 좁아짐)`,
@@ -1108,10 +1215,10 @@ export function blockCosts(stats = true): string[] {
   ];
 }
 
-/** 표 모양 4종의 어림 높이 한 줄(경영관리 분량 안내에만 — 주요사업 요청 글 blockCosts는 그대로, 2026-10-12) */
-export function tableShapeCosts(): string {
+/** 표 모양 4종의 어림 높이 한 줄(경영관리 분량 안내에만 — 주요사업 요청 글 blockCosts는 그대로, 2026-10-12). mg = 칸 불릿을 칸 폭의 mgBulletLines줄로(blockCosts의 mg와 같음, 2026-10-29) */
+export function tableShapeCosts(mg = false): string {
   const canon = (variant: string, n: number) => {
-    const b = canonicalBlock("table", variant, n, "라벨");
+    const b = canonicalBlock("table", variant, n, "라벨", [], undefined, {}, mg);
     return Math.round(blockHeight(b, blockWidth(b)));
   };
   return `table:result 2행(오른쪽 추진실적 칸) ${canon("result", 2)}mm · table:bars 3행 ${canon("bars", 3)}mm · table:chevron 2행(단계 머리 3) ${canon("chevron", 2)}mm · table:ladder 4행(큰 라벨 2) ${canon("ladder", 4)}mm`;

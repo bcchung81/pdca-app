@@ -123,11 +123,34 @@ function barNumber(raw: string): { value: number; unit: string } | null {
 }
 
 /**
- * 막대 표(table:bars) 한 행의 막대 길이(%, 0~100): 같은 행에서 단위가 같은 값끼리 가장 큰 값에 견줌(결정론 — AI는 숫자만 씀).
- * 수치가 아닌 칸·음수·0·자리표시는 null(막대 없음), 같은 단위 값이 하나뿐이면 견줄 것이 없어 null
+ * PDCA 순환 칸 머리의 단계 표지: 칸 칩(tag)이 두 글자 이하면 그대로, 비었거나 길면 P·D·C·A
+ * (2026-10-28 표본 카드: 칩 「Step 1」을 앞 두 글자로 잘라 「St」로 그림 — 화면·한글·개조식이 함께 씀)
  */
-export function tableBars(values: string[]): Array<number | null> {
-  const nums = values.map(barNumber);
+export const pdcaMark = (tag: string, i: number) => {
+  const t = tag.trim();
+  return t && [...t].length <= 2 ? t : (["P", "D", "C", "A"][i] ?? "");
+};
+
+/**
+ * 막대·추진실적 열 수치의 뜻(series label)은 16자까지 — 낱말 가운데서 자르지 않고, 자른 끝에 닫히지 않은 괄호가 남으면 그 괄호째 뺌
+ * (2026-10-28 표본 카드: 「고객 상담 접수 처리 현황(’26.6)」이 「…현황(’26.6」으로 잘려 괄호 짝이 깨져 보임)
+ */
+export function seriesLabel(s: string): string {
+  if (s.length <= 16) return s;
+  const cut = s.slice(0, 16);
+  if (/[(（][^)）]*$/.test(cut)) return cut.replace(/\s*[(（][^)）]*$/, "");
+  // 낱말 가운데서 잘리면(「…등 지원」 → 「…등 지」) 앞 빈칸까지
+  const sp = cut.lastIndexOf(" ");
+  return /\S/.test(s[16]) && sp > 0 ? cut.slice(0, sp) : cut;
+}
+
+/**
+ * 막대 표(table:bars) 한 행의 막대 길이(%, 0~100): 같은 행에서 단위가 같은 값끼리 가장 큰 값에 견줌(결정론 — AI는 숫자만 씀).
+ * 수치가 아닌 칸·음수·0·자리표시는 null(막대 없음), 같은 단위 값이 하나뿐이면 견줄 것이 없어 null.
+ * items = 표 머리 줄 전체(첫째 = 행 머리 열, 값 열은 둘째부터) — 목표·계획·예상·전망 열은 막대 없음(chart의 「목표만이면 뺌」과 같은 규칙, 남은 실적 값끼리만 견줌)
+ */
+export function tableBars(values: string[], items: string[] = []): Array<number | null> {
+  const nums = values.map((v, k) => (PLAN_BAR.test(items[k + 1] ?? "") ? null : barNumber(v)));
   const max = new Map<string, { n: number; top: number }>();
   for (const x of nums) if (x) max.set(x.unit, { n: (max.get(x.unit)?.n ?? 0) + 1, top: Math.max(max.get(x.unit)?.top ?? 0, x.value) });
   return nums.map((x) => {
@@ -180,6 +203,8 @@ export interface BlockClean {
   blocks: Block[];
   /** 뺀 블록 이유(경고) */
   dropped: string[];
+  /** 앱이 뺀 블록의 종류·모양 — 구성안 지킴 셈(planAdherence)에서 이 블록만큼은 구성안에서도 덜어냄(앱이 뺀 것을 AI가 안 따랐다고 세지 않음) */
+  droppedShapes: Array<{ kind: string; variant: string }>;
 }
 
 /**
@@ -191,6 +216,7 @@ export interface BlockClean {
  */
 export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number) => string, found: (s: string) => boolean, opts: { biz?: boolean } = {}): BlockClean {
   const dropped: string[] = [];
+  const droppedShapes: BlockClean["droppedShapes"] = [];
   const list = (a: unknown, max: number, len = 200) => (Array.isArray(a) ? a.map((x) => line(x, len)).filter(Boolean).slice(0, max) : []);
   const cells = (a: unknown, max: number) =>
     (Array.isArray(a) ? a : [])
@@ -218,7 +244,7 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       items: list(b.items, 8, 160),
       cells: cells(b.cells, kind === "voices" || kind === "quotes" ? 3 : kind === "strategy" || kind === "pdca" ? 4 : 5),
       rows: (Array.isArray(b.rows) ? b.rows : []).map((r: Json) => ({ key: line(r?.key, 30), before: list(r?.before, 4, 120), after: list(r?.after, 4, 120) })).filter((r: Json) => r.before.length || r.after.length).slice(0, 5),
-      series: (Array.isArray(b.series) ? b.series : []).map((s: Json) => ({ label: line(s?.label, 16), value: line(s?.value, 24) })).filter((s: Json) => s.label && /\d/.test(s.value)).slice(0, 4),
+      series: (Array.isArray(b.series) ? b.series : []).map((s: Json) => ({ label: seriesLabel(line(s?.label, 40)), value: line(s?.value, 24) })).filter((s: Json) => s.label && /\d/.test(s.value)).slice(0, 4),
       badge: line(b.badge, 24),
       figures: cleanFigures(kind, b.figures, line),
     };
@@ -255,22 +281,30 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
     }
     if ((kind === "case" || kind === "define") && !(b.evidence && found(String(b.evidence)))) {
       dropped.push(`${name}: 근거 원문(evidence)을 찾지 못해 뺐습니다 — ${kind === "case" ? "수상·보도 자료" : "정의가 적힌 자료"}를 첨부하면 넣을 수 있습니다.`);
+      droppedShapes.push({ kind: x.kind, variant: x.variant });
       continue;
     }
-    if (!enough(x)) continue;
+    if (!enough(x)) {
+      // 수치 띠는 뺀 까닭을 남김(2026-10-29 — 경영관리 닫는 추진성과가 소리 없이 빠지고 원장 보강이 수치 없는 문장으로 채웠음)
+      if (kind === "stats") dropped.push("수치 띠: 수치가 든 칸이 없어 뺐습니다 — 칸 머리(head)에 성과 수치를 적어야 남습니다");
+      droppedShapes.push({ kind: x.kind, variant: x.variant });
+      continue;
+    }
     // 막대: 실적 값이 2개 미만(목표·계획 값만 더한 막대)이면 뺌
     if (kind === "chart" && actualBars(x.series).length < 2) {
       dropped.push("막대: 실적 값이 2개 미만(목표·계획 값만 더한 막대)이라 뺐습니다 — 실적 값이 쌓이면 다시 쓸 수 있습니다");
+      droppedShapes.push({ kind: x.kind, variant: x.variant });
       continue;
     }
     // 핵심 수치 띠(주요사업): 새 초안에는 두지 않음 — 띠에 쓴 수치는 단계 결과 줄·추진성과로(2026-10-28 사용자 결정)
     if (kind === "stats" && opts.biz) {
       dropped.push(`수치 띠: 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않아 뺐습니다(${x.cells.map((c) => c.head).join("·")}) — 그 수치는 단계 칸 결과 줄·표 결과 열·추진성과에 씁니다`);
+      droppedShapes.push({ kind: x.kind, variant: x.variant });
       continue;
     }
     blocks.push(x);
   }
-  return { blocks, dropped };
+  return { blocks, dropped, droppedShapes };
 }
 
 /** 목표·계획·예상·전망 표시가 라벨이나 값에 있는 막대(정의는 actuals.ts — 수치 띠 칸과 같은 낱말) */
@@ -331,8 +365,9 @@ function enough(b: Block): boolean {
     case "chart":
       return b.series.length >= 2;
     case "stats":
-      // 핵심 수치 띠: 칸마다 수치(head)가 있어야 함
-      return b.cells.filter((c) => /\d/.test(c.head)).length >= 2;
+      // 수치 띠: 수치(head)가 든 칸이 하나 이상(2026-10-29 — 예전 2칸 이상). 2026-10-28부터 칸마다 추진성과 불릿 한 줄로 그려(section-html.ts statsUl·fit.ts statsLine)
+      // 칸 하나여도 그림이 깨지지 않음 — 「수치 1칸 + 성과 문장 칸」인 경영관리 닫는 추진성과가 빠지던 것을 막음. 수치 없는 칸만 있으면 뺌
+      return b.cells.some((c) => /\d/.test(c.head));
     case "define":
       return Boolean(b.title && (b.text || b.items.length));
     case "case":
@@ -356,6 +391,16 @@ export function blockTexts(b: Block): string[] {
     ...b.series.map((s) => `${s.label} ${s.value}`),
     b.badge,
   ].filter(Boolean);
+}
+
+/**
+ * 숫자 대조용 글: 수치 표(isGridTable)는 칸이 아니라 한 행(행 머리 + 그 행의 값 칸 전부)을 한 줄로 냄 — 값이 칸마다 따로라 같은 행 두 값의 차이·증감률(계산값)을
+ * 한 단위로 인정해야 하기 때문(number-calc.ts calcExplained는 줄 하나가 한 단위). 다른 블록은 blockTexts 그대로
+ */
+export function blockNumberTexts(b: Block): string[] {
+  if (!isGridTable(b)) return blockTexts(b);
+  const rows = b.cells.map((c) => [c.head, ...c.bullets].filter(Boolean).join(" ")).filter(Boolean);
+  return [...blockTexts({ ...b, cells: [] }), ...rows];
 }
 
 /** 문체 경고를 볼 문장(불릿·칸 불릿 — 인용·말풍선은 원문, 수치 표 칸은 값이라 뺌) */

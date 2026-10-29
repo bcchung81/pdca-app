@@ -19,6 +19,8 @@ test("주요사업 스펙은 예전에 코드에 흩어져 있던 값 그대로(
     inspectionForm: "biz14",
     sharedUnits: ["BZ-1", "BZ-2", "BZ-3"],
     unitParts: [],
+    // 2026-10-29 칸 글 한도의 불릿 기준 길이(2025 주요사업 불릿 평균 중앙값 — 예전 리터럴이 아니라 새 값)
+    reportBulletChars: 28,
   });
   assert.equal(DEFAULT_TRACK, BIZ_TRACK);
   assert.equal(FORM_ID, "biz14", "점검표 양식 id는 스펙에서 오지만 값은 DB에 저장된 그대로");

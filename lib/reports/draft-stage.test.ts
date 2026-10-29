@@ -45,7 +45,7 @@ test("draftStage: 경영관리는 바로 만들기가 어디에도 없음(초안
   assert.deepEqual(empty.primary, { key: "outline", label: "구성안 만들기" });
   assert.deepEqual(empty.alt, []);
   const drafted = run({ mg: true, hasOutline: true, outlineApproved: true, hasDraft: true, draftFromOutline: true });
-  assert.deepEqual(keys(drafted.redo), ["plan", "outline"]);
+  assert.deepEqual(keys(drafted.redo), ["revise", "outline"]);
   assert.ok(![drafted.primary, ...drafted.alt, ...drafted.redo].some((a) => a?.key === "draft"));
 });
 
@@ -72,16 +72,19 @@ test("draftStage: 승인된 구성안에 초안이 없으면(드묾) 지금 초�
   assert.deepEqual(keys(run({ mg: true, hasOutline: true, outlineApproved: true }).alt), ["outline"]);
 });
 
-test("draftStage: 초안 있음 — 지금 점검, 주 행동 「점검 결과 보기」, 다시 쓰기 묶음(구성안대로 집필·구성안 다시 만들기·조용한 바로 다시 만들기)", () => {
+test("draftStage: 초안 있음 — 지금 점검, 주 행동 「점검 결과 보기」, 다시 쓰기 묶음(자료 반영 고치기·구성안 다시 만들기·조용한 바로 다시 만들기)", () => {
   const s = run({ hasOutline: true, outlineApproved: true, hasDraft: true, draftFromOutline: true, checks: 10 });
   assert.deepEqual(states(s), ["구성안:승인 · 집필함:done", "초안:초안 있음:done", "점검:할 일 10:handoff"]);
   assert.deepEqual(now(s), ["check"]);
   assert.deepEqual(s.primary, { key: "show-check", label: "점검 결과 보기" });
   assert.deepEqual(s.redo, [
-    { key: "plan", label: "구성안대로 집필" },
+    // 구성안대로 쓴 초안 — 같은 구성안대로 새 자료·요청을 더해 다시 씀(2026-10-29 「초안 뒤 첨부한 파일로 고치기」)
+    { key: "revise", label: "자료 반영 고치기" },
     { key: "outline", label: "구성안 다시 만들기" },
     { key: "draft", label: "바로 다시 만들기", quiet: true },
   ]);
+  // 바로 만들기 초안 뒤 구성안 — 구성안대로 처음 집필
+  assert.deepEqual(run({ hasOutline: true, outlineApproved: true, hasDraft: true }).redo[0], { key: "plan", label: "구성안대로 집필" });
   assert.equal(s.redoOpen, false);
   // 점검 할 일 0 — 끝
   assert.equal(run({ hasDraft: true }).steps[2].state, "확인할 것 없음");
@@ -127,7 +130,7 @@ test("draftStage: 부서 화면 보기·쓸 수 없음 — 보기 행동만(초�
 });
 
 test("draftStage: 주 행동은 늘 하나 이하이고 생성 행동은 쓸 수 있을 때만", () => {
-  const gen = new Set(["outline", "plan", "draft"]);
+  const gen = new Set(["outline", "plan", "revise", "draft"]);
   for (const hasOutline of [false, true])
     for (const outlineApproved of [false, true])
       for (const hasDraft of [false, true])

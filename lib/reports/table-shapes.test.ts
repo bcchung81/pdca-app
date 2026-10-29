@@ -11,7 +11,7 @@ import { verifyBlockEdit } from "./block-edit.ts";
 import { applyDraftText } from "./draft-text.ts";
 import { BIZ_VARIETY, bizVarietyIssue, diagramHints, mgVarietyIssues, shapeKeyOf, shapeVariety } from "./diagram-hints.ts";
 import { shapeStats } from "./eval-stats.ts";
-import { TABLE_SHAPE_MM, blockHeight, blockWidth, canonicalBlock, fitReport, slotOf, tableShapeCosts } from "./fit.ts";
+import { TABLE_COL, TABLE_SHAPE_MM, blockHeight, blockWidth, canonicalBlock, fitReport, slotOf, tableColsMm, tableShapeCosts, textEm } from "./fit.ts";
 import { SHAPES, cellRange, defaultCells, shapeCode, shapeName } from "./frameworks.ts";
 import { unclosedPartKeys } from "./mg-outline.ts";
 import type { ReportSectionSpec } from "./section.ts";
@@ -119,14 +119,56 @@ test("tableBars: 같은 행·같은 단위끼리 가장 큰 값에 견줌, 수�
   assert.deepEqual(tableBars([]), []);
 });
 
+test("tableBars: 열 머리에 목표·계획·예상·전망이 든 열은 막대 없음, 남은 실적 값끼리만 견줌", () => {
+  const heads = ["구분", "’24년", "’25년", "’26년 목표(예상)"];
+  assert.deepEqual(tableBars(["10건", "20건", "40건"], heads), [50, 100, null], "목표 열은 null, 실적 둘만 견줌");
+  assert.deepEqual(tableBars(["10건", "40건"], ["구분", "’25년 실적", "’26년 목표"]), [null, null], "실적이 하나뿐이면 견줄 것이 없음");
+  assert.deepEqual(tableBars(["10건", "20건"], ["구분", "’25년", "’26년 계획"]), [null, null]);
+  assert.deepEqual(tableBars(["10건", "20건"]), [50, 100], "머리를 안 주면 예전 그대로");
+});
+
 // ---------------------------------------------------------------------------
 // 그리기
 
 test("기본 표 HTML은 예전 모양 그대로(class k-tbl, 막대·쉐브론 표지 없음)", () => {
   const h = blocksSampleHtml([blk("table", { items: ["구분", "’25", "’26"], cells: [cell("건수", ["10건", "20건"]), cell("비율", ["1%", "2%"])] })]);
-  assert.match(h, /<table class="k-tbl"><colgroup><col style="width:20\.00%"><col style="width:40\.00%"><col style="width:40\.00%"><\/colgroup><thead><tr><th scope="col">구분<\/th>/);
+  // 2026-10-29 열 폭이 글 길이를 따름(fit.ts tableColsMm): 짧은 행 머리는 최소 18mm(170mm 중 10.59%), 짧은 값 열 둘은 균등 — 예전 고정 22%(34mm 상한 20%)·나머지 균등에서 바뀜
+  assert.match(h, /<table class="k-tbl"><colgroup><col style="width:10\.59%"><col style="width:44\.71%"><col style="width:44\.71%"><\/colgroup><thead><tr><th scope="col">구분<\/th>/);
   assert.match(h, /<tr><th scope="row">건수<\/th><td>10건<\/td><td>20건<\/td><\/tr>/);
   assert.doesNotMatch(h, /k-barc|k-chev|k-res|k-lad/);
+});
+
+test("수치 표 열 폭(2026-10-29): 긴 행 머리·짧은 값이면 행 머리 열이 넓어져 한 줄에 들고, 그리기(colgroup)와 높이 어림이 같은 폭(tableColsMm)을 씀", () => {
+  const long = blk("table", { label: "평가", items: ["순위", "총점", "체감도", "발전성"], cells: [cell("1위 지역 시설 개방 현황 자료", ["85점", "32점", "34점"]), cell("2위 공공 체육시설 예약 정보", ["88점", "33점", "26점"])] });
+  const short = { ...long, cells: long.cells.map((c, i) => ({ ...c, head: `${i + 1}위` })) };
+  const w = blockWidth(long);
+  const cols = tableColsMm(long, w);
+  assert.equal(Math.round(cols.reduce((a, b) => a + b, 0) * 1000) / 1000, Math.round(w * 1000) / 1000, "열 폭 합 = 표 폭");
+  assert.ok(cols[0] > w * 0.22, `행 머리 열이 예전 22%보다 넓음(${cols[0].toFixed(1)}mm)`);
+  // 행 머리(tbody th 돋움 10.4pt)가 한 줄에 듦: 자연 폭 + 칸 여백 ≤ 열 폭
+  const px = 25.4 / 96;
+  for (const c of long.cells) assert.ok(textEm(c.head, true) * 10.4 * (25.4 / 72) + 8 * px <= cols[0]);
+  const vals = cols.slice(1);
+  assert.ok(Math.max(...vals) - Math.min(...vals) < 6, "값이 모두 짧으면 값 열은 균등에 가까움(머리 줄 글 차이만)");
+  // 그리기: colgroup 비율 = tableColsMm ÷ 표 폭
+  const h = blocksSampleHtml([long]);
+  const pct = [...(/<table class="k-tbl"><colgroup>(.*?)<\/colgroup>/.exec(h)?.[1] ?? "").matchAll(/width:([\d.]+)%/g)].map((m) => Number(m[1]));
+  assert.deepEqual(pct, cols.map((x) => Number(((x / w) * 100).toFixed(2))));
+  // 높이 어림: 넓힌 열로 셈 — 행 머리가 한 줄에 들므로 짧은 행 머리 표와 높이가 같음(예전 22% 열이면 두 줄로 접혀 더 높았음)
+  assert.equal(blockHeight(long, w).toFixed(3), blockHeight(short, w).toFixed(3));
+});
+
+test("수치 표 열 폭: 행 머리 상한(표 폭 TABLE_COL.headCap)·값 열 최소, 긴 값 열은 자연 폭에 비례해 넓음", () => {
+  const w = 150;
+  const huge = blk("table", { items: ["구분", "값"], cells: [cell("가".repeat(60), ["1건"])] });
+  assert.equal(tableColsMm(huge, w)[0], w * TABLE_COL.headCap, "아주 긴 행 머리는 상한에서 접힘");
+  const mixed = blk("table", { items: ["구분", "’25", "’26", "비고"], cells: [cell("건수", ["10건", "20건", "가나다라마바사아자차카타파하 가나다라마바사아자차카타파하"])] });
+  const [head, a, b, note] = tableColsMm(mixed, w);
+  assert.equal(head, TABLE_COL.headMin, "짧은 행 머리는 최소 폭");
+  assert.ok(note > a * 2 && Math.abs(a - b) < 0.01, "긴 글 열이 넓고, 짧은 값 열 둘은 같은 폭");
+  assert.ok(a >= TABLE_COL.valueMinChars * 0.936 * 10.6 * (25.4 / 72), "값 열 최소(한글 4자)는 지킴");
+  const bars = tableColsMm({ ...mixed, variant: "bars" }, w);
+  assert.ok(bars[1] >= a + TABLE_SHAPE_MM.bar, "막대 표는 값 열 최소에 막대 칸을 더함");
 });
 
 test("bars: 막대가 되는 칸만 k-barc(너비 %), 수치가 아닌 칸은 예전 칸 그대로", () => {

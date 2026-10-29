@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { approveReportOutline, previewReportOutline, regenerateMgPart, runReportOutline, saveReportOutline } from "../../app/(app)/reports/cards/outline-actions";
+import type { DraftPick } from "../../lib/reports/draft-sources.ts";
 import type { BlockEdit, Composition, CompositionEdit } from "../../lib/reports/composition.ts";
 import type { OutlineText } from "../../lib/reports/outline-text.ts";
 import type { OutlineView, ShapeRow } from "../../lib/reports/outline-view.ts";
@@ -425,7 +426,17 @@ function headOf(w: string): { tag: string; text: string } {
  * 읽는 차례(2026-09-28 가독성 개선): 결론(핵심 메시지) → 근거(평가 논점) → 짜임(이야기 틀·블록) → 추진성과 → 재료 → 확인할 것 → 할 일.
  * 좁은 패널이라 재료는 표가 아니라 카드 목록(예전 표는 칸이 좁아 글이 옆 칸으로 넘쳐 겹쳤음)
  */
-export function OutlinePanel(props: { uid: string; canWrite: boolean; ed: OutlineEdit; margin: boolean; /** 사람이 고친 초안 블록 순번(집필 전 확인) */ humanEdits: number[]; onShowMaterial: (id: string) => void }) {
+export function OutlinePanel(props: {
+  uid: string;
+  canWrite: boolean;
+  ed: OutlineEdit;
+  margin: boolean;
+  /** 사람이 고친 초안 블록 순번(집필 전 확인) */
+  humanEdits: number[];
+  onShowMaterial: (id: string) => void;
+  /** 지금 고른 근거(「승인하고 집필」이 구성안 근거에 더함 — 요청 칸 「구성안대로 집필」과 같음) */
+  pick?: DraftPick;
+}) {
   const { ed } = props;
   const data = ed.data!;
   const c = data.outline;
@@ -685,7 +696,7 @@ export function OutlinePanel(props: { uid: string; canWrite: boolean; ed: Outlin
                     {busy === "fit" ? "줄이는 중…" : "판면에 맞게 줄이기"}
                   </button>
                 )}
-                <button type="button" disabled={Boolean(busy)} onClick={() => ed.regenerate()} className={T.btn}>
+                <button type="button" disabled={Boolean(busy)} onClick={() => ed.regenerate()} className={T.btn} title="구성안을 만들 때 쓴 근거로 다시 만듭니다 — 그 뒤 고른 첨부는 넣지 않습니다(새 자료로 다시 짜려면 요청 칸 「구성안 다시 만들기」)">
                   {busy === "again" ? `다시 만드는 중…(${rangeText(draftExpect("again", ed.mg))})` : "메모 반영해 다시 만들기"}
                 </button>
                 <button
@@ -698,7 +709,7 @@ export function OutlinePanel(props: { uid: string; canWrite: boolean; ed: Outlin
                           const saved = await saveReportOutline(props.uid, { edit: ed.edit });
                           if (!saved.ok) return saved;
                         }
-                        return approveReportOutline(props.uid);
+                        return approveReportOutline(props.uid, { pick: props.pick });
                       }),
                     )
                   }

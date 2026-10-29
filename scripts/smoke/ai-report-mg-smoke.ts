@@ -15,24 +15,36 @@
 //   「구성안 만들기」(메모 없음) → 그 구성안 그대로 승인 → 집필(검증은 서버와 같은 인자 — 올해 실적 기준일 actuals.today까지), 같은 지표 다른 카드 구성안은 서버처럼 과제번호 순 12장까지.
 //   HTML 경로에 초안, <HTML>.json에 spec, <HTML>.outline.json에 구성안, <HTML>.meta.json에 앱이 저장할 경고·구성안 경고·판·시간·토큰·모델·요청 글 크기(ai-report-smoke.ts --app과 같은 모양)
 //  공통 지식 선별 방식 병행 비교(2026-10-26): --select-dir <폴더> — ai-report-smoke.ts와 같음(KNOWLEDGE_SELECT에 report가 있어야 켜짐, 선별되지 못하면 meta.json select.fellBack = true)
+//  자료 반영 고치기(2026-10-29 — 서버 approveReportOutline에 pick·request를 준 흐름): --add-file <이 컴퓨터의 파일>(여러 번 가능) [--request <담당자 요청>]
+//   = --files(저장된 첨부) + 이 파일을 kordoc으로 읽어 카드 전용 자료처럼 넣고, 저장된 구성안 그대로(구성안을 새로 만들지 않음) 다시 집필.
+//   구성안 근거(composition.sources)에 없던 첨부(저장된 첨부 중 구성안 뒤 올린 것 + 이 파일)는 요청 글 「구성안 뒤 추가된 자료」, --request는 「담당자 요청」.
+//   HTML 경로에 초안, <HTML>.json에 spec, <HTML>.meta.json에 경고·추가 자료·판·시간·토큰·요청 글 크기. DB에 쓰지 않고 파일도 올리지 않음. --dry면 「승인된 구성안」 끝의 두 절만 보임(AI 호출 없음)
+//  분량 채움 보강(2026-10-29): --app·--add-file은 서버 writeMgDraft와 같게 집필 검증 뒤 lib/reports/mg-fill.ts runMgFill → mgFillPatch(블록마다 callReportBlock edit·경영관리, 기한은 fixDeadlineMs)를 돌림 —
+//   HTML·<HTML>.json은 보강한 초안, <HTML>.meta.json fill에 보강 전후 높이·사유와 라운드별(rounds — 최대 2회) 고른 블록·사유(빈 칸·분량·반복·안 쓴 사실)·블록 몫·늘어난 mm·
+//   반복 수치 제거 결과(removed·kept)·성공/실패·시간·토큰(DB에 쓰지 않음). 반복 수치 남길 자리는 구성안 성과 배정(plan)을 봄. 호출 기록이 없어 호출 한도(startAiRequest)로는 멈추지 않음.
+//   --no-fill이면 보강 없이(1차 초안만 — 비교용, meta.fill.off)
 import { createClient } from "@supabase/supabase-js";
 import { loadCardBundle, setSelectionSource } from "../../lib/ai/context.ts";
 import { selectionFromDir } from "../lib/select-dir.ts";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { materialState, MATERIAL_COLS, type MaterialRow } from "../../lib/ai/material-text.ts";
 import { fileRelation } from "../../lib/reports/material-match.ts";
-import { aiProvider, callReportDraftMg, callReportOutlineMg, modelLabel, outlineSystem, reportSystem } from "../../lib/ai/run.ts";
+import { aiProvider, callReportBlock, callReportDraftMg, callReportOutlineMg, modelLabel, outlineSystem, reportSystem } from "../../lib/ai/run.ts";
+import { fixDeadlineMs } from "../../lib/ai/fix-policy.ts";
+import { type FillPlan, type FillTarget, type MgFillInput, type MgFillReasons, mgFillPatch, mgFillReasons, runMgFill } from "../../lib/reports/mg-fill.ts";
 import { isoDay } from "../../lib/format.ts";
 import { sharedTexts, listText, relevantRefs } from "../../lib/knowledge/bundle.ts";
 import { mgStoryHintsFor } from "../../lib/reports/story-hints-mg.ts";
-import { reportDraftPromptsMg, reportOutlinePromptsMg } from "../../lib/prompts/sets.ts";
+import { reportBlockPromptsMg, reportDraftPromptsMg, reportOutlinePromptsMg } from "../../lib/prompts/sets.ts";
 import { yearActuals } from "../../lib/reports/actuals.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { type MgDraftContext, mgCardAsOf, mgMarkers, mgMaterialsPrompt, mgPlanPrompt, mgVolumePrompt, verifyMgDraft } from "../../lib/reports/mg-draft.ts";
 import { sectionDocument } from "../../lib/reports/section-html.ts";
-import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
+import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgBundlePrompt, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOutcomePrompt, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
 import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../lib/reports/mg-queries.ts";
-import { draftEvidence, evidenceOf, sectionHints } from "../../lib/reports/section.ts";
+import { cleanLine, draftEvidence, evidenceOf, sectionHints } from "../../lib/reports/section.ts";
+import { cardBundles } from "../../lib/reports/mg-bundles.ts";
+import { ledgerOutcomeItems } from "../../lib/reports/mg-close.ts";
 import { planAdherence, readComposition } from "../../lib/reports/composition.ts";
 import { patternOf } from "../../lib/reports/framework-patterns.ts";
 import { type FrameChoice, type FrameInput, altContext, altSignature, cleanAltChoices, cleanFrameChoice, exampleOf, frameLabel, framePrompt, markDuplicateAlts, outlineFrameOf } from "../../lib/reports/framework-pick.ts";
@@ -43,15 +55,20 @@ import { readResult } from "../../lib/inspections/model.ts";
 import { MGMT_INDICATORS } from "../../lib/tracks/mgmt-units.ts";
 import { splitHeadPrompt } from "../../lib/reports/split-axes.ts";
 import { fillFrom } from "../../lib/prompts/template.ts";
+import { readAttachment } from "../../lib/ai/attachments.ts";
+import type { PlanRevise } from "../../lib/reports/draft-sources.ts";
+import { basename } from "node:path";
 
 // 값을 받는 옵션(--part·--story)의 값은 위치 인자에서 뺌
 const flagValue = (name: string) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined);
-const valued = new Set(["--part", "--story", "--json", "--pattern", "--example", "--request", "--alts", "--select-dir"].flatMap((f) => (process.argv.includes(f) ? [process.argv.indexOf(f) + 1] : [])));
+// --add-file은 여러 번 줄 수 있어 모든 자리의 값을 뺌
+const valued = new Set([...["--part", "--story", "--json", "--pattern", "--example", "--request", "--alts", "--select-dir"].flatMap((f) => (process.argv.includes(f) ? [process.argv.indexOf(f) + 1] : [])), ...process.argv.flatMap((a, i) => (a === "--add-file" ? [i + 1] : []))]);
+const addPaths = process.argv.flatMap((a, i) => (a === "--add-file" && process.argv[i + 1] ? [process.argv[i + 1]] : []));
 const args = process.argv.slice(2).filter((a, i) => !a.startsWith("--") && !valued.has(i + 2));
 const dry = process.argv.includes("--dry");
 // 앱 흐름 그대로(--app): 서버와 같은 첨부(--files)로 구성안 → 그대로 승인 → 집필(--draft)
 const app = process.argv.includes("--app");
-const withFiles = app || process.argv.includes("--files");
+const withFiles = app || addPaths.length > 0 || process.argv.includes("--files");
 const withDraft = app || process.argv.includes("--draft");
 // 선별 방식 실험 출처(--select-dir) — 묶음·평가 근거를 읽기 전에 꽂음
 const selectDir = flagValue("--select-dir");
@@ -86,10 +103,16 @@ if (withFiles) {
   }
   console.log(`첨부 ${files.length}건: ${files.map((f) => `[${f.kind === "card" ? "카드" : "보고서"}·${f.relation}] 「${f.name}」 ${f.text.length}자`).join(" · ") || "없음"} · 합계 ${files.reduce((n, f) => n + f.text.length, 0)}자`);
 }
+// --add-file: 이 컴퓨터의 파일을 앱이 올릴 때와 같은 읽기(kordoc — 이미지·스캔 PDF는 그림 설명)로 카드 전용 자료처럼 넣음(DB·버킷에 안 씀)
+for (const path of addPaths) {
+  const doc = await readAttachment(new Uint8Array(readFileSync(path)), basename(path), "card");
+  files.push({ id: `local:${doc.name}`, kind: "card", name: doc.name, text: doc.text, relation: "card", numberEvidence: true });
+  console.log(`추가 자료 「${doc.name}」 ${doc.text.length}자(이 컴퓨터 파일 — 카드 전용 자료처럼)`);
+}
 const [prior, lens, kb, pages] = await Promise.all([loadMgPrior(db, card.eval_unit_id), loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }), loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "report"), loadMgCardPages(db, card, year)]);
 const taskNo = String(card.data?.taskNo ?? "");
 const ctx: MgDraftContext = { unit: card.eval_unit_id, indicator: indicator.name, taskNo, markers: mgMarkers(card.data), prior, evals: defaultEvals(taskNo, prior), pages, cardAsOf: mgCardAsOf(card) };
-const actuals = yearActuals(card.data, reportKpi, isoDay());
+const actuals = yearActuals(card.data, reportKpi, isoDay(), { wide: true });
 const numbers = await loadMgNumberEvidence(db, card.eval_unit_id);
 const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
 const draft = reportDraftPromptsMg().prompts;
@@ -106,7 +129,9 @@ const siblings = (sibRows ?? [])
 const hints = sectionHints(card.data, [], files, lens, actuals, year, mgHintOptions(ctx));
 const { data: ins } = await db.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
 const inspection = followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
-const volumeClose = [mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, prior, indicator.name)].filter(Boolean).join("\n\n");
+// 서버 callReportOutlineMg와 같은 순서: 분량 목표 · 닫기 관례 · 절 성과 재료 · 수치 묶음 재료(2026-10-29)
+const outcomes = ledgerOutcomeItems(card.data, cleanLine, Infinity);
+const volumeClose = [mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, prior, indicator.name), mgOutcomePrompt(outline, outcomes), mgBundlePrompt(outline, cardBundles(card.data, actuals))].filter(Boolean).join("\n\n");
 const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files, hints, siblings });
 // 갈래 축 사전(서버 callReportOutlineMg와 같은 절 — 전체 구성안만, 2026-10-13)
 const splitHead = splitHeadPrompt(outline, "mg");
@@ -128,6 +153,58 @@ console.log(`도식 후보 ${hints.map((h) => h.kind).join("·") || "없음"} ·
 const evidenceArgs: [string, string] = withFiles ? [[ev.known, numbers].join("\n"), ev.quoteOnly] : [prior.map((s) => s.text).join("\n"), lens.map((x) => x.text).join("\n")];
 const close = mgCloseRule(prior);
 console.log(`분량 목표 ${ctx.pages ?? "없음"}쪽 · 닫기 관례 ${close.strict ? "엄격" : "기본"}(2025 절 ${close.total}개 중 「추진성과」 행 ${close.closed}개) · 구성안 요청의 분량·닫기 절 ${volumeClose.length}자`);
+// 분량 채움 보강(서버 writeMgDraft와 같은 runMgFill → mgFillPatch, 저장 안 함 — 2026-10-29). --no-fill이면 보강 없이 1차 초안 그대로(비교용)
+const noFill = process.argv.includes("--no-fill");
+// 함수 안에서는 위의 카드 null 확인이 이어지지 않아 값을 따로 둠
+const cardData = card.data;
+async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[], t0: number, firstMs: number, plan: FillPlan) {
+  const input: MgFillInput = { card: cardData, known: [ev.known, numbers].join("\n"), quoteOnly: ev.quoteOnly, year, today: actuals.today, closed: v.closed, plan };
+  const brief = (r: MgFillReasons) => ({ short: r.short, hollow: r.hollow.map((h) => h.index + 1), facts: r.facts, repeats: r.repeats.map((x) => ({ figure: x.figure, keep: x.keep + 1, others: x.others.map((i) => i + 1) })) });
+  const reasons = mgFillReasons(v.spec, cardData, plan);
+  const first = { spec: v.spec, warnings, unknownNumbers: v.unknownNumbers };
+  if (noFill) return { ...first, meta: { off: true, before: reasons.height, target: reasons.target, reasons: brief(reasons) } };
+  const t = Date.now();
+  const prompts = reportBlockPromptsMg().prompts;
+  const run = await runMgFill(v.spec, input, {
+    prompts,
+    t0,
+    firstMs,
+    deadlineMs: fixDeadlineMs(),
+    call: async (prompt) => {
+      const c = await callReportBlock({ kind: "edit", prompt, kb, mg: true });
+      return { ok: true, output: c.output, usage: c.usage, model: modelLabel(c) };
+    },
+  });
+  const ms = Date.now() - t;
+  if (!run) return { ...first, meta: { off: false, before: reasons.height, after: reasons.height, target: reasons.target, reasons: brief(reasons), rounds: [], ms, usage: null, promptVersion: prompts.version } };
+  const patch = mgFillPatch(first, run, input);
+  const label = (i: number) => v.spec.blocks?.[i]?.label || "전폭";
+  // 라운드별 블록·사유(빈 칸·분량·반복·안 쓴 사실)·늘어난 mm·반복 제거 결과·시간
+  const why = (x: FillTarget) => [x.boxes.length ? "빈 칸" : "", x.part ? "분량" : "", x.repeats.length ? "반복" : "", x.facts.length ? "안 쓴 사실" : ""].filter(Boolean);
+  const meta = {
+    off: false,
+    before: run.before,
+    after: run.after,
+    target: run.reasons.target,
+    reasons: brief(run.reasons),
+    rounds: run.rounds.map((r) => ({
+      round: r.round,
+      before: r.before,
+      after: r.after,
+      ms: r.ms,
+      reasons: brief(r.reasons),
+      targets: r.targets.map((x) => ({ block: x.index + 1, label: label(x.index), why: x.why, reasons: why(x), share: x.share, part: x.part ?? null, facts: x.facts, repeats: x.repeats.map((y) => `${y.figure} → ${y.at}`) })),
+      results: r.results.map((x) => ({ block: x.index + 1, label: label(x.index), ok: x.ok, share: x.share, mm: x.mm ?? null, repeats: x.repeats ?? null, reason: x.reason ?? null, ms: x.ms ?? null, usage: x.usage ?? null })),
+      skipped: r.skipped ? { ...r.skipped, blocks: r.skipped.blocks.map((i) => i + 1) } : null,
+    })),
+    ms,
+    usage: run.usage,
+    promptVersion: prompts.version,
+  };
+  const tally = meta.rounds.map((r) => `${r.round}회차 ${r.before} → ${r.after}mm·블록 ${r.results.filter((x) => x.ok).length}/${r.targets.length}개·${Math.round(r.ms / 1000)}초`).join(" / ");
+  console.log(`분량 보강 — ${run.before} → ${run.after}${run.reasons.target ? `/${run.reasons.target}` : ""}mm · ${tally} · 합 ${Math.round(ms / 1000)}초`);
+  return { ...patch, meta };
+}
 const partKey = flagValue("--part");
 if (partKey) {
   // 절별 다시 짜기(서버 regenerateMgPart·runOutlineAlternatives와 같은 흐름 — 저장된 구성안을 읽기만). 짜임은 서버와 같은 검증
@@ -162,6 +239,7 @@ if (partKey) {
     // 요청 글 크기(AI 호출 없음): callReportOutlineMg part와 같은 조각 — 자료 블록·도식 후보·형제 짜임·점검·이 절만 다시 짜기(+ 고른 짜임)·닫기 관례·요청 글
     const head = [request, mgDiagramPrompt(outline, hints), mgSiblingsPrompt(outline, siblings), outlineInspectionPrompt(outline, inspection)].filter(Boolean).join("\n\n").length;
     const tail = mgClosePrompt(outline, prior, indicator.name).length + (memo ? memo.length + 80 : 0);
+    console.log(`--- 절 성과 재료(이 절만 다시 짜기) ---\n${mgOutcomePrompt(outline, redos[0]?.redo.outcomes ?? outcomes) || "(없음)"}`);
     for (const [k, x] of redos.entries()) {
       const partText = mgPartPrompt(outline, x.redo);
       const fp = x.redo.frame ? framePrompt(outline, x.redo.frame, true) : "";
@@ -192,8 +270,54 @@ if (partKey) {
   console.log(JSON.stringify({ sec: Math.round((Date.now() - t) / 1000), alts: res.map((r, i) => ({ no: i + 1, ...r, sig: undefined, same: same[i] === null ? null : same[i]! + 1 })) }, null, 1));
   process.exit(0);
 }
+if (addPaths.length) {
+  // 자료 반영 고치기: 저장된 구성안 그대로 + 구성안 뒤 추가된 자료·담당자 요청(서버 approveReportOutline → writeMgDraft revise)
+  const { data: row } = await db.from("card_report_drafts").select("outline").eq("card_id", card.id).eq("year", year).maybeSingle();
+  const plan = readComposition(row?.outline);
+  if (!plan?.mg) throw new Error("저장된 경영관리 구성안이 없음 — 앱에서 구성안을 만든 뒤 시험해 주세요");
+  const had = new Set([...(plan.sources?.card ?? []).map((x) => `card:${x}`), ...(plan.sources?.report ?? []).map((x) => `report:${x}`)]);
+  const revise: PlanRevise = { added: files.filter((f) => !had.has(`${f.kind}:${f.id}`)).map((f) => f.name), request: (flagValue("--request") ?? "").trim().slice(0, 500) };
+  const evals = [...new Set(plan.mg.parts.map((p) => p.evalNo))];
+  const draftAsk = `${mgMaterialsPrompt(draft, card.data, ctx, year, evals.length ? evals : ctx.evals, files.map((f) => ({ name: f.name, text: f.text })), lens, actuals)}\n\n${mgPlanPrompt(draft, plan, ctx, revise)}`;
+  console.log(`자료 반영 고치기 — 구성안 절 ${plan.mg.parts.length}개·블록 ${plan.blocks.length}개 · 구성안 뒤 추가된 자료 ${revise.added.length}건(${revise.added.join(" · ") || "없음"}) · 담당자 요청 ${revise.request ? `${revise.request.length}자` : "없음"} · 집필 요청 글 ${draftAsk.length}자 · ${draft.version}`);
+  if (dry) {
+    const plain = mgPlanPrompt(draft, plan, ctx);
+    console.log(`--- 「승인된 구성안」 끝에 붙는 글 ---\n${mgPlanPrompt(draft, plan, ctx, revise).slice(plain.length).trim() || "(없음 — 추가 자료·요청이 없음)"}`);
+    process.exit(0);
+  }
+  const t1 = Date.now();
+  const dcall = await callReportDraftMg({ card: card.data, ctx, year, files, lens, actuals, kb, plan, revise });
+  const draftMs = Date.now() - t1;
+  // 서버 writeMgDraft와 같은 검증 인자(숫자 근거 = 첨부(추가 자료 포함)·실사 답변·계량 실적 입력 + 그 지표 2025 보고서·핵심공통항목)
+  const v = verifyMgDraft(dcall.output, card.data, plan, ctx, [ev.known, numbers].join("\n"), ev.quoteOnly, year, actuals.today);
+  const out = args[1] ?? `/tmp/mg-revise-${id.replace(/\//g, "_")}.html`;
+  const adherence = planAdherence(plan, v.spec.blocks ?? []);
+  const draftWarnings = [...v.warnings, ...(skipped.length ? [`첨부: AI가 읽지 못해 빼고 썼습니다 — ${skipped.join(", ")}`] : [])];
+  if (!adherence.same) draftWarnings.push(`구성안: 승인한 짜임 ${adherence.total}블록 중 ${adherence.matched}블록만 같은 순서로 썼습니다 — 다시 만들거나 구성안을 고쳐 주세요.`);
+  // 서버와 같게 1차 초안 뒤 분량 채움 보강(저장 안 함 — 파일은 보강한 초안)
+  const fin = await fillStep(v, draftWarnings, t1, draftMs, plan);
+  writeFileSync(out, sectionDocument(fin.spec, fin.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: modelLabel(dcall) }));
+  writeFileSync(`${out}.json`, JSON.stringify(fin.spec, null, 1));
+  const meta = {
+    revise,
+    files: files.map((f) => ({ kind: f.kind, name: f.name, chars: f.text.length, relation: f.relation, local: f.id.startsWith("local:") })),
+    warnings: fin.warnings,
+    unknownNumbers: fin.unknownNumbers,
+    adherence,
+    promptVersion: dcall.promptVersion,
+    fill: fin.meta,
+    timings: { draftMs, fillMs: fin.meta.off ? null : fin.meta.ms },
+    usage: { draft: dcall.usage, fill: fin.meta.off ? null : fin.meta.usage },
+    request: { draft: requestSize(reportSystem(draft), draftAsk) },
+    model: modelLabel(dcall),
+    provider: aiProvider(),
+  };
+  writeFileSync(`${out}.meta.json`, JSON.stringify(meta, null, 1));
+  console.log(JSON.stringify({ draftSec: Math.round(draftMs / 1000), usage: dcall.usage, added: revise.added, kinds: (fin.spec.blocks ?? []).map((b, i) => `${fin.spec.mg?.at[i]} ${b.label || "전폭"}:${b.kind}`), adherence: `${adherence.matched}/${adherence.total}`, unknownNumbers: fin.unknownNumbers, warnings: fin.warnings, html: out }, null, 1));
+  process.exit(0);
+}
 if (dry) {
-  console.log(`--- 구성안 요청: 분량 목표·닫기 관례 ---\n${volumeClose}`);
+  console.log(`--- 구성안 요청: 분량 목표·닫기 관례·절 성과 재료 ---\n${volumeClose}`);
   // 저장된 구성안이 있으면 집필 요청의 「승인된 구성안」 글(닫기 관례·분량 목표·블록 글 한도)도 — AI 호출 없음
   const { data: row } = await db.from("card_report_drafts").select("outline").eq("card_id", card.id).eq("year", year).maybeSingle();
   const saved = readComposition(row?.outline);
@@ -208,7 +332,7 @@ const t0 = Date.now();
 const call = await callReportOutlineMg({ card: card.data, ctx, year, files, lens, actuals, kb, siblings, hints, inspection });
 const outlineMs = Date.now() - t0;
 const { hayKey, known } = evidenceOf(card.data, ...evidenceArgs);
-const { composition, warnings } = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior });
+const { composition, warnings } = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
 // 서버 runReportOutlineMg가 저장하는 구성안 경고와 같은 목록
 const outlineWarnings = [...warnings, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition)];
 console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}`), materials: composition.materials.length, warnings: outlineWarnings }, null, 1));
@@ -221,27 +345,29 @@ if (withDraft) {
   // --app은 서버 writeMgDraft와 같은 검증 인자(올해 실적 기준일 actuals.today까지)
   const v = verifyMgDraft(dcall.output, card.data, plan, ctx, [ev.known, numbers].join("\n"), ev.quoteOnly, year, app ? actuals.today : undefined);
   const out = args[1] ?? `/tmp/mg-draft-${id.replace(/\//g, "_")}.html`;
-  writeFileSync(out, sectionDocument(v.spec, v.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: modelLabel(dcall) }));
+  // 앱이 저장할 경고 — 서버 writeMgDraft와 같은 순서·문구(검증 경고 + 첨부 읽기 실패 + 구성안 지킴), --app은 그 뒤 분량 채움 보강까지(서버와 같음 — 저장 안 함)
+  const adherence = planAdherence(plan, v.spec.blocks ?? []);
+  const draftWarnings = [...v.warnings, ...(skipped.length ? [`첨부: AI가 읽지 못해 빼고 썼습니다 — ${skipped.join(", ")}`] : [])];
+  if (!adherence.same) draftWarnings.push(`구성안: 승인한 짜임 ${adherence.total}블록 중 ${adherence.matched}블록만 같은 순서로 썼습니다 — 다시 만들거나 구성안을 고쳐 주세요.`);
+  const fin = app ? await fillStep(v, draftWarnings, t1, draftMs, plan) : { spec: v.spec, warnings: v.warnings, unknownNumbers: v.unknownNumbers, meta: null };
+  writeFileSync(out, sectionDocument(fin.spec, fin.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: modelLabel(dcall) }));
   const jsonOut = flagValue("--json");
-  if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ card: id, year, files: files.map((f) => ({ kind: f.kind, name: f.name, chars: f.text.length, relation: f.relation })), composition, spec: v.spec, unknownNumbers: v.unknownNumbers, warnings: v.warnings }, null, 1));
-  if (app) {
-    writeFileSync(`${out}.json`, JSON.stringify(v.spec, null, 1));
+  if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ card: id, year, files: files.map((f) => ({ kind: f.kind, name: f.name, chars: f.text.length, relation: f.relation })), composition, spec: fin.spec, unknownNumbers: fin.unknownNumbers, warnings: fin.warnings }, null, 1));
+  if (app && fin.meta) {
+    writeFileSync(`${out}.json`, JSON.stringify(fin.spec, null, 1));
     writeFileSync(`${out}.outline.json`, JSON.stringify(plan, null, 1));
-    // 앱이 저장할 경고 — 서버 writeMgDraft와 같은 순서·문구(검증 경고 + 첨부 읽기 실패 + 구성안 지킴)
-    const adherence = planAdherence(plan, v.spec.blocks ?? []);
-    const draftWarnings = [...v.warnings, ...(skipped.length ? [`첨부: AI가 읽지 못해 빼고 썼습니다 — ${skipped.join(", ")}`] : [])];
-    if (!adherence.same) draftWarnings.push(`구성안: 승인한 짜임 ${adherence.total}블록 중 ${adherence.matched}블록만 같은 순서로 썼습니다 — 다시 만들거나 구성안을 고쳐 주세요.`);
     const evals = [...new Set((plan.mg?.parts ?? []).map((p) => p.evalNo))];
     const draftAsk = `${mgMaterialsPrompt(draft, card.data, ctx, year, evals.length ? evals : ctx.evals, files.map((f) => ({ name: f.name, text: f.text })), lens, actuals)}\n\n${mgPlanPrompt(draft, plan, ctx)}`;
     const meta = {
-      warnings: draftWarnings,
-      unknownNumbers: v.unknownNumbers,
+      warnings: fin.warnings,
+      unknownNumbers: fin.unknownNumbers,
       outlineWarnings,
-      story: v.spec.story,
+      story: fin.spec.story,
       promptVersion: dcall.promptVersion,
       outlineVersion: call.promptVersion,
-      timings: { outlineMs, draftMs, firstMs: draftMs, fixMs: null, fitPasses: 0, fixSkipped: null },
-      usage: { outline: call.usage, draft: dcall.usage },
+      fill: fin.meta,
+      timings: { outlineMs, draftMs, firstMs: draftMs, fixMs: null, fitPasses: 0, fixSkipped: null, fillMs: fin.meta.off ? null : fin.meta.ms },
+      usage: { outline: call.usage, draft: dcall.usage, fill: fin.meta.off ? null : fin.meta.usage },
       // 요청 글 크기(글자) — 구성안 요청 글은 callReportOutlineMg와 같은 조각(자료 블록 + 도식 후보·형제·점검·전체 구성안 요청·갈래 축·틀 후보·분량·닫기)
       request: { outline: requestSize(outlineSystem(outline), [request, mgDiagramPrompt(outline, hints), mgSiblingsPrompt(outline, siblings), outlineInspectionPrompt(outline, inspection), fillFrom(outline, "request", "task", { maxParts: MG_LIMITS.parts, maxBlocks: MG_LIMITS.blocks }), splitHead, storyHints, mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, prior, indicator.name)].filter(Boolean).join("\n\n")), draft: requestSize(reportSystem(draft), draftAsk) },
       select: selectDir ? { dir: selectDir, fellBack } : null,
@@ -251,5 +377,5 @@ if (withDraft) {
     };
     writeFileSync(`${out}.meta.json`, JSON.stringify(meta, null, 1));
   }
-  console.log(JSON.stringify({ draftSec: Math.round(draftMs / 1000), usage: dcall.usage, kinds: (v.spec.blocks ?? []).map((b, i) => `${v.spec.mg?.at[i]} ${b.label || "전폭"}:${b.kind}`), strategy: (v.spec.blocks ?? []).filter((b) => b.kind === "strategy" || b.kind === "pdca").map((b) => ({ kind: b.kind, text: b.text, items: b.items, cells: b.cells.map((c) => c.head) })), unknownNumbers: v.unknownNumbers, warnings: v.warnings, html: out }, null, 1));
+  console.log(JSON.stringify({ draftSec: Math.round(draftMs / 1000), usage: dcall.usage, kinds: (fin.spec.blocks ?? []).map((b, i) => `${fin.spec.mg?.at[i]} ${b.label || "전폭"}:${b.kind}`), strategy: (fin.spec.blocks ?? []).filter((b) => b.kind === "strategy" || b.kind === "pdca").map((b) => ({ kind: b.kind, text: b.text, items: b.items, cells: b.cells.map((c) => c.head) })), unknownNumbers: fin.unknownNumbers, warnings: fin.warnings, html: out }, null, 1));
 }

@@ -4,6 +4,7 @@ import { ChevronUp, LayoutTemplate, LoaderCircle, MessageCircleQuestionMark, Ref
 import { useRouter } from "next/navigation";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type DraftEditItem, listDraftEdits, runDraftBlockEdit, undoDraftBlockEdit } from "../../app/(app)/reports/cards/edit-actions";
+import type { DraftPick } from "../../lib/reports/draft-sources.ts";
 import { fmtDateTime } from "../../lib/format.ts";
 import type { ResultBox } from "../../lib/reports/block-edit.ts";
 import { type Block, blockTexts } from "../../lib/reports/blocks.ts";
@@ -165,8 +166,14 @@ export function useDraftReview(p: {
   paper: RefObject<HTMLDivElement | null>;
   /** 도구줄을 놓는 상자(position: relative) */
   content: RefObject<HTMLDivElement | null>;
+  /** 지금 고른 근거(서버가 초안 근거에 더함 — 초안 뒤 올린 첨부, 뺀 자료는 뺌). 보낼 때의 값을 씀 */
+  pick?: DraftPick;
 }) {
   const { uid } = p;
+  const pickRef = useRef(p.pick);
+  useEffect(() => {
+    pickRef.current = p.pick;
+  });
   const router = useRouter();
   const [notes, setNotes] = useState<DraftNote[]>([]);
   // 불러온 뒤에만 저장(개발 모드의 효과 두 번 실행에서 빈 목록이 저장소를 덮지 않게 — 상태로 둠)
@@ -216,7 +223,7 @@ export function useDraftReview(p: {
       sending.current = true;
       patch(n.id, { status: "sending" });
       try {
-        const r = await runDraftBlockEdit(uid, { blockIndex: n.blockIndex, kind: n.kind, request: n.request || DEFAULT_EDIT, quote: n.quote, version });
+        const r = await runDraftBlockEdit(uid, { blockIndex: n.blockIndex, kind: n.kind, request: n.request || DEFAULT_EDIT, quote: n.quote, version, pick: pickRef.current });
         if (r.ok && r.kind === "edit") {
           versionRef.current = r.version;
           patch(n.id, { status: r.changed ? "applied" : "unchanged", reply: r.reply, changed: r.changed, message: r.message, editId: r.editId });

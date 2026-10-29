@@ -5,9 +5,12 @@ import { test } from "node:test";
 import { reportDraftPromptsMg, reportOutlinePromptsMg } from "../prompts/sets.ts";
 import { fillFrom } from "../prompts/template.ts";
 import type { BlockOutput } from "./blocks.ts";
-import type { Composition } from "./composition.ts";
+import { type Composition, limitText } from "./composition.ts";
 import { type MgDraftContext, MG_VOLUME_BAND, mgCardAsOf, mgFindingParts, mgMarkers, mgMaterialsPrompt, mgPlanPrompt, mgVolumePrompt, mgVolumeWarning, recheckMgSection, verifyMgDraft } from "./mg-draft.ts";
 import { mgSpecHeight } from "./business-layout.ts";
+import { MG_BULLET_CHARS, blockCosts, mgBulletLines, tableShapeCosts } from "./fit.ts";
+import { quoteFoundIn, sourceKey } from "./section.ts";
+import { MGMT_TRACK } from "../tracks/index.ts";
 import type { MgPriorSection } from "./mg-outline.ts";
 import { sectionHtml } from "./section-html.ts";
 
@@ -232,7 +235,7 @@ test("승인된 구성안 글(D1·D2): 닫기 관례 한 줄·블록마다 글 �
   const loose = mgPlanPrompt(p, plan, ctx);
   assert.match(loose, /닫기 관례: 이 지표\(「조직 및 인적자원관리」\)의 2025 보고서는 절마다 닫는 모양이 다릅니다/);
   assert.match(loose, /1\. \[추진배경\] bullets — 왜 · 칸 1개\(늘리지 않음\) · 글 한도 불릿 1줄 이하 · 한 줄 약 \d+자/);
-  assert.match(loose, /2\. \[추진성과\] stats — 결과 · 칸 2개\(늘리지 않음\) · 글 한도 칸마다 한 줄 약 \d+자/);
+  assert.match(loose, /2\. \[추진성과\] stats — 결과 · 칸 2개\(늘리지 않음\) · 글 한도 칸마다 불릿 하나 약 \d+자\(한 줄 약 \d+자 × \d줄\)/);
   assert.match(loose, /칸 수·불릿 줄 수를 늘리지 않고/);
   assert.doesNotMatch(loose, /분량 목표/, "배정이 없으면 분량 목표 없음");
   const strict = mgPlanPrompt(p, plan, { ...strictCtx, pages: 1.5 });
@@ -316,9 +319,11 @@ test("집필 점검 보강: 표의 빈 값 칸·수치 띠의 빈 큰 수치, �
   const withFig = verifyMgDraft({ caption: "", parts: [{ key: "3.1.가", title: "t", blocks: [{ ...cardsA, figures: [{ kind: "photo", desc: "교육 현장", pos: "right", size: "S" }] }, statsOut()] }] }, card, plan, ctx, "", "", 2026);
   assert.ok(!withFig.warnings.some((w) => w.startsWith("그림 자리:")), "그림 자리가 하나라도 있으면 경고 없음");
   assert.ok(!withFig.warnings.some((w) => w.startsWith("빈 칸:") || w.startsWith("도식:")));
-  // 빈 큰 수치
-  const blankStat = verifyMgDraft({ caption: "", parts: [{ key: "3.1.가", title: "t", blocks: [blk({ kind: "stats", label: "추진성과", cells: [{ head: "", tag: "", bullets: ["교육 인원"], note: "" }, { head: "85회", tag: "", bullets: ["교육 운영"], note: "" }, { head: "120명", tag: "", bullets: ["교육 인원"], note: "" }] })] }] }, card, plan, ctx, "", "", 2026);
-  assert.ok(blankStat.warnings.some((w) => w.startsWith("빈 칸: [추진성과] 수치 띠의 큰 수치 1칸이 비었습니다")));
+  // 성과 문장도 수치도 없는 칸만 빈 칸(문장만 있고 head가 빈 칸은 정상 — 프롬프트: 수치가 아닌 성과는 head를 비움)
+  const statsCells = (first: { head: string; bullets: string[]; note?: string }) => [{ ...first, tag: "", note: first.note ?? "" }, { head: "85회", tag: "", bullets: ["교육 운영"], note: "" }, { head: "120명", tag: "", bullets: ["교육 인원"], note: "" }];
+  const run = (first: { head: string; bullets: string[]; note?: string }) => verifyMgDraft({ caption: "", parts: [{ key: "3.1.가", title: "t", blocks: [blk({ kind: "stats", label: "추진성과", cells: statsCells(first) })] }] }, card, plan, ctx, "", "", 2026);
+  assert.ok(run({ head: "", bullets: [], note: "’26년" }).warnings.some((w) => w.startsWith("빈 칸: [추진성과] 수치 띠의 큰 수치 1칸이 비었습니다")), "문장도 수치도 없으면 경고");
+  assert.ok(!run({ head: "", bullets: ["교육 인원 확대"] }).warnings.some((w) => w.startsWith("빈 칸:")), "문장만 있고 head가 비어도 경고 없음");
 });
 
 test("카드 시점(mgCardAsOf): 원본 판·그 뒤 원장 수정 — 요청 「카드」 머리에 들어가고, 작성일은 카드 시점이 아니라고 밝힘", () => {
@@ -348,8 +353,9 @@ test("실적 2개 미만 막대(2026-10-14): 실적 하나 + 목표 하나는 �
 test("빈 상자(2026-10-15 후속 5): 집필 요청 글 한도에 나란한 칸 줄 수 맞춤(상한 없음), 집필·다시 점검은 「칸 채우기:」 경고만", () => {
   const cardsPlan: Composition = { ...plan, blocks: [...plan.blocks.slice(0, 2), { kind: "cards", variant: "plain", label: "추진내용", purpose: "무엇", cells: 3, materials: ["m1"], figures: [], at: "4.1.가" }] };
   const text = mgPlanPrompt(reportDraftPromptsMg().prompts, cardsPlan, ctx);
-  assert.match(text, /\[추진내용\] cards:plain — 무엇 · 칸 3개\(늘리지 않음\) · 글 한도 칸마다 한 줄 약 \d+자 · 나란한 칸은 줄 수를 같게\(±1줄\)/);
-  assert.match(text, /\[추진성과\] stats — 결과 · 칸 2개\(늘리지 않음\) · 글 한도 칸마다 한 줄 약 \d+자 ·/, "수치 띠는 줄 수 맞춤 없음");
+  // 2026-10-29 칸 글 한도 = 2025 경영관리 불릿 기준: 나란한 칸은 줄 수가 아니라 불릿 수·칸 글자 수를 맞춤
+  assert.match(text, /\[추진내용\] cards:plain — 무엇 · 칸 3개\(늘리지 않음\) · 글 한도 칸마다 불릿 하나 약 \d+자\(한 줄 약 \d+자 × \d줄\) · 나란한 칸은 불릿 수와 칸 글자 수를 같게/);
+  assert.match(text, /\[추진성과\] stats — 결과 · 칸 2개\(늘리지 않음\) · 글 한도 칸마다 불릿 하나 약 \d+자\(한 줄 약 \d+자 × \d줄\) ·/, "수치 띠는 칸 맞춤 없음");
   assert.doesNotMatch(text, /칸마다 최대/, "경영관리는 줄 수 상한을 두지 않음");
   const long = "직무교육 체계 개편 결과를 부서별로 공유하여 교육 과정을 함께 정비";
   const cards = blk({ kind: "cards", label: "추진내용", variant: "plain", cells: [{ head: "가", tag: "", bullets: [long, long, long], note: "" }, { head: "나", tag: "", bullets: [long, long, long], note: "" }, { head: "다", tag: "", bullets: ["짧은 글"], note: "" }] });
@@ -365,4 +371,53 @@ test("경영관리 수치 띠는 올해 실적 칸이 모자라도 빼지 않음
   assert.ok(v.spec.blocks!.some((b) => b.kind === "stats"), "수치 띠가 남음");
   assert.ok(!v.warnings.some((w) => w.startsWith("수치 띠:")), v.warnings.join(" / "));
   assert.ok(!v.warnings.some((w) => w.includes("수치 띠를 빼고 다른 도식")), "경영관리 ② 문구는 예전 그대로");
+});
+
+test("다시 점검: 근거 숫자 두 개로 계산한 값은 인정, 원값 없는 퍼센트는 없는 숫자", () => {
+  const v = verifyMgDraft({ caption: "", parts: [{ key: "3.1.가", title: "t", blocks: [blk({ label: "추진배경", items: ["직무교육 체계 개편"] })] }] }, card, plan, ctx, "", "", 2026);
+  const prior = ctx.prior.map((s) => s.text).join("\n");
+  const withItem = (item: string) => ({ ...v.spec, blocks: [{ ...v.spec.blocks![0], items: [item] }] });
+  const extra = `${prior}\n교육 개설 과정 410건, 올해 과정 492건`;
+  assert.deepEqual(recheckMgSection(withItem("교육 과정 20% 확대(’25년 410건 → ’26년 492건)"), card, extra, 2026).unknownNumbers, []);
+  assert.deepEqual(recheckMgSection(withItem("교육 과정 30% 확대"), card, extra, 2026).unknownNumbers, ["30%"]);
+});
+
+test("칸 글 한도 = 2025 경영관리 불릿 기준(2026-10-29): 「칸마다 불릿 하나 약 T자(한 줄 약 P자 × L줄)」, L = max(1, round(23 ÷ P)) — 주요사업 높이 표는 그대로", () => {
+  // 2025 경영관리 보고서 불릿 평균 글자 수 중앙값 23.05자(scripts/eval/mg-fill-baseline.ts) → 상수 23
+  assert.equal(MG_BULLET_CHARS, 23);
+  assert.equal(MGMT_TRACK.reportBulletChars, MG_BULLET_CHARS, "트랙 스펙 값");
+  assert.equal(mgBulletLines(8), 3, "한 줄 8자(4칸 격자) → 3줄");
+  assert.equal(mgBulletLines(12), 2);
+  assert.equal(mgBulletLines(41), 1, "넓은 칸은 1줄 아래로 내려가지 않음");
+  const withBlock = (b: Composition["blocks"][number]): Composition => ({ ...plan, blocks: [...plan.blocks.slice(0, 2), b] });
+  const pdca = mgPlanPrompt(reportDraftPromptsMg().prompts, withBlock({ kind: "pdca", variant: "", label: "추진내용", purpose: "무엇", cells: 4, materials: ["m1"], figures: [], at: "4.1.가" }), ctx);
+  assert.match(pdca, /\[추진내용\] pdca — 무엇 · 칸 4개\(늘리지 않음\) · 글 한도 칸마다 불릿 하나 약 24자\(한 줄 약 8자 × 3줄\) · 나란한 칸은 불릿 수와 칸 글자 수를 같게 ·/);
+  assert.match(pdca, /\[추진성과\] stats — 결과 · 칸 2개\(늘리지 않음\) · 글 한도 칸마다 불릿 하나 약 41자\(한 줄 약 41자 × 1줄\) ·/);
+  assert.match(pdca, /\[추진배경\] bullets — 왜 · 칸 1개\(늘리지 않음\) · 글 한도 불릿 1줄 이하 · 한 줄 약 41자 ·/, "불릿 블록은 그대로");
+  // 인용(원문 길이)·막대 표(값 칸은 수치만)는 예전 글
+  const bars = mgPlanPrompt(reportDraftPromptsMg().prompts, withBlock({ kind: "table", variant: "bars", label: "추진실적", purpose: "무엇", cells: 3, materials: ["m1"], figures: [], at: "4.1.가" }), ctx);
+  assert.match(bars, /\[추진실적\] table:bars — 무엇 · 칸 3개\(늘리지 않음\) · 글 한도 칸마다 한 줄 약 \d+자 ·/);
+  // 주요사업 글 한도(composition.ts limitText)는 불릿 줄 수(bullet)가 없는 한도면 예전 글 그대로(불릿 기준은 composition.test.ts — 2025 주요사업 28자)
+  assert.equal(limitText({ lines: 2, perLine: 8, unit: "cell", side: true }), "칸마다 최대 2줄 · 한 줄 약 8자 · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 1줄 이상)");
+  assert.equal(limitText({ lines: 3, perLine: 41, unit: "line" }), "불릿 3줄 이하 · 한 줄 약 41자");
+  // 높이 표: 주요사업(blockCosts(false))은 예전 머리 글, 경영관리(mg)는 새 기준을 말하고 좁은 칸 도식이 더 높게 어림됨
+  assert.ok(blockCosts(false)[0].startsWith("(칸 글을 채운 보통 모양 기준 — 칸 글이 길면 더 높음)"));
+  assert.deepEqual(blockCosts(false), blockCosts(false, false));
+  const mgCosts = blockCosts(true, true);
+  assert.ok(mgCosts[0].startsWith("(칸 불릿 하나가 「글 한도」의 불릿 글자 수(약 23자 — 좁은 칸은 2~3줄)를 채운 모양 기준"), mgCosts[0]);
+  const pdcaMm = (lines: string[]) => Number(/pdca (\d+)mm/.exec(lines.join("\n"))?.[1]);
+  assert.ok(pdcaMm(mgCosts) > pdcaMm(blockCosts()), "4칸 PDCA(한 줄 8자)는 불릿 3줄로 어림해 더 높음");
+  assert.equal(tableShapeCosts(), tableShapeCosts(false));
+  assert.match(mgVolumePrompt(reportOutlinePromptsMg().prompts, 1), /칸 불릿 하나가 「글 한도」의 불릿 글자 수/);
+});
+
+test("인용·말풍선 대조 열쇠(2026-10-29): 표 HTML 원문을 편 글(칸 사이 「 | 」·칸 안 줄바꿈)로 인용한 말풍선은 「원문 확인」으로 남음 — 예전 열쇠(HTML 그대로)로는 못 찾던 것", () => {
+  const extra = "<table><tr><td>교육생 의견</td><td>현장 실습이 많아져<br>업무에 바로 썼습니다</td></tr></table>";
+  const quote = "현장 실습이 많아져 업무에 바로 썼습니다";
+  assert.equal(quoteFoundIn(sourceKey(extra), quote), false, "HTML 그대로면 칸 안 <br>의 태그 이름이 끼어 못 찾음");
+  const out = { caption: "", parts: [{ key: "3.1.가", title: "t", blocks: [blk({ label: "추진배경", items: ["직무교육 체계 개편"] }), blk({ kind: "voices", label: "교육생", cells: [{ head: "교육생", tag: "", bullets: [quote], note: "" }] })] }] };
+  const v = verifyMgDraft(out, card, plan, ctx, extra, "", 2026);
+  assert.ok(v.spec.blocks?.some((b) => b.kind === "voices" && b.cells[0]?.bullets[0] === quote), "편 글로 대조해 말풍선을 남김");
+  const none = verifyMgDraft(out, card, plan, ctx, "", "", 2026);
+  assert.ok(!none.spec.blocks?.some((b) => b.kind === "voices"), "근거에 없으면 예전처럼 뺌");
 });

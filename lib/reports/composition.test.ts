@@ -38,6 +38,7 @@ import {
 import { canonicalBlock } from "./fit.ts";
 import { cellRange, storyLabel } from "./frameworks.ts";
 import { evidenceOf } from "./section.ts";
+import { BIZ_TRACK } from "../tracks/index.ts";
 import { reportDraftPrompts } from "../prompts/sets.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 
@@ -529,6 +530,18 @@ test("planAdherence: 같은 순서(모양까지)면 same=true, 블록 하나 빠
   assert.equal(withOneMissing.same, false);
 });
 
+test("planAdherence: 앱이 뺀 블록(droppedByApp)은 구성안에서도 덜어내고, AI가 실제로 뺀 블록은 그대로 모자람", () => {
+  const c = baseComposition({
+    blocks: [planBlock({ kind: "bullets" }), planBlock({ kind: "chart" }), planBlock({ kind: "steps", variant: "row" })],
+  });
+  const all = planBlocks(c);
+  const withoutChart = all.filter((b) => b.kind !== "chart");
+  assert.equal(planAdherence(c, withoutChart).same, false, "알려 주지 않으면 모자람");
+  assert.deepEqual(planAdherence(c, withoutChart, [{ kind: "chart", variant: "" }]), { matched: 2, total: 2, same: true }, "앱이 뺀 chart는 셈에서 뺌");
+  const withoutSteps = all.filter((b) => b.kind !== "steps");
+  assert.deepEqual(planAdherence(c, withoutSteps, [{ kind: "chart", variant: "" }]), { matched: 1, total: 2, same: false }, "앱이 chart를 뺐어도 AI가 steps를 뺀 것은 경고 대상");
+});
+
 test("planAdherence: 모양이 다르면(같은 종류라도) 안 맞은 것으로 셈", () => {
   const c = baseComposition({ blocks: [planBlock({ kind: "compare", variant: "table" })] });
   const different: Block[] = [canonicalBlock("compare", "panels", 2, "")];
@@ -793,6 +806,30 @@ test("글 한도(2026-10-15 후속 5): 나란한 칸(상자 도식 2칸 이상·
   assert.equal(limits[0]?.side, undefined);
   assert.equal(limits[1]?.side, true);
   assert.ok(planPrompt(reportDraftPrompts().prompts, c, 1).includes(limitText(limits[1])));
+});
+
+test("칸 글 한도 = 2025 주요사업 불릿 기준(2026-10-29): 「칸마다 최대 N줄 · 불릿 하나 약 T자(한 줄 P자 × L줄)」, L = min(N, max(1, round(28 ÷ P))) — 불릿 블록·인용·막대 표는 예전 글", () => {
+  // 2025 주요사업 보고서 과제 소항목 62개 불릿 평균 중앙값 27.89자(scripts/eval/biz-bullet-baseline.ts) → 28
+  assert.equal(BIZ_TRACK.reportBulletChars, 28);
+  assert.equal(limitText({ lines: 3, perLine: 8, unit: "cell", side: true, bullet: 3 }), "칸마다 최대 3줄 · 불릿 하나 약 24자(한 줄 8자 × 3줄) · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 2줄 이상)");
+  const c = baseComposition({ blocks: [planBlock({ kind: "bullets", cells: 2 }), planBlock({ kind: "pdca", cells: 4, label: "추진내용" }), planBlock({ kind: "cards", variant: "plain", cells: 3, label: "추진내용" }), planBlock({ kind: "quotes", cells: 2, label: "목소리" }), planBlock({ kind: "table", variant: "bars", cells: 3, label: "실적" })] });
+  for (const pages of [1, 2]) {
+    const limits = blockLimits(c, pages);
+    assert.equal(limits[0]?.bullet, undefined, "불릿 블록은 줄 수가 곧 불릿 수");
+    for (const i of [1, 2]) {
+      const l = limits[i]!;
+      assert.equal(l.bullet, Math.min(l.lines, Math.max(1, Math.round(28 / l.perLine))), `${c.blocks[i].kind} ${pages}쪽`);
+      assert.ok(l.bullet! <= l.lines, "불릿 하나가 칸 최대 줄 수를 넘지 않음");
+      assert.match(limitText(l), /^칸마다 최대 \d+줄 · 불릿 하나 약 \d+자\(한 줄 \d+자 × \d+줄\)/);
+    }
+    assert.equal(limits[3]?.bullet, undefined, "인용은 원문 길이");
+    assert.equal(limits[4]?.bullet, undefined, "막대 표 값 칸은 수치만");
+    assert.match(limitText(limits[3]), /^칸마다 최대 \d+줄 · 한 줄 약 \d+자$/);
+  }
+  // 4칸 PDCA(한 줄 8자): 2쪽(줄 여유 큼)이면 round(28 ÷ 8) = 4줄, 1쪽이면 칸 최대 줄 수까지
+  const two = blockLimits(c, 2)[1]!;
+  assert.deepEqual([two.perLine, two.bullet], [8, 4]);
+  assert.ok(planPrompt(reportDraftPrompts().prompts, c, 2).includes("불릿 하나 약 32자(한 줄 8자 × 4줄)"));
 });
 
 // ---------------------------------------------------------------------------

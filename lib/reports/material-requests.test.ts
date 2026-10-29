@@ -73,3 +73,12 @@ test("buildTodoBoard: 줄의 requests는 자료 필요 수(구성안만 있는 �
   assert.equal(b.totals.requests, 2);
   assert.equal(b.rows[0].todo, 1); // 구성안만 있는 x = 초안 없음 1
 });
+
+test("needRequestsOf: 시점 미기재 원장 성과 줄은 구성안 없이도 「기준 시점·출처 확인」 한 줄로 올라가고 같은 줄은 한 번", () => {
+  const r = needRequestsOf(null, ["처리 속도 3배 상승(20분 → 6분)", "처리 속도 3배 상승(20분 → 6분)"]);
+  assert.deepEqual(r, [{ text: "원장 성과 「처리 속도 3배 상승(20분 → 6분)」의 기준 시점·출처 확인", where: "" }]);
+  const withNeed = needRequestsOf(comp([mat("m1", "need", "올해 실적")], [blk(["m1"], { label: "가" })]), ["증가 120건"]);
+  assert.equal(withNeed.length, 2);
+  const [dept] = buildMaterialRequests([card("u1", "1-1", null, { undatedOutcome: ["증가 120건"] })], [{ id: 1, name: "팀" }]);
+  assert.equal(dept.total, 1);
+});

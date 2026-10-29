@@ -28,7 +28,7 @@ export function ReportCardPreview({ spec, unknown, weak, canWrite, hasOutline }:
     <section aria-label="보고서 초안 미리보기" className="min-w-0">
       <style>{REPORT_CSS}</style>
       {/* 두 번 눌러 고치기 표지(editMarks)는 고칠 수 있을 때만(canWrite는 보관·부서 잠금·권한을 이미 반영) */}
-      <ReportPreview html={sectionHtml(spec, unknown, { weak, blockMarks: true, resultMark: true, editMarks: canWrite && spec.version === 3 })} />
+      <ReportPreview html={sectionHtml(spec, unknown, { weak, repeats: true, blockMarks: true, resultMark: true, editMarks: canWrite && spec.version === 3 })} />
     </section>
   );
 }

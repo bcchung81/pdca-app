@@ -283,7 +283,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
   // 자료 요청 — 구성안 재료표의 「자료 필요」(이 부서 과제만, 목차에서 뺀 과제 제외)
   const requests = scope.team
     ? buildMaterialRequests(
-        [...cardMap].flatMap(([k, cs]) => cs.map((c) => ({ unitId: k.split("|")[0], teamId: scope.team!.id, uid: c.uid, taskNo: c.taskNo, title: c.title, included: c.included, outline: c.draft?.outline }))),
+        [...cardMap].flatMap(([k, cs]) => cs.map((c) => ({ unitId: k.split("|")[0], teamId: scope.team!.id, uid: c.uid, taskNo: c.taskNo, title: c.title, included: c.included, outline: c.draft?.outline, undatedOutcome: c.undatedOutcome }))),
         [{ id: scope.team.id, name: scope.team.name }],
       )[0] ?? null
     : null;

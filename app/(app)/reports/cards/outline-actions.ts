@@ -21,13 +21,15 @@ import { loadExampleList, loadExampleSection } from "../../../../lib/reports/exa
 import { layoutName } from "../../../../lib/reports/layout.ts";
 import { type OutlineCatalog, type OutlineView, outlineCatalog, outlineView } from "../../../../lib/reports/outline-view.ts";
 import { REPORT_CSS } from "../../../../lib/reports/section-css.ts";
-import { type SiblingCard, evidenceOf, sectionContext, sectionHints } from "../../../../lib/reports/section.ts";
+import { type SiblingCard, cleanLine, evidenceOf, sectionContext, sectionHints } from "../../../../lib/reports/section.ts";
+import { ledgerOutcomeItems } from "../../../../lib/reports/mg-close.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { type SplitSibling, splitSiblingIssues } from "../../../../lib/reports/split-axes.ts";
 import type { MgDraftContext } from "../../../../lib/reports/mg-draft.ts";
 import { type MgOutlineOutput, type MgPartRedo, applyMgCompositionEdit, cleanMgComposition, isMgMainStory, mgCompositionIssues, mgHintOptions, mgOutlineOutSchema, mgOverlapIssues, mgPartLabel, mgPartRedo, replaceMgPart } from "../../../../lib/reports/mg-outline.ts";
 import { DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginAi, beginAiBatch, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
 import { writeDraft } from "./draft-write.ts";
+import { type DraftPick, type PlanRevise, mergeSources, readPick } from "../../../../lib/reports/draft-sources.ts";
 
 /** 구성안 경고 = 재료 대조 경고 + 같은 실행과제 형제와 다른 갈래 축·같은 칩(경고만) + 구성안 점검(판면·자료 필요) */
 const outlineWarnings = (c: Composition, module: number, materialWarnings: string[], head: HeadMode = "all", splitSiblings: SplitSibling[] = []) => [...materialWarnings, ...splitSiblingIssues(c.split, splitSiblings), ...compositionIssues(c, module, head)];
@@ -124,7 +126,8 @@ async function runReportOutlineMg(p: Prepared & { mg: MgDraftContext }, uid: str
     const oc = await callReportOutlineMg({ card: card.data, ctx: p.mg, year, files, lens, actuals, memo: memo?.slice(0, 500), kb: p.kb, siblings: p.mgSiblings, hints, inspection });
     await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
     const { hayKey, known: numbers } = evidenceOf(card.data, known, quoteOnly);
-    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior });
+    // 요청에 준 절 성과 재료를 구성안에 남김(구성안 점검 「성과 배정」 — mg-outline.ts mgOutcomeIssues)
+    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
     const composition: Composition = {
       ...cleaned.composition,
       memo: (memo ?? "").slice(0, 500),
@@ -530,14 +533,25 @@ export async function getOutlineCatalog(mg = false): Promise<OutlineCatalog & { 
   return { ...outlineCatalog(Boolean(mg)), altCost: outlineCostUsd(specForFeature("report_outline", aiProvider() === "api" ? "api" : "cli").model, Boolean(mg)) };
 }
 
-/** 구성안 승인하고 집필: 구성안을 만들 때 쓴 근거(첨부·전년 절)로 그 짜임대로 초안을 쓰고, 구성안을 승인(approved)으로 */
-export async function approveReportOutline(uid: string): Promise<ReportDraftState> {
+/**
+ * 구성안 승인하고 집필(「구성안대로 집필」·「자료 반영 고치기」·구성안 패널 「승인하고 집필」): 저장된 구성안의 짜임(블록·라벨·재료)은 그대로 두고 초안을 쓰고, 구성안을 승인(approved)으로.
+ * 근거 = 구성안을 만들 때 쓴 근거(첨부·전년 절) ∪ 지금 고른 첨부(pick — 새로 올린 자료 포함, 사람이 뺀 자료는 저장된 근거에 있어도 뺌 — lib/reports/draft-sources.ts mergeSources).
+ * 지금 고른 자료가 이 카드의 자료가 아니면 거절(prepareDraft loose), 저장된 근거 중 그 뒤 지운 자료만 빼고 씀. 구성안에 없던 자료는 요청 글 「구성안 뒤 추가된 자료」로 이름을 알리고,
+ * request(요청 칸 글 — 500자)는 「담당자 요청」(집필 지시일 뿐 근거 아님). pick이 있으면 저장하는 구성안·초안의 근거 목록도 합친 것으로(다음 블록 고치기가 새 자료를 씀)
+ */
+export async function approveReportOutline(uid: string, opts?: { pick?: DraftPick; request?: string }): Promise<ReportDraftState> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const o = await loadOutline(uid);
   if (!o.ok) return o;
-  const p = await prepareDraft(uid, o.outline.sources);
+  const pick = readPick(opts?.pick);
+  const saved = o.outline.sources;
+  const merged = mergeSources(saved, pick);
+  const p = await prepareDraft(uid, pick ? merged.sources : saved, pick ? { loose: saved ?? { card: [], report: [] } } : {});
   if (!p.ok) return p;
-  const r = await writeDraft(p, o.outline);
+  const isNew = (kind: "card" | "report", id: string) => (kind === "card" ? merged.added.card : merged.added.report).includes(id);
+  const revise: PlanRevise = { added: p.files.filter((f) => isNew(f.kind, f.id)).map((f) => f.name), request: requestText(opts?.request) };
+  const plan: Composition = pick ? { ...o.outline, sources: sourcesOf(p) } : o.outline;
+  const r = await writeDraft(p, plan, revise);
   if (r.ok) refresh(uid);
   return r;
 }

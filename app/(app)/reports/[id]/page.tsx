@@ -64,7 +64,7 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
       needs: row?.needs ?? 0,
       figures: row?.figures ?? 0,
       unknown: row?.unknown ?? 0,
-      html: spec ? sectionHtml(spec, c.draft?.unknownNumbers ?? [], { blockMarks: true }) : null,
+      html: spec ? sectionHtml(spec, c.draft?.unknownNumbers ?? [], { blockMarks: true, repeats: true }) : null,
       cardHref: withReturn(deptView ? `/my?${teamQ}&peek=${c.uid}` : staff ? `/cards?peek=${c.uid}` : `/my?peek=${c.uid}`, selfHref),
       draftHref: withReturn(`/reports/cards/${c.uid}${teamQ ? `?${teamQ}` : ""}`, selfHref),
     };

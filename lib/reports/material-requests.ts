@@ -49,6 +49,8 @@ export interface RequestCard {
   /** 목차에서 뺀 과제는 요청에서 빠짐 */
   included: boolean;
   outline: unknown;
+  /** 시점 미기재 원장 성과 줄(SubmitCard.undatedOutcome) */
+  undatedOutcome?: string[];
 }
 
 const squash = (s: string, n: number) => {
@@ -70,8 +72,21 @@ function whereOf(c: Composition, id: string): string {
   return seen.length > 2 ? `${seen.slice(0, 2).join(" · ")} 외` : seen.join(" · ");
 }
 
-/** 구성안 한 장의 「자료 필요」 — 같은 문구는 한 번(쓰일 곳은 합침). 구성안이 없거나 형식이 다르면 빈 목록 */
-export function needRequestsOf(outline: unknown): MaterialRequest[] {
+/** 시점 미기재로 받은 원장 성과 줄의 요청 문구 앞 40자까지 */
+const UNDATED_CHARS = 40;
+
+/**
+ * 구성안 한 장의 「자료 필요」 — 같은 문구는 한 번(쓰일 곳은 합침). 구성안이 없거나 형식이 다르면 빈 목록.
+ * undated: 연도 언급 없이 올해 실적 재료로 받은 원장 성과 줄(경영관리, actuals.ts undatedOutcomeLines) — 구성안 없이도 「기준 시점·출처 확인」 한 줄씩 올림
+ */
+export function needRequestsOf(outline: unknown, undated: string[] = []): MaterialRequest[] {
+  const extra: MaterialRequest[] = undated.map((l) => ({ text: squash(`원장 성과 「${squash(l, UNDATED_CHARS)}」의 기준 시점·출처 확인`, REQUEST_TEXT_CHARS), where: "" }));
+  const base = needRequestsOfOutline(outline);
+  const seen = new Set(base.map((r) => keyOf(r.text)));
+  return [...base, ...extra.filter((r) => !seen.has(keyOf(r.text)) && seen.add(keyOf(r.text)))];
+}
+
+function needRequestsOfOutline(outline: unknown): MaterialRequest[] {
   const c = readComposition(outline as never);
   if (!c) return [];
   const byKey = new Map<string, MaterialRequest>();
@@ -93,7 +108,7 @@ export function buildMaterialRequests(cards: RequestCard[], teams: Array<{ id: n
   const byTeam = new Map<number, CardRequests[]>();
   for (const c of cards) {
     if (!c.included) continue;
-    const all = needRequestsOf(c.outline);
+    const all = needRequestsOf(c.outline, c.undatedOutcome);
     if (!all.length) continue;
     const items = all.slice(0, max);
     const row: CardRequests = { uid: c.uid, taskNo: c.taskNo, title: c.title, unitId: c.unitId, total: all.length, items, more: all.length - items.length };

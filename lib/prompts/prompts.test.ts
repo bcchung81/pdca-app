@@ -242,7 +242,23 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-10-15 후속 5 상자 채움(공용 문체 report-draft/style.md 「판면」 — 나란한 칸 줄 수 맞춤)으로 판 바뀜(@3a68f193 → @db2b1b11)
   // 2026-10-28 공용 조각(style.md 제목 한 줄·화살표 규칙, blocks.md#blocks 수치 띠는 경영관리 추진성과 행에서만, schema.md#block.title 블록 제목 규칙)으로 판 바뀜(@db2b1b11 → @726705b8)
   // 2026-10-28 수치 띠를 2025 추진성과 행 모양으로(공용 blocks.md#blocks stats·chart 설명, report-draft-mg/blocks.md#choose)으로 판 바뀜(@726705b8 → @387737ef)
-  assert.equal(mg.prompts.version, "report-block-mg@387737ef");
+  // 2026-10-28 report-draft-mg/blocks.md#choose 막대 문구(실적 값 둘 이상일 때만)로 판 바뀜(@387737ef → @a73d9a16)
+  // 2026-10-28 문단 품질 루프 1회차(report-draft-mg/inputs.md — 절 안 사실·숫자 되풀이 금지·전후 비교 「후」는 올해 결과 먼저)로 판 바뀜(@a73d9a16 → @b76bfb01)
+  // 2026-10-29 원장 채움(P2 — report-draft-mg inputs·blocks#choose: 원장 성과 인정·계획은 진행형·본문 자리표시 대신 다른 성과·칸 문법·주제 라벨·계산값 두 원값 병기)로 판 바뀜(@b76bfb01 → @89724d27)
+  // 2026-10-29 P4 1회차(report-draft-mg/blocks.md#choose 나란한 칸 — 칸마다 불릿 수 같게·같은 순번 길이 맞춤·결과 줄은 다 두거나 다 비움)로 판 바뀜(@89724d27 → @7f85c03f)
+  // 2026-10-29 칸 글 한도 = 2025 경영관리 불릿 기준(report-block-mg/system.md 글 한도 문장, report-draft-mg/blocks.md#choose 「불릿 하나 약 T자」)으로 판 바뀜(@7f85c03f → @fdd353fa)
+  // 2026-10-29 막대는 같은 라벨 글 블록 오른쪽에만(report-draft-mg/blocks.md#choose — 글 블록을 빼고 막대만 남기지 않음)으로 판 바뀜(@fdd353fa → @06da706f)
+  // 2026-10-29 절 성과 배정·집필 지침(report-draft-mg/inputs.md — 작성일 뒤 일은 완료형 금지·계획은 추진내용 끝 한 줄 「예정」·같은 주장은 한 블록)으로 판 바뀜(@06da706f → @61724437)
+  // 2026-10-29 분량 채움 보강(report-block-mg/request.md fill·fill.hollow·fill.short·fill.room·fill.keep·fill.none — 집필 뒤 앱이 보내는 요청 글 조각, lib/reports/mg-fill.ts)으로 판 바뀜(@61724437 → @63f470c1 — 주요사업 report-block@afffeff8 그대로)
+  // 2026-10-29 주요사업 칸 글 한도 = 2025 주요사업 불릿 기준(공용 문체 report-draft/style.md 불릿 길이 — 「도식 칸 안은 글 한도의 불릿 하나 글자 수대로」)으로 판 바뀜(@63f470c1 → @b7065808)
+  // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.room 줄·불릿 수 + fill.room.cell·fill.room.bullet·fill.room.line·fill.repeat·fill.repeat.item, fill 「줄을 줄이지 않음」)로 판 바뀜(@b7065808 → @e0653ee9 — 주요사업 report-block@d2197db2 그대로)
+  assert.equal(mg.prompts.version, "report-block-mg@e0653ee9");
+  for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item"]) {
+    assert.ok(mg.prompts.request[k], `report-block-mg/request.md @${k}`);
+    assert.equal(bp.request[k], undefined, `주요사업 report-block에는 @${k} 없음`);
+  }
+  // 2026-10-29 공용 문체 report-draft/style.md 불릿 길이 문장(주요사업 칸 글 한도 = 2025 불릿 기준)으로 판 바뀜(@afffeff8 → @d2197db2 — 분량 채움 보강 때문이 아님)
+  assert.equal(bp.version, "report-block@d2197db2", "주요사업 블록 고치기 판은 분량 채움 보강으로 바뀌지 않음");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {
@@ -282,9 +298,35 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-10-28 공용 조각 schema.md#block.label(맨 상자 금지 — 상자형 도식은 라벨·머리 중 하나)로 집필 판만 바뀜(@98767749 → @d1beb140)
   // 2026-10-28 수치 띠 = 2025 추진성과 행(성과 문장 + 수치 + 시점 불릿, 같은 라벨 막대 — 공용 blocks.md#blocks·schema.md#block.label·block.cells, 경영관리 stories·blocks#choose·process)으로 셋 다 바뀜
   // (@d1beb140 → @7433abde, @2defbb8a → @52cd2237, @726705b8 → @387737ef)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@7433abde");
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@52cd2237");
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@387737ef");
+  // 2026-10-28 경영관리 칸 불릿 구체어·계획/실적 가름·막대는 실적 값 둘 이상·추진성과 head는 수치만(report-draft-mg process·stories, report-outline-mg system)으로 앞 둘만 바뀜
+  // (@7433abde → @2fa26b75, @52cd2237 → @645c3ba5 — report-block-mg는 stories·process를 안 끼워 그대로)
+  // 같은 날 blocks.md#choose의 막대 문구(실적 값 둘 이상)를 맞춰 셋 다 바뀜(@2fa26b75 → @c9cf4d04, @645c3ba5 → @6abcffde, @387737ef → @a73d9a16)
+  // 2026-10-28 문단 품질 루프 1회차(재료 하나는 블록 하나·블록 몫(왜/어떻게/결과)·제목 받치는 블록만·제목 결과 쪽에 달라진 대상·「후」는 올해 결과 먼저·연도 + 낱말 불릿 금지·나란한 칸 글 양 — report-outline-mg system·schema, report-draft-mg inputs·process·request)로 셋 다 바뀜
+  // (@c9cf4d04 → @73bff3e1, @6abcffde → @b8b4dad9, @a73d9a16 → @b76bfb01 — 주요사업 판 그대로)
+  // 2026-10-29 원장 채움(P2 — 원장 추진성과 칸 = 부서가 적은 성과·끝나지 않은 일은 진행형·본문 【확인】 대신 원장의 다른 성과·칸 문법(칩 + 사실 + 수치, 결과 줄)·주제 라벨·계산값은 두 원값 병기·분량은 블록 밀도로 — report-draft-mg inputs·blocks·stories·process·role·output·request·schema, report-outline-mg system·schema)로 셋 다 바뀜
+  // (@73bff3e1 → @e388fd7d, @b8b4dad9 → @2c750492, @b76bfb01 → @89724d27 — 주요사업 판 그대로)
+  // 2026-10-29 P4 1회차(report-draft-mg/blocks.md#choose 나란한 칸을 셀 수 있는 규칙으로 — 불릿 수 같게·같은 순번 길이·결과 줄 전부 또는 없음)로 셋 다 바뀜
+  // (@e388fd7d → @f99832da, @2c750492 → @0abd0921, @89724d27 → @7f85c03f — 주요사업 판 그대로)
+  // 2026-10-29 닫기 관례 「과반」 단계(close.majority — 2025 절이 절반 이상 추진성과로 닫힌 지표는 성과 있는 절을 모두 닫음, report-outline-mg·report-draft-mg request)로 outline·draft만 바뀜(draft @f99832da → @540c454f, outline @0abd0921 → @52a70fff)
+  // 2026-10-29 「초안 뒤 첨부한 파일로 고치기」(자료 반영 고치기 — report-draft-mg request plan.added 「구성안 뒤 추가된 자료」·plan.request 「담당자 요청」, 각각 있을 때만 붙음)로 draft만 바뀜(@540c454f → @4bd0e241 — 주요사업 report-draft도 같은 두 절로 @8403980c → @b0c5f746, 판 고정 시험은 없음)
+  // 2026-10-29 칸 글 한도 = 2025 경영관리 불릿 기준(「칸마다 불릿 하나 약 T자」 — report-draft-mg request plan.head·blocks#choose·process, report-block-mg system)으로 셋 다 바뀜
+  // (@4bd0e241 → @8dbca883, @52a70fff → @b2e02ed0, @7f85c03f → @fdd353fa — 주요사업 판 report-draft@b0c5f746·report-outline@3486fee5·report-block@afffeff8 그대로)
+  // 2026-10-29 막대는 같은 라벨 글 블록 오른쪽에만 — 글 블록 없이 막대만 한 행에 두지 않음(report-outline-mg system 막대 문장, report-draft-mg/blocks.md#choose)으로 셋 다 바뀜
+  // (@8dbca883 → @553d67c8, @b2e02ed0 → @0ad4f443, @fdd353fa → @06da706f — 주요사업 판 그대로)
+  // 2026-10-29 절 성과 배정(report-outline-mg request outcomes.* 「절 성과 재료」·system 2·5번 배정·합치기·계획만 담은 블록 금지·제목 「수단 + 결과」·schema part.title,
+  // report-draft-mg inputs 작성일 뒤 일 완료형 금지·계획은 추진내용 끝 한 줄·같은 주장은 한 블록, process 제목 「수단 + 결과」)로 셋 다 바뀜
+  // (@553d67c8 → @0435f085, @0ad4f443 → @08f8ada7, @06da706f → @61724437 — 주요사업 판 report-draft@b0c5f746·report-outline@3486fee5·report-block@afffeff8 그대로)
+  // 2026-10-29 분량 채움 보강 요청 조각(report-block-mg/request.md fill.*)으로 블록 고치기 판만 바뀜(@61724437 → @63f470c1 — 집필·구성안·주요사업 판 그대로)
+  // 2026-10-29 주요사업 칸 글 한도 = 2025 주요사업 불릿 기준(공용 문체 report-draft/style.md 불릿 길이 — 「도식 칸 안은 글 한도의 불릿 하나 글자 수대로」)으로 draft·block이 바뀜
+  // (@0435f085 → @713be917, @63f470c1 → @b7065808 — 주요사업 report-draft@b0c5f746 → @c3a401a3(style.md + request fit.guide·plan.head)·report-block@afffeff8 → @d2197db2, report-unit-mg@90b1a4e1 → @3d5e76b7도 style.md를 끼워 바뀜)
+  // 2026-10-29 구성안 「둔 이유」 안내(report-outline-mg/schema.md part.why 「한 줄」 → 「두세 문장(400자 안)」 — mg-outline.ts WHY_MAX와 맞춤)로 outline만 바뀜(@08f8ada7 → @2329565b)
+  // 2026-10-29 집필 지침 process.md 3번의 불릿 예시를 중립 예시로 바꿈(공개 저장소라 실제 카드 값 제거 — 집필 판만 바뀜 @713be917 → @5928aee4)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@5928aee4");
+  // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
+  // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@e5deeb90");
+  // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@e0653ee9");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {

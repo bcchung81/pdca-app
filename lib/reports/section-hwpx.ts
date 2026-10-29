@@ -14,8 +14,8 @@ import { BORDER_WIDTH_MM } from "../hwp/hwp5.ts";
 import { type HwpxInput, hwpxFiles } from "../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, Bullet, Cell, CharPr, HwpDoc, Inline, LineType, PageDef, Para, ParaPr, Table } from "../hwp/model.ts";
 import { writeHwpxPackage } from "../hwpx/postprocess.ts";
-import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, blockTexts, figureMm, isPanelCompare, ladderGroups, tableBars } from "./blocks.ts";
-import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableRowHeadMm, textEm } from "./fit.ts";
+import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, blockTexts, figureMm, isPanelCompare, ladderGroups, pdcaMark, tableBars } from "./blocks.ts";
+import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableColsMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
 import { fontName } from "./report-fonts.ts";
 import { REPORT_STYLE } from "./section-css.ts";
@@ -430,6 +430,8 @@ interface TCell {
 /** 한 줄 글 행의 최소 높이(글 크기 × 줄간격 + 위아래 여백) — 한글이 글에 맞게 늘림 */
 const lineH = (pt: number = F.body, pad = px(4)) => Math.round(pt * ST.lineSpacingPct) + pad;
 const M0: [number, number, number, number] = [0, 0, 0, 0];
+/** 추진성과 상자 안 막대 칸 폭(mm — 머리 세로 칸 + 막대, 화면 .k-result__body--chart > .k-row2 오른쪽 열과 같음) */
+const SIDE_COL_MM = ST.sideChart.headMm + ST.sideChart.barMm;
 const inner = (w: number, m: [number, number, number, number] = [px(3), px(3), px(2), px(2)]) => Math.max(mm(5), w - m[0] - m[1]);
 
 // ───────────────────────── 블록
@@ -561,9 +563,8 @@ class SectionWriter extends Writer {
         return [...title, this.host(this.cardColumns(cells, w, join && cells.length > 1 ? JOIN.gapMm : 3, join, head), px(3))];
       }
       case "pdca": {
-        const DEF = ["P", "D", "C", "A"];
         const cells = b.cells.slice(0, 4);
-        const t = this.cardColumns(cells, w, JOIN.gapMm, "▶", (c, i) => [this.run((c.tag || DEF[i]).slice(0, 2), { face: "label", pt: 8.5, bold: true, color: WHITE, shade: G.g4 }), this.run(" ", HEAD), ...this.rich(c.head, HEAD)]);
+        const t = this.cardColumns(cells, w, JOIN.gapMm, "▶", (c, i) => [this.run(pdcaMark(c.tag, i), { face: "label", pt: 8.5, bold: true, color: WHITE, shade: G.g4 }), this.run(" ", HEAD), ...this.rich(c.head, HEAD)]);
         const out = [...title, this.host(t, px(3))];
         if (b.text) out.push(this.host(this.table([w], [lineH(F.small)], [{ r: 0, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.pdcaFb) }, [this.run("↺ ", { ...HEAD, pt: F.small }), ...this.rich(b.text, { ...HEAD, pt: F.small })], HEAD)], box: all({ ...HAIR, type: "DASH" }), m: [px(6), px(6), px(2), px(2)] }]), mm(1.2)));
         return out;
@@ -963,9 +964,10 @@ class SectionWriter extends Writer {
    * 막대(화면 miniChartHtml의 SVG — 값 → 높이, 마지막 막대 진하게): 표 칸으로. 막대마다 안쪽 표 한 개(세로 3행 —
    * [위 빈 칸 = 최대 − 막대][값 글 줄][막대 칸 = 값 비율 × 최대])라 막대 높이가 값 비율 그대로(층 나눔 없음)이고 값 글이 막대 바로 위에 붙음.
    * 열은 SVG와 같은 비례(양끝 10, 칸마다 막대 폭 min(26, 칸 × 0.5)). 최대 막대 높이는 SVG와 같은 54/150 폭.
-   * 값이 【확인: …】이면 노란 점선 빈 막대(최대의 55%) + 「확인」
+   * 값이 【확인: …】이면 노란 점선 빈 막대(최대의 55%) + 「확인」.
+   * side = 추진성과 상자 안 막대(화면 k-chart--side — resultBox만, 2026-10-29): 머리(제목 + 배지 아래 줄)를 왼쪽 세로 칸(REPORT_STYLE.sideChart.headMm, 두 행 합침·가운데)으로, 막대는 남은 폭. 홀로 놓인 막대는 머리가 위
    */
-  chart(c: MiniChart, w: number): Table {
+  chart(c: MiniChart, w: number, side = false): Table {
     const n = Math.max(1, c.series.length);
     const vals = c.series.map((s) => (/【확인:/.test(s.value) ? 0 : Number((s.value.match(/\d[\d,]*(?:\.\d+)?/)?.[0] ?? "0").replace(/,/g, ""))));
     const max = Math.max(...vals, 1);
@@ -974,15 +976,31 @@ class SectionWriter extends Writer {
     const parts: Array<{ fr: number }> = [{ fr: 10 }];
     for (let i = 0; i < n; i++) parts.push({ fr: (slot - bw) / 2 }, { fr: bw }, { fr: (slot - bw) / 2 });
     parts.push({ fr: 10 });
-    const colW = this.cols(w, parts);
+    const head = Boolean(c.title || c.badge);
+    const left = side && head;
+    const headW = left ? mm(ST.sideChart.headMm) : 0;
+    const colW = [...(left ? [headW] : []), ...this.cols(w - headW, parts)];
+    const c0 = left ? 1 : 0;
     const ncol = colW.length;
-    const unit = w / 150;
+    const unit = (w - headW) / 150;
     const maxBar = Math.round(54 * unit);
     const valH = Math.round(9.5 * 100 * 1.2);
-    const head = Boolean(c.title || c.badge);
-    const r0 = head ? 1 : 0;
+    const r0 = head && !left ? 1 : 0;
     const cells: TCell[] = [];
-    if (head)
+    if (left)
+      cells.push({
+        r: 0,
+        c: 0,
+        rs: 2,
+        va: "CENTER",
+        paras: [
+          ...(c.title ? [this.para({ align: "CENTER", line: pct(LH.chart) }, this.rich(c.title, { ...HEAD, pt: F.small }), HEAD)] : []),
+          ...(c.badge ? [this.para({ align: "CENTER", line: pct(LH.chart), before: px(1) }, [this.run(plain(c.badge), { face: "dotumB", pt: F.tag, color: WHITE, shade: G.g5 })], HEAD)] : []),
+        ],
+        box: { r: HAIR, fill: G.g1 },
+        m: [px(3), px(3), px(2), px(2)],
+      });
+    else if (head)
       cells.push({
         r: 0,
         c: 0,
@@ -993,9 +1011,9 @@ class SectionWriter extends Writer {
       });
     const tiny = () => [this.empty()];
     const labRow = r0 + 1;
-    for (const r of [r0, labRow]) cells.push({ r, c: 0, paras: tiny(), m: M0, box: r === r0 ? { b: HAIR } : {} }, { r, c: ncol - 1, paras: tiny(), m: M0, box: r === r0 ? { b: HAIR } : {} });
+    for (const r of [r0, labRow]) cells.push({ r, c: c0, paras: tiny(), m: M0, box: r === r0 ? { b: HAIR } : {} }, { r, c: ncol - 1, paras: tiny(), m: M0, box: r === r0 ? { b: HAIR } : {} });
     c.series.forEach((s, i) => {
-      const col = 1 + i * 3;
+      const col = c0 + 1 + i * 3;
       const need = /【확인:/.test(s.value);
       const bar = need ? Math.round(maxBar * 0.55) : Math.max(Math.round(2 * unit), Math.round((maxBar * vals[i]) / max));
       const dash: Line = { pt: 0.8, color: NEED.line, type: "DASH" };
@@ -1013,8 +1031,13 @@ class SectionWriter extends Writer {
       cells.push({ r: r0, c: col, cs: 3, va: "BOTTOM", m: M0, paras: [this.host(inner3)], box: { b: HAIR } });
       cells.push({ r: labRow, c: col, cs: 3, va: "TOP", m: M0, paras: [this.para({ align: "CENTER", line: 100 }, [this.run(plain(s.label), { face: "dotumB", pt: 8.5, color: "#333333" })], BODY)] });
     });
-    const rowH = [...(head ? [lineH(F.small, 0)] : []), maxBar + valH, Math.round(16 * unit)];
+    const rowH = [...(r0 ? [lineH(F.small, 0)] : []), maxBar + valH, Math.round(16 * unit)];
     return this.table(colW, rowH, cells, { outline: HAIR });
+  }
+
+  /** 추진성과 상자 안 막대(화면 k-chart--side — 소항목 추진성과·수치 띠 상자): 머리가 있으면 왼쪽 세로 칸 + 막대, 없으면 막대 폭(42mm)만 칸 오른쪽에(화면 justify-self:end) */
+  sideChart(c: MiniChart, w: number): Para {
+    return c.title || c.badge ? this.host(this.chart(c, w, true)) : this.host(this.chart(c, Math.min(w, mm(ST.sideChart.barMm))), 0, "RIGHT");
   }
 
   /** Q&A 상자: 쌍마다 Q 표지(진회색) + 질문(돋움 굵게), A 표지(흰 바탕 테두리) + 답(하나면 불릿 없이) */
@@ -1031,11 +1054,11 @@ class SectionWriter extends Writer {
     return this.table(colW, cells.flatMap(() => [lineH(), lineH()]), out, { outline: HAIR });
   }
 
-  /** 수치 표(기본·막대·쉐브론): 머리 줄 = items(첫째 = 행 머리 열), 행 머리 열 폭은 판면 어림(fit.ts tableRowHeadMm)과 같은 규칙 */
+  /** 수치 표(기본·막대·쉐브론): 머리 줄 = items(첫째 = 행 머리 열), 열 폭은 판면 어림·화면과 같은 함수(fit.ts tableColsMm — 값 열은 그 비율로, 합 = 표 폭) */
   gridTable(b: Block, w: number, wMm: number): Table {
-    const head = mm(tableRowHeadMm(wMm));
+    const [head, ...vals] = tableColsMm(b, wMm);
     const nv = Math.max(1, b.items.length - 1);
-    const colW = this.cols(w, [head, ...Array.from({ length: nv }, () => ({ fr: 1 }))]);
+    const colW = this.cols(w, [mm(head), ...vals.map((fr) => ({ fr }))]);
     const chev = b.variant === "chevron";
     const bars = b.variant === "bars";
     const cells: TCell[] = b.items.map((x, i): TCell => {
@@ -1052,7 +1075,7 @@ class SectionWriter extends Writer {
     b.cells.forEach((c, i) => {
       const bottom = i === last ? HAIR : HAIR3;
       cells.push({ r: i + 1, c: 0, paras: [this.p(c.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { b: bottom, fill: G.g1 }, m: [px(4), px(4), px(1), px(1)] });
-      const lens = bars ? tableBars(c.bullets) : [];
+      const lens = bars ? tableBars(c.bullets, b.items) : [];
       for (let k = 0; k < nv; k++) {
         const x = c.bullets[k] ?? "";
         const cw = inner(colW[k + 1], [px(4), px(4), px(1), px(1)]);
@@ -1296,7 +1319,7 @@ class SectionWriter extends Writer {
   }
 
   /**
-   * 추진성과 상자 틀(2026-10-28 — 소항목 추진성과·수치 띠 상자 공용, 화면 .k-result): [라벨 21mm 진회색][본문(main — 글 칸 폭을 받음) · 막대(오른쪽 42mm)][강조 띠] — 굵은 테두리.
+   * 추진성과 상자 틀(2026-10-28 — 소항목 추진성과·수치 띠 상자 공용, 화면 .k-result): [라벨 21mm 진회색][본문(main — 글 칸 폭을 받음) · 막대(오른쪽 — 머리 칸 + 막대 SIDE_COL_MM)][강조 띠] — 굵은 테두리.
    * width = 상자 폭(가로 반씩 짝이면 반 폭)
    */
   resultBox(label: string, mainOf: (w: number) => Para[], chart: MiniChart | null, band = "", width = BODY_W): Para {
@@ -1305,7 +1328,7 @@ class SectionWriter extends Writer {
     const edge: Line = { pt: 1.2, color: G.g5 };
     const bodyM: [number, number, number, number] = [px(6), px(6), px(3), px(3)];
     const bw = inner(colW[1], bodyM);
-    const mainW = chart ? this.cols(bw, [{ fr: 1 }, mm(2.5), mm(42)]) : [bw];
+    const mainW = chart ? this.cols(bw, [{ fr: 1 }, mm(2.5), mm(SIDE_COL_MM)]) : [bw];
     const main = mainOf(mainW[0]);
     const body = chart
       ? [
@@ -1313,7 +1336,7 @@ class SectionWriter extends Writer {
             this.table(mainW, [lineH()], [
               { r: 0, c: 0, m: M0, paras: main },
               { r: 0, c: 1, m: M0, paras: [] },
-              { r: 0, c: 2, m: M0, paras: [this.host(this.chart(chart, mainW[2]))] },
+              { r: 0, c: 2, m: M0, paras: [this.sideChart(chart, mainW[2])] },
             ]),
           ),
         ]

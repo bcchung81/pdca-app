@@ -3,7 +3,7 @@
 // 묶는 규칙은 HTML 렌더러(section-html.ts)와 같은 함수를 씀: 라벨·단 띠·가로 반씩 = layoutGroups, 막대 없는 표 칸·2단 라벨 = ladderGroups,
 // 전후 비교 패널 = isPanelCompare. 경영관리 마커 옮기기(지적개선을 카드 지적 행과 겹치는 절 대주제에)는 section-html.ts mgBody와 같은 짜임.
 
-import { type Block, type BlockCell, FIGURE_LABEL, type Figure, blockTexts, isPanelCompare, ladderGroups } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_LABEL, type Figure, blockTexts, isPanelCompare, ladderGroups, pdcaMark } from "./blocks.ts";
 import { layoutGroups } from "./layout.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 
@@ -65,8 +65,7 @@ function body(b: Block, warnings: string[]): string[] {
     case "cards":
       return [...title, ...cellLines(b.cells, (c) => (c.tag ? `[${t(c.tag)}] ` : ""))];
     case "pdca": {
-      const DEF = ["P", "D", "C", "A"];
-      return [...title, ...cellLines(b.cells.slice(0, 4), (c, i) => `[${t(c.tag || DEF[i]).slice(0, 2)}] `), ...(b.text ? [bullet(`↺ ${b.text}`)] : [])];
+      return [...title, ...cellLines(b.cells.slice(0, 4), (c, i) => `[${t(pdcaMark(c.tag, i))}] `), ...(b.text ? [bullet(`↺ ${b.text}`)] : [])];
     }
     case "steps":
       // 단계 번호가 차례를 보이므로 칸 제목 앞 「Step N」·「N단계」는 뗌(렌더러와 같음)
