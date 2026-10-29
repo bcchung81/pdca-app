@@ -69,7 +69,7 @@ export type ResultEditOutput = z.infer<ReturnType<typeof resultEditSchema>>;
 /** 두 트랙 블록 고치기 요청 절(고치기·질문·다른 모양으로 + 블록 JSON·근거) */
 const BLOCK_EDIT_REQUEST = ["edit", "ask", "shapes", "block", "evidence"] as const;
 /** 경영관리 「분량 채움 보강」 요청 글 조각(lib/reports/mg-fill.ts fillRequestText — 2026-10-29, 경영관리만: 주요사업 report-block 절·판은 그대로) */
-export const MG_FILL_SECTIONS = ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none"] as const;
+export const MG_FILL_SECTIONS = ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none", "fill.refs", "fill.refs.item", "fill.avoid"] as const;
 /** 블록 고치기 프롬프트 파일에 있어야 하는 절 — 경영관리(report-block-mg: 추진성과 상자가 없어 result 절 없음, 분량 채움 보강 절이 더 있음) */
 export const BLOCK_EDIT_MG_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...BLOCK_EDIT_REQUEST, ...MG_FILL_SECTIONS], schema: BLOCK_EDIT_OUT_FIELDS };
 /** 주요사업(report-block) — 공용 절 + 추진성과 고치기·질문(result·resultAsk)과 답 필드 */
@@ -184,7 +184,8 @@ export function roomText(r: BlockRoom | null): string {
   // 경영관리 칸 블록은 칸 불릿 하나의 글자 수를 앞에(집필 글 한도와 같은 기준 — 좁은 칸에 한 줄 조각 불릿이 나오지 않게)
   const per = r.bullet ? `칸마다 불릿 하나 약 ${r.bullet * r.perLine}자(한 줄 약 ${r.perLine}자 × ${r.bullet}줄)` : `한 줄 약 ${r.perLine}자`;
   if (r.slack === null) return `${per} · 지금 ${what} ${r.now}줄 — 지금 줄 수 안팎`;
-  const room = r.slack <= 0 ? `초안이 이미 ${-r.slack}mm 넘침 — 지금보다 줄을 늘리지 않음(줄일 수 있으면 줄임)` : r.max > r.now ? `판면 여유 ${r.slack}mm — ${r.unit === "line" ? "불릿 줄 합" : "칸마다"} 최대 ${r.max}줄까지` : `판면 여유 ${r.slack}mm로는 한 줄도 더 못 늘림 — 지금 줄 수 안에서`;
+  // 여유 0(분량 보강에서 몫 0을 받은 블록 — 빈 칸·반복만 고침)은 넘침이 아님 — 「한 줄도 더 못 늘림 — 지금 줄 수 안에서」(넘침 글의 「줄일 수 있으면 줄임」은 보강 받기 조건과 어긋남)
+  const room = r.slack < 0 ? `초안이 이미 ${-r.slack}mm 넘침 — 지금보다 줄을 늘리지 않음(줄일 수 있으면 줄임)` : r.max > r.now ? `판면 여유 ${r.slack}mm — ${r.unit === "line" ? "불릿 줄 합" : "칸마다"} 최대 ${r.max}줄까지` : `판면 여유 ${r.slack}mm로는 한 줄도 더 못 늘림 — 지금 줄 수 안에서`;
   return `${per} · 지금 ${what} ${r.now}줄 · ${room}`;
 }
 

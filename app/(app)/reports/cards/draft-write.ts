@@ -10,6 +10,7 @@ import { saveDraftRow } from "../../../../lib/reports/draft-store.ts";
 import { type MgDraftContext, verifyMgDraft } from "../../../../lib/reports/mg-draft.ts";
 import { type MgFillDeps, type MgFillInput, type MgFillRun, fillMessage, mgAdherenceWarning, mgFillPatch, runMgFill, saveFirstThenFill } from "../../../../lib/reports/mg-fill.ts";
 import { reportBlockPromptsMg } from "../../../../lib/prompts/sets.ts";
+import { relevantRefs } from "../../../../lib/knowledge/bundle.ts";
 import { mgPartLabel } from "../../../../lib/reports/mg-outline.ts";
 import type { PlanRevise } from "../../../../lib/reports/draft-sources.ts";
 import { type Prepared, type ReportDraftState, beginAi, logAiError } from "./draft-prepare.ts";
@@ -74,8 +75,8 @@ async function writeMgDraft(p: Prepared & { mg: MgDraftContext }, plan?: Composi
     };
     const row: Record<string, unknown> = { card_id: card.id, year, spec, warnings, unknown_numbers: v.unknownNumbers, model: modelLabel(call), source_rev: card.data_rev, created_by: me.id, outline: plan, outline_status: "approved", outline_approved_by: me.id, outline_approved_at: new Date().toISOString() };
     // 1차 초안을 먼저 저장한 뒤 분량 채움 보강(사유가 없으면 보강 없이 1차만) — 보강 판은 1차 저장 버전 조건으로만 씀(자료 반영 고치기도 이 경로)
-    // 빠진 구성안 블록 되살리기는 앱이 뺀 블록(droppedShapes)을 빼고 셈(구성안 지킴 셈과 같음)
-    const fillIn: MgFillInput = { card: card.data, known, quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes };
+    // 빠진 구성안 블록 되살리기는 앱이 뺀 블록(droppedShapes)을 빼고 셈(구성안 지킴 셈과 같음), 보탤 재료는 숫자 근거(known)와 같은 연결 조각(relevantRefs)
+    const fillIn: MgFillInput = { card: card.data, known, quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes, refs: relevantRefs(p.kb) };
     const saved = await saveFirstThenFill<MgFillRun>(supabase, { cardId: card.id, year }, row, p.base, async () => {
       const run = await runMgFill(spec, fillIn, { prompts: reportBlockPromptsMg().prompts, call: fillCall(p), t0, firstMs, deadlineMs: fixDeadlineMs() });
       if (!run) return null;

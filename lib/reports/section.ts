@@ -685,7 +685,7 @@ export function knownNumbers(card: Json, extraText = ""): Set<string> {
  * 단 보고서 추가자료는 사람이 이 과제에 연결(확정)한 것만(ReportFile.numberEvidence)
  */
 /** 과제 대응표가 이 과제에 연결한 공통 지식 조각 중 숫자 근거로 쓰는 유형 — KCA 자신의 2025 보고서 절·실사 답변(평가위원 지적은 인용 대조에만) */
-const LINKED_NUMBER_TYPES: readonly string[] = ["report_section", ...SURVEY_TYPES];
+export const LINKED_NUMBER_TYPES: readonly string[] = ["report_section", ...SURVEY_TYPES];
 
 /**
  * linked: 과제 대응표가 이 과제에 연결한 조각(자동·확정 — kb.list.relevant). 그중 2025 보고서 절·실사 답변의 수치도 숫자 근거(2026-10-10 — 전년 절은 닮은 순으로만,

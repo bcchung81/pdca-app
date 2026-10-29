@@ -5,7 +5,7 @@
 import { fitTextLines } from "./fit-dom.ts";
 import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
-import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, pdcaMark, tableBars } from "./blocks.ts";
+import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, tableBars } from "./blocks.ts";
 import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
 import { type RepeatMarks, figureSpans, repeatMarks } from "./repeat-figures.ts";
@@ -282,17 +282,27 @@ function cellCard(c: Block["cells"][number], u: Marks, cp?: string): string {
 type At = (rest: string) => string | undefined;
 
 /**
- * 추진실적 열 표(table:result — 2025 경영관리 MG-3·5·11·13의 「본문 칸 옆 어두운 추진실적 칸」): 왼쪽 행(행 머리가 하나라도 있으면 행 머리 열 + 추진내용 불릿),
- * 오른쪽 한 칸(모든 행에 걸침) = 머리 「추진실적」 + 큰 수치(series value)·뜻(label) + 결과 줄(text). 열 폭은 판면 어림(fit.ts slotOf)과 같은 값
+ * 추진실적 열 표(table:result — 2025 경영관리 MG-3·5·11·13의 「본문 칸 옆 추진실적 칸」, 2026-10-29 원본 모양으로): 머리 행 resultHeads(「구분 | 추진내용 | 추진실적」 —
+ * 수치 표 머리 칸, 「추진실적」 머리 칸만 어둡게) + 왼쪽 행(행 머리가 하나라도 있으면 행 머리 열 + 추진내용 불릿) + 오른쪽 결과 칸(밝은 바탕).
+ * 결과 칸 = series마다 굵은 줄 「뜻 수치」(가운데) + 시점 줄(text — 괄호, resultTimeText), series가 없으면 text를 불릿 한 줄로. 한 칸이 모든 행에 걸침(rowspan).
+ * 어느 행이든 결과 글(cells[i].note)이 있으면 결과 칸을 행마다 두고(rowspan 없음 — 2025 MG-3 「행마다 결과」 표) 그 행의 note를 불릿으로,
+ * series·text는 버리지 않고 첫 행 칸 위에 둠(근거 수치를 소리 없이 지우지 않음 — 집필 지침은 행마다 결과면 series·text를 비우라고 함). 열 폭은 판면 어림(fit.ts slotOf)과 같은 값
  */
 function resultTableHtml(b: Block, u: Marks, at: At, w: number): string {
   const right = (TABLE_SHAPE_MM.result / w) * 100;
   const rh = b.cells.some((c) => c.head) ? (resultRowHeadMm(w) / w) * 100 : 0;
-  const res = `<td class="k-res__r" rowspan="${b.cells.length}"><p class="k-res__h">추진실적</p>${b.series
-    .map((x, i) => `<p class="k-res__v">${tx(x.value, u, at(`series.${i}.value`))}</p>${x.label ? `<p class="k-res__l">${tx(x.label, u, at(`series.${i}.label`))}</p>` : ""}`)
-    .join("")}${b.text ? `<p class="k-res__t">${tx(b.text, u, at("text"))}</p>` : ""}</td>`;
-  return `<table class="k-tbl k-tbl--res"><colgroup>${rh ? `<col style="width:${rh.toFixed(2)}%">` : ""}<col><col style="width:${right.toFixed(2)}%"></colgroup><tbody>${b.cells
-    .map((c, i) => `<tr>${rh ? `<th scope="row">${tx(c.head, u, at(`cells.${i}.head`))}</th>` : ""}<td class="k-res__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}</td>${i === 0 ? res : ""}</tr>`)
+  const heads = resultHeads(b);
+  const thead = `<thead><tr>${heads.map((x, k) => (k === heads.length - 1 ? `<th scope="col" class="k-res__hd">${esc(x)}</th>` : `<th scope="col">${b.items[k] ? tx(x, u, at(`items.${k}`)) : esc(x)}</th>`)).join("")}</tr></thead>`;
+  const series = b.series.map((x, i) => `<p class="k-res__s">${x.label ? `${tx(x.label, u, at(`series.${i}.label`))} ` : ""}${tx(x.value, u, at(`series.${i}.value`))}</p>`).join("");
+  const text = !b.text ? "" : b.series.length ? `<p class="k-res__t">${tx(resultTimeText(b.text), u, at("text"), undefined, b.text)}</p>` : `<ul><li>${tx(b.text, u, at("text"))}</li></ul>`;
+  const perRow = resultPerRow(b);
+  const res = (i: number) => {
+    if (!perRow) return i === 0 ? `<td class="k-res__r" rowspan="${b.cells.length}">${series}${text}</td>` : "";
+    const c = b.cells[i];
+    return `<td class="k-res__r">${i === 0 ? `${series}${text}` : ""}${c.note ? `<ul><li>${tx(c.note, u, at(`cells.${i}.note`))}</li></ul>` : ""}</td>`;
+  };
+  return `<table class="k-tbl k-tbl--res"><colgroup>${rh ? `<col style="width:${rh.toFixed(2)}%">` : ""}<col><col style="width:${right.toFixed(2)}%"></colgroup>${thead}<tbody>${b.cells
+    .map((c, i) => `<tr>${rh ? `<th scope="row">${tx(c.head, u, at(`cells.${i}.head`))}</th>` : ""}<td class="k-res__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}</td>${res(i)}</tr>`)
     .join("")}</tbody></table>`;
 }
 

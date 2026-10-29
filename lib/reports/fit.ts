@@ -2,7 +2,7 @@
 // 칸 폭·여백·글꼴은 lib/reports/section-css.ts(2025 최종본 실측)와 같은 값입니다. CSS를 바꾸면 여기 SLOT·높이 상수도 함께 바꿉니다.
 // 쓰임: ① 요청 글의 「판면 예산」(칸마다 한 줄 글자 수·쪽 줄 수) ② 초안 뒤 높이 어림 → 넘치면 경고·맞추기 요청.
 
-import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, figureMm, isGridTable, isPanelCompare, ladderGroups } from "./blocks.ts";
+import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, figureMm, isGridTable, isPanelCompare, ladderGroups, resultHeads, resultPerRow, resultTimeText } from "./blocks.ts";
 import { type LayoutBlock, type LayoutGroup, PAIR_GAP_MM, cleanSpan, containerOf, layoutGroups } from "./layout.ts";
 import { MGMT_TRACK } from "../tracks/index.ts";
 import { REPORT_STYLE } from "./section-css.ts";
@@ -266,9 +266,11 @@ export function tableColsMm(b: Pick<Block, "variant" | "cells"> & Partial<Pick<B
 }
 /**
  * 표 모양(2026-10-12, section-html·section-css와 같은 값): 추진실적 열 표의 오른쪽 결과 칸 폭 · 막대 표의 막대 칸(막대 14mm + 사이 1.5mm) ·
- * 2단 라벨 표의 큰 라벨 열·하위 라벨 열 · 쉐브론 머리의 화살표 안 여백(좌우 합)
+ * 2단 라벨 표의 큰 라벨 열·하위 라벨 열 · 쉐브론 머리의 화살표 안 여백(좌우 합).
+ * 결과 칸 36 → 32mm(2026-10-29 — 2025 경영관리 원본 모양): 원본 「추진실적」 칸은 표 폭의 약 17~21%(MG-3·5·11·13 쪽 캡처 여섯 곳의 칸 폭 ÷ 표 폭)이고
+ * 큰 수치(15pt)를 세로로 쌓던 칸을 「뜻 수치」 본문 크기 줄로 바꿔 넓을 까닭이 없어짐 — 32mm = 사다리 칸 150mm의 21%·전폭 170mm의 19%
  */
-export const TABLE_SHAPE_MM = { result: 36, bar: 14, barGap: 1.5, ladderBig: 24, ladderSub: 30, chevronPad: 7 } as const;
+export const TABLE_SHAPE_MM = { result: 32, bar: 14, barGap: 1.5, ladderBig: 24, ladderSub: 30, chevronPad: 7 } as const;
 /** 추진실적 열 표의 왼쪽 행 머리 열(행 머리가 하나라도 있을 때) */
 export const resultRowHeadMm = (width: number) => tableRowHeadMm(width - TABLE_SHAPE_MM.result);
 
@@ -367,7 +369,7 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
       // Q&A 상자: 테두리·안 여백 12px, 왼쪽 Q·A 표지 칸(QA_MARK_MM) — 질문은 돋움 굵게, 답은 불릿
       return { body: width - pad(12) - QA_MARK_MM - INDENT_MM, head: width - pad(12) - QA_MARK_MM, note: width };
     case "table": {
-      // 추진실적 열 표: 오른쪽 결과 칸(36mm) + 왼쪽 행 머리 열(행 머리가 있을 때) + 추진내용 불릿 칸 — body = 불릿, head = 행 머리, note = 결과 칸
+      // 추진실적 열 표: 오른쪽 결과 칸(TABLE_SHAPE_MM.result) + 왼쪽 행 머리 열(행 머리가 있을 때) + 추진내용 불릿 칸 — body = 불릿, head = 행 머리, note = 결과 칸
       if (b.variant === "result") {
         const rowHead = b.cells.some((c) => c.head) ? resultRowHeadMm(width) : 0;
         return { body: width - TABLE_SHAPE_MM.result - rowHead - pad(8) - INDENT_MM, head: rowHead - pad(8), note: TABLE_SHAPE_MM.result - pad(8) };
@@ -568,11 +570,16 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       const TH = 10.4 * 1.45 * PT;
       const t = b.title ? HEAD_MM + 1 : 0;
       if (b.variant === "result") {
-        // 왼쪽 행(행 머리 돋움 · 추진내용 불릿) 합 vs 오른쪽 결과 칸(머리 「추진실적」 9.5pt + 큰 수치 15pt·뜻 9.5pt 묶음 + 결과 줄 9.5pt) 중 큰 것
-        const left = b.cells.reduce((n, c) => n + Math.max(c.head ? lineCount(c.head, s.head, 10.4, true) * TH : 0, lines(c.bullets, s.body) * L) + 2 * PX, 0);
-        const small = 9.5 * 1.4 * PT;
-        const right = small + 1 + b.series.reduce((n, x) => n + lineCount(x.value, s.note, 15, true) * 15 * 1.3 * PT + lineCount(x.label, s.note, 9.5, true) * small + 0.6, 0) + (b.text ? lineCount(b.text, s.note, 9.5, true) * small + 0.6 : 0) + 4 * PX;
-        return t + Math.max(left, right) + 1.2;
+        // 머리 행(resultHeads — 수치 표 머리 칸과 같은 맑은 고딕 10.4pt) + 본문. 결과 칸(section-html resultTableHtml): series마다 「뜻 수치」 돋움 굵게 본문 크기 한 줄(어절 단위) ·
+        // 시점 줄(text — 괄호, 바탕 9.5pt, 위 1px) · series 없으면 text는 불릿 · 행마다 결과(note)는 그 행 칸의 불릿. 칸 안 여백 위아래 2px(왼쪽 칸은 1px)
+        const RL = REPORT_STYLE.lh;
+        const head = max(resultHeads(b).map((x, k, all) => lineCount(x, k === all.length - 1 ? s.note : k === 0 && all.length === 3 ? s.head : s.body + INDENT_MM, 10.4, true))) * TH + 2 * PX;
+        const bulletW = s.note - INDENT_MM;
+        const result = b.series.reduce((n, x) => n + lineCount([x.label, x.value].filter(Boolean).join(" "), s.note, BODY_PT, true) * BODY_PT * RL.resSeries * PT, 0) +
+          (!b.text ? 0 : b.series.length ? lineCount(resultTimeText(b.text), s.note, 9.5, false, true) * 9.5 * RL.resLine * PT + PX : lines([b.text], bulletW) * L);
+        const leftRow = (c: Block["cells"][number]) => Math.max(c.head ? lineCount(c.head, s.head, 10.4, true) * TH : 0, lines(c.bullets, s.body) * L) + 2 * PX;
+        if (resultPerRow(b)) return t + head + b.cells.reduce((n, c, i) => n + Math.max(leftRow(c), (i === 0 ? result : 0) + (c.note ? lines([c.note], bulletW) * L : 0) + 4 * PX), 0) + 1.2;
+        return t + head + Math.max(b.cells.reduce((n, c) => n + leftRow(c), 0), result + 4 * PX) + 1.2;
       }
       if (b.variant === "ladder") {
         // 큰 라벨 묶음마다: 행(하위 라벨 돋움 · 내용 불릿) 합과 큰 라벨 줄 중 큰 것
@@ -1138,7 +1145,7 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       return { ...b, cells: b.cells.map((c) => ({ ...c, head: "계획수립", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))] })) };
     }
     case "table": {
-      // 추진실적 열 표: 행(구분 + 추진내용 불릿 2개 × 약 1.2줄) 1~4개 + 오른쪽 큰 수치 2개·결과 줄
+      // 추진실적 열 표: 행(구분 + 추진내용 불릿 2개 × 약 1.2줄) 1~4개 + 오른쪽 「뜻 수치」 줄 2개·시점 줄
       if (variant === "result") {
         const b = { ...base, cells: Array.from({ length: Math.min(4, count) }, () => ({ head: "구분", tag: "", bullets: [] as string[], note: "" })), series: [{ label: "결과의 뜻", value: "약 3만국" }, { label: "결과의 뜻", value: "97%" }], text: "가".repeat(12) };
         const sl = slotOf(b, inner(b));

@@ -100,7 +100,7 @@ export const VARIANTS: Partial<Record<BlockKind, readonly string[]>> = {
   compare: ["table", "panels", "diag"],
   steps: ["row", "zigzag"],
   timeline: ["chevron", "dots"],
-  // 표 모양(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 「블록 어휘 수준」 표): 빈 글 = 수치·구분표(예전 그대로), result = 오른쪽 어두운 「추진실적」 칸,
+  // 표 모양(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 「블록 어휘 수준」 표): 빈 글 = 수치·구분표(예전 그대로), result = 오른쪽 「추진실적」 칸(머리만 어둡게 — 2026-10-29),
   // bars = 값 칸 옆 가로 막대(길이는 코드가 셈 — tableBars), chevron = 열 머리가 단계 화살표, ladder = 2단 라벨(큰 라벨 안 하위 라벨 + 내용)
   table: ["", "result", "bars", "chevron", "ladder"],
 };
@@ -168,6 +168,32 @@ export function ladderGroups(cells: BlockCell[]): Array<{ head: string; start: n
     else out.push({ head: c.head, start: i, rows: 1 });
   });
   return out;
+}
+
+/**
+ * 추진실적 열 표(table:result) 머리 행(2026-10-29 — 2025 경영관리 원본 「구분 | 추진내용 | 추진실적」): 행 머리가 하나라도 있으면 세 칸, 없으면 「추진내용 | 추진실적」.
+ * items에 글이 있으면 앞 칸부터 그 글을 머리로(원본은 「구분」 대신 내용 이름을 단 머리도 있음), 마지막 칸은 늘 「추진실적」. 그리기·한글·높이 어림·원고가 같이 씀
+ */
+export function resultHeads(b: Pick<Block, "cells" | "items">): string[] {
+  const left = b.cells.some((c) => c.head) ? ["구분", "추진내용"] : ["추진내용"];
+  return [...left.map((x, i) => b.items[i] || x), "추진실적"];
+}
+
+/** 추진실적 열 표의 결과 칸을 행마다 두는가: 어느 행이든 결과 글(cells[i].note)이 있으면(2025 MG-3 「행마다 결과」 표) — 아니면 한 칸이 모든 행에 걸침 */
+export const resultPerRow = (b: Pick<Block, "cells">) => b.cells.some((c) => c.note);
+
+/** 추진실적 칸 시점 줄(text): 글 전체가 이미 한 괄호로 싸였으면 그대로, 아니면 괄호로 감쌈(2025 「(’24년 … → ’25년 …)」 꼴) */
+export function resultTimeText(s: string): string {
+  const t = s.trim();
+  if (!t) return "";
+  let depth = 0;
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === "(") depth += 1;
+    else if (t[i] === ")") depth -= 1;
+    // 첫 여는 괄호가 끝보다 먼저 닫히면 「(가) 및 (나)」처럼 한 괄호가 아님
+    if (depth === 0 && i < t.length - 1) return `(${t})`;
+  }
+  return t[0] === "(" && t.at(-1) === ")" ? t : `(${t})`;
 }
 
 const Cell = z.object({ head: z.string(), tag: z.string(), bullets: z.array(z.string()), note: z.string() });
@@ -250,13 +276,14 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
     };
     const name = `${kind}${x.label ? `(${x.label})` : ""}`;
     // 수치 표: items = 머리 줄 전체(첫째 = 행 머리 열 이름, 값 열 2~5개), 칸마다 head = 행 머리·bullets = 값 열 순서대로
-    // 추진실적 열 표(result): cells = 왼쪽 행(head 구분 — 선택·bullets 추진내용 불릿) 4행까지, series = 오른쪽 큰 수치 1~2(label 뜻·value 수치), text = 짧은 결과 줄(선택).
-    // 결과(수치·결과 줄)가 하나도 없으면 오른쪽 칸을 그릴 수 없어 평범한 칸(2행 이상) 또는 불릿으로
+    // 추진실적 열 표(result): cells = 왼쪽 행(head 구분 — 선택·bullets 추진내용 불릿·note 그 행의 결과 — 선택) 4행까지, series = 오른쪽 칸 「뜻 수치」 줄 1~2(label 뜻·value 수치), text = 시점 줄(선택).
+    // items = 머리 글(선택 — 왼쪽 칸 수 이하일 때만, 「추진실적」은 앱이 붙이므로 걷음 — resultHeads). 결과(수치·시점 줄·행 결과)가 하나도 없으면 오른쪽 칸을 그릴 수 없어 평범한 칸(2행 이상) 또는 불릿으로
     if (kind === "table" && x.variant === "result") {
-      x.items = [];
       x.cells = cells(b.cells, 12).filter((c) => c.bullets.length).slice(0, 4);
+      const heads = list(b.items, 4, 30).filter((h) => h !== "추진실적");
+      x.items = heads.length <= (x.cells.some((c) => c.head) ? 2 : 1) ? heads : [];
       x.series = x.series.slice(0, 2);
-      if (!x.series.length && !x.text) Object.assign(x, x.cells.length >= 2 ? { variant: "plain", kind: "cards" } : { kind: "bullets", variant: "", items: x.cells.flatMap((c) => c.bullets).slice(0, 8), cells: [] });
+      if (!x.series.length && !x.text && !resultPerRow(x)) Object.assign(x, x.cells.length >= 2 ? { variant: "plain", kind: "cards", items: [] } : { kind: "bullets", variant: "", items: x.cells.flatMap((c) => c.bullets).slice(0, 8), cells: [] });
     } else if (kind === "table" && x.variant === "ladder") {
       // 2단 라벨 표(ladder): cells = 행(head 큰 라벨 — 이어진 같은 라벨·빈 글은 한 칸으로 합침, tag 하위 라벨, bullets 내용) 6행까지
       x.items = [];
@@ -356,7 +383,7 @@ function enough(b: Block): boolean {
     case "qa":
       return b.cells.length >= 1;
     case "table":
-      if (b.variant === "result") return b.cells.length >= 1 && (b.series.length > 0 || Boolean(b.text));
+      if (b.variant === "result") return b.cells.length >= 1 && (b.series.length > 0 || Boolean(b.text) || resultPerRow(b));
       if (b.variant === "ladder") return b.cells.length >= 2;
       if (b.variant === "chevron") return b.items.length >= 3 && b.cells.length >= 1;
       return b.items.length >= 3 && b.cells.length >= 2;

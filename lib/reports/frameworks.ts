@@ -160,7 +160,7 @@ export const SHAPES: ShapeInfo[] = [
   { code: "stats", kind: "stats", variant: "", name: "핵심 수치 띠", group: "base", use: "추진성과 상자 — 칸마다 「성과 문장(시점 수치)」 굵은 불릿 2~4줄(2026-10-28 2025 추진성과 행 모양)" },
   { code: "table", kind: "table", variant: "", name: "수치 표", group: "base", use: "행·열 머리가 모두 있는 수치" },
   // 표 모양 4종(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 docs/analysis/2025-경영관리-경영실적보고서-분석.md 「블록 어휘 수준」)
-  { code: "table:result", kind: "table", variant: "result", name: "추진실적 열 표", group: "base", use: "추진내용 행 옆 어두운 「추진실적」 칸(큰 수치 1~2 + 한 줄)" },
+  { code: "table:result", kind: "table", variant: "result", name: "추진실적 열 표", group: "base", use: "추진내용 행 옆 「추진실적」 칸(「뜻 수치」 줄 1~2 + 시점, 행마다 결과도)" },
   { code: "table:bars", kind: "table", variant: "bars", name: "막대 든 수치 표", group: "base", use: "값 옆 가로 막대(’25 → ’26 — 같은 행·같은 단위끼리, 길이는 앱이 셈)" },
   { code: "table:chevron", kind: "table", variant: "chevron", name: "쉐브론 머리 표", group: "base", use: "열 머리가 단계 화살표(현황 ▶ 개선방향 ▶ 적용 결과)" },
   { code: "table:ladder", kind: "table", variant: "ladder", name: "2단 라벨 표", group: "base", use: "큰 라벨(① 관리) 안 하위 라벨(①-1·①-2) + 내용" },

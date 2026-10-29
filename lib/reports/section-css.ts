@@ -27,7 +27,7 @@ export const REPORT_STYLE = {
    * 상자 머리(.k-card__h·.k-ctx__head·.k-tl__h·.k-proc__h·table.k-ba th·.k-case__h·.k-panel__h·.k-zig__h·.k-hub__name) · 칸 사이 기호(.k-join·.k-vs·.k-zig__arr) ·
    * 협업 목록 머리(table.k-hub__list th)·목소리 이름(.k-voice__who span)·용어 칩(.k-chip)·가치 띠(.k-band__l·.k-band__t)·막대 머리(.k-chart figcaption)·PDCA 환류(.k-pdca__fb) ·
    * Q&A 질문(.k-qa dt > span)·표지(.k-qa__m) · 수치 표 머리 칸(table.k-tbl th)·노력/성과 표 머리(table.k-act th) · 전략체계도(th·__top·__head·__foot) ·
-   * 추진실적 열(.k-res__h·__v·__l·__t) · 추진성과(.k-result__label·.k-result__band) · 그림 자리(.k-fig__kind·.k-fig__desc)
+   * 추진실적 열(결과 칸 「뜻 수치」 줄 .k-res__s·시점 줄 .k-res__t) · 추진성과(.k-result__label·.k-result__band) · 그림 자리(.k-fig__kind·.k-fig__desc)
    */
   lh: {
     biz: 1.3, task: 1.25, sub: 1.3, title: 1.5, subhead: 1.4, stage: 1.5, ladder: 1.3,
@@ -35,7 +35,7 @@ export const REPORT_STYLE = {
     join: 1, vs: 1, zigArr: 1,
     hubList: 1.4, voice: 1.4, chip: 1.5, band: 1.6, chart: 1.45, pdcaFb: 1.45, qa: 1.5, qaMark: 1.5,
     tbl: 1.45, act: 1.45, stratTh: 1.3, stratTop: 1.5, stratHead: 1.5, stratFoot: 1.45,
-    resHead: 1.4, resValue: 1.3, resLine: 1.4, result: 1.3, resultBand: 1.3, figKind: 1.25, figDesc: 1.3,
+    resSeries: 1.4, resLine: 1.4, result: 1.3, resultBand: 1.3, figKind: 1.25, figDesc: 1.3,
   },
   /**
    * 칸 사이 기호 칸(2026-10-21 5mm → 3.5mm — 좁은 다단 칸 글 폭): 카드 묶음 ✚·▶·시기 흐름 ▶·PDCA ▶ 칸 폭(mm) · 기호 ✚·▶ 글자(pt) · 시기 흐름 화살표 그림 폭(mm).
@@ -452,12 +452,13 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-result__body--chart .k-chart{font-weight:400}
 /* 표 모양(2026-10-12, 2025 경영관리 빈출 — 폭은 lib/reports/fit.ts TABLE_SHAPE_MM과 같음): 추진실적 열 · 값 옆 막대 · 쉐브론 머리 · 2단 라벨 */
 .kca-dg-doc table.k-tbl--res td.k-res__b,.kca-dg-doc table.k-tbl--lad td.k-lad__b{text-align:left;vertical-align:middle;padding:1px 4px}
-.kca-dg-doc table.k-tbl--res td.k-res__r{background:var(--k-g5);color:#fff;text-align:center;vertical-align:middle;padding:2px 4px;border-left:var(--k-hair) solid var(--k-g5)}
-.kca-dg-doc .k-res__h{margin:0 0 1px;padding-bottom:1px;border-bottom:var(--k-hair) solid #fff;font:700 9.5pt/${LH.resHead} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
-.kca-dg-doc .k-res__v{margin:1px 0 0;font:700 ${F.stat}pt/${LH.resValue} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
-.kca-dg-doc .k-res__l,.kca-dg-doc .k-res__t{margin:0;font:700 9.5pt/${LH.resLine} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
-.kca-dg-doc .k-res__t{margin-top:2px}
-.kca-dg-doc .k-res__r .k-need{color:var(--k-ink)}
+/* 추진실적 열 표(2026-10-29 — 2025 경영관리 원본 모양): 머리 행은 수치 표 머리 그대로이고 「추진실적」 머리 칸만 어둡게. 결과 칸은 밝은 바탕·보통 글자색 —
+   「뜻 수치」 굵은 줄(본문 크기, 가운데) + 시점 줄(괄호, 작은 바탕), series가 없으면 불릿 · 행마다 결과(cells[i].note)는 그 행 칸의 불릿 */
+.kca-dg-doc table.k-tbl--res thead th.k-res__hd{background:var(--k-g5);color:#fff}
+.kca-dg-doc table.k-tbl--res td.k-res__r{text-align:center;vertical-align:middle;padding:2px 4px;border-left:var(--k-hair) solid var(--k-g4)}
+.kca-dg-doc .k-res__s{margin:0;font:700 ${F.body}pt/${LH.resSeries} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
+.kca-dg-doc .k-res__t{margin:1px 0 0;font:400 ${F.small}pt/${LH.resLine} var(--k-f-body)}
+.kca-dg-doc .k-res__r > ul{text-align:left}
 .kca-dg-doc .k-barc{display:flex;align-items:center;gap:1.5mm}
 .kca-dg-doc .k-barc__v{flex:1 1 auto;min-width:0;text-align:right}
 .kca-dg-doc .k-barc__t{flex:0 0 14mm;height:2.6mm;background:var(--k-g1);box-shadow:inset 0 0 0 var(--k-hair) var(--k-g3)}

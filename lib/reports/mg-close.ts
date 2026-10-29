@@ -24,7 +24,7 @@ export const CLOSE_ITEMS_MAX = 4;
 
 const PLAN_WORD = /예정|예상|목표|계획|전망/;
 /** 계획·목표 줄인가 — 「계획 대비 3배」·「목표 대비 120%」는 견준 결과라 계획 낱말로 안 셈(2026-10-29: 원장 정량 성과 「…31건(계획대비 3배)」가 빠졌음) */
-const isPlanLine = (l: string) => PLAN_WORD.test(l.replace(/(계획|목표)\s*대비/g, ""));
+export const isPlanLine = (l: string) => PLAN_WORD.test(l.replace(/(계획|목표)\s*대비/g, ""));
 const BULLET = /^[∙·•\-－○◦▪□■◆※*]\s*/;
 const isHead = (s: string) => BULLET.test(s);
 

@@ -69,12 +69,12 @@ const RESULT_LABEL = /^(?:추진성과|추진실적|성과)$/;
 const RESULT_HEAD = /추진\s?(?:성과|실적)|^성과$/;
 const compact = (s: string) => s.replace(/\s/g, "");
 
-/** 블록 하나의 실적 칸 줄(없으면 빈 배열): 라벨이 추진성과·추진실적·성과인 블록은 전부, 추진실적 열 표는 수치·결과 줄, 구분표는 「추진실적」 열 */
+/** 블록 하나의 실적 칸 줄(없으면 빈 배열): 라벨이 추진성과·추진실적·성과인 블록은 전부, 추진실적 열 표는 수치·시점 줄·행마다 결과(note), 구분표는 「추진실적」 열 */
 export function resultLinesOfBlock(b: Block): string[] {
   const all = () => [b.title, b.text, ...b.items, ...b.cells.flatMap((c) => [c.head, c.tag, ...c.bullets, c.note]), ...b.rows.flatMap((r) => [r.key, ...r.before, ...r.after]), ...b.series.map((s) => `${s.label} ${s.value}`), b.badge];
   let out: string[];
   if (RESULT_LABEL.test(compact(b.label))) out = all();
-  else if (b.kind === "table" && b.variant === "result") out = [b.text, ...b.series.map((s) => `${s.label} ${s.value}`)];
+  else if (b.kind === "table" && b.variant === "result") out = [b.text, ...b.series.map((s) => `${s.label} ${s.value}`), ...b.cells.map((c) => c.note)];
   else if (b.kind === "table" && b.variant !== "ladder") {
     // 구분표: items[0] = 구분 열 머리, items[k+1] = k번째 값 열 머리 → 「추진실적」 머리의 열만
     const cols = b.items.map((h, i) => (i > 0 && RESULT_HEAD.test(h) ? i - 1 : -1)).filter((i) => i >= 0);

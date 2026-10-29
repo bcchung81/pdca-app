@@ -306,8 +306,11 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 2026-10-29 추진성과 상자 안 막대 머리를 왼쪽 세로 칸으로(771dac2d… → ea9b9e37…): 주석 + .k-result__body--chart > .k-row2 오른쪽 열 60mm(REPORT_STYLE.sideChart 머리 18 + 막대 42)
 // + .k-chart--side 규칙 다섯 줄을 한 덩어리로 더함(사다리 행 끝 막대의 .k-row2 42mm는 그대로) — 이 덩어리를 뺀 글이 옛 고정값 771dac2d…과 같음을 확인
 // 2026-10-29 되풀이 표시(ea9b9e37… → a3166f1a…): .k-unv 다음에 주석 + .k-rep·.k-rep--line 바탕 + @media print 한 줄(화면 전용, 한글 양식 값 아님) — 이 네 줄을 뺀 글이 옛 고정값 ea9b9e37…과 같음을 확인
+// 2026-10-29 추진실적 열 표를 2025 경영관리 원본 모양으로(a3166f1a… → a62585f4…): 결과 칸 어두운 바탕·흰 글과 칸 안 머리·큰 수치·뜻 규칙(.k-res__h·__v·__l·__r .k-need)을
+// 주석 + 「추진실적」 머리 칸(thead th.k-res__hd)만 어둡게·밝은 결과 칸·「뜻 수치」 줄(.k-res__s — lh.resSeries)·괄호 시점 줄(.k-res__t 바탕 9.5pt)·칸 안 불릿 왼쪽 정렬로 바꿈
+// (REPORT_STYLE.lh resHead·resValue → resSeries) — 이 덩어리를 옛 여섯 줄로 되돌린 글이 옛 고정값 a3166f1a…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "a3166f1a3d4178c03a28a932e3698e13e411e0acb8864f47b00ffd6681463b5d");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "a62585f4169a6bdd8c2e8dc32752ed8cb96f1a9151c27caa35b5e7b2beffd2a8");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {
@@ -464,8 +467,9 @@ test("상자 머리·표 머리 칸·수치 칸 줄간격 = 화면 CSS line-heig
     ["table:", (t) => t === "구분", "table.k-tbl thead th", LH.tbl, 145],
     ["table:", (t) => t === "건수", "table.k-tbl tbody th", LH.tbl, 145],
     ["table:result", (t) => t === "가", "table.k-tbl tbody th", LH.tbl, 145],
-    ["table:result", (t) => t === "추진실적", ".k-res__h", LH.resHead, 140],
-    ["table:result", (t) => t === "1,240건", ".k-res__v", LH.resValue, 130],
+    ["table:result", (t) => t === "추진실적", "table.k-tbl thead th", LH.tbl, 145],
+    ["table:result", (t) => t === "검사 건수 1,240건", ".k-res__s", LH.resSeries, 140],
+    ["table:result", (t) => t === "(목표 초과)", ".k-res__t", LH.resLine, 140],
     ["cards:plain", (t) => t.endsWith("가 칸"), ".k-card__h", LH.card, 150],
     ["steps:row", (t) => t.endsWith("수요조사"), ".k-proc__h", LH.proc, 155],
     ["timeline:chevron", (t) => t === "’24년", ".k-tl__h", LH.tl, 150],
@@ -482,6 +486,32 @@ test("상자 머리·표 머리 칸·수치 칸 줄간격 = 화면 CSS line-heig
     const { doc } = await convert(makeSpec([SAMPLES[sample]]));
     assert.equal(lineOf(doc, pred), want, `${sample} — ${css}`);
   }
+});
+
+test("추진실적 열 표(2026-10-29 원본 모양): 머리 행 「구분 | 추진내용 | 추진실적」(「추진실적」 칸만 진회색), 결과 칸 흰 바탕 「뜻 수치」·괄호 시점 줄, 행마다 결과면 칸이 행마다", async () => {
+  const { doc } = await convert(makeSpec([SAMPLES["table:result"]]));
+  const t = allTables(doc.sections[0].paras).find((x) => x.cells.some((c) => textOf(c.paras).join("") === "추진실적"))!;
+  assert.ok(t);
+  const at = (r: number, c: number) => t.cells.find((x) => x.row === r && x.col === c)!;
+  const fill = (c: { borderFill: number }) => doc.borderFills[c.borderFill]!.fill?.color?.toLowerCase() ?? null;
+  assert.deepEqual([0, 1, 2].map((c) => textOf(at(0, c).paras).join("")), ["구분", "추진내용", "추진실적"]);
+  assert.equal(fill(at(0, 2)), REPORT_STYLE.gray.g5, "「추진실적」 머리 칸만 진회색");
+  assert.equal(fill(at(0, 1)), REPORT_STYLE.gray.g2);
+  const res = at(1, 2);
+  assert.equal(res.rowSpan, 2, "결과 칸 하나가 모든 행에 걸침");
+  assert.ok(fill(res) === null || fill(res) === "#ffffff", `결과 칸은 칠하지 않음(${fill(res)})`);
+  assert.deepEqual(textOf(res.paras), ["검사 건수 1,240건", "(목표 초과)"]);
+  // 행마다 결과(note): 행마다 결과 칸(rowspan 없음), 첫 행 위에 series·text
+  const perRow = block({ ...SAMPLES["table:result"], cells: [cell("가", ["내용1"], { note: "처리 30% 단축" }), cell("나", ["내용2"], { note: "참여 12곳" })] });
+  const p = await convert(makeSpec([perRow]));
+  const t2 = allTables(p.doc.sections[0].paras).find((x) => x.cells.some((c) => textOf(c.paras).join("") === "추진실적"))!;
+  const rc = t2.cells.filter((c) => c.col === 2 && c.row > 0);
+  assert.deepEqual(rc.map((c) => c.rowSpan), [1, 1]);
+  assert.deepEqual(rc.map((c) => textOf(c.paras)), [["검사 건수 1,240건", "(목표 초과)", "처리 30% 단축"], ["참여 12곳"]]);
+  // 행 머리가 없으면 「추진내용 | 추진실적」
+  const noHead = await convert(makeSpec([block({ ...SAMPLES["table:result"], cells: [cell("", ["내용1"])] })]));
+  const t3 = allTables(noHead.doc.sections[0].paras).find((x) => x.cells.some((c) => textOf(c.paras).join("") === "추진실적"))!;
+  assert.deepEqual(t3.cells.filter((c) => c.row === 0).map((c) => textOf(c.paras).join("")), ["추진내용", "추진실적"]);
 });
 
 test("XML 금지 문자: 본문·모양·미리보기 글 모두 0", async () => {

@@ -82,6 +82,30 @@ test("AI 답 정리: 절은 번호·표지를 정리해 평가내용 → 대주�
   assert.ok(warnings.some((w) => w.includes("블록이 없는 절 1개")));
 });
 
+test("추진실적 열 표(table:result) 옆 그림 자리는 뺌(2026-10-29 — 2025 원본은 옆 그림 없이 폭을 다 씀): AI 답·사람 편집 모두, 참고 경고 「그림 자리:」, 다른 블록 그림은 그대로", () => {
+  const fig = { kind: "screen" as const, desc: "시스템 화면", pos: "right" as const, size: "S" as const };
+  const o = out();
+  o.blocks = [
+    { part: 2, kind: "table", variant: "result", label: "추진내용", purpose: "결과", cells: 2, materials: ["m1"], figures: [fig], alts: [] },
+    { part: 2, kind: "cards", variant: "plain", label: "추진배경", purpose: "왜", cells: 3, materials: ["m1"], figures: [fig], alts: [] },
+  ];
+  const { composition: c, warnings } = cleanMgComposition(o, "", new Set(), { indicator: "지표", prior: PRIOR });
+  const res = c.blocks.find((b) => b.kind === "table")!;
+  assert.deepEqual(res.figures, []);
+  assert.equal(c.blocks.find((b) => b.kind === "cards")!.figures.length, 1, "다른 블록 그림은 그대로");
+  const w = warnings.filter((x) => x.startsWith("그림 자리:"));
+  assert.equal(w.length, 1);
+  assert.match(w[0], /추진실적 열 표 옆 그림 자리 1개를 뺐습니다/);
+  assert.equal(warningLevel(w[0]), "info", "참고 경고");
+  assert.ok(!cleanMgComposition(out(), "", new Set(), { indicator: "지표", prior: PRIOR }).warnings.some((x) => x.startsWith("그림 자리:")), "뺄 것이 없으면 경고 없음");
+  // 사람 편집: 그림이 붙은 칸 블록을 추진실적 열 표로 바꾸면 그림 자리를 뺌
+  const e = editOf(c);
+  const cardsAt = e.blocks.findIndex((b) => b.kind === "cards");
+  const edited = applyMgCompositionEdit(c, { ...e, blocks: e.blocks.map((b, i) => (i === cardsAt ? { ...b, kind: "table", variant: "result", cells: 2 } : b)) });
+  assert.ok(edited.composition.blocks.every((b) => !(b.kind === "table" && b.variant === "result") || !b.figures.length));
+  assert.ok(edited.notes.some((x) => /^그림 자리: 추진실적 열 표 옆 그림 자리 1개/.test(x)), edited.notes.join(" | "));
+});
+
 test("구성안 점검: 「추진성과」로 닫지 않은 절(대주제 본문은 예외)·자료 필요·재료 없는 블록, 판면 경고는 없음", () => {
   const { composition: c } = cleanMgComposition(out(), "", new Set(), { indicator: "지표", prior: PRIOR });
   const issues = mgCompositionIssues(c);

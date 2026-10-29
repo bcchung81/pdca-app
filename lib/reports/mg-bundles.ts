@@ -104,7 +104,7 @@ export function headUnit(text: string): string {
  * 표 하나(rich-text.ts parseChunkBlocks의 행·칸) → 표 머리(머리 행마다 칸 「 | 」, 행 사이 「 / 」)와 자료 행(행 줄 「칸 | 칸」, 값 칸만 이은 글). 머리 = 앞쪽의 머리 칸(th)이 있거나 숫자가 없는 행들(두 줄 머리 포함).
  * 병합 칸은 열 자리를 맞춰(colspan은 덮는 열 모두, rowspan은 아래 행의 그 열 자리) 값 칸이 맨 숫자면 그 열 머리의 단위를, 없으면 행 첫 칸(행 머리)의 단위를 붙임 — 계량지표의 「지표 단위 붙이기」와 같은 생각
  */
-function readTable(rows: RichCell[][]): { head: string; rows: Array<{ line: string; values: string }> } {
+export function readTable(rows: RichCell[][]): { head: string; rows: Array<{ line: string; values: string }> } {
   const heads: string[] = []; // 열마다 머리 글(위 머리 행부터 이음)
   const headRows: string[] = [];
   const below: number[] = []; // 열마다 위 행의 rowspan 칸이 더 차지하는 행 수

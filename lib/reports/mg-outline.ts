@@ -364,6 +364,8 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     blocks.push({ ...x, at });
   }
   if (lost) warnings.push(`구성: 놓일 절을 알 수 없는 블록 ${lost}개를 뺐습니다.`);
+  const figs = dropResultFigures(blocks);
+  if (figs.warning) warnings.push(figs.warning);
   warnings.push(...chipWarnings);
   const used = new Set(blocks.map((b) => b.at));
   const empty = parts.filter((p) => !used.has(p.key));
@@ -381,7 +383,7 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     story: "",
     storyWhy: "",
     alternative: "",
-    blocks: sortByParts(blocks, kept),
+    blocks: sortByParts(figs.blocks, kept),
     results: "",
     resultShape: "bullets",
     materials,
@@ -389,6 +391,19 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}), ...(ctx.outcomes?.length ? { outcomes: ctx.outcomes } : {}) },
   };
   return { composition, warnings };
+}
+
+/**
+ * 추진실적 열 표(table:result) 옆 그림 자리는 뺌(2026-10-29, AI 답·사람 편집 공용): 2025 경영관리 원본의 추진실적 열 표는 판면 폭을 다 쓰고 옆에 그림이 붙지 않음 —
+ * 그림이 붙으면 추진내용·결과 칸이 그림 폭만큼 좁아져 칸 글이 여러 줄로 접힘. 뺐으면 참고 경고 한 줄(「그림 자리:」)
+ */
+function dropResultFigures(blocks: PlanBlock[]): { blocks: PlanBlock[]; warning: string } {
+  const n = blocks.reduce((k, b) => k + (b.kind === "table" && b.variant === "result" ? b.figures.length : 0), 0);
+  if (!n) return { blocks, warning: "" };
+  return {
+    blocks: blocks.map((b) => (b.kind === "table" && b.variant === "result" && b.figures.length ? { ...b, figures: [] } : b)),
+    warning: `그림 자리: 추진실적 열 표 옆 그림 자리 ${n}개를 뺐습니다 — 2025 보고서의 추진실적 열 표는 옆에 그림 없이 폭을 다 씁니다(그림은 다른 블록에 붙여 주세요).`,
+  };
 }
 
 /** 절 칩 하나 정리(AI 답·사람 편집 공용): 축이 없으면 칩을 버리고(적었으면 경고), 있으면 cleanChip. 경고는 warnings에 모음 */
@@ -558,11 +573,13 @@ export function applyMgCompositionEdit(c: Composition, e: CompositionEdit, hayKe
     return { ...b, at: kept[0].key, by: "human" as const };
   });
   if (moved) notes.push(`놓일 절이 없는 블록 ${moved}개를 첫 절로 옮겼습니다.`);
+  const figs = dropResultFigures(blocks);
+  if (figs.warning) notes.push(figs.warning);
   notes.push(...[...chipNotes].map((w) => w.replace(/^갈래:\s*/, "갈래 칩: ")));
   const mg = { ...c.mg, parts: kept };
   if (axis) mg.axis = axis;
   else delete mg.axis;
-  return { composition: { ...r.composition, story: "", blocks: sortByParts(blocks, kept), mg }, notes };
+  return { composition: { ...r.composition, story: "", blocks: sortByParts(figs.blocks, kept), mg }, notes };
 }
 
 // ---------------------------------------------------------------------------

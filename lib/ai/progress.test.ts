@@ -82,7 +82,7 @@ test("경평 초안 보통 걸리는 시간: 한곳(draftExpect)에서 — 경�
   assert.equal(rangeText(draftExpect("story")), "1~4분");
   assert.equal(rangeText(draftExpect("outline", true)), "1~4분", "경영관리 구성안 108·150초");
   // 경영관리 집필 89·99초 + 분량 채움 보강(2026-10-29 — 보강 전체 상한 MG_FILL.maxSec(실측 블록 16~44초 × 두 라운드 약 20블록)까지, 사유가 없으면 집필 한 번으로 끝나 아래쪽 그대로)
-  assert.equal(rangeText(draftExpect("plan", true)), "1~13분");
+  assert.equal(rangeText(draftExpect("plan", true)), `1~${Math.round((180 + MG_FILL.maxSec) / 60)}분`);
   assert.equal(draftExpect("plan", true).max, 180 + MG_FILL.maxSec);
   assert.deepEqual(draftExpect("revise", true), draftExpect("plan", true), "자료 반영 고치기도 같은 보강");
   assert.equal(rangeText(draftExpect("plan")), "1~3분", "주요사업 집필은 그대로");

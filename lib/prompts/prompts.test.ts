@@ -254,8 +254,11 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.room 줄·불릿 수 + fill.room.cell·fill.room.bullet·fill.room.line·fill.repeat·fill.repeat.item, fill 「줄을 줄이지 않음」)로 판 바뀜(@b7065808 → @e0653ee9 — 주요사업 report-block@d2197db2 그대로)
   // 2026-10-29 반복 문장을 분량 보강 사유로(report-block-mg/request.md fill.sentence·fill.sentence.item, fill 「「비슷한 문장 되풀이」를 고치는 것 말고는」 — lib/reports/mg-fill.ts sentencesOf)로 판 바뀜(@e0653ee9 → @8302d6f6 — 주요사업 report-block@d2197db2 그대로)
   // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none, 머리 설명 — lib/reports/mg-fill.ts missingBlocks)로 판 바뀜(@8302d6f6 → @0c7d879b — 주요사업 report-block@d2197db2 그대로)
-  assert.equal(mg.prompts.version, "report-block-mg@0c7d879b");
-  for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none"]) {
+  // 2026-10-29 저녁 보강 재료·되풀이 금지(report-block-mg/request.md fill.refs·fill.refs.item — 연결 근거 조각의 안 쓴 사실·시점 표지, fill.avoid — 다른 블록에 이미 있는 수치·문장,
+  // fill의 {{refs}}{{avoid}} 자리, 머리 설명 — lib/reports/mg-fill.ts linkedFacts·avoidList)로 판 바뀜(@0c7d879b → @c9d8bf92 — 주요사업 report-block@d2197db2 그대로)
+  // 2026-10-29 추진실적 열 표를 2025 경영관리 원본 모양으로(report-draft-mg/blocks.md#choose result 한 줄 — 머리 행·오른쪽 칸은 「뜻 수치」 짧게·시점은 text·행마다 결과는 cells[i].note·items 머리 글·옆 그림 자리 없음)로 판 바뀜(@c9d8bf92 → @b358c751 — 주요사업 report-block@d2197db2 그대로)
+  assert.equal(mg.prompts.version, "report-block-mg@b358c751");
+  for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none", "fill.refs", "fill.refs.item", "fill.avoid"]) {
     assert.ok(mg.prompts.request[k], `report-block-mg/request.md @${k}`);
     assert.equal(bp.request[k], undefined, `주요사업 report-block에는 @${k} 없음`);
   }
@@ -275,7 +278,7 @@ test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나�
   assert.match(req["fit.guide"], /나란한 칸[^\n]*줄 수를 같게\(±1줄\)[^\n]*불릿 1~3개[^\n]*2025 보고서\(전년 절\)의 글·수치·사례로 칸이나 배경을 채우지 않습니다[^\n]*올해 사실로 더 쓸 것이 없으면 긴 칸을 줄이거나 칸 수를 줄여 맞추고, 근거 없는 말로 채우지 않습니다\. 판면 예산은 그대로 지킵니다/);
   assert.match(req["fit.hollowHead"], /짧은 칸을 채워도 판면은 늘지 않음[^\n]*카드·첨부의 올해 사실로만 보강하고\(2025 보고서 글·수치로 채우지 않음\), 성과 칸을 비우거나 블록을 빼서 맞추지 않음/);
   assert.match(req["fit.hollowItem"], /카드·첨부의 올해 사실로 약 \{\{add\}\}자 보강[^\n]*올해 사실로 더 쓸 것이 없으면 긴 칸을 줄여 맞춤/);
-  assert.match(reportDraftPromptsMg().prompts.request["volume.plan"], /칸 불릿은 칸마다 1~3개, 나란한 칸은 줄 수를 같게/);
+  assert.match(reportDraftPromptsMg().prompts.request["volume.plan"], /칸 불릿은 칸마다 2~3개, 나란한 칸은 줄 수를 같게/);
 });
 
 test("경영관리 구성안 절 정하기(2026-10-15): 올해 한 일 없이 계획·목표만 있는 묶음은 따로 절을 세우지 않고 실적 있는 절의 「향후 계획」 줄로 — 절 수 규칙(분량 목표)은 그대로", () => {
@@ -323,16 +326,21 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // (@0435f085 → @713be917, @63f470c1 → @b7065808 — 주요사업 report-draft@b0c5f746 → @c3a401a3(style.md + request fit.guide·plan.head)·report-block@afffeff8 → @d2197db2, report-unit-mg@90b1a4e1 → @3d5e76b7도 style.md를 끼워 바뀜)
   // 2026-10-29 구성안 「둔 이유」 안내(report-outline-mg/schema.md part.why 「한 줄」 → 「두세 문장(400자 안)」 — mg-outline.ts WHY_MAX와 맞춤)로 outline만 바뀜(@08f8ada7 → @2329565b)
   // 2026-10-29 집필 지침 process.md 3번의 불릿 예시를 중립 예시로 바꿈(공개 저장소라 실제 카드 값 제거 — 집필 판만 바뀜 @713be917 → @5928aee4)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@5928aee4");
+  // 2026-10-29 분량 목표를 블록 영역의 90~100% → 100~110%로(집필이 어림보다 짧게 끝남 — 6-2 일곱 번 첫 초안 배정의 60~83%), 칸 불릿 1~3개 → 2~3개 — 집필 판만 바뀜 @5928aee4 → @d2b75d91
+  // 2026-10-29 추진실적 열 표를 2025 경영관리 원본 모양으로(report-draft-mg/blocks.md#choose result 한 줄 — 머리 행·오른쪽 칸은 「뜻 수치」 짧게·시점은 text·행마다 결과는 cells[i].note·items 머리 글·옆 그림 자리 없음)로 셋 다 바뀜(draft @d2b75d91 → @a2d03082, outline @12d3277a → @7ed0f810, block @c9d8bf92 → @b358c751 — 주요사업 판 그대로)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@a2d03082");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜
   // (@e5deeb90 → @12d3277a — 집필·블록 고치기·주요사업 판 그대로)
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@12d3277a");
+  // 2026-10-29 추진실적 열 표 원본 모양(report-draft-mg/blocks.md#choose)으로 outline도 바뀜(@12d3277a → @7ed0f810 — 위 집필 판 줄과 같은 변경)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@7ed0f810");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 반복 문장 보강 사유(report-block-mg/request.md fill.sentence·fill.sentence.item)로 블록 고치기 판만 바뀜(@e0653ee9 → @8302d6f6 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none)로 블록 고치기 판만 바뀜(@8302d6f6 → @0c7d879b — 집필·구성안·주요사업 판 그대로)
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@0c7d879b");
+  // 2026-10-29 저녁 보강 재료·되풀이 금지(report-block-mg/request.md fill.refs·fill.refs.item·fill.avoid)로 블록 고치기 판만 바뀜(@0c7d879b → @c9d8bf92 — 집필·구성안·주요사업 판 그대로)
+  // 2026-10-29 추진실적 열 표 원본 모양(report-draft-mg/blocks.md#choose)으로 블록 고치기 판도 바뀜(@c9d8bf92 → @b358c751)
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@b358c751");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {

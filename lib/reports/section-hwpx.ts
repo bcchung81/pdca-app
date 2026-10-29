@@ -14,7 +14,7 @@ import { BORDER_WIDTH_MM } from "../hwp/hwp5.ts";
 import { type HwpxInput, hwpxFiles } from "../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, Bullet, Cell, CharPr, HwpDoc, Inline, LineType, PageDef, Para, ParaPr, Table } from "../hwp/model.ts";
 import { writeHwpxPackage } from "../hwpx/postprocess.ts";
-import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, blockTexts, figureMm, isPanelCompare, ladderGroups, pdcaMark, tableBars } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, blockTexts, figureMm, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, tableBars } from "./blocks.ts";
 import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableColsMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
 import { fontName } from "./report-fonts.ts";
@@ -1103,28 +1103,41 @@ class SectionWriter extends Writer {
     );
   }
 
-  /** 추진실적 열 표(table:result): 왼쪽 행(행 머리 + 추진내용 불릿) · 오른쪽 한 칸(진회색 — 「추진실적」·큰 수치·뜻·결과 줄) */
+  /**
+   * 추진실적 열 표(table:result — 화면 section-html resultTableHtml과 같은 모양, 2026-10-29): 머리 행(resultHeads — 수치 표 머리 칸, 「추진실적」 칸만 진회색·흰 글) ·
+   * 왼쪽 행(행 머리 + 추진내용 불릿) · 오른쪽 결과 칸(흰 바탕 — 「뜻 수치」 돋움 굵게 가운데 + 괄호 시점 줄, series 없으면 text 불릿). 행마다 결과(note)가 있으면 칸을 행마다(첫 행 위에 series·text)
+   */
   resultTable(b: Block, w: number): Table {
     const wMm = w / HU_PER_MM;
     const right = mm(TABLE_SHAPE_MM.result);
     const rh = b.cells.some((c) => c.head) ? mm(resultRowHeadMm(wMm)) : 0;
     const colW = this.cols(w, [...(rh ? [rh] : []), { fr: 1 }, right]);
     const off = rh ? 1 : 0;
-    const W9: CS = { face: "dotumB", pt: F.small, color: WHITE };
-    const res: Para[] = [
-      this.para({ align: "CENTER", line: pct(LH.resHead), box: { b: { pt: ST.line.hair, color: G.g0 } }, after: px(1) }, [this.run("추진실적", W9)], W9),
-      ...b.series.flatMap((x) => [this.p(x.value, { face: "dotumB", pt: F.stat, color: WHITE }, { align: "CENTER", before: px(1), line: pct(LH.resValue) }), ...(x.label ? [this.p(x.label, W9, { align: "CENTER", line: pct(LH.resLine) })] : [])]),
-      ...(b.text ? [this.p(b.text, W9, { align: "CENTER", before: px(2), line: pct(LH.resLine) })] : []),
+    const M: [number, number, number, number] = [px(4), px(4), px(1), px(1)];
+    const heads = resultHeads(b);
+    const cells: TCell[] = heads.map((x, i): TCell => {
+      const dark = i === heads.length - 1;
+      return { r: 0, c: i, paras: [this.p(x, dark ? { ...LABEL, color: WHITE } : LABEL, { align: "CENTER", line: pct(LH.tbl) })], box: { t: THICK, b: HAIR, l: i ? { pt: ST.line.hair, color: G.g0 } : undefined, fill: dark ? G.g5 : G.g2 }, m: M };
+    });
+    const top: Para[] = [
+      ...b.series.map((x) => this.p([x.label, x.value].filter(Boolean).join(" "), HEAD, { align: "CENTER", line: pct(LH.resSeries) })),
+      ...(!b.text ? [] : b.series.length ? [this.p(resultTimeText(b.text), { ...BODY, pt: F.small }, { align: "CENTER", before: px(1), line: pct(LH.resLine), chars: true })] : this.ul([b.text])),
     ];
+    const perRow = resultPerRow(b);
     const n = Math.max(1, b.cells.length);
-    const cells: TCell[] = [];
+    const resBox = (bottom: Line): Box => ({ l: HAIR, b: bottom });
     b.cells.forEach((c, i) => {
       const bottom = i === n - 1 ? HAIR : HAIR3;
-      if (rh) cells.push({ r: i, c: 0, paras: [this.p(c.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { b: bottom, fill: G.g1, t: i === 0 ? THICK : undefined }, m: [px(4), px(4), px(1), px(1)] });
-      cells.push({ r: i, c: off, paras: this.ul(c.bullets), box: { b: bottom, l: off ? HAIR3 : undefined, t: i === 0 ? THICK : undefined }, m: [px(4), px(4), px(1), px(1)] });
+      const r = i + 1;
+      if (rh) cells.push({ r, c: 0, paras: [this.p(c.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { b: bottom, fill: G.g1 }, m: M });
+      cells.push({ r, c: off, paras: this.ul(c.bullets), box: { b: bottom, l: off ? HAIR3 : undefined }, m: M });
+      if (perRow) {
+        const paras = [...(i === 0 ? top : []), ...(c.note ? this.ul([c.note]) : [])];
+        cells.push({ r, c: off + 1, paras: paras.length ? paras : [this.empty()], box: resBox(bottom), m: [px(4), px(4), px(2), px(2)] });
+      }
     });
-    cells.push({ r: 0, c: off + 1, rs: n, paras: res, box: { fill: G.g5, l: { pt: ST.line.hair, color: G.g5 }, t: THICK, b: HAIR }, m: [px(4), px(4), px(2), px(2)] });
-    return this.table(colW, Array.from({ length: n }, () => lineH()), cells);
+    if (!perRow) cells.push({ r: 1, c: off + 1, rs: n, paras: top.length ? top : [this.empty()], box: resBox(HAIR), m: [px(4), px(4), px(2), px(2)] });
+    return this.table(colW, [lineH(F.label), ...Array.from({ length: n }, () => lineH())], cells);
   }
 
   /** 2단 라벨 표(table:ladder): 큰 라벨(이어진 같은·빈 글은 한 칸 — ladderGroups) · 하위 라벨(있을 때) · 내용 불릿 */

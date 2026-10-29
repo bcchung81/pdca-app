@@ -123,7 +123,10 @@ test("표 모양 4종: 막대·쉐브론은 값 표, result는 추진실적 열(
   const grid = (variant: string) => md([block({ kind: "table", variant, items: ["구분", "’25", "’26"], cells: [cell("건수", ["10건", "20건"])] })]).md;
   assert.ok(grid("bars").includes("| 건수 | 10건 | 20건 |") && grid("chevron").includes("| 구분 | ’25 | ’26 |"));
   const res = md([block({ kind: "table", variant: "result", cells: [cell("가", ["내용1"]), cell("나", ["내용2"])], series: [{ label: "검사 건수", value: "1,240건" }], text: "목표 초과" })]).md;
-  assert.ok(res.includes("| 구분 | 추진내용 | 추진실적 |") && res.includes("| 가 | 내용1 | 1,240건 검사 건수 / 목표 초과 |") && res.includes("| 나 | 내용2 | 〃 |"));
+  // 2026-10-29 결과 칸 글을 화면과 같게(「뜻 수치」 + 괄호 시점 줄 — 예전 「수치 뜻 / 결과 줄」), 행마다 결과(note)면 행마다
+  assert.ok(res.includes("| 구분 | 추진내용 | 추진실적 |") && res.includes("| 가 | 내용1 | 검사 건수 1,240건 / (목표 초과) |") && res.includes("| 나 | 내용2 | 〃 |"));
+  const perRow = md([block({ kind: "table", variant: "result", cells: [cell("가", ["내용1"], { note: "처리 30% 단축" }), cell("나", ["내용2"], { note: "참여 12곳" })], series: [], text: "" })]).md;
+  assert.ok(perRow.includes("| 가 | 내용1 | 처리 30% 단축 |") && perRow.includes("| 나 | 내용2 | 참여 12곳 |"));
   const lad = md([block({ kind: "table", variant: "ladder", cells: [cell("큰 라벨", ["가"], { tag: "하위1" }), cell("", ["나"], { tag: "하위2" }), cell("다른", ["다"], { tag: "하위3" })] })]).md;
   assert.ok(lad.includes("| 큰 라벨 | 하위1 | 가 |") && lad.includes("| 〃 | 하위2 | 나 |") && lad.includes("| 다른 | 하위3 | 다 |"));
 });

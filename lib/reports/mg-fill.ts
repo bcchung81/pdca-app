@@ -17,6 +17,9 @@
 //     라운드: 1회차 뒤 다시 재서 아직 배정 × MG_FILL.low 미만이면 2회차(MG_FILL.rounds) — 보강할 수 있는 블록 전부를 다시 고름(1회차에 몫을 다 쓴 블록·못 받은 블록도, 몫은 남은 분량을 다시 나눔).
 //     멈춤: 블록마다 시작 전 기한(canFixAgain — Vercel fixDeadlineMs, 로컬은 MG_FILL.maxSec), 호출 한도(startAiRequest 거절)면 그 라운드를 끝냄(기다리지 않음)
 //  4. 저장(saveFirstThenFill): 1차 초안 먼저 저장 → 보강 → 1차 저장의 updated_at 조건으로만 갱신(그 사이 사람이 고쳤으면 덮지 않고 건너뜀)
+// 2026-10-29 저녁(6-2 r9·r9b 흔들림 — 분량 88%·보강이 만든 반복 문장 5쌍·빠진 데이터 블록): ③ 보탤 사실에 연결 근거 조각(relevantRefs)의 문장·표 행을 더하고(linkedFacts — 사유는 아님, 재료만),
+//   블록 몫은 MG_FILL.shareMin 이상이 되는 최소 개수에 모으고(줄 수 적은 블록 먼저), 요청 글에 다른 블록의 수치·문장(되풀이 금지)을 주고, 새 반복을 만드는 판은 받지 않고,
+//   보강 뒤 반복이 남으면 「반복 정리」 한 라운드, 빠진 데이터 블록은 그 절의 짝 없는 블록에 재료 값이 없을 때 되살림(missingSlot)
 // 서버 app/(app)/reports/cards/draft-write.ts writeMgDraft와 연기 시험 scripts/smoke/ai-report-mg-smoke.ts --app이 같은 함수를 부름. 표본 카드·지표·라벨 문구로 가르는 분기 없음.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -36,14 +39,17 @@ import { type HollowBox, PAGE_MM, canonicalBlock, hollowBoxes, isBoxBlock, plain
 import { shapeCode, shapeName } from "./frameworks.ts";
 import { bigramSet, overlapScore } from "./ground.ts";
 import { layoutFields } from "./layout.ts";
-import { ledgerOutcomeItems } from "./mg-close.ts";
+import { parseChunkBlocks } from "../knowledge/rich-text.ts";
+import { BUNDLE_MIN, readTable } from "./mg-bundles.ts";
+import { isPlanLine, ledgerOutcomeItems } from "./mg-close.ts";
 import { MG_VOLUME_BAND, mgSpecText, recheckMgSection } from "./mg-draft.ts";
 import { MG_FILL } from "./mg-fill-limits.ts";
 import { CLOSE_LABEL, outcomeRefs } from "./mg-outcomes.ts";
 import { isDataBlock } from "./mg-outline.ts";
 import type { MgPart } from "./mg-types.ts";
 import { REPEAT_MIN_BLOCKS, REPEAT_MIN_PARTS, figureKeys, figureUnits, repeatedFigures, repeatedSentences } from "./repeat-figures.ts";
-import { type ReportSectionSpec, cleanLine, evidenceKey, quoteFoundIn } from "./section.ts";
+import { LINKED_NUMBER_TYPES, type ReportSectionSpec, cleanLine, evidenceKey, quoteFoundIn } from "./section.ts";
+import type { KnowledgeRef } from "../ai/writer.ts";
 
 export { MG_FILL } from "./mg-fill-limits.ts";
 
@@ -101,6 +107,8 @@ export interface MgFillReasons {
   hollow: Array<{ index: number; boxes: HollowBox[] }>;
   /** ③ 수치가 초안 어디에도 없는 원장 성과 줄(원장 순) */
   facts: string[];
+  /** 보탤 재료(사유 아님 — hasFillReason에 안 셈): 연결 근거 조각의 아직 안 쓴 사실(linkedFacts — 조각 순) */
+  refFacts: RefFact[];
   /** ④ 반복 수치(repeatedFigures 순 — 블록 수 많은 순) */
   repeats: FillRepeat[];
   /** ⑤ 반복 문장(repeatedSentences 순 — 닮음 큰 순) */
@@ -138,6 +146,57 @@ export function unusedLedgerFacts(spec: ReportSectionSpec, card: Json): string[]
       const keys = [...figureKeys(t).keys()];
       return keys.length > 0 && !keys.some((k) => used.has(k));
     });
+}
+
+/** 연결 근거 조각의 사실 하나 — 글(문장·표 행, MG_FILL.refFactChars에서 자름)과 어디서(조각 이름, 표 행이면 표 머리) */
+export interface RefFact {
+  text: string;
+  from: string;
+}
+
+/** 보강 재료로 읽는 연결 조각 — relevantRefs(kb)(lib/knowledge/bundle.ts)의 조각 */
+export type FillRef = Pick<KnowledgeRef, "key" | "title" | "unitType" | "text">;
+
+const clipFact = (t: string) => (t.length > MG_FILL.refFactChars ? `${t.slice(0, MG_FILL.refFactChars - 1).trimEnd()}…` : t);
+/** 문단 → 문장(줄바꿈, 한글·닫는 괄호 뒤 마침표에서 나눔 — 「3.5」·「’25.11.」 같은 숫자 뒤 점은 안 나눔), 앞 불릿 표지는 뗌 */
+const splitSentences = (text: string) =>
+  text
+    .split(/\n+|(?<=[가-힣)]\.)\s+/)
+    .map((x) => x.replace(/^[\s∙·•\-－–○◦●▪□■◆▸►※*]+/, "").trim())
+    .filter(Boolean);
+
+/**
+ * 보탤 재료 — 연결 근거 조각의 아직 안 쓴 사실(결정론, 2026-10-29 저녁): 이 카드에 연결된 조각(relevantRefs(kb) — 경평 숫자 근거 draftEvidence linked와 같은 범위) 중
+ * 숫자 근거로 인정하는 유형(section.ts LINKED_NUMBER_TYPES — 2025 보고서 절·실사 답변. 보강 답의 숫자 대조 known에 그 글이 들어 있어 보탠 숫자가 「근거 밖」이 안 됨)만,
+ * 문단은 문장으로, 표는 행으로(mg-bundles.ts readTable — 맨 숫자 칸에 열 머리 단위를 붙인 「칸 | 칸」 줄, 출처에 표 머리) 읽어
+ * ③ 안 쓴 원장 사실과 같은 기준으로 고름: 수치 열쇠(figureKeys)가 있고 그 수치가 하나도 초안 글에 없음(taken — 같은 라운드의 안 쓴 원장 사실 — 의 수치와도 안 겹침),
+ * 계획·예정 줄(mg-close.ts isPlanLine)이 아님, 8자 이상, 같은 글은 한 번. 수치 없는 문장(고유명사만)은 쓰였는지 셀 수 없어 원장 사실처럼 넣지 않음
+ */
+export function linkedFacts(spec: ReportSectionSpec, refs: readonly FillRef[], taken: readonly string[] = []): RefFact[] {
+  const used = new Set([...figureKeys(mgSpecText(spec)).keys(), ...taken.flatMap((t) => [...figureKeys(t).keys()])]);
+  const seen = new Set<string>();
+  const out: RefFact[] = [];
+  for (const r of refs) {
+    if (!LINKED_NUMBER_TYPES.includes(r.unitType)) continue;
+    const name = r.title.split(" · ").slice(0, 2).join(" · ");
+    for (const b of parseChunkBlocks(r.text)) {
+      const items =
+        b.kind === "para"
+          ? splitSentences(b.text).map((text) => ({ text, from: name }))
+          : b.kind === "table"
+            ? (({ head, rows }) => rows.map((x) => ({ text: x.line, from: head ? `${name} 표 「${head.length > 40 ? `${head.slice(0, 39)}…` : head}」` : name })))(readTable(b.rows))
+            : [];
+      for (const x of items) {
+        const text = clipFact(x.text);
+        const keys = [...figureKeys(text).keys()];
+        const id = text.replace(/\s+/g, "");
+        if (text.length < 8 || !keys.length || keys.some((k) => used.has(k)) || isPlanLine(text) || seen.has(id)) continue;
+        seen.add(id);
+        out.push({ text, from: x.from });
+      }
+    }
+  }
+  return out;
 }
 
 /** 구성안이 그 수치를 담은 원장 성과 재료(mg.outcomes)를 닫는 「추진성과」 블록에 배정한 절 열쇠 — mg-outline.ts mgOutcomeIssues와 같은 잇기(outcomeRefs) */
@@ -188,11 +247,12 @@ export function sentencesOf(spec: ReportSectionSpec): FillSentence[] {
   });
 }
 
-/** 초안의 보강 사유(결정론). plan = 반복 수치 남길 자리의 성과 배정(없으면 블록 순) */
-export function mgFillReasons(spec: ReportSectionSpec, card: Json, plan?: FillPlan): MgFillReasons {
+/** 초안의 보강 사유(결정론)와 보탤 재료. plan = 반복 수치 남길 자리의 성과 배정(없으면 블록 순), refs = 연결 근거 조각(없으면 원장 사실만) */
+export function mgFillReasons(spec: ReportSectionSpec, card: Json, plan?: FillPlan, refs: readonly FillRef[] = []): MgFillReasons {
   const height = Math.round(mgSpecHeight(spec));
   const target = targetOf(spec);
-  return { height, target, short: target !== null && height < target * MG_FILL.low, hollow: hollowByBlock(spec), facts: unusedLedgerFacts(spec, card), repeats: repeatsOf(spec, plan), sentences: sentencesOf(spec) };
+  const facts = unusedLedgerFacts(spec, card);
+  return { height, target, short: target !== null && height < target * MG_FILL.low, hollow: hollowByBlock(spec), facts, refFacts: linkedFacts(spec, refs, facts), repeats: repeatsOf(spec, plan), sentences: sentencesOf(spec) };
 }
 
 // ---------------------------------------------------------------------------
@@ -224,26 +284,47 @@ function partPairs(spec: ReportSectionSpec, plan: Pick<Composition, "blocks">, k
 /**
  * 구성안 블록 i를 끼울 초안 자리(결정론): 그 절 안 짝(partPairs)이 없는 블록이면 앞쪽 가장 가까운 짝 블록 바로 뒤, 앞에 짝이 없으면 그 절 첫 블록 앞. null:
  * 짝이 있음(빠진 것이 아님) · 초안에 그 절이 없음(절째 빠짐은 「구성안: 승인한 절」 경고가 알리고, 블록 하나로는 절 제목을 못 세움) ·
- * 그 절에 짝 없는 초안 블록이 있음 — 집필이 그 절을 다른 모양으로 쓰거나 더 넣은 것이라 어느 블록이 빠진 블록 대신인지 모양 순서만으로 못 가림(되살리면 같은 내용이 둘이 될 수 있음)
+ * 그 절에 짝 없는 초안 블록이 있음 — 집필이 그 절을 다른 모양으로 쓰거나 더 넣은 것이라 어느 블록이 빠진 블록 대신인지 모양 순서만으로 못 가림(되살리면 같은 내용이 둘이 될 수 있음).
+ * 단 빠진 블록이 데이터 블록(isDataBlock)이면 그 절 초안 블록 글에 그 재료 값이 들어 있는지로 가름(dataElsewhere, 2026-10-29 저녁) — 들어 있으면(다른 모양으로 이미 씀) null, 없으면 자리를 줌
  */
-export function missingSlot(spec: ReportSectionSpec, plan: Pick<Composition, "blocks">, i: number): number | null {
+export function missingSlot(spec: ReportSectionSpec, plan: Pick<Composition, "blocks" | "materials">, i: number): number | null {
   const key = plan.blocks[i]?.at;
   if (!key) return null;
   const { pi, di, m } = partPairs(spec, plan, key);
   const k = pi.indexOf(i);
-  if (!di.length || m[k] !== null || m.filter((x) => x !== null).length < di.length) return null;
+  if (!di.length || m[k] !== null) return null;
+  if (m.filter((x) => x !== null).length < di.length && dataElsewhere(spec, plan, i, di)) return null;
   for (let p = k - 1; p >= 0; p--) if (m[p] !== null) return di[m[p]!] + 1;
   return di[0];
 }
 
 /**
+ * 그 절에 짝 없는 초안 블록이 있을 때 빠진 구성안 블록 i의 내용이 그 절 초안 블록(part — 초안 번호)에 이미 있다고 볼지(결정론): 데이터 블록이 아니면 늘 있다고 봄(예전처럼 보수적 — 글 블록은 같은 내용을 수치로 못 가림).
+ * 데이터 블록이면 그 블록 재료(자료 필요 뺌)의 글·원문 구절의 수치 열쇠(figureKeys — 수치 묶음 값)가 그 절 초안 블록 하나에 BUNDLE_MIN개(열쇠가 그보다 적으면 전부) 이상 들어 있으면 있다고 봄
+ * (수치 묶음 = 같은 단위 값 3개 이상 — S2, 그만큼 옮겼으면 그 묶음을 다른 모양으로 씀). 짝 없는 블록만이 아니라 그 절 블록 전부를 봄 — 짝(planMatch)은 종류·모양 순서로만 맞춰
+ * 값을 옮긴 불릿이 다른 불릿 자리의 짝이 되고 남는 불릿이 짝 없는 블록이 될 수 있음. 재료에 수치가 없으면 가늠할 수 없어 있다고 봄(되살리지 않음)
+ */
+function dataElsewhere(spec: ReportSectionSpec, plan: Pick<Composition, "blocks" | "materials">, i: number, part: number[]): boolean {
+  const b = plan.blocks[i];
+  if (!isDataBlock(b)) return true;
+  const keys = new Set(b.materials.flatMap((id) => plan.materials.filter((x) => x.id === id && x.kind !== "need")).flatMap((x) => [...figureKeys(`${x.text}\n${x.quote}`).keys()]));
+  if (!keys.size) return true;
+  const need = Math.min(BUNDLE_MIN, keys.size);
+  return part.some((j) => {
+    const have = figureKeys(blockTexts(spec.blocks![j]).join("\n"));
+    return [...keys].filter((x) => have.has(x)).length >= need;
+  });
+}
+
+/**
  * 빠진 구성안 블록(결정론): 그 절 안 짝(partPairs)이 없고 끼울 자리(missingSlot)가 있는 구성안 블록. 빼는 것:
  * ① 앱이 정리하며 뺀 블록(cleanBlocks droppedShapes — 원문 없는 인용·사례·정의 등): 집필은 썼는데 앱이 근거 없다고 일부러 뺀 것이라 되살리지 않음 — 짝 없는 블록 중
- *    같은 모양을 하나씩 덜어냄(planAdherence가 구성안 셈에서 덜어내는 것과 같은 뜻)
+ *    같은 모양을 하나씩 덜어냄(planAdherence가 구성안 셈에서 덜어내는 것과 같은 뜻). 단 데이터 블록(S2 — isDataBlock)은 앱이 모양 조건(표 행·열 수 등)으로 뺐어도 되살림:
+ *    6-2 11회차에서 집필이 쓴 막대 표를 앱이 빼 절에 데이터 블록이 없어졌음. 되살린 판도 받기 검사(근거 밖 숫자·모양·빈 칸)를 거치므로 근거 없는 표는 들어가지 않음
  * ② 추진성과 원장 보강(mg-close.ts fillClosingOutcome)이 이미 채운 절(closed)의 「추진성과」 — 코드가 원장 줄로 되살렸음(막대 행 글 블록처럼 모양이 달라 짝이 안 맞아도 같은 자리)
  * 순서: 데이터 블록 먼저(S2 — 수치 묶음을 담는 블록), 그다음 구성안 순
  */
-export function missingBlocks(spec: ReportSectionSpec, plan: Pick<Composition, "blocks">, dropped: Array<{ kind: string; variant: string }> = [], closed: string[] = []): FillMissing[] {
+export function missingBlocks(spec: ReportSectionSpec, plan: Pick<Composition, "blocks" | "materials">, dropped: Array<{ kind: string; variant: string }> = [], closed: string[] = []): FillMissing[] {
   const pairs = new Map<string, ReturnType<typeof partPairs>>();
   const free = dropped.map((d) => shapeCode(d.kind, d.variant));
   const out: FillMissing[] = [];
@@ -255,7 +336,7 @@ export function missingBlocks(spec: ReportSectionSpec, plan: Pick<Composition, "
     const k = free.indexOf(blockShapeCode(b));
     if (k >= 0) {
       free.splice(k, 1);
-      return;
+      if (!isDataBlock(b)) return;
     }
     if (b.label.trim() === CLOSE_LABEL && closed.includes(b.at)) return;
     if (missingSlot(spec, plan, i) === null) return;
@@ -303,10 +384,12 @@ export interface FillTarget {
   boxes: HollowBox[];
   /** 이 블록이 든 절의 몫·모자람(mm, why short) */
   part?: { share: number; short: number };
-  /** 이 블록 몫(mm) = 남은 분량 ÷ 고른 블록 수(0 이상). 배정이 없으면 null(지금 줄 수 안팎) */
+  /** 이 블록 몫(mm) — 몫을 모은 블록은 남은 분량 ÷ 모은 블록 수, 나머지(빈 칸·반복만 고칠 블록·반복 정리)는 0(지금 높이 안에서). 배정이 없으면 null(지금 줄 수 안팎) */
   share: number | null;
   /** 이 블록에 나눈 아직 안 쓴 원장 사실 */
   facts: string[];
+  /** 이 블록에 나눈 연결 근거 사실(MG_FILL.refFacts개까지) */
+  refFacts: RefFact[];
   /** 이 블록에서 뺄 반복 수치와 남길 자리(블록 이름 — 「3번 「추진성과」」). 고른 까닭과 상관없이 이 블록이 든 반복 수치 전부 */
   repeats: Array<{ figure: string; key: string; at: string }>;
   /** 이 블록에서 바꿀 반복 문장(이 블록의 글·남길 쪽 블록 번호·글·이름). 고른 까닭과 상관없이 이 블록이 바꿀 쪽인 쌍 전부 */
@@ -347,25 +430,36 @@ function partVolumes(spec: ReportSectionSpec, target: number): Map<string, { sha
   return out;
 }
 
+/** 고르기 선택 — all: 2회차(절 몫을 채운 절의 블록까지) · repeat: 「반복 정리」 라운드(반복 수치·문장 블록만, 몫 없음) */
+export interface PickOptions {
+  all?: boolean;
+  repeat?: boolean;
+}
+
 /**
  * 보강할 블록 고르기(결정론): ② 빈 칸 블록(모자란 줄 합이 큰 순 → 블록 순) → ④ 반복 수치를 뺄 블록(블록 순) → ⑤ 반복 문장을 바꿀 블록(블록 순) → ①·③이 있고 늘릴 높이(배정 − 어림)가 남았으면
- * 절 몫보다 모자란 절의 칸 글 블록(많이 모자란 절 먼저, 절 안은 블록 순). 블록 수 상한 없음(그 라운드에 보강할 수 있는 블록 전부 — 2026-10-29 「1분 한도 − 1」 상한을 풂,
- * 호출 한도는 블록마다 startAiRequest가 막음). all(2회차 — 1회차 뒤에도 카드 분량이 배정 × MG_FILL.low 미만): 위 순서 뒤에 절 몫을 채운 절의 블록까지 보강할 수 있는 블록 전부를
- * 블록 순으로 더함(2026-10-29 사용자 선호 「초안에는 내용이 많은 게 낫다」 — 예전에는 1회차에 몫의 절반 이상 늘린 블록을 빼서 모든 블록이 늘면 2회차 후보가 비었음).
- * 블록 몫 = 남은 분량 ÷ 고른 블록 수(배정이 없으면 null — 2회차는 1회차 뒤 다시 잰 남은 분량을 다시 나눔), 반복 수치·문장은 그 블록이 든 것 전부, 안 쓴 원장 사실은 assignFacts로 나눔
+ * 절 몫보다 모자란 절의 칸 글 블록(많이 모자란 절 먼저, 절 안은 블록 순). 블록 수 상한 없음(호출 한도는 블록마다 startAiRequest가 막음).
+ * all(2회차 — 1회차 뒤에도 카드 분량이 배정 × MG_FILL.low 미만): 위 순서 뒤에 절 몫을 채운 절의 블록까지 블록 순으로 더함(2026-10-29 「초안에는 내용이 많은 게 낫다」).
+ * repeat(「반복 정리」): ④·⑤ 블록만, 몫 0.
+ * 몫 모으기(2026-10-29 저녁 — 6-2 r9 몫 10~15mm를 블록 9개에 고르게 나눠 덜 늘었음): 남은 분량을 빈 칸 블록 밖의 고른 블록 중 줄 수(blockRoom now)가 적은 블록부터
+ * MG_FILL.shareMin 이상이 되는 최소 개수(남은 분량 ÷ shareMin, 적어도 1개)에만 똑같이 나누고 나머지는 몫 0 — 늘리려고만 고른 블록(short)은 몫이 없으면 뺌.
+ * 빈 칸 블록은 따로 둠(몫 0 — 짧은 칸을 긴 칸 줄 수까지 채우는 것이라 블록 높이를 늘리지 않음). 배정이 없으면 몫 null.
+ * 반복 수치·문장은 그 블록이 든 것 전부, 안 쓴 원장 사실은 assignFacts로, 연결 근거 사실은 assignRefFacts로 나눔
  */
-export function pickFillTargets(spec: ReportSectionSpec, reasons: MgFillReasons, closed: string[] = [], all = false): FillTarget[] {
+export function pickFillTargets(spec: ReportSectionSpec, reasons: MgFillReasons, closed: string[] = [], opts: PickOptions = {}): FillTarget[] {
   if (!hasFillReason(reasons)) return [];
   const shut = new Set(closed);
   const blocks = spec.blocks ?? [];
   const ok = (i: number) => fillable(spec, i, shut);
   const room = reasons.target === null ? null : Math.max(0, reasons.target - reasons.height);
   const deficit = (bs: HollowBox[]) => bs.reduce((n, x) => n + x.most - x.used, 0);
-  const make = (index: number, why: FillTarget["why"], more: Partial<FillTarget> = {}): FillTarget => ({ index, why, boxes: [], share: null, facts: [], repeats: [], sentences: [], ...more });
-  const picked: FillTarget[] = reasons.hollow
-    .filter((h) => ok(h.index))
-    .sort((a, b) => deficit(b.boxes) - deficit(a.boxes) || a.index - b.index)
-    .map((h) => make(h.index, "hollow", { boxes: h.boxes }));
+  const make = (index: number, why: FillTarget["why"], more: Partial<FillTarget> = {}): FillTarget => ({ index, why, boxes: [], share: null, facts: [], refFacts: [], repeats: [], sentences: [], ...more });
+  let picked: FillTarget[] = opts.repeat
+    ? []
+    : reasons.hollow
+        .filter((h) => ok(h.index))
+        .sort((a, b) => deficit(b.boxes) - deficit(a.boxes) || a.index - b.index)
+        .map((h) => make(h.index, "hollow", { boxes: h.boxes }));
   const has = (i: number) => picked.some((t) => t.index === i);
   const repeatAt = new Map<number, FillTarget["repeats"]>();
   for (const r of reasons.repeats) for (const i of r.others) if (ok(i)) repeatAt.set(i, [...(repeatAt.get(i) ?? []), { figure: r.figure, key: r.key, at: blockName(r.keep, blocks[r.keep].label) }]);
@@ -373,26 +467,44 @@ export function pickFillTargets(spec: ReportSectionSpec, reasons: MgFillReasons,
   const sentenceAt = new Map<number, FillTarget["sentences"]>();
   for (const { index, ...x } of reasons.sentences) if (ok(index)) sentenceAt.set(index, [...(sentenceAt.get(index) ?? []), x]);
   for (const i of [...sentenceAt.keys()].sort((a, b) => a - b)) if (!has(i)) picked.push(make(i, "sentence"));
-  if ((reasons.short || reasons.facts.length) && room && reasons.target !== null) {
+  if (!opts.repeat && (reasons.short || reasons.facts.length) && room && reasons.target !== null) {
     const at = spec.mg?.at ?? [];
     const parts = [...partVolumes(spec, reasons.target)].filter(([, v]) => v.short > 0).sort((a, b) => b[1].short - a[1].short);
     for (const [key, v] of parts)
       blocks.forEach((_, i) => {
         if (at[i] === key && !has(i) && ok(i)) picked.push(make(i, "short", { part: v }));
       });
-    if (all && reasons.short) blocks.forEach((_, i) => {
+    if (opts.all && reasons.short) blocks.forEach((_, i) => {
       if (!has(i) && ok(i)) picked.push(make(i, "short"));
     });
   }
-  const share = room === null ? null : Math.floor(room / Math.max(1, picked.length));
   for (const t of picked) {
-    t.share = share;
     t.repeats = repeatAt.get(t.index) ?? [];
     t.sentences = sentenceAt.get(t.index) ?? [];
   }
+  if (room !== null) {
+    for (const t of picked) t.share = 0;
+    const grow = opts.repeat
+      ? []
+      : picked
+          .filter((t) => t.why !== "hollow")
+          .map((t, k) => ({ t, k, lines: blockRoom(spec, t.index)?.now ?? 0 }))
+          .sort((a, b) => a.lines - b.lines || a.k - b.k);
+    const n = Math.min(grow.length, Math.max(1, Math.floor(room / MG_FILL.shareMin)));
+    for (const g of grow.slice(0, n)) g.t.share = Math.floor(room / n);
+    picked = picked.filter((t) => t.why !== "short" || (t.share ?? 0) > 0);
+  }
   assignFacts(spec, picked, reasons.facts);
+  assignRefFacts(spec, picked, reasons.refFacts);
   return picked;
 }
+
+/** 대상 블록이 든 절 글의 글자 두 개 묶음(사실 나누기 겹침 셈 — ground.ts overlapScore) */
+const partBigrams = (spec: ReportSectionSpec, targets: FillTarget[]) => {
+  const at = spec.mg?.at ?? [];
+  const blocks = spec.blocks ?? [];
+  return new Map(targets.map((t) => [t.index, bigramSet(blocks.filter((_, i) => at[i] === at[t.index]).flatMap(blockTexts).join("\n"))]));
+};
 
 /**
  * 안 쓴 원장 사실 나누기 — 사실 하나는 블록 하나에만(같은 성과를 여러 블록에 되풀이하지 않게). 반복 수치를 빼거나 반복 문장을 바꿀 블록부터 하나씩(그 자리를 채울 사실) 먼저 주고,
@@ -400,9 +512,7 @@ export function pickFillTargets(spec: ReportSectionSpec, reasons: MgFillReasons,
  */
 function assignFacts(spec: ReportSectionSpec, targets: FillTarget[], facts: string[]): void {
   if (!targets.length) return;
-  const at = spec.mg?.at ?? [];
-  const blocks = spec.blocks ?? [];
-  const partText = new Map(targets.map((t) => [t.index, bigramSet(blocks.filter((_, i) => at[i] === at[t.index]).flatMap(blockTexts).join("\n"))]));
+  const partText = partBigrams(spec, targets);
   const pool = [...facts];
   for (const t of targets.filter((x) => x.repeats.length || x.sentences.length)) {
     if (!pool.length) break;
@@ -431,15 +541,67 @@ function assignFacts(spec: ReportSectionSpec, targets: FillTarget[], facts: stri
   }
 }
 
+/**
+ * 연결 근거 사실 나누기(결정론): 고른 순서대로 블록마다 그 블록이 든 절 글과 글자 두 개 묶음이 가장 많이 겹치는 사실(겹침 0은 주지 않음 — 이 블록 주제와 무관)을
+ * MG_FILL.refFacts개까지. 사실 하나는 블록 하나에만, 준 사실과 수치 열쇠가 하나라도 같은 사실도 다른 블록에 주지 않음(같은 수치를 두 블록에 보태 반복 수치가 생기지 않게)
+ */
+function assignRefFacts(spec: ReportSectionSpec, targets: FillTarget[], facts: RefFact[]): void {
+  if (!targets.length || !facts.length) return;
+  const partText = partBigrams(spec, targets);
+  let pool = facts.map((f) => ({ f, keys: [...figureKeys(f.text).keys()] }));
+  for (const t of targets) {
+    while (t.refFacts.length < MG_FILL.refFacts && pool.length) {
+      let pick = -1;
+      let score = 0;
+      pool.forEach((x, i) => {
+        const s = overlapScore(x.f.text, partText.get(t.index)!) ?? 0;
+        if (s > score) {
+          pick = i;
+          score = s;
+        }
+      });
+      if (pick < 0) break;
+      const got = pool[pick];
+      t.refFacts.push(got.f);
+      pool = pool.filter((x) => x !== got && !x.keys.some((k) => got.keys.includes(k)));
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 3. 다시 쓰기
 
 /**
+ * 다른 블록에 이미 있는 것(보강 요청 「되풀이 금지」 목록, 결정론 — 블록 고치기 요청에는 이 블록 JSON만 들어가 AI가 다른 블록 글을 못 봄):
+ * 수치 = 다른 블록 글의 수치(figureKeys, 블록 순, 이 블록에도 있는 수치는 뺌 — 그것은 fill.repeat가 다룸) MG_FILL.avoidFigures개까지,
+ * 문장 = 다른 블록의 문장 중 이 블록 글·준 사실과 글자 두 개 묶음이 겹치는 것(겹침 큰 순 — 되풀이될 만한 것) MG_FILL.avoidSentences개, 앞 24자
+ */
+export function avoidList(spec: ReportSectionSpec, t: FillTarget): { figures: string[]; sentences: string[] } {
+  const blocks = spec.blocks ?? [];
+  const mine = blocks[t.index] ? figureKeys(blockTexts(blocks[t.index]).join("\n")) : new Map<string, string>();
+  const figures = new Map<string, string>();
+  blocks.forEach((b, j) => {
+    if (j === t.index) return;
+    for (const [k, shown] of figureKeys(blockTexts(b).join("\n"))) if (!mine.has(k) && !figures.has(k)) figures.set(k, shown);
+  });
+  const near = bigramSet([...(blocks[t.index] ? blockTexts(blocks[t.index]) : []), ...t.facts, ...t.refFacts.map((x) => x.text)].join("\n"));
+  const sentences = blocks
+    .flatMap((b, j) => (j === t.index ? [] : [b.text, ...b.items, ...b.cells.flatMap((c) => [...c.bullets, c.note]), ...b.rows.flatMap((r) => [...r.before, ...r.after])].filter((x) => plainText(x).trim().length >= 8)))
+    .map((text, k) => ({ text, k, score: overlapScore(text, near) ?? 0 }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.k - b.k)
+    .slice(0, MG_FILL.avoidSentences)
+    .map((x) => clipText(x.text));
+  return { figures: [...figures.values()].slice(0, MG_FILL.avoidFigures), sentences: [...new Set(sentences)] };
+}
+
+/**
  * 보강 요청 글(블록 고치기 edit 절의 「요청」 자리 — 코드가 report-block-mg/request.md fill.* 조각으로 만듦, 사람 글이 아님).
  * room = 이 블록의 글 한도(blockRoom(spec, i, 블록 몫)) — 늘릴 줄 = room.max − room.now, 불릿 수 = 줄 ÷ 불릿 하나의 줄 수(올림 — room.bullet). 몫이 없거나 한 줄도 못 늘리면 fill.keep.
+ * 연결 근거 사실은 fill.refs(+ fill.refs.item — 시점 표지·계획 금지), spec을 주면 다른 블록에 이미 있는 수치·문장(avoidList)을 fill.avoid로(되풀이 금지).
  * 빠진 구성안 블록(t.missing)은 fill.missing 하나 — 라벨·모양 이름·목적·재료(fill.missing.item, 앱이 찾은 원문 구절은 fill.missing.quote, 재료가 없으면 fill.missing.none)
  */
-export function fillRequestText(p: PromptSet, t: FillTarget, room?: BlockRoom | null): string {
+export function fillRequestText(p: PromptSet, t: FillTarget, room?: BlockRoom | null, spec?: ReportSectionSpec): string {
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   if (t.missing) {
     const items = t.missing.materials.map((m) => r("fill.missing.item", { id: m.id, text: m.text, quote: m.quote ? r("fill.missing.quote", { quote: m.quote }) : "" }));
@@ -450,7 +612,10 @@ export function fillRequestText(p: PromptSet, t: FillTarget, room?: BlockRoom | 
   const why = [t.boxes.length ? r("fill.hollow", { boxes: t.boxes.map((x) => `[${x.where}] 지금 ${x.used}/${x.most}줄`).join(" · ") }) : "", t.part ? r("fill.short", { share: t.part.share, short: t.part.short }) : "", repeat, sentence].filter(Boolean).join(" ");
   const lines = room && t.share ? room.max - room.now : 0;
   const more = !room || lines <= 0 ? "" : room.unit === "line" ? r("fill.room.line", { lines }) : room.bullet ? r("fill.room.bullet", { lines, bullets: Math.ceil(lines / room.bullet) }) : r("fill.room.cell", { lines });
-  return r("fill", { why, facts: t.facts.length ? t.facts.map((f) => `「${f}」`).join(" · ") : r("fill.none"), height: more ? r("fill.room", { mm: t.share!, lines: more }) : r("fill.keep") });
+  const refs = t.refFacts.length ? r("fill.refs", { items: t.refFacts.map((x) => r("fill.refs.item", { text: x.text, from: x.from })).join(" · ") }) : "";
+  const a = spec ? avoidList(spec, t) : { figures: [], sentences: [] };
+  const avoid = a.figures.length || a.sentences.length ? r("fill.avoid", { figures: a.figures.join(", ") || "없음", sentences: a.sentences.join(" · ") || "없음" }) : "";
+  return r("fill", { why, facts: t.facts.length ? t.facts.map((f) => `「${f}」`).join(" · ") : r("fill.none"), refs, avoid, height: more ? r("fill.room", { mm: t.share!, lines: more }) : r("fill.keep") });
 }
 
 /** 블록 하나 AI 호출 결과 — ok가 아니면 message(실패 까닭), stop = 호출 한도에 걸려 그 라운드의 남은 블록은 시작하지 않음 */
@@ -485,11 +650,15 @@ export interface MgFillInput {
   plan?: FillPlan;
   /** 앱이 정리하며 뺀 블록의 종류·모양(verifyMgDraft droppedShapes) — 빠진 블록에서 덜고 구성안 지킴을 다시 셀 때 씀 */
   dropped?: Array<{ kind: string; variant: string }>;
+  /** 이 카드에 연결된 공통 지식 조각(relevantRefs(kb) — 숫자 근거 known과 같은 묶음) — 보탤 재료(linkedFacts). 없으면 원장 사실만 */
+  refs?: readonly FillRef[];
 }
 
 export interface FillResult {
   /** 몇 회차(1부터, 빠진 블록 되살리기는 0) */
   round: number;
+  /** 「반복 정리」 라운드의 결과 */
+  cleanup?: boolean;
   /** 되살린 구성안 블록 번호(round 0만). index는 받았으면 보강을 마친 초안의 블록 번호, 못 받았으면 끼우려던 자리 */
   plan?: number;
   index: number;
@@ -513,6 +682,8 @@ export interface FillResult {
 /** 보강 한 라운드 */
 export interface FillRound {
   round: number;
+  /** 「반복 정리」 라운드(보강 라운드 뒤 반복 수치·문장이 남았을 때 반복 블록만, 몫 0) */
+  cleanup?: boolean;
   /** 이 라운드를 시작할 때 초안의 사유 */
   reasons: MgFillReasons;
   targets: FillTarget[];
@@ -547,7 +718,7 @@ const countOf = (b: Block) => (b.kind === "bullets" || b.kind === "case" ? null 
 /**
  * 보강 답 한 블록 받기(결정론): 블록 고치기 검증(verifyBlockEdit — 모양 규칙 없이 같은 종류만·원문 못 찾은 인용 버림) → 라벨·그림 자리는 원래 값(짜임 그대로) →
  * 모양·칸 수가 같고 → 바뀐 글이 있고 → 새로 생긴 근거 밖 숫자가 없고(recheckMgSection — 블록 고치기 저장과 같은 숫자 대조) → 높이가 줄지 않고(반복 수치를 빼며 줄이면 안 됨) →
- * 늘었다면 분량 상한(배정 × (1 + MG_VOLUME_BAND)) 안 → 뺄 반복 수치(repeats)가 하나도 안 빠지고 바꿀 반복 문장(sentences)도 하나도 안 바뀌었으면 분량이 늘었을 때만
+ * 늘었다면 분량 상한(배정 × (1 + MG_VOLUME_BAND)) 안 → 새 반복 수치·반복 문장 쌍을 만들지 않음(newRepeats — 반복 사유 블록은 반복 수가 줄면 받음) → 뺄 반복 수치(repeats)가 하나도 안 빠지고 바꿀 반복 문장(sentences)도 하나도 안 바뀌었으면 분량이 늘었을 때만
  * (남은 수치·문장은 결과의 kept — 경고 「반복 그대로」). 반복 문장은 받은 판에서 repeatedSentences가 이 블록과 남길 쪽의 그 글을 아직 쌍으로 내면 그대로 남은 것.
  * 적용은 applyBlockEdit(짝 잃은 「가로 반씩」 정리 포함)이되 사람이 고친 블록 표시(humanEdits — 다시 만들기 경고)에는 넣지 않음(AI 글)
  */
@@ -568,6 +739,8 @@ export function acceptFill(cur: ReportSectionSpec, index: number, out: BlockOutp
   if (h1 < h0) return { ok: false, reason: `높이가 줄어듦(${Math.round(h1 - h0)}mm)` };
   if (target !== null && h1 > h0 && h1 > target * (1 + MG_VOLUME_BAND)) return { ok: false, reason: `분량이 배정의 ${Math.round((1 + MG_VOLUME_BAND) * 100)}%를 넘음` };
   const mm = Math.round(h1 - h0);
+  const made = newRepeats(cur, next, repeats.length > 0 || sentences.length > 0);
+  if (made) return { ok: false, reason: made };
   if (!repeats.length && !sentences.length) return { ok: true, spec: next, mm };
   const left = figureKeys(blockTexts(block).join("\n"));
   const kept = repeats.filter((x) => left.has(x.key)).map((x) => x.figure);
@@ -581,6 +754,30 @@ export function acceptFill(cur: ReportSectionSpec, index: number, out: BlockOutp
     return { ok: false, reason: `${what} 분량도 늘지 않음` };
   }
   return { ok: true, spec: next, mm, ...(repeats.length ? { repeats: { removed, kept } } : {}), ...(sentences.length ? { sentences: { fixed, kept: same } } : {}) };
+}
+
+/** 반복 수치(「반복 수치」 경고와 같은 기준 — 열쇠 → 모양)와 반복 문장 쌍(「반복 문장」 경고와 같은 쌍 — 블록 번호·글로 가름) */
+function repeatState(spec: ReportSectionSpec): { figures: Map<string, string>; sentences: Set<string> } {
+  const figures = new Map(repeatedFigures(figureUnits(spec), REPEAT_MIN_BLOCKS, REPEAT_MIN_PARTS).flatMap(([f]): Array<[string, string]> => {
+    const k = [...figureKeys(f).keys()][0];
+    return k ? [[k, f]] : [];
+  }));
+  const sentences = new Set(repeatedSentences(spec).map(({ a, b }) => [a, b].map((x) => `${x.at}\u0001${x.text}`).sort().join("\u0002")));
+  return { figures, sentences };
+}
+
+/**
+ * 받은 판이 새로 만든 반복(2026-10-29 저녁 — 6-2 r9b는 보강 전 반복 문장 0이 보강 뒤 5쌍): 보강 전(cur)에 없던 반복 수치·반복 문장 쌍이 생기면 못 받는 까닭.
+ * 반복을 줄이는 것이 목적인 블록(fix — 반복 수치·문장 사유)은 새 쌍이 생겨도 반복 수(수치 + 문장 쌍)가 줄면 받음. 없으면 null
+ */
+function newRepeats(cur: ReportSectionSpec, next: ReportSectionSpec, fix: boolean): string | null {
+  const was = repeatState(cur);
+  const now = repeatState(next);
+  const figs = [...now.figures].filter(([k]) => !was.figures.has(k)).map(([, f]) => f);
+  const pairs = [...now.sentences].filter((x) => !was.sentences.has(x)).length;
+  if (!figs.length && !pairs) return null;
+  if (fix && now.figures.size + now.sentences.size < was.figures.size + was.sentences.size) return null;
+  return `새 반복(${[figs.length ? `수치 ${figs.slice(0, 3).join(", ")}` : "", pairs ? `문장 ${pairs}쌍` : ""].filter(Boolean).join("·")})`;
 }
 
 /** 답 블록 정리: 블록 고치기 검증(verifyBlockEdit — 모양 규칙 없이 같은 종류만·원문 못 찾은 인용 버림) → 라벨·그림 자리는 원래 값(짜임 그대로) */
@@ -638,7 +835,8 @@ const addUsage = (a: Usage, b: Usage) => {
  * 기한 안에 한 번 더 부를 시간이 있는지(canFixAgain: 지금까지 + 직전 호출 ms × 1.1 ≤ 기한, 첫 블록은 1차 집필 ms로 어림. 기한 = deps.deadlineMs와 보강 시작 + MG_FILL.maxSec 중 이른 것) 보고,
  * 시간이 없으면 보강을 끝내고, 호출 한도에 걸리면 그 라운드를 끝냄(기다리지 않음). 앞 블록을 받은 초안 위에서 다음 블록 요청 글을 만듦.
  * 2회차는 1회차 뒤 다시 잰 어림이 아직 배정 × MG_FILL.low 미만일 때만 — 보강할 수 있는 블록 전부(pickFillTargets all: 1회차에 몫을 다 쓴 블록·못 받은 블록 포함)를
- * 남은 분량을 다시 나눈 새 몫으로 고름. 받기 조건(acceptFill — 높이 감소·배정 125% 초과 거절)은 라운드마다 같음
+ * 남은 분량을 다시 나눈 새 몫으로 고름. 받기 조건(acceptFill — 높이 감소·배정 125% 초과·새 반복 거절)은 라운드마다 같음.
+ * 보강 라운드 뒤(시간이 모자라 끝나지 않았으면) 반복 수치·문장이 남았으면 「반복 정리」 한 라운드(pickFillTargets repeat — 반복 블록만, 몫 0)
  */
 export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, deps: MgFillDeps): Promise<MgFillRun | null> {
   const now = deps.now ?? Date.now;
@@ -649,7 +847,7 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
   const found = (q: string) => quoteFoundIn(hay, q);
   const evidence = { card: outline, extra: input.known };
   const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
-  const first = mgFillReasons(spec, input.card, input.plan);
+  const first = mgFillReasons(spec, input.card, input.plan, input.refs);
   const rounds: FillRound[] = [];
   let cur = spec;
   let last = deps.firstMs;
@@ -676,7 +874,7 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
     const trial = insertBlock(cur, pos, emptyBlock(pb), m.at);
     // 재료는 그 블록이 가리키는 구성안 재료(자료 필요는 뺌), 원문 구절은 앱이 근거에서 찾은 것만
     const materials = pb.materials.flatMap((id) => plan!.materials.filter((x) => x.id === id && x.kind !== "need").map((x) => ({ id: x.id, text: x.text, quote: x.found ? x.quote : "" })));
-    const t: FillTarget = { index: pos, why: "missing", boxes: [], share: null, facts: [], repeats: [], sentences: [], missing: { label: m.label, shape: shapeName(pb.kind, pb.variant), purpose: pb.purpose, materials } };
+    const t: FillTarget = { index: pos, why: "missing", boxes: [], share: null, facts: [], refFacts: [], repeats: [], sentences: [], missing: { label: m.label, shape: shapeName(pb.kind, pb.variant), purpose: pb.purpose, materials } };
     // 글 한도는 블록 몫 없이(사람 블록 고치기와 같은 「지금 줄 + 4줄」 — 빈 모양이라 지금 줄은 1줄 안팎)
     const prompt = blockEditPrompt(deps.prompts, trial, { blockIndex: pos, kind: "edit", request: fillRequestText(deps.prompts, t), quote: "" }, evidence);
     const t1 = now();
@@ -705,11 +903,8 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
     }
     revived.push({ ...head, index: pos, ms, usage: got.usage, model: got.model, ...(a.ok ? { ok: true, mm: a.mm } : { ok: false, reason: a.reason }) });
   }
-  for (let round = 1; !timeUp && round <= MG_FILL.rounds; round++) {
-    const reasons = round === 1 && cur === spec ? first : mgFillReasons(cur, input.card, input.plan);
-    if (round > 1 && !reasons.short) break;
-    const targets = pickFillTargets(cur, reasons, input.closed, round > 1);
-    if (!targets.length) break;
+  // 한 라운드: 고른 블록을 하나씩 차례로 — 앞 블록을 받은 초안 위에서 다음 블록 요청 글(다른 블록에 이미 있는 것 목록 포함)을 만듦
+  const runRound = async (round: number, reasons: MgFillReasons, targets: FillTarget[], cleanup: boolean): Promise<FillRound> => {
     const start = now();
     const before = Math.round(mgSpecHeight(cur));
     const results: FillResult[] = [];
@@ -722,7 +917,7 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
       }
       const label = cur.blocks![t.index].label;
       const share = t.share ?? undefined;
-      const req = { blockIndex: t.index, kind: "edit" as const, request: fillRequestText(deps.prompts, t, blockRoom(cur, t.index, share)), quote: "" };
+      const req = { blockIndex: t.index, kind: "edit" as const, request: fillRequestText(deps.prompts, t, blockRoom(cur, t.index, share), cur), quote: "" };
       // 글 한도의 여유는 블록 몫(배정이 없으면 블록 고치기와 같은 「지금 줄 수 안팎」)
       const prompt = blockEditPrompt(deps.prompts, cur, req, evidence, undefined, share);
       const t1 = now();
@@ -738,7 +933,7 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
         skipped = { why: "limit", blocks: rest(), message: got.message };
         break;
       }
-      const head = { round, index: t.index, label, share: t.share, ms };
+      const head = { round, ...(cleanup ? { cleanup } : {}), index: t.index, label, share: t.share, ms };
       if (!got.ok) {
         results.push({ ...head, ok: false, reason: got.message });
         continue;
@@ -749,8 +944,22 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
       if (!a.ok) continue;
       cur = a.spec;
     }
-    rounds.push({ round, reasons, targets, results, skipped, before, after: Math.round(mgSpecHeight(cur)), ms: now() - start });
-    if (skipped?.why === "time") break;
+    return { round, ...(cleanup ? { cleanup } : {}), reasons, targets, results, skipped, before, after: Math.round(mgSpecHeight(cur)), ms: now() - start };
+  };
+  for (let round = 1; !timeUp && round <= MG_FILL.rounds; round++) {
+    const reasons = round === 1 && cur === spec ? first : mgFillReasons(cur, input.card, input.plan, input.refs);
+    if (round > 1 && !reasons.short) break;
+    const targets = pickFillTargets(cur, reasons, input.closed, { all: round > 1 });
+    if (!targets.length) break;
+    const r = await runRound(round, reasons, targets, false);
+    rounds.push(r);
+    if (r.skipped?.why === "time") timeUp = true;
+  }
+  // 반복 정리(2026-10-29 저녁): 보강 라운드 뒤 반복 수치·문장이 남았고 시간이 있으면 반복 블록만 한 라운드 더(몫 0 — 늘리지 않고 바꿈)
+  if (!timeUp) {
+    const reasons = mgFillReasons(cur, input.card, input.plan, input.refs);
+    const targets = reasons.repeats.length || reasons.sentences.length ? pickFillTargets(cur, reasons, input.closed, { repeat: true }) : [];
+    if (targets.length) rounds.push(await runRound(rounds.length + 1, reasons, targets, true));
   }
   if (!rounds.length && !revived.length) return null;
   return { spec: cur, reasons: first, missing, revived, rounds, before: first.height, after: Math.round(mgSpecHeight(cur)), usage };
@@ -770,7 +979,7 @@ function byBlock(run: MgFillRun): { picked: number[]; ok: Set<number>; failed: A
 }
 
 /**
- * 보강 경고(참고 — warning-levels.ts 「분량 보강」·「분량 보강 실패」): 받은 블록·채운 mm(2회차면 「2회차」)·반복 수치 결과(「반복 뺌 …」·「반복 그대로 …」)·
+ * 보강 경고(참고 — warning-levels.ts 「분량 보강」·「분량 보강 실패」): 받은 블록·채운 mm(2회차면 「2회차」, 반복 정리 라운드면 「반복 정리」)·반복 수치 결과(「반복 뺌 …」·「반복 그대로 …」)·
  * 반복 문장 결과(「반복 문장 바꿈 n개」·「반복 그대로 「글 앞부분…」」)와 분량 전후, 되살린 빠진 블록은 앞에 「빠진 블록 되살림: 번호 「라벨」 +mm」,
  * 어느 라운드에서도 못 받거나 시작하지 않은 블록은 「1차 글 유지」와 마지막 까닭, 못 되살린 빠진 블록은 「「라벨」(모양) — 까닭」
  */
@@ -786,7 +995,7 @@ export function fillWarnings(run: MgFillRun): string[] {
     const one = (r: FillResult) =>
       [
         `${blockName(r.index, r.label)} ${mm(r.mm)}`,
-        r.round > 1 ? `${r.round}회차` : "",
+        r.cleanup ? "반복 정리" : r.round > 1 ? `${r.round}회차` : "",
         r.repeats?.removed.length ? `반복 뺌 ${r.repeats.removed.join(", ")}` : "",
         r.repeats?.kept.length ? `반복 그대로 ${r.repeats.kept.join(", ")}` : "",
         r.sentences?.fixed.length ? `반복 문장 바꿈 ${r.sentences.fixed.length}개` : "",

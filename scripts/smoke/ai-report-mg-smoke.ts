@@ -45,7 +45,7 @@ import { sectionDocument } from "../../lib/reports/section-html.ts";
 import { addMgDataBlocks } from "../../lib/reports/mg-data-blocks.ts";
 import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgBundlePrompt, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOutcomePrompt, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
 import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../lib/reports/mg-queries.ts";
-import { cleanLine, draftEvidence, evidenceOf, sectionHints } from "../../lib/reports/section.ts";
+import { type ReportSectionSpec, cleanLine, draftEvidence, evidenceOf, sectionHints } from "../../lib/reports/section.ts";
 import { cardBundles, linkedBundles } from "../../lib/reports/mg-bundles.ts";
 import { ledgerOutcomeItems } from "../../lib/reports/mg-close.ts";
 import { planAdherence, readComposition } from "../../lib/reports/composition.ts";
@@ -161,11 +161,11 @@ const noFill = process.argv.includes("--no-fill");
 // 함수 안에서는 위의 카드 null 확인이 이어지지 않아 값을 따로 둠
 const cardData = card.data;
 async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[], t0: number, firstMs: number, plan: FillPlan) {
-  const input: MgFillInput = { card: cardData, known: [ev.known, numbers].join("\n"), quoteOnly: ev.quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes };
+  const input: MgFillInput = { card: cardData, known: [ev.known, numbers].join("\n"), quoteOnly: ev.quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes, refs: relevantRefs(kb) };
   // 빠진 구성안 블록(서버와 같은 missingBlocks — 앱이 뺀 블록·원장 보강한 추진성과 제외, 데이터 블록 먼저)
   const missing = missingBlocks(v.spec, plan, v.droppedShapes, v.closed).map((m) => ({ plan: m.plan + 1, label: m.label, shape: m.shape, part: m.at, data: m.data }));
-  const brief = (r: MgFillReasons) => ({ short: r.short, hollow: r.hollow.map((h) => h.index + 1), facts: r.facts, repeats: r.repeats.map((x) => ({ figure: x.figure, keep: x.keep + 1, others: x.others.map((i) => i + 1) })), sentences: r.sentences.map((x) => ({ block: x.index + 1, keep: x.keep < 0 ? "상자" : x.keep + 1, text: x.text })) });
-  const reasons = mgFillReasons(v.spec, cardData, plan);
+  const brief = (r: MgFillReasons) => ({ short: r.short, hollow: r.hollow.map((h) => h.index + 1), facts: r.facts, refFacts: r.refFacts.length, repeats: r.repeats.map((x) => ({ figure: x.figure, keep: x.keep + 1, others: x.others.map((i) => i + 1) })), sentences: r.sentences.map((x) => ({ block: x.index + 1, keep: x.keep < 0 ? "상자" : x.keep + 1, text: x.text })) });
+  const reasons = mgFillReasons(v.spec, cardData, plan, input.refs);
   const first = { spec: v.spec, warnings, unknownNumbers: v.unknownNumbers };
   if (noFill) return { ...first, meta: { off: true, before: reasons.height, target: reasons.target, reasons: brief(reasons), missing } };
   const t = Date.now();
@@ -186,7 +186,7 @@ async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[],
   // 라운드 블록 번호는 빠진 블록을 되살린 뒤의 초안 번호(라운드는 블록을 끼우거나 빼지 않아 보강을 마친 초안과 같음)
   const label = (i: number) => run.spec.blocks?.[i]?.label || "전폭";
   // 라운드별 블록·사유(빈 칸·분량·반복·안 쓴 사실)·늘어난 mm·반복 제거 결과·시간
-  const why = (x: FillTarget) => [x.boxes.length ? "빈 칸" : "", x.part ? "분량" : "", x.repeats.length ? "반복" : "", x.sentences.length ? "반복 문장" : "", x.facts.length ? "안 쓴 사실" : ""].filter(Boolean);
+  const why = (x: FillTarget) => [x.boxes.length ? "빈 칸" : "", x.part ? "분량" : "", x.repeats.length ? "반복" : "", x.sentences.length ? "반복 문장" : "", x.facts.length ? "안 쓴 사실" : "", x.refFacts.length ? "연결 근거 사실" : ""].filter(Boolean);
   const meta = {
     off: false,
     before: run.before,
@@ -198,11 +198,12 @@ async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[],
     revived: run.revived.map((x) => ({ plan: (x.plan ?? -1) + 1, block: x.index + 1, label: x.label || "전폭", ok: x.ok, mm: x.mm ?? null, reason: x.reason ?? null, ms: x.ms ?? null, usage: x.usage ?? null })),
     rounds: run.rounds.map((r) => ({
       round: r.round,
+      cleanup: r.cleanup ?? false,
       before: r.before,
       after: r.after,
       ms: r.ms,
       reasons: brief(r.reasons),
-      targets: r.targets.map((x) => ({ block: x.index + 1, label: label(x.index), why: x.why, reasons: why(x), share: x.share, part: x.part ?? null, facts: x.facts, repeats: x.repeats.map((y) => `${y.figure} → ${y.at}`), sentences: x.sentences.map((y) => `${y.text} → ${y.at}`) })),
+      targets: r.targets.map((x) => ({ block: x.index + 1, label: label(x.index), why: x.why, reasons: why(x), share: x.share, part: x.part ?? null, facts: x.facts, refFacts: x.refFacts.map((y) => `${y.text} ← ${y.from}`), repeats: x.repeats.map((y) => `${y.figure} → ${y.at}`), sentences: x.sentences.map((y) => `${y.text} → ${y.at}`) })),
       results: r.results.map((x) => ({ block: x.index + 1, label: label(x.index), ok: x.ok, share: x.share, mm: x.mm ?? null, repeats: x.repeats ?? null, sentences: x.sentences ?? null, reason: x.reason ?? null, ms: x.ms ?? null, usage: x.usage ?? null })),
       skipped: r.skipped ? { ...r.skipped, blocks: r.skipped.blocks.map((i) => i + 1) } : null,
     })),
@@ -210,7 +211,7 @@ async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[],
     usage: run.usage,
     promptVersion: prompts.version,
   };
-  const tally = [...(run.revived.length ? [`빠진 블록 ${run.revived.filter((x) => x.ok).length}/${run.revived.length}개 되살림`] : []), ...meta.rounds.map((r) => `${r.round}회차 ${r.before} → ${r.after}mm·블록 ${r.results.filter((x) => x.ok).length}/${r.targets.length}개·${Math.round(r.ms / 1000)}초`)].join(" / ");
+  const tally = [...(run.revived.length ? [`빠진 블록 ${run.revived.filter((x) => x.ok).length}/${run.revived.length}개 되살림`] : []), ...meta.rounds.map((r) => `${r.cleanup ? "반복 정리" : `${r.round}회차`} ${r.before} → ${r.after}mm·블록 ${r.results.filter((x) => x.ok).length}/${r.targets.length}개·${Math.round(r.ms / 1000)}초`)].join(" / ");
   console.log(`분량 보강 — ${run.before} → ${run.after}${run.reasons.target ? `/${run.reasons.target}` : ""}mm · ${tally} · 합 ${Math.round(ms / 1000)}초`);
   return { ...patch, meta };
 }
@@ -333,13 +334,19 @@ if (addPaths.length) {
 if (dry) {
   console.log(`--- 구성안 요청: 분량 목표·닫기 관례·절 성과 재료 ---\n${volumeClose}`);
   // 저장된 구성안이 있으면 집필 요청의 「승인된 구성안」 글(닫기 관례·분량 목표·블록 글 한도)도 — AI 호출 없음
-  const { data: row } = await db.from("card_report_drafts").select("outline").eq("card_id", card.id).eq("year", year).maybeSingle();
+  const { data: row } = await db.from("card_report_drafts").select("outline, spec").eq("card_id", card.id).eq("year", year).maybeSingle();
   const saved = readComposition(row?.outline);
   if (saved?.mg) {
     const planText = mgPlanPrompt(draft, saved, ctx);
     console.log(`--- 집필 요청: 승인된 구성안 글 ${planText.length}자(절 ${saved.mg.parts.length}개·블록 ${saved.blocks.length}개) — 새 줄만 ---`);
     console.log(planText.split("\n").filter((l) => /닫기 관례|분량 목표|블록 영역|글 한도|둔 이유|값 어긋남/.test(l)).slice(0, 12).join("\n"));
   } else console.log("저장된 구성안 없음 — 집필 요청 글은 보이지 않음");
+  // 저장된 초안이 있으면 분량 채움 보강의 사유·재료(2026-10-29 저녁 — 연결 근거 사실 수·빠진 블록, AI 호출 없음)
+  const savedSpec = row?.spec as ReportSectionSpec | null | undefined;
+  if (savedSpec?.mg) {
+    const r = mgFillReasons(savedSpec, card.data, saved ?? undefined, relevantRefs(kb));
+    console.log(`--- 분량 채움 보강(저장된 초안 기준): 어림 ${r.height}/${r.target ?? "배정 없음"}mm · 안 쓴 원장 사실 ${r.facts.length}개 · 연결 근거 사실 ${r.refFacts.length}개 · 반복 수치 ${r.repeats.length}개 · 반복 문장 ${r.sentences.length}쌍${saved ? ` · 빠진 구성안 블록 ${missingBlocks(savedSpec, saved).length}개` : ""}`);
+  }
   process.exit(0);
 }
 const t0 = Date.now();

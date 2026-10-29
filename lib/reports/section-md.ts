@@ -3,7 +3,7 @@
 // 묶는 규칙은 HTML 렌더러(section-html.ts)와 같은 함수를 씀: 라벨·단 띠·가로 반씩 = layoutGroups, 막대 없는 표 칸·2단 라벨 = ladderGroups,
 // 전후 비교 패널 = isPanelCompare. 경영관리 마커 옮기기(지적개선을 카드 지적 행과 겹치는 절 대주제에)는 section-html.ts mgBody와 같은 짜임.
 
-import { type Block, type BlockCell, FIGURE_LABEL, type Figure, blockTexts, isPanelCompare, ladderGroups, pdcaMark } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_LABEL, type Figure, blockTexts, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText } from "./blocks.ts";
 import { layoutGroups } from "./layout.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 
@@ -114,10 +114,12 @@ function body(b: Block, warnings: string[]): string[] {
     }
     case "table": {
       if (b.variant === "result") {
-        // 오른쪽 「추진실적」 칸은 첫 행에 쓰고 아래 행은 〃(세로 병합)
-        const result = [...b.series.map((s) => [s.value, s.label].filter(Boolean).join(" ")), b.text].filter(Boolean).join(" / ");
+        // 머리 행·결과 칸 글은 화면과 같은 규칙(resultHeads·「뜻 수치」·괄호 시점 줄). 결과 칸은 첫 행에 쓰고 아래 행은 〃(세로 병합), 행마다 결과(note)면 행마다(첫 행 앞에 series·text)
+        const result = [...b.series.map((s) => [s.label, s.value].filter(Boolean).join(" ")), b.series.length && b.text ? resultTimeText(b.text) : b.text].filter(Boolean).join(" / ");
         const head = b.cells.some((c) => c.head);
-        return [...caption(b.title), ...table([[...(head ? ["구분"] : []), "추진내용", "추진실적"], ...b.cells.map((c, i) => [...(head ? [c.head] : []), c.bullets.join(" / "), i ? "〃" : result])])];
+        const perRow = resultPerRow(b);
+        const right = (c: BlockCell, i: number) => (perRow ? [i ? "" : result, c.note].filter(Boolean).join(" / ") : i ? "〃" : result);
+        return [...caption(b.title), ...table([resultHeads(b), ...b.cells.map((c, i) => [...(head ? [c.head] : []), c.bullets.join(" / "), right(c, i)])])];
       }
       if (b.variant === "ladder") {
         const subCol = b.cells.some((c) => c.tag);

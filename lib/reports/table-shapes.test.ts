@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { type Block, type BlockOutput, VARIANTS, blockBullets, blockSignature, cleanBlocks, isGridTable, ladderGroups, tableBars } from "./blocks.ts";
+import { type Block, type BlockOutput, VARIANTS, blockBullets, blockSignature, cleanBlocks, isGridTable, ladderGroups, resultHeads, resultPerRow, resultTimeText, tableBars } from "./blocks.ts";
 import { verifyBlockEdit } from "./block-edit.ts";
 import { applyDraftText } from "./draft-text.ts";
 import { BIZ_VARIETY, bizVarietyIssue, diagramHints, mgVarietyIssues, shapeKeyOf, shapeVariety } from "./diagram-hints.ts";
@@ -15,6 +15,7 @@ import { TABLE_COL, TABLE_SHAPE_MM, blockHeight, blockWidth, canonicalBlock, fit
 import { SHAPES, cellRange, defaultCells, shapeCode, shapeName } from "./frameworks.ts";
 import { unclosedPartKeys } from "./mg-outline.ts";
 import type { ReportSectionSpec } from "./section.ts";
+import { REPORT_CSS } from "./section-css.ts";
 import { blocksSampleHtml, sectionHtml } from "./section-html.ts";
 
 const out = (b: Omit<Partial<BlockOutput>, "kind"> & { kind: any }): BlockOutput => ({ label: "", title: "", variant: "", text: "", items: [], cells: [], rows: [], series: [], badge: "", evidence: "", figures: [], ...b }) as BlockOutput;
@@ -66,12 +67,15 @@ test("cleanBlocks: 모르는 표 모양은 빈 글(예전 그대로), bars·chev
   assert.equal(clean(out({ kind: "table", items: ["구분", "a", "b"], cells: [cell("x", [long, "y"]), cell("z", ["1", "2"])] }))[0].cells[0].bullets[0].length, 60, "기본 표 값은 예전처럼 60자");
 });
 
-test("cleanBlocks result: 왼쪽 행 4개까지(불릿 없는 행 뺌)·큰 수치 2개까지·items 비움, 결과가 없으면 칸 도식(2행↑)이나 불릿으로", () => {
+test("cleanBlocks result: 왼쪽 행 4개까지(불릿 없는 행 뺌)·「뜻 수치」 2개까지·items는 왼쪽 칸 수 이하 머리 글만, 결과가 없으면 칸 도식(2행↑)이나 불릿으로", () => {
   const [r] = clean(
-    out({ kind: "table", variant: "result", items: ["무시"], cells: [cell("가", ["a"]), cell("빈", []), cell("나", ["b"]), cell("다", ["c"]), cell("라", ["d"]), cell("마", ["e"])], series: [{ label: "배정", value: "20건" }, { label: "항목", value: "11개" }, { label: "셋째", value: "3개" }], text: "전수 완료" }),
+    out({ kind: "table", variant: "result", items: ["갈래", "추진실적"], cells: [cell("가", ["a"]), cell("빈", []), cell("나", ["b"]), cell("다", ["c"]), cell("라", ["d"]), cell("마", ["e"])], series: [{ label: "배정", value: "20건" }, { label: "항목", value: "11개" }, { label: "셋째", value: "3개" }], text: "전수 완료" }),
   );
   assert.equal(r.variant, "result");
-  assert.deepEqual(r.items, []);
+  assert.deepEqual(r.items, ["갈래"], "「추진실적」은 앱이 붙이므로 걷음");
+  const many = clean(out({ kind: "table", variant: "result", items: ["가", "나", "다"], cells: [cell("가", ["a"])], text: "결과" }))[0];
+  assert.deepEqual(many.items, [], "왼쪽 칸(구분·추진내용)보다 많으면 어느 칸 머리인지 몰라 버림");
+  assert.deepEqual(clean(out({ kind: "table", variant: "result", items: ["가", "나"], cells: [cell("", ["a"])], text: "결과" }))[0].items, [], "행 머리가 없으면 왼쪽 칸은 하나");
   assert.deepEqual(r.cells.map((c) => c.head), ["가", "나", "다", "라"]);
   assert.deepEqual(r.series.map((s) => s.value), ["20건", "11개"]);
   const [cards, bullets] = clean(out({ kind: "table", variant: "result", cells: [cell("가", ["a"]), cell("나", ["b"])] }), out({ kind: "table", variant: "result", cells: [cell("가", ["a", "b"])] }));
@@ -79,6 +83,9 @@ test("cleanBlocks result: 왼쪽 행 4개까지(불릿 없는 행 뺌)·큰 수�
   assert.equal(bullets.kind, "bullets");
   assert.deepEqual(bullets.items, ["a", "b"]);
   assert.equal(clean(out({ kind: "table", variant: "result", cells: [cell("가", ["a"])], text: "결과 줄만" }))[0].variant, "result", "결과 줄만 있어도 됨");
+  const perRow = clean(out({ kind: "table", variant: "result", cells: [cell("가", ["a"], "", "처리 기간 30% 단축"), cell("나", ["b"])] }))[0];
+  assert.equal(perRow.variant, "result", "행마다 결과(note)만 있어도 됨");
+  assert.deepEqual(perRow.cells.map((c) => c.note), ["처리 기간 30% 단축", ""], "note를 버리지 않음");
 });
 
 test("cleanBlocks ladder: 행 6개까지(내용 없는 행 뺌)·items 비움, 2행 미만이면 뺌", () => {
@@ -185,16 +192,54 @@ test("chevron: 값 열 머리마다 k-chev(마지막은 k-chev--last), 첫 머�
   assert.match(h, /<th scope="col">구분<\/th><th scope="col" class="k-chev"><span>현황<\/span><\/th><th scope="col" class="k-chev"><span>개선방향<\/span><\/th><th scope="col" class="k-chev k-chev--last"><span>적용 결과<\/span><\/th>/);
 });
 
-test("result: 오른쪽 결과 칸 하나가 모든 행에 걸침(rowspan) — 머리 「추진실적」·큰 수치·뜻·결과 줄, 행 머리가 없으면 행 머리 열도 없음", () => {
+// 2026-10-29 2025 경영관리 원본 모양으로: 예전 「오른쪽 칸 전체 어두운 바탕 + 칸 안 머리 「추진실적」·큰 수치(15pt)·뜻 세로 쌓기」를
+// 머리 행(「추진실적」 머리 칸만 어둡게) + 밝은 결과 칸(「뜻 수치」 굵은 줄·괄호 시점 줄) + 행마다 결과로 바꿈 — 그래서 아래 기대 글이 바뀜
+test("result: 머리 행 「구분 | 추진내용 | 추진실적」(「추진실적」 칸만 어둡게), 행 머리가 없으면 「추진내용 | 추진실적」, items 글은 앞 칸부터 머리로", () => {
   const b = blk("table", { variant: "result", cells: [cell("측정기준", ["a"]), cell("로그", ["b", "c"])], series: [{ label: "유형 배정", value: "20건" }], text: "전수 완료" });
   const h = blocksSampleHtml([b]);
   assert.match(h, /class="k-tbl k-tbl--res"/);
-  assert.match(h, /<td class="k-res__r" rowspan="2"><p class="k-res__h">추진실적<\/p><p class="k-res__v">20건<\/p><p class="k-res__l">유형 배정<\/p><p class="k-res__t">전수 완료<\/p><\/td>/);
-  assert.equal((h.match(/k-res__r/g) ?? []).length, 1);
+  assert.match(h, /<thead><tr><th scope="col">구분<\/th><th scope="col">추진내용<\/th><th scope="col" class="k-res__hd">추진실적<\/th><\/tr><\/thead>/);
   assert.match(h, /<th scope="row">측정기준<\/th>/);
   const noHead = blocksSampleHtml([{ ...b, cells: [cell("", ["a"])] }]);
+  assert.match(noHead, /<thead><tr><th scope="col">추진내용<\/th><th scope="col" class="k-res__hd">추진실적<\/th><\/tr><\/thead>/);
   assert.doesNotMatch(noHead, /<th scope="row">/);
   assert.match(noHead, /rowspan="1"/);
+  assert.match(blocksSampleHtml([{ ...b, items: ["갈래"] }]), /<th scope="col">갈래<\/th><th scope="col">추진내용<\/th><th scope="col" class="k-res__hd">추진실적<\/th>/);
+  assert.match(blocksSampleHtml([{ ...b, cells: [cell("", ["a"])], items: ["개선 내용"] }]), /<thead><tr><th scope="col">개선 내용<\/th><th scope="col" class="k-res__hd">추진실적<\/th>/);
+});
+
+test("result 결과 칸: 밝은 칸 하나가 모든 행에 걸침(rowspan) — series마다 「뜻 수치」 굵은 줄, text는 괄호 시점 줄(이미 괄호면 그대로), series가 없으면 text 불릿", () => {
+  const b = blk("table", { variant: "result", cells: [cell("측정기준", ["a"]), cell("로그", ["b", "c"])], series: [{ label: "유형 배정", value: "20건" }, { label: "", value: "11개" }], text: "’26.8 기준" });
+  const h = blocksSampleHtml([b]);
+  assert.match(h, /<td class="k-res__r" rowspan="2"><p class="k-res__s">유형 배정 20건<\/p><p class="k-res__s">11개<\/p><p class="k-res__t">\(’26\.8 기준\)<\/p><\/td>/);
+  assert.equal((h.match(/class="k-res__r"/g) ?? []).length, 1);
+  assert.doesNotMatch(h, /k-res__h"|k-res__v|k-res__l/, "예전 칸 안 머리·큰 수치 없음");
+  assert.match(blocksSampleHtml([{ ...b, text: "(’25년 8건 → ’26년 2건)" }]), /<p class="k-res__t">\(’25년 8건 → ’26년 2건\)<\/p>/);
+  assert.match(blocksSampleHtml([{ ...b, series: [], text: "지적 0건(3년 연속)" }]), /<td class="k-res__r" rowspan="2"><ul><li>지적 0건\(3년 연속\)<\/li><\/ul><\/td>/);
+  // 화면 CSS: 결과 칸은 바탕을 칠하지 않고(흰 글 없음) 「추진실적」 머리 칸만 어두움
+  assert.match(REPORT_CSS, /table\.k-tbl--res thead th\.k-res__hd\{background:var\(--k-g5\);color:#fff\}/);
+  const rule = /table\.k-tbl--res td\.k-res__r\{([^}]*)\}/.exec(REPORT_CSS)?.[1] ?? "";
+  assert.ok(rule && !/background|color:#fff/.test(rule), rule);
+});
+
+test("resultTimeText: 글 전체가 한 괄호일 때만 그대로, 아니면 괄호로 감쌈", () => {
+  assert.equal(resultTimeText("’25년 대비"), "(’25년 대비)");
+  assert.equal(resultTimeText("(’25년 대비)"), "(’25년 대비)");
+  assert.equal(resultTimeText("(가) 및 (나)"), "((가) 및 (나))");
+  assert.equal(resultTimeText("(열린 괄호"), "((열린 괄호)");
+  assert.equal(resultTimeText(" "), "");
+});
+
+test("result 행마다 결과: 어느 행이든 note가 있으면 결과 칸을 행마다(rowspan 없음) note 불릿으로 — series·text는 첫 행 칸 위에", () => {
+  const b = blk("table", { variant: "result", cells: [cell("가", ["a"], "", "처리 기간 30% 단축"), cell("나", ["b"]), cell("다", ["c"], "", "참여 12곳")], series: [{ label: "뜻", value: "20건" }] });
+  const h = blocksSampleHtml([b]);
+  assert.doesNotMatch(h, /rowspan/);
+  assert.equal((h.match(/<td class="k-res__r">/g) ?? []).length, 3);
+  assert.match(h, /<td class="k-res__r"><p class="k-res__s">뜻 20건<\/p><ul><li>처리 기간 30% 단축<\/li><\/ul><\/td>/);
+  assert.match(h, /<td class="k-res__b"><ul><li>b<\/li><\/ul><\/td><td class="k-res__r"><\/td>/, "결과 없는 행은 빈 칸");
+  assert.match(h, /<td class="k-res__r"><ul><li>참여 12곳<\/li><\/ul><\/td>/);
+  assert.ok(resultPerRow(b) && !resultPerRow({ cells: [cell("가", ["a"])] }));
+  assert.deepEqual(resultHeads(b), ["구분", "추진내용", "추진실적"]);
 });
 
 test("ladder: 큰 라벨은 묶음마다 한 칸(rowspan), 하위 라벨 열은 tag가 있을 때만", () => {
@@ -215,16 +260,20 @@ const spec = (blocks: Block[]): ReportSectionSpec =>
 
 test("직접 고치기: 새 표 모양의 칸 글에 표지(data-t)가 달리고 applyDraftText가 받음 — 큰 수치(series)는 추진실적 열 표에서만", () => {
   const s = spec([
-    blk("table", { variant: "result", cells: [cell("구분", ["내용"])], series: [{ label: "뜻", value: "20건" }], text: "결과" }),
+    blk("table", { variant: "result", items: ["갈래"], cells: [cell("구분", ["내용"], "", "행 결과")], series: [{ label: "뜻", value: "20건" }], text: "결과" }),
     blk("table", { variant: "ladder", cells: [cell("① 관리", ["a"], "①-1"), cell("", ["b"], "①-2")] }),
     blk("table", { variant: "bars", items: ["구분", "’25", "’26"], cells: [cell("x", ["10건", "20건"])] }),
     blk("chart", { title: "건수", series: [{ label: "’25", value: "10" }, { label: "’26", value: "20" }] }),
   ]);
   const h = sectionHtml(s, [], { editMarks: true });
-  for (const p of ["blocks.0.series.0.value", "blocks.0.series.0.label", "blocks.0.text", "blocks.0.cells.0.bullets.0", "blocks.1.cells.0.head", "blocks.1.cells.1.tag", "blocks.1.cells.1.bullets.0", "blocks.2.cells.0.bullets.1"]) assert.match(h, new RegExp(`data-t="${p.replace(/\./g, "\\.")}"`), p);
+  for (const p of ["blocks.0.series.0.value", "blocks.0.series.0.label", "blocks.0.text", "blocks.0.cells.0.bullets.0", "blocks.0.cells.0.note", "blocks.0.items.0", "blocks.1.cells.0.head", "blocks.1.cells.1.tag", "blocks.1.cells.1.bullets.0", "blocks.2.cells.0.bullets.1"]) assert.match(h, new RegExp(`data-t="${p.replace(/\./g, "\\.")}"`), p);
   const ok = applyDraftText(s, { path: "blocks.0.series.0.value", text: "21건" });
   assert.ok(ok.ok && ok.changed && ok.blockIndex === 0);
   assert.equal(ok.ok && ok.spec.blocks![0].series[0].value, "21건");
+  // 시점 줄은 괄호를 붙여 그리지만 고치기 원래 글(data-raw)은 저장된 글 그대로
+  assert.match(h, /data-t="blocks\.0\.text" data-raw="결과">\(결과\)</);
+  const note = applyDraftText(s, { path: "blocks.0.cells.0.note", text: "행 결과 고침" });
+  assert.equal(note.ok && note.spec.blocks![0].cells[0].note, "행 결과 고침");
   assert.ok(applyDraftText(s, { path: "blocks.1.cells.1.tag", text: "①-2 전환" }).ok);
   const chart = applyDraftText(s, { path: "blocks.3.series.0.value", text: "99" });
   assert.equal(chart.ok, false, "막대(chart) 값은 여기서 못 바꿈");
@@ -255,6 +304,25 @@ test("blockHeight result: 왼쪽 행 합과 오른쪽 결과 칸 중 큰 것 —
   const longLeft = { ...base, cells: Array.from({ length: 4 }, () => cell("", ["가".repeat(120)])) };
   assert.equal(blockHeight({ ...longLeft, series: [...base.series, { label: "뜻", value: "11개" }] }, w), blockHeight(longLeft, w), "왼쪽이 더 높으면 오른쪽 칸은 높이를 안 바꿈");
   assert.ok(blockHeight({ ...base, text: "결과 한 줄" }, w) > one);
+});
+
+// 2026-10-29 새 모양(머리 행 + 밝은 결과 칸)의 어림을 로컬 Chrome 실측(sectionDocument, 사다리 칸 150mm — 13-4 표본 블록 모양·지어낸 글 7가지:
+// 결과 칸이 정함·왼쪽이 정함·행 머리 없음·행마다 결과·행마다 결과 + series·text 불릿만·items 머리)과 대조 — 어림이 실측보다 0.6~1.2mm 작음(표 테두리 몫, 수치 표와 같은 1.2mm 상수)
+test("blockHeight result 새 모양: 머리 행 높이가 더해지고, 행마다 결과는 행마다 큰 쪽을 더하고, 긴 items 머리는 머리 행을 높임", () => {
+  const w = blockWidth({ label: "추진내용", kind: "table" });
+  const b = blk("table", { label: "추진내용", variant: "result", cells: [cell("가", ["가".repeat(10)]), cell("나", ["가".repeat(10)])], series: [{ label: "뜻", value: "20건" }] });
+  const s = slotOf(b, w);
+  const L = 10.6 * 1.52 * (25.4 / 72);
+  const TH = 10.4 * 1.45 * (25.4 / 72);
+  // 왼쪽이 정할 때: 머리 행(한 줄 + 여백 2px) + 행 둘(한 줄 + 2px) + 1.2
+  const px = 25.4 / 96;
+  assert.ok(s.body > 40);
+  assert.equal(Math.round(blockHeight(b, w) * 100) / 100, Math.round((TH + 2 * px + 2 * (L + 2 * px) + 1.2) * 100) / 100);
+  const perRow = { ...b, cells: [{ ...b.cells[0], note: "가".repeat(40) }, b.cells[1]] };
+  assert.ok(blockHeight(perRow, w) > blockHeight(b, w), "첫 행 결과 칸이 series + 긴 note로 행보다 높음");
+  assert.ok(blockHeight({ ...perRow, series: [] }, w) < blockHeight(perRow, w), "series를 비우면 첫 행이 낮아짐");
+  assert.ok(blockHeight({ ...b, items: ["가".repeat(20)] }, w) > blockHeight(b, w), "긴 머리 글은 머리 행을 두 줄로");
+  assert.ok(blockHeight({ ...b, cells: [cell("가", ["짧게"])], series: [], text: "가".repeat(40) }, w) > blockHeight({ ...b, cells: [cell("가", ["짧게"])], series: [], text: "가" }, w), "series 없는 text는 불릿 줄 수대로");
 });
 
 test("blockHeight ladder·chevron·bars: 큰 라벨이 행보다 길면 그 높이, 쉐브론 머리는 기본 머리보다 높거나 같음, 막대 표는 좁은 값 칸에서 줄이 늘 수 있음", () => {
