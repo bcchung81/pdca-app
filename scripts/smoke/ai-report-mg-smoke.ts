@@ -43,7 +43,7 @@ import { sectionDocument } from "../../lib/reports/section-html.ts";
 import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgBundlePrompt, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOutcomePrompt, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
 import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../lib/reports/mg-queries.ts";
 import { cleanLine, draftEvidence, evidenceOf, sectionHints } from "../../lib/reports/section.ts";
-import { cardBundles } from "../../lib/reports/mg-bundles.ts";
+import { cardBundles, linkedBundles } from "../../lib/reports/mg-bundles.ts";
 import { ledgerOutcomeItems } from "../../lib/reports/mg-close.ts";
 import { planAdherence, readComposition } from "../../lib/reports/composition.ts";
 import { patternOf } from "../../lib/reports/framework-patterns.ts";
@@ -129,9 +129,9 @@ const siblings = (sibRows ?? [])
 const hints = sectionHints(card.data, [], files, lens, actuals, year, mgHintOptions(ctx));
 const { data: ins } = await db.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
 const inspection = followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
-// 서버 callReportOutlineMg와 같은 순서: 분량 목표 · 닫기 관례 · 절 성과 재료 · 수치 묶음 재료(2026-10-29)
+// 서버 callReportOutlineMg와 같은 순서: 분량 목표 · 닫기 관례 · 절 성과 재료 · 수치 묶음 재료(2026-10-29 — 연결 조각 표도 서버와 같은 kb의 relevantRefs)
 const outcomes = ledgerOutcomeItems(card.data, cleanLine, Infinity);
-const volumeClose = [mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, prior, indicator.name), mgOutcomePrompt(outline, outcomes), mgBundlePrompt(outline, cardBundles(card.data, actuals))].filter(Boolean).join("\n\n");
+const volumeClose = [mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, prior, indicator.name), mgOutcomePrompt(outline, outcomes), mgBundlePrompt(outline, [...cardBundles(card.data, actuals), ...linkedBundles(relevantRefs(kb))])].filter(Boolean).join("\n\n");
 const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files, hints, siblings });
 // 갈래 축 사전(서버 callReportOutlineMg와 같은 절 — 전체 구성안만, 2026-10-13)
 const splitHead = splitHeadPrompt(outline, "mg");

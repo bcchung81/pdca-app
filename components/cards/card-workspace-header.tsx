@@ -78,7 +78,8 @@ export function WorkspaceHeader({ props, ws }: HeaderProps) {
   return (
     <div className="flex shrink-0 flex-col border-b border-line">
       {/* 전체 페이지(전체 보기)는 머리 한 줄 — 돌아가기·과제번호·과제명 · 버튼(메뉴·화면 탭은 틀이 숨김, 머리띠 아래 전부 작성 영역) */}
-      <div className={`flex justify-between gap-4 ${variant === "page" ? "min-h-14 items-center px-5 py-2" : "items-start px-6 pt-4 pb-3"}`}>
+      {/* 휴대폰 폭(md 미만): 좌우 여백을 줄이고 제목이 아이콘에 밀리지 않게 아이콘은 더보기로 접음(HeaderButtons·MoreMenu) */}
+      <div className={`flex justify-between gap-4 max-md:gap-2 ${variant === "page" ? "min-h-14 items-center px-5 py-2 max-md:px-3" : "items-start px-6 pt-4 pb-3 max-md:px-3 max-md:pt-3"}`}>
         <HeaderTitle props={props} />
         <HeaderButtons props={props} ws={ws} />
       </div>
@@ -102,11 +103,12 @@ export function WorkspaceHeader({ props, ws }: HeaderProps) {
 function HeaderTitle({ props }: { props: WorkspaceProps }) {
   if (props.variant === "page") {
     return (
-      <div className="flex min-w-0 items-baseline gap-3">
-        <span className="shrink-0 font-mono text-xs whitespace-nowrap text-muted" title={`${props.group} · ${props.taskNo} · ${props.editionLabel} 현행 카드 · 원본 양식`}>
+      // 휴대폰 폭: 과제번호를 제목 위 줄로(제목은 한 줄 말줄임)
+      <div className="flex min-w-0 items-baseline gap-3 max-md:flex-col max-md:items-stretch max-md:gap-0">
+        <span className="shrink-0 font-mono text-xs whitespace-nowrap text-muted max-md:truncate" title={`${props.group} · ${props.taskNo} · ${props.editionLabel} 현행 카드 · 원본 양식`}>
           {props.group} · {props.taskNo}
         </span>
-        <h2 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy" title={props.title}>
+        <h2 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy max-md:text-lg max-md:leading-7" title={props.title}>
           {props.title}
         </h2>
       </div>
@@ -124,20 +126,31 @@ function HeaderTitle({ props }: { props: WorkspaceProps }) {
   );
 }
 
-/** 머리 오른쪽 아이콘 묶음: 목록 · 경평 초안 · 자료 · 수정 이력 · 더보기 · (옆 창) 전체 페이지·닫기 */
+/** 옆 창 → 전체 페이지: 남은 변경을 저장한 뒤 이동(AI가 코멘트를 처리하는 중이면 확인 막대) */
+async function openPage(ws: CardWorkspaceState) {
+  const { editor, router } = ws;
+  const go = async () => {
+    await editor.current?.flush();
+    router.push(ws.pageHref);
+  };
+  if (editor.current?.busy()) ws.setLeaving(() => () => void go());
+  else await go();
+}
+
+/** 머리 오른쪽 아이콘 묶음: 목록 · 경평 초안 · 자료 · 수정 이력 · 더보기 · (옆 창) 전체 페이지·닫기. 휴대폰 폭에서는 경평 초안·자료·수정 이력·전체 페이지를 더보기 메뉴로 접음 */
 function HeaderButtons({ props, ws }: HeaderProps) {
   const { variant } = props;
-  const { editor, router, side, toggle } = ws;
+  const { side, toggle } = ws;
   return (
-    <div className="flex shrink-0 items-center justify-end gap-2">
+    <div className="flex shrink-0 items-center justify-end gap-2 max-md:gap-1.5">
       <ListIconButton label={ws.listLabel} onClick={() => void ws.close()} />
-      <Link href={ws.reportHref} aria-label="경평 초안" title="경평 초안 — 과제별 초안 열기" className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}>
+      <Link href={ws.reportHref} aria-label="경평 초안" title="경평 초안 — 과제별 초안 열기" className={`${T.iconBtn} border-field-line text-ink hover:border-navy max-md:hidden`}>
         <FileText size={16} aria-hidden />
       </Link>
-      <button type="button" aria-pressed={side === "materials"} aria-label="자료" title="자료 — 카드 전용 자료" onClick={() => toggle("materials")} className={`${T.iconBtn} ${side === "materials" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
+      <button type="button" aria-pressed={side === "materials"} aria-label="자료" title="자료 — 카드 전용 자료" onClick={() => toggle("materials")} className={`${T.iconBtn} ${side === "materials" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"} max-md:hidden`}>
         <FolderOpen size={16} aria-hidden />
       </button>
-      <button type="button" aria-pressed={side === "history"} aria-label="수정 이력" title="수정 이력" onClick={() => toggle("history")} className={`${T.iconBtn} ${side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
+      <button type="button" aria-pressed={side === "history"} aria-label="수정 이력" title="수정 이력" onClick={() => toggle("history")} className={`${T.iconBtn} ${side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"} max-md:hidden`}>
         <History size={16} aria-hidden />
       </button>
       <MoreMenu props={props} ws={ws} />
@@ -146,16 +159,11 @@ function HeaderButtons({ props, ws }: HeaderProps) {
           href={ws.pageHref}
           onClick={async (e) => {
             e.preventDefault();
-            const go = async () => {
-              await editor.current?.flush();
-              router.push(ws.pageHref);
-            };
-            if (editor.current?.busy()) ws.setLeaving(() => () => void go());
-            else await go();
+            await openPage(ws);
           }}
           aria-label="전체 페이지로 열기"
           title="전체 페이지로 열기"
-          className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}
+          className={`${T.iconBtn} border-field-line text-ink hover:border-navy max-md:hidden`}
         >
           <Maximize2 size={15} aria-hidden />
         </Link>
@@ -182,7 +190,47 @@ function MoreMenu({ props, ws }: HeaderProps) {
         <Ellipsis size={16} aria-hidden />
       </button>
       {menu && (
-        <div role="menu" aria-label="카드 더보기" className="absolute top-9 right-0 z-menu flex w-60 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu">
+        <div role="menu" aria-label="카드 더보기" className="absolute top-9 right-0 z-menu flex w-60 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu max-md:top-11">
+          {/* 휴대폰 폭(md 미만): 머리에서 접은 아이콘(경평 초안·자료·수정 이력·전체 페이지)을 메뉴 맨 위에 */}
+          <Link role="menuitem" href={ws.reportHref} onClick={() => setMenu(false)} className="px-3 py-2 text-ink no-underline hover:bg-row-hover md:hidden">
+            경평 초안
+          </Link>
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => {
+              setMenu(false);
+              ws.toggle("materials");
+            }}
+            className="px-3 py-2 text-left text-ink hover:bg-row-hover md:hidden"
+          >
+            자료
+          </button>
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => {
+              setMenu(false);
+              ws.toggle("history");
+            }}
+            className="px-3 py-2 text-left text-ink hover:bg-row-hover md:hidden"
+          >
+            수정 이력
+          </button>
+          {props.variant === "peek" && (
+            <button
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                setMenu(false);
+                void openPage(ws);
+              }}
+              className="px-3 py-2 text-left text-ink hover:bg-row-hover md:hidden"
+            >
+              전체 페이지로 열기
+            </button>
+          )}
+          <span aria-hidden className="my-1 border-t border-line md:hidden" />
           <a role="menuitem" href={`/cards/${props.uid}/hwpx`} download onClick={() => setMenu(false)} className="px-3 py-2 text-ink no-underline hover:bg-row-hover">
             한글(HWPX)로 내려받기
             <span className="block text-xs text-muted">지금 보이는 {draftMode ? "작성본" : "원장"} 카드 · 9.16 양식</span>
@@ -209,6 +257,7 @@ function MoreMenu({ props, ws }: HeaderProps) {
               onClick={() => {
                 setMenu(false);
                 ws.setOther("import");
+                ws.setSheet(true);
               }}
               className="px-3 py-2 text-left text-ink hover:bg-row-hover"
             >

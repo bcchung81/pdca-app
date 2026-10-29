@@ -7,12 +7,13 @@ export function TeamPicker({ teams, value, allLabel }: { teams: Array<{ id: numb
   const router = useRouter();
   const pathname = usePathname();
   return (
-    <label className="flex min-w-0 items-center gap-2 text-xs font-semibold text-muted">
+    // 좁은 폭(md 미만): 한 줄 전체 폭, 「부서」 글자는 접히지 않게
+    <label className="flex min-w-0 items-center gap-2 text-xs font-semibold text-muted max-md:w-full max-md:whitespace-nowrap">
       부서
       <select
         value={value ?? ""}
         onChange={(e) => router.push(e.target.value ? `${pathname}?team=${e.target.value}` : pathname, { scroll: false })}
-        className="h-8 max-w-[260px] min-w-0 rounded-md border border-field-line bg-paper px-2 text-ui font-normal text-ink"
+        className="h-8 max-w-[260px] min-w-0 rounded-md border border-field-line bg-paper px-2 text-ui font-normal text-ink max-md:h-9 max-md:max-w-none max-md:grow"
       >
         <option value="">{allLabel ?? "부서 고르기"}</option>
         {teams.map((t) => (

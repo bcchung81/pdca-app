@@ -181,8 +181,8 @@ export default async function InspectionsPage({ searchParams }: PageProps<"/insp
             </colgroup>
             <thead>
               <tr className={T.headRow}>
-                {["번호", "과제명", "부서", "이달 작성본", "점검", "충족 7·8·5", "보완", "집중보완", "수정일"].map((h) => (
-                  <th key={h} scope="col" className={T.th} title={h === "충족 7·8·5" ? "7대축(7)·질의패턴(8)·정합성(5) 충족 행 수" : undefined}>
+                {["번호", "과제명", "부서", "이달 작성본", "점검", "충족 7·8·5", "보완", "집중보완", "수정일"].map((h, i) => (
+                  <th key={h} scope="col" className={`${T.th} ${i === 0 ? T.stickTh : ""}`} title={h === "충족 7·8·5" ? "7대축(7)·질의패턴(8)·정합성(5) 충족 행 수" : undefined}>
                     {h}
                   </th>
                 ))}
@@ -205,7 +205,7 @@ export default async function InspectionsPage({ searchParams }: PageProps<"/insp
                     const on = r.uid === peekUid;
                     return (
                       <tr key={r.id} className={on ? T.rowOn : T.row}>
-                        <td className={`${T.td} font-mono text-ui text-navy`}>{r.taskNo}</td>
+                        <td className={`${T.td} ${T.stickTd} font-mono text-ui text-navy`}>{r.taskNo}</td>
                         <td className={`${T.td} truncate`}>
                           <Link href={href({ peek: r.uid })} scroll={false} title={r.title} className="block truncate font-semibold text-navy no-underline hover:underline">
                             {r.title}

@@ -59,12 +59,13 @@ export function useFitZoom(opts: UseFitZoomOptions) {
     return () => ro.disconnect();
   }, [opts.paused]);
 
-  // 이 브라우저에 기억한 확대(없으면 맞춤) — 서버 그림에는 없는 값이라 붙은 뒤에 읽음
+  // 이 브라우저에 기억한 확대(없으면 맞춤) — 서버 그림에는 없는 값이라 붙은 뒤에 읽음.
+  // 열쇠가 바뀌면(좁은 폭은 따로 기억 — 데스크톱에서 고른 배율이 휴대폰에 넘어가지 않게) 그 열쇠의 값, 없으면 맞춤으로 돌아감
   useEffect(() => {
     try {
       const v = Number(localStorage.getItem(opts.storageKey));
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (v >= handRange.min && v <= handRange.max) setHand(v);
+      setHand(v >= handRange.min && v <= handRange.max ? v : null);
     } catch {
       // 저장 공간을 못 쓰면 맞춤
     }

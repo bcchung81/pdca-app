@@ -2,7 +2,7 @@ import { UserPlus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PeekEscape } from "../../../components/shell/peek-escape";
-import { LinkTabs, NoAccess, PageHeader, Screen, Toolbar } from "../../../components/ui/kit";
+import { LinkTabs, NoAccess, PageHeader, Screen, T, Toolbar } from "../../../components/ui/kit";
 import { type AppRole, ROLE_LABEL, requireAtLeast } from "../../../lib/auth/dal.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { listUsers } from "../../../lib/users/queries.ts";
@@ -71,13 +71,13 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
       className="peek-sheet flex w-full max-w-[440px] flex-col border-l border-line-strong bg-paper shadow-peek"
     >
       <PeekEscape closeHref={closeHref} />
-      <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-6 py-4">
+      <div className="flex shrink-0 items-center justify-between gap-4 border-b border-line px-6 py-4 max-md:px-4">
         <h2 className="truncate font-serif text-lg font-bold text-navy">{creating ? createLabel : editing!.displayName || "이름 미입력"}</h2>
-        <Link href={closeHref} scroll={false} aria-label="닫기 (Esc)" title="닫기 (Esc)" className="flex size-8 shrink-0 items-center justify-center rounded-md border border-field-line text-muted no-underline hover:border-navy">
+        <Link href={closeHref} scroll={false} aria-label="닫기 (Esc)" title="닫기 (Esc)" className="flex size-8 shrink-0 items-center justify-center rounded-md border border-field-line text-muted no-underline hover:border-navy max-md:size-10">
           ✕
         </Link>
       </div>
-      <div className="flex min-h-0 grow flex-col gap-4 overflow-y-auto p-6">
+      <div className="flex min-h-0 grow flex-col gap-4 overflow-y-auto p-6 max-md:p-4">
         {creating ? (
           <InviteForm teams={teams} isAdmin={isAdmin} />
         ) : readOnlyTarget ? (
@@ -125,7 +125,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
           scroll={false}
           aria-label={createLabel}
           title={createLabel}
-          className="ml-auto flex size-[34px] shrink-0 items-center justify-center rounded-lg bg-navy text-white no-underline hover:opacity-90"
+          className="ml-auto flex size-[34px] shrink-0 items-center justify-center rounded-lg bg-navy text-white no-underline hover:opacity-90 max-md:size-10"
         >
           <UserPlus size={16} aria-hidden />
         </Link>
@@ -144,8 +144,8 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
               </colgroup>
               <thead>
                 <tr className="h-10 bg-thead text-left text-xs font-semibold text-muted">
-                  {["이름", "메일", "팀", "역할", "담당 과제", "최근 접속"].map((h) => (
-                    <th key={h} scope="col" className="border-b border-line px-3 whitespace-nowrap">
+                  {["이름", "메일", "팀", "역할", "담당 과제", "최근 접속"].map((h, i) => (
+                    <th key={h} scope="col" className={`border-b border-line px-3 whitespace-nowrap ${i === 0 ? T.stickTh : ""}`}>
                       {h}
                     </th>
                   ))}
@@ -156,7 +156,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
                   const selected = u.id === editId;
                   return (
                     <tr key={u.id} className={`h-12 ${selected ? "bg-row-hover" : "hover:bg-row-hover"} ${u.active ? "" : "text-muted"}`}>
-                      <td className={cell}>
+                      <td className={`${cell} ${T.stickTd}`}>
                         <Link href={href({ edit: u.id })} scroll={false} className={`block truncate no-underline hover:underline ${u.displayName && u.active ? "font-semibold text-navy" : "text-muted"}`} title="눌러서 수정">
                           {u.displayName || "이름 미입력"}
                           {u.id === me.id ? <span className="ml-1 text-xs font-normal text-muted">(나)</span> : null}

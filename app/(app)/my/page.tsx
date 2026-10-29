@@ -123,7 +123,7 @@ export default async function MyTasksPage({ searchParams }: PageProps<"/my">) {
     <Screen header={<PageHeader title="내 과제" />} peek={peek || undefined}>
       {staff && (
         <PreviewBanner teamName={scope.team?.name ?? null} all>
-          <span className="ml-auto">
+          <span className="ml-auto max-md:ml-0 max-md:w-full max-md:min-w-0">
             <TeamPicker teams={scope.teams} value={scope.team?.id ?? null} allLabel="전체 부서" />
           </span>
         </PreviewBanner>

@@ -2,7 +2,8 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BUNDLE_MIN, cardBundles, figureBundle, materialBundle } from "./mg-bundles.ts";
+import { type KnowledgeBundle, relevantRefs } from "../knowledge/bundle.ts";
+import { BUNDLE_MIN, cardBundles, figureBundle, headUnit, linkedBundles, materialBundle } from "./mg-bundles.ts";
 
 const kpiRow = (name: string, unit: string, prev: string, target: string, expected = "") => ({ name, unit, weight: "", prev, target, expected });
 const card = (rows: unknown[], monthly: unknown[] = []) => ({ id: "경영관리9/9-3", taskNo: "9-3", kpi: { rows }, do: { lines: [], monthly } });
@@ -43,4 +44,46 @@ test("재료 묶음: 글 + 원문 구절(표 행을 옮긴 재료)에 같은 단
   assert.deepEqual(materialBundle(row)?.values, ["85점", "88점", "82점"]);
   assert.equal(materialBundle({ ...row, kind: "need" }), null);
   assert.equal(materialBundle({ kind: "figure", text: "개방 46건 → 58건", quote: "46건 | 58건" }), null, "값 둘");
+});
+
+// 연결 조각 표(2026-10-29 S2 보강) — 지어낸 표만 씀
+const SCORE_TABLE = [
+  "<table><tr><th rowspan=\"2\">순위</th><th rowspan=\"2\">항목명</th><th colspan=\"2\">평가 항목</th><th rowspan=\"2\">총점</th></tr>",
+  "<tr><td>가 기준</td><td>나 기준</td></tr>",
+  "<tr><td>1</td><td>가 항목</td><td>40</td><td>45</td><td>85</td></tr>",
+  "<tr><td>2</td><td>나 항목</td><td>38</td><td>40</td><td>78</td></tr>",
+  "<tr><td>3</td><td>다 항목</td><td>35</td><td>36</td><td>71</td></tr></table>",
+].join("");
+const ref = (key: string, text: string) => ({ key, title: `'25 실사 질문 · 9-(1) Q9 · 가짜 질문 글 ${key}`, text });
+
+test("표 머리 단위: 괄호 단위(「(건)」「(단위: 백만원)」) 먼저, 없으면 단위를 뜻하는 머리 낱말(총점·배점·점수·건수·인원·횟수)만 — 끝 글자가 단위와 같은 머리(구분·기관명)는 아님", () => {
+  for (const [head, unit] of [["총점", "점"], ["배점", "점"], ["평가 점수", "점"], ["실적(건)", "건"], ["예산 (단위: 백만원)", "백만원"], ["처리 건수", "건"], ["참여 인원", "명"], ["개최 횟수", "회"], ["교육 인원(명)", "명"]]) assert.equal(headUnit(head), unit, head);
+  for (const head of ["구분", "기관명", "순위", "’25년", "탐색기(2)", "평가 항목"]) assert.equal(headUnit(head), "", head);
+});
+
+test("연결 조각 묶음: 표를 행 단위로 읽어 맨 숫자 값 칸에 열 머리 단위를 붙이고(두 줄 머리·병합 칸 자리 맞춤) 같은 단위 값 3개 이상이면 그 행만 줄로 — 단위 없는 열은 셈하지 않음", () => {
+  const got = linkedBundles([ref("qa25-mg-99/q09", `답변 글\n${SCORE_TABLE}\n끝`)]);
+  assert.equal(got.length, 1);
+  assert.equal(got[0].from, "linked");
+  assert.equal(got[0].unit, "점");
+  assert.deepEqual(got[0].values, ["85점", "78점", "71점"], "총점 열만 — 가 기준·나 기준 열은 머리에 단위가 없어 맨 숫자로 둠");
+  assert.deepEqual(got[0].lines, ["1 | 가 항목 | 40 | 45 | 85점", "2 | 나 항목 | 38 | 40 | 78점", "3 | 다 항목 | 35 | 36 | 71점"]);
+  assert.deepEqual(got[0].ref, { key: "qa25-mg-99/q09", name: "'25 실사 질문 · 9-(1) Q9", head: "순위 | 항목명 | 평가 항목 | 총점 / 가 기준 | 나 기준" });
+});
+
+test("연결 조각 묶음: 행 머리(첫 칸) 단위·마크다운 파이프 표, 글 속 숫자 칸(설문 보기)은 값 칸이 아님, 같은 표를 되풀이한 조각은 한 번만", () => {
+  const pipe = ["| 구분 | ’24 | ’25 | ’26 목표 |", "| --- | --- | --- | --- |", "| 교육 인원(명) | 120 | 135 | 150 |", "| 협약 | 12건 | 15건 | - |"].join("\n");
+  const got = linkedBundles([ref("a", pipe)]);
+  assert.deepEqual(got.map((b) => [b.unit, b.values, b.lines]), [["명", ["120명", "135명", "150명"], ["교육 인원(명) | 120명 | 135명 | 150명"]]], "건 값 둘은 묶음 아님");
+  const survey = "<table><tr><th>질문</th><th>답변</th></tr><tr><td>1. 연령대</td><td>① 10대 이하<br>② 20대<br>③ 30대<br>④ 40대</td></tr></table>";
+  assert.deepEqual(linkedBundles([ref("b", survey)]), [], "보기 글 속 숫자");
+  assert.equal(linkedBundles([ref("c", SCORE_TABLE), ref("d", SCORE_TABLE)]).length, 1, "같은 단위·값의 묶음은 처음 조각 것만");
+  assert.deepEqual(linkedBundles([ref("e", "표 없는 답변 글 85점, 78점, 71점")]), [], "표 밖 글은 재료 묶음(materialBundle)이 맡음");
+});
+
+test("연결 조각 묶음은 이 카드에 연결된 조각(relevantRefs)만 — 같은 지표의 연결 안 된 조각 표는 보지 않음", () => {
+  const linked = { ...ref("qa25-mg-99/q09", SCORE_TABLE), unitType: "qa_pair" };
+  const other = { ...ref("qa25-mg-99/q10", SCORE_TABLE.replace(/>85</, ">95<")), unitType: "qa_pair" };
+  const kb = { unit: "MG-99", layers: [{ id: "business", refs: [linked, other] }], list: { relevant: [linked.key], taskRow: null, peers: [], prior: [], similar: [] } } as unknown as KnowledgeBundle;
+  assert.deepEqual(linkedBundles(relevantRefs(kb)).map((b) => b.ref?.key), [linked.key]);
 });

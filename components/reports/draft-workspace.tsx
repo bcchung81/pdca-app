@@ -2,17 +2,19 @@
 
 import { draftExpect, draftProgress, rangeText } from "../../lib/ai/progress.ts";
 import type { FrameChoice } from "../../lib/reports/framework-pick.ts";
-import { ChevronLeft, ChevronRight, Ellipsis, FolderOpen, History, PanelRightClose, PanelRightOpen, Save, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Ellipsis, FolderOpen, History, PanelRightClose, PanelRightOpen, Save, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { fitTextLines } from "../../lib/reports/fit-dom";
 import { reportFontsReady } from "./report-font-probe";
 import { Toast } from "../cards/review/review-ui";
 import { ListIconButton } from "../workspace/list-icon-button";
+import { NarrowSheet, SheetButton } from "../workspace/narrow-sheet";
 import { PaneResizer, usePaneWidth } from "../workspace/pane-resizer";
 import { type PaneTabItem, PaneTabs } from "../workspace/pane-tabs";
 import { paneClass, paneWidthStyle } from "../workspace/right-pane.ts";
 import { type StepZoomRange, useFitZoom } from "../workspace/use-fit-zoom.ts";
+import { NARROW_QUERY, PHONE_QUERY, mediaMatches, useMedia } from "../workspace/use-narrow.ts";
 import { ZoomControl } from "../workspace/zoom-control";
 import { type DraftBusy, DraftCompose, type DraftMeta, type DraftMsg } from "./draft-compose";
 import { DraftComposer, DraftHistory, DraftReviewNote, DraftSelectionBar, RESULT_AT, flashBlock, hoverBlock, useDraftReview } from "./draft-review";
@@ -34,6 +36,8 @@ import { BlockShapes } from "./block-shapes";
 import type { ShapeMenuItem } from "../../lib/reports/block-shape.ts";
 
 type Tab = "ai" | "check";
+/** 좁은 폭 시트 머리·떠 있는 단추의 이름(지금 오른쪽 자리에 든 패널) */
+const SIDE_LABEL = { ai: "AI 초안", check: "점검 결과", sources: "근거 자료", history: "수정 이력", shapes: "다른 모양" } as const;
 /** 더보기 항목: 링크(download면 내려받기) 또는 화면 그대로 한글 내려받기(dom — 누르면 숨은 사본을 떠 서버로 보냄, dom-hwpx-download.tsx) */
 export type MenuItem = { href: string; label: string; hint?: string; download?: boolean; dom?: DomHwpxItem };
 type Sib = { href: string; taskNo: string; title: string } | null;
@@ -45,8 +49,12 @@ const PAPER_PX = (182 * 96) / 25.4;
 /** 여백 메모 열 폭 + 종이와의 간격, 왼쪽 열 안 좌우 여백(px-6 두 번) */
 const NOTES_PX = 272 + 20;
 const PAD_PX = 48;
+/** 휴대폰 폭(md 미만)의 좌우 여백(px-2 두 번) */
+const PAD_PHONE_PX = 16;
 /** 맞춤 확대 범위(남는 폭 ÷ 종이 폭) */
 const FIT_ZOOM = { min: 0.8, max: 1.6 } as const;
+/** 좁은 폭(64rem 미만) 맞춤 범위 — 휴대폰(390px)에서도 종이(182mm) 전체가 화면 폭에 들게 아래 한도를 낮춤(읽기용 축소, 보이는 종이에만 — 한글 변환 숨은 사본과 무관) */
+const NARROW_FIT_ZOOM = { min: 0.4, max: 1.6 } as const;
 /** 단추로 고르는 범위 */
 const HAND_ZOOM: StepZoomRange = { min: 0.5, max: 2, step: 0.1 };
 const ZOOM_KEY = "report-zoom";
@@ -121,6 +129,10 @@ export function DraftWorkspace(
   const [shapeAt, setShapeAt] = useState<{ blockIndex: number; quote: string; key: number } | null>(null);
   // 오른쪽 창 접기(좁은 화면에서 왼쪽 문서 폭을 확보 — 기억하지 않음). 접어도 언마운트하지 않아 AI 요청 진행·입력 중인 글이 남음
   const [paneOpen, setPaneOpen] = useState(true);
+  // 좁은 폭(64rem 미만)에서는 오른쪽 창을 아래 시트로(components/workspace/narrow-sheet.tsx) — 처음엔 닫혀 종이가 전체 폭. 넓은 폭에서는 이 값이 화면에 영향이 없음
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const narrow = useMedia(NARROW_QUERY);
+  const phone = useMedia(PHONE_QUERY);
   const side = other ?? tab;
   const sel = useDraftSelection(props);
   // 지금 고른 근거(서버 액션에 보냄 — 구성안대로 집필·자료 반영 고치기·블록 고치기·모양 바꾸기가 저장된 근거에 더함, 뺀 자료는 뺌)
@@ -156,6 +168,11 @@ export function DraftWorkspace(
   const openSide = (k: "sources" | "history" | "shapes" | null) => {
     setOther(k);
     setPaneOpen(true);
+    setSheetOpen(true);
+  };
+  /** 시트 안에서 종이의 한 자리로 옮길 때: 좁은 폭이면 시트를 닫아 종이가 보이게 */
+  const revealPaper = () => {
+    if (mediaMatches(NARROW_QUERY)) setSheetOpen(false);
   };
   const paperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -167,18 +184,20 @@ export function DraftWorkspace(
   const [view, setView] = useState<"draft" | "outline">(props.defaultView);
   const shown = !outline ? "draft" : !props.hasSpec ? "outline" : view;
   // 블록 고치기(초안 판·블록 목록 초안): 끌어 고른 글 → 도구줄 → 여백 작성 카드 → 결과 메모. 여백 열은 좁은 창에서도 이때는 둠
-  const reviewOn = shown === "draft" && Boolean(props.version) && !props.deptView;
+  // 좁은 폭(64rem 미만)에서는 끌어 고르기·여백 메모 열(272px)을 쓰지 않음 — 구성안 메모는 시트의 구성안 목록으로, 고친 이력은 수정 이력으로
+  const reviewOn = shown === "draft" && Boolean(props.version) && !props.deptView && !narrow;
   const review = useDraftReview({ uid: props.uid, version: props.version, enabled: reviewOn, canEdit: props.canWrite, paper: paperRef, content: contentRef, pick });
   // 왼쪽 열 폭 → 여백 메모를 둘 수 있는지(margin) · 맞춤 확대(종이는 늘 182mm 고정 폭 — docWidthPx)
   // 구성안 블록 메모(도식 구조)는 「구성안」 판에서만 여백에(2026-09-28 사용자 요구 — 초안 판에 도식 구조가 섞여 보였음). 초안 판의 여백은 블록 고치기 메모만
-  const marginOf = (leftW: number) => Boolean(outline) && shown === "outline" && leftW > 0 && leftW >= PAPER_PX * FIT_ZOOM.min + NOTES_PX + PAD_PX;
+  const marginOf = (leftW: number) => !narrow && Boolean(outline) && shown === "outline" && leftW > 0 && leftW >= PAPER_PX * FIT_ZOOM.min + NOTES_PX + PAD_PX;
   const columnOf = (leftW: number) => marginOf(leftW) || reviewOn;
   const { width: paneW, setWidth: setPaneW, setLive: setPaneLive, dragging: paneDragging, setDragging: setPaneDragging } = usePaneWidth("report-pane-w");
+  // 좁은 폭은 손으로 고른 배율을 따로 기억(데스크톱 배율이 휴대폰에 넘어가지 않게)
   const { scrollRef, zoom, hand, setZoom, leftW } = useFitZoom({
-    storageKey: ZOOM_KEY,
+    storageKey: narrow ? `${ZOOM_KEY}-narrow` : ZOOM_KEY,
     docWidthPx: PAPER_PX,
-    reservePx: (w) => PAD_PX + (columnOf(w) ? NOTES_PX : 0),
-    fitRange: FIT_ZOOM,
+    reservePx: (w) => (phone ? PAD_PHONE_PX : PAD_PX) + (columnOf(w) ? NOTES_PX : 0),
+    fitRange: narrow ? NARROW_FIT_ZOOM : FIT_ZOOM,
     handRange: HAND_ZOOM,
     paused: paneDragging,
   });
@@ -219,6 +238,7 @@ export function DraftWorkspace(
     if (!b) return;
     const kind = b.dataset.jump;
     // 성과관리팀 코멘트: 블록 순번(data-block)으로 바로 찾아 깜박임(kc-flash — 카드 리뷰어와 같은 표시)
+    revealPaper();
     if (kind === "comment") {
       const j = Number(b.dataset.block);
       if (!Number.isInteger(j)) return;
@@ -274,22 +294,23 @@ export function DraftWorkspace(
 
   const head = (
     <div className="flex shrink-0 flex-col border-b border-line">
-      <div className="flex min-h-14 items-center justify-between gap-4 px-5 py-2">
-        <div className="flex min-w-0 items-center gap-3">
+      {/* 휴대폰 폭(md 미만): 두 줄 — 첫 줄 앞뒤 과제·과제번호·아이콘, 둘째 줄 제목(한 줄 말줄임). 왼쪽 묶음을 display:contents로 풀어 순서만 바꿈 */}
+      <div className="flex min-h-14 items-center justify-between gap-4 px-5 py-2 max-md:flex-wrap max-md:gap-x-2 max-md:gap-y-1 max-md:px-3">
+        <div className="flex min-w-0 items-center gap-3 max-md:contents">
           {(props.prev || props.next) && (
             <nav aria-label="같은 보고서의 다른 과제" className="flex shrink-0 items-center gap-1">
               <SibLink sib={props.prev} dir="prev" />
               <SibLink sib={props.next} dir="next" />
             </nav>
           )}
-          <span className="shrink-0 font-mono text-xs whitespace-nowrap text-muted" title={props.place}>
+          <span className="shrink-0 font-mono text-xs whitespace-nowrap text-muted max-md:min-w-0 max-md:shrink max-md:truncate" title={props.place}>
             {props.group} · {props.taskNo}
           </span>
-          <h1 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy" title={props.title}>
+          <h1 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy max-md:order-last max-md:basis-full max-md:text-lg max-md:leading-7" title={props.title}>
             {props.title}
           </h1>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 max-md:ml-auto max-md:gap-1.5">
           {props.deptView && <span className="shrink-0 text-xs text-muted">부서 화면 보기 · 읽기 전용</span>}
           <ListIconButton href={props.back.href} label={props.back.label} />
           <button
@@ -298,7 +319,7 @@ export function DraftWorkspace(
             aria-label="수정 이력"
             title="수정 이력 — 블록 고치기·되돌리기"
             onClick={() => (paneOpen && other === "history" ? openSide(null) : openSide("history"))}
-            className={`${T.iconBtn} ${paneOpen && side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}
+            className={`${T.iconBtn} ${paneOpen && side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"} max-md:hidden`}
           >
             <History size={16} aria-hidden />
           </button>
@@ -308,7 +329,7 @@ export function DraftWorkspace(
             aria-label="근거 자료"
             title="근거 자료 — 전년 보고서 절·평가 기준·카드 전용 자료·보고서 추가자료 고르기"
             onClick={() => (paneOpen && other === "sources" ? openSide(null) : openSide("sources"))}
-            className={`${T.iconBtn} ${paneOpen && side === "sources" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}
+            className={`${T.iconBtn} ${paneOpen && side === "sources" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"} max-md:hidden`}
           >
             <FolderOpen size={16} aria-hidden />
           </button>
@@ -319,11 +340,22 @@ export function DraftWorkspace(
             aria-label={paneOpen ? "오른쪽 창 접기" : "오른쪽 창 펴기"}
             title={paneOpen ? "오른쪽 창 접기 — 문서를 넓게 봅니다" : "오른쪽 창 펴기"}
             onClick={() => setPaneOpen((v) => !v)}
-            className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}
+            className={`${T.iconBtn} border-field-line text-ink hover:border-navy max-lg:hidden`}
           >
             {paneOpen ? <PanelRightClose size={16} aria-hidden /> : <PanelRightOpen size={16} aria-hidden />}
           </button>
-          <MoreMenu items={props.menu} />
+          {/* 휴대폰 폭에서는 머리에서 숨긴 수정 이력·근거 자료를 더보기 메뉴 맨 위에(렌더 자체를 휴대폰 폭에서만 — 메뉴 화살표 이동이 숨은 항목에 걸리지 않게) */}
+          <MoreMenu
+            items={props.menu}
+            actions={
+              phone
+                ? [
+                    { key: "history", label: "수정 이력", onSelect: () => openSide("history") },
+                    { key: "sources", label: "근거 자료", onSelect: () => openSide("sources") },
+                  ]
+                : undefined
+            }
+          />
           {/* 닫기(2026-09-29 사용자 요구 — 과제원장 옆 창처럼 맨 오른쪽 ✕): 목록 아이콘과 같은 곳(이 화면을 연 곳)으로 — 링크라 고친 글은 먼저 저장(onLinkCapture) */}
           <Link href={props.back.href} aria-label={`닫기 — ${props.back.label}`} title={`닫기 — ${props.back.label}`} className={`${T.iconBtn} border-field-line text-muted hover:border-navy`}>
             <X size={16} aria-hidden />
@@ -402,9 +434,10 @@ export function DraftWorkspace(
       <div className="flex min-h-0 grow">
         {/* 왼쪽: 보고서(과제원장의 카드 편집기 자리) — 도구줄 + 회색 바탕 위 종이(확대) + 여백 메모 */}
         <div className="relative flex min-w-0 grow flex-col">
-          <div className="flex min-h-14 shrink-0 items-center gap-x-2 border-b border-line bg-thead px-5 py-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:thin]">{props.toolbar}</div>
-            <span className="ml-auto flex shrink-0 items-center gap-2">
+          {/* 휴대폰 폭: 칩 줄(가로 스크롤)과 보기·확대·저장 단추 줄을 두 줄로(겹치지 않게) */}
+          <div className="flex min-h-14 shrink-0 items-center gap-x-2 border-b border-line bg-thead px-5 py-2 max-md:flex-wrap max-md:gap-y-2 max-md:px-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:thin] max-md:basis-full">{props.toolbar}</div>
+            <span className="ml-auto flex shrink-0 items-center gap-2 max-md:ml-0 max-md:min-w-0 max-md:shrink max-md:flex-wrap">
               {outline && props.hasSpec && (
                 <span role="group" aria-label="보는 판" className="inline-flex overflow-hidden rounded-md border border-field-line">
                   <button type="button" aria-pressed={shown === "draft"} onClick={() => setView("draft")} className={segBtn(shown === "draft")} title="AI가 쓴 초안">
@@ -440,7 +473,7 @@ export function DraftWorkspace(
             </span>
           </div>
           <div ref={scrollRef} className="min-h-0 grow overflow-auto bg-[#e9eae9]">
-            <div ref={contentRef} className="relative flex w-max min-w-full items-start justify-center gap-5 px-6 py-5">
+            <div ref={contentRef} className="relative flex w-max min-w-full items-start justify-center gap-5 px-6 py-5 max-md:px-2 max-md:py-3">
               {/* 끌어 고르기 시작만 기억(도구줄은 창의 mouseup에서 — 블록 고치기) */}
               <div
                 ref={paperRef}
@@ -517,105 +550,110 @@ export function DraftWorkspace(
           {textToast && <Toast key={`t${textToast.key}`} spec={textToast.spec} onDone={() => setTextToast(null)} />}
         </div>
         {paneOpen && <PaneResizer width={paneW} onWidth={setPaneLive} onDragging={setPaneDragging} onCommit={setPaneW} label="오른쪽 패널 폭 조절" />}
-        {/* 오른쪽: 탭(AI 초안 | 점검 결과) 또는 근거 자료 — 구성안 블록 목록이 여백 메모로 나가 좁게(440px) */}
-        <div id={`${id}-pane`} ref={rightRef} className={`${paneOpen ? "flex" : "hidden"} ${paneClass(paneW)} flex-col border-l border-line bg-paper`} style={paneWidthStyle(paneW)}>
-          <div className={`${other ? "hidden" : "flex"} h-14 shrink-0 items-stretch border-b border-line px-5`}>
-            <PaneTabs id={id} ariaLabel="AI 초안·점검 결과" tabs={paneTabs} active={tab} onChange={setTab} />
-          </div>
-          <div id={`${id}-ai`} role="tabpanel" aria-labelledby={`${id}-ai-tab`} className={pane(side === "ai")}>
-            <DraftCompose
-              uid={props.uid}
-              canWrite={props.canWrite}
-              hasSpec={props.hasSpec}
-              hasOutline={Boolean(outline)}
-              outline={outlinePanel}
-              draftInfo={props.draftInfo}
-              meta={props.draftMeta}
-              outlineApproved={outline?.status === "approved"}
-              checkCount={props.checkCount}
-              locked={props.locked}
-              deptView={Boolean(props.deptView)}
-              onShowCheck={() => {
-                openSide(null);
-                setTab("check");
-              }}
-              onShowOutline={() => {
-                // 구성안 판(왼쪽 판면)으로 바꾸고 구성안 패널을 펼침 — 패널의 「승인하고 집필」로 이어짐
-                openSide(null);
-                setTab("ai");
-                setView("outline");
-                ed.setOpen(true);
-              }}
-              cardFiles={props.cardFiles}
-              reportFiles={props.reportFiles}
-              lensCount={props.lens.length}
-              inspection={props.inspection ?? null}
-              sel={sel}
-              busy={busy}
-              setBusy={setBusy}
-              msg={msg}
-              setMsg={setMsg}
-              onOpenSources={() => openSide("sources")}
-              humanEdits={props.humanEdits}
-              outlineHuman={outline ? (ed.view ?? outline.view).human : 0}
-              avail={outline ? (ed.view ?? outline.view).avail : null}
-              currentStory={outline?.outline.story || null}
-              onPlan={planDraft}
-              alternative={outline?.outline.alternative || null}
-              active={side === "ai"}
-              outlineRun={{ busy: ed.busy, at: ed.busyAt, msg: ed.msg, frame: ed.busyFrame }}
-              onAlts={(cands, request, sources) => openAlts(cands, request, { sources, confirm: outline && (ed.view ?? outline.view).human > 0 ? `구성안에 담당자가 고르거나 더한 블록 ${(ed.view ?? outline.view).human}개가 있습니다. 고른 안으로 바꾸면 고친 내용은 사라집니다. 계속할까요?` : null })}
-              outlineSources={outline?.outline.sources ?? null}
-              prior={props.prior}
-              mg={props.mg}
-            />
-          </div>
-          <div id={`${id}-check`} role="tabpanel" aria-labelledby={`${id}-check-tab`} className={pane(side === "check")}>
-            {/* 항목 단추(data-jump)는 서버가 그림 — 누르면(키보드로 눌러도 click이 올라옴) 여기서 받아 미리보기의 그 자리로 */}
-            <div onClick={onJump} className="min-h-0 grow overflow-y-auto px-5 py-4">
-              {props.check}
+        {/* 좁은 폭: 오른쪽 창을 시트로(처음엔 닫힘 — 떠 있는 단추로 엶, 접기 단추는 숨김). 넓은 폭: 감싼 상자가 display:contents라 예전 그대로 */}
+        <SheetButton open={sheetOpen} onOpen={() => setSheetOpen(true)} label={SIDE_LABEL[side]} icon={<Sparkles size={16} aria-hidden />} />
+        <NarrowSheet open={sheetOpen} onClose={() => setSheetOpen(false)} label={SIDE_LABEL[side]}>
+          {/* 오른쪽: 탭(AI 초안 | 점검 결과) 또는 근거 자료 — 구성안 블록 목록이 여백 메모로 나가 좁게(440px) */}
+          <div id={`${id}-pane`} ref={rightRef} className={`${paneOpen ? "flex" : "hidden max-lg:flex"} ${paneClass(paneW)} flex-col border-l border-line bg-paper`} style={paneWidthStyle(paneW)}>
+            <div className={`${other ? "hidden" : "flex"} h-14 shrink-0 items-stretch border-b border-line px-5`}>
+              <PaneTabs id={id} ariaLabel="AI 초안·점검 결과" tabs={paneTabs} active={tab} onChange={setTab} />
             </div>
-          </div>
-          <div className={pane(side === "sources")}>
-            <DraftSources {...props} sel={sel} busy={Boolean(busy)} onClose={() => setOther(null)} />
-          </div>
-          {shapeAt && props.shapeMenu && (
-            <div className={pane(side === "shapes")}>
-              <BlockShapes
-                key={shapeAt.key}
+            <div id={`${id}-ai`} role="tabpanel" aria-labelledby={`${id}-ai-tab`} className={pane(side === "ai")}>
+              <DraftCompose
                 uid={props.uid}
-                blockIndex={shapeAt.blockIndex}
-                quote={shapeAt.quote}
-                version={props.version}
-                currentCode={props.blockCodes?.[shapeAt.blockIndex] ?? ""}
-                menu={props.shapeMenu}
-                mg={Boolean(props.mg)}
-                pick={pick}
-                added={addedSinceDraft}
-                onClose={() => setOther(null)}
-                onRefresh={review.refresh}
-                onApplied={(r, request) => {
-                  review.record({ blockIndex: r.blockIndex, request, reply: r.reply, message: r.message, editId: r.editId, changed: r.changed, version: r.version });
-                  setShapeAt(null);
-                  setOther(null);
+                canWrite={props.canWrite}
+                hasSpec={props.hasSpec}
+                hasOutline={Boolean(outline)}
+                outline={outlinePanel}
+                draftInfo={props.draftInfo}
+                meta={props.draftMeta}
+                outlineApproved={outline?.status === "approved"}
+                checkCount={props.checkCount}
+                locked={props.locked}
+                deptView={Boolean(props.deptView)}
+                onShowCheck={() => {
+                  openSide(null);
+                  setTab("check");
                 }}
+                onShowOutline={() => {
+                  // 구성안 판(왼쪽 판면)으로 바꾸고 구성안 패널을 펼침 — 패널의 「승인하고 집필」로 이어짐
+                  openSide(null);
+                  setTab("ai");
+                  setView("outline");
+                  ed.setOpen(true);
+                }}
+                cardFiles={props.cardFiles}
+                reportFiles={props.reportFiles}
+                lensCount={props.lens.length}
+                inspection={props.inspection ?? null}
+                sel={sel}
+                busy={busy}
+                setBusy={setBusy}
+                msg={msg}
+                setMsg={setMsg}
+                onOpenSources={() => openSide("sources")}
+                humanEdits={props.humanEdits}
+                outlineHuman={outline ? (ed.view ?? outline.view).human : 0}
+                avail={outline ? (ed.view ?? outline.view).avail : null}
+                currentStory={outline?.outline.story || null}
+                onPlan={planDraft}
+                alternative={outline?.outline.alternative || null}
+                active={side === "ai" && (sheetOpen || !narrow)}
+                outlineRun={{ busy: ed.busy, at: ed.busyAt, msg: ed.msg, frame: ed.busyFrame }}
+                onAlts={(cands, request, sources) => openAlts(cands, request, { sources, confirm: outline && (ed.view ?? outline.view).human > 0 ? `구성안에 담당자가 고르거나 더한 블록 ${(ed.view ?? outline.view).human}개가 있습니다. 고른 안으로 바꾸면 고친 내용은 사라집니다. 계속할까요?` : null })}
+                outlineSources={outline?.outline.sources ?? null}
+                prior={props.prior}
+                mg={props.mg}
               />
             </div>
-          )}
-          {side === "history" && (
-            <div className={pane(true)}>
-              <DraftHistory
-                uid={props.uid}
-                version={props.version}
-                onClose={() => setOther(null)}
-                onGoto={(j) => {
-                  setView("draft");
-                  setTimeout(() => flashBlock(paperRef.current, j), 60);
-                }}
-              />
+            <div id={`${id}-check`} role="tabpanel" aria-labelledby={`${id}-check-tab`} className={pane(side === "check")}>
+              {/* 항목 단추(data-jump)는 서버가 그림 — 누르면(키보드로 눌러도 click이 올라옴) 여기서 받아 미리보기의 그 자리로 */}
+              <div onClick={onJump} className="min-h-0 grow overflow-y-auto px-5 py-4">
+                {props.check}
+              </div>
             </div>
-          )}
-        </div>
+            <div className={pane(side === "sources")}>
+              <DraftSources {...props} sel={sel} busy={Boolean(busy)} onClose={() => setOther(null)} />
+            </div>
+            {shapeAt && props.shapeMenu && (
+              <div className={pane(side === "shapes")}>
+                <BlockShapes
+                  key={shapeAt.key}
+                  uid={props.uid}
+                  blockIndex={shapeAt.blockIndex}
+                  quote={shapeAt.quote}
+                  version={props.version}
+                  currentCode={props.blockCodes?.[shapeAt.blockIndex] ?? ""}
+                  menu={props.shapeMenu}
+                  mg={Boolean(props.mg)}
+                  pick={pick}
+                  added={addedSinceDraft}
+                  onClose={() => setOther(null)}
+                  onRefresh={review.refresh}
+                  onApplied={(r, request) => {
+                    review.record({ blockIndex: r.blockIndex, request, reply: r.reply, message: r.message, editId: r.editId, changed: r.changed, version: r.version });
+                    setShapeAt(null);
+                    setOther(null);
+                  }}
+                />
+              </div>
+            )}
+            {side === "history" && (
+              <div className={pane(true)}>
+                <DraftHistory
+                  uid={props.uid}
+                  version={props.version}
+                  onClose={() => setOther(null)}
+                  onGoto={(j) => {
+                    revealPaper();
+                    setView("draft");
+                    setTimeout(() => flashBlock(paperRef.current, j), 60);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </NarrowSheet>
       </div>
       {outline && (
         <>
@@ -706,7 +744,7 @@ function SibLink({ sib, dir }: { sib: Sib; dir: "prev" | "next" }) {
 }
 
 /** 머리의 더보기(… 단추): 바깥 누르기·Esc로 닫히고, 위·아래 화살표로 항목을 옮김 */
-function MoreMenu({ items }: { items: MenuItem[] }) {
+function MoreMenu({ items, actions }: { items: MenuItem[]; actions?: Array<{ key: string; label: string; onSelect: () => void }> }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -774,7 +812,22 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
         <Ellipsis size={16} aria-hidden />
       </button>
       {open && (
-        <div id={menuId} role="menu" aria-label="과제별 초안 더보기" onKeyDown={onMenuKey} className="absolute top-9 right-0 z-menu flex w-64 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu">
+        <div id={menuId} role="menu" aria-label="과제별 초안 더보기" onKeyDown={onMenuKey} className="absolute top-9 right-0 z-menu flex w-64 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu max-md:top-11">
+          {actions?.map((a) => (
+            <button
+              key={a.key}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                a.onSelect();
+              }}
+              className={`${itemCls} text-left`}
+            >
+              {a.label}
+            </button>
+          ))}
+          {actions?.length ? <span aria-hidden className="my-1 border-t border-line" /> : null}
           {items.map((it) => {
             const body = (
               <>

@@ -8,7 +8,9 @@ import { isFullView } from "../../lib/full-view.ts";
 import { PendingDot } from "../ui/pending-dot";
 import { NAV_COOKIE, type NavIcon, type NavMode, type NavSection, activeHref, itemBadge } from "./nav-items";
 
-const SHAPES: Record<NavMode, { width: string; open: string; shut: string; headAlign: string; rowAlign: string; turn: string }> = {
+type NavShape = { width: string; open: string; shut: string; headAlign: string; rowAlign: string; turn: string };
+
+export const SHAPES: Record<NavMode, NavShape> = {
   open: { width: "w-[232px]", open: "", shut: "hidden", headAlign: "justify-between", rowAlign: "px-3", turn: "" },
   collapsed: { width: "w-[68px]", open: "hidden", shut: "", headAlign: "justify-center", rowAlign: "justify-center px-0", turn: "rotate-180" },
   auto: { width: "w-[68px] xl:w-[232px]", open: "max-xl:hidden", shut: "xl:hidden", headAlign: "justify-between max-xl:justify-center", rowAlign: "px-3 max-xl:justify-center max-xl:px-0", turn: "max-xl:rotate-180" },
@@ -42,7 +44,8 @@ const wideOnServer = () => true;
 
 /**
  * 접는 왼쪽 메뉴(역할별 묶음). 쿠키에 사용자가 고른 open·collapsed가 있으면 그대로 따르고, 없으면(auto) 폭 1280px 미만에서 접힙니다.
- * 서버는 화면 폭을 모르므로 auto의 모양은 CSS 반응형 클래스(max-xl:·xl:)로만 가려 첫 렌더부터 깜빡이지 않게 합니다
+ * 서버는 화면 폭을 모르므로 auto의 모양은 CSS 반응형 클래스(max-xl:·xl:)로만 가려 첫 렌더부터 깜빡이지 않게 합니다.
+ * 좁은 폭(md 768px 미만, 휴대폰)에서는 레일을 숨기고 머리띠의 메뉴 단추가 여는 서랍(nav-drawer.tsx)이 같은 항목을 보입니다
  */
 export function SideNav({ roleLabel, sections, initialMode, badges = {} }: { roleLabel: string; sections: NavSection[]; initialMode: NavMode; badges?: Record<string, number> }) {
   const pathname = usePathname();
@@ -66,7 +69,7 @@ export function SideNav({ roleLabel, sections, initialMode, badges = {} }: { rol
   return (
     <nav
       aria-label="주 메뉴"
-      className={`flex shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line-strong bg-nav px-3 py-4 ${shape.width}`}
+      className={`flex shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line-strong bg-nav px-3 py-4 max-md:hidden ${shape.width}`}
     >
       <div className={`mb-1.5 flex items-center gap-2 border-b border-line-strong pb-3 ${shape.headAlign}`}>
         <span className={`truncate pl-1 text-xs font-semibold tracking-[0.12em] text-muted ${shape.open}`}>{roleLabel}</span>
@@ -81,6 +84,15 @@ export function SideNav({ roleLabel, sections, initialMode, badges = {} }: { rol
           <ChevronLeft size={17} strokeWidth={1.8} aria-hidden="true" className={shape.turn} />
         </button>
       </div>
+      <NavLinks sections={sections} badges={badges} active={active} shape={shape} expanded={expanded} />
+    </nav>
+  );
+}
+
+/** 메뉴 묶음·항목 줄(왼쪽 레일과 좁은 폭의 서랍이 같이 씀). onPick은 항목을 누른 뒤(서랍 닫기) */
+export function NavLinks({ sections, badges, active, shape, expanded, onPick }: { sections: NavSection[]; badges: Record<string, number>; active: string | null; shape: NavShape; expanded: boolean; onPick?: () => void }) {
+  return (
+    <>
       {sections.map((s, si) => (
         <div key={s.id} role="group" aria-label={s.title} className={`flex flex-col gap-0.5 ${si > 0 ? "mt-3 border-t border-line-strong pt-3" : ""}`}>
           {sections.length > 1 && <span className={`px-3 pb-1 text-xs font-semibold tracking-[0.08em] text-muted ${shape.open}`}>{s.title}</span>}
@@ -92,6 +104,7 @@ export function SideNav({ roleLabel, sections, initialMode, badges = {} }: { rol
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onPick}
                 aria-current={current ? "page" : undefined}
                 aria-label={`${expanded ? "" : `${s.title} · `}${item.label}${badge ? ` (할 일 ${badge})` : ""}`}
                 title={badge ? `${item.label} · 할 일 ${badge}` : item.label}
@@ -115,6 +128,6 @@ export function SideNav({ roleLabel, sections, initialMode, badges = {} }: { rol
           })}
         </div>
       ))}
-    </nav>
+    </>
   );
 }

@@ -92,7 +92,7 @@ function rowsOf(e: Entry, label: string, note: string): string {
   const { profile: p, checks: c } = e;
   const fill = e.fill ? `보강 ${e.fill.before} → ${e.fill.after}mm` : "보강 없음";
   const volume = p.volumePct == null ? "-" : `${p.volumePct.toFixed(0)}%`;
-  const title = `<td rowspan="2"><a href="${esc(e.file)}.html">${esc(label)}</a></td><td rowspan="2">${e.select ? "Jev 선별" : "통째로 넣기"}</td><td rowspan="2">${esc(note)}</td>`;
+  const title = `<td rowspan="2"><a href="${esc(e.file)}">${esc(label)}</a></td><td rowspan="2">${e.select ? "Jev 선별" : "통째로 넣기"}</td><td rowspan="2">${esc(note)}</td>`;
   const row1 = [
     cellOf("쪽당 보이는 글자", n1(p.charsPerPage, 0), c.charsPerPage),
     cellOf("쪽당 수량 토큰", n1(p.qtyPerPage), c.qtyPerPage),

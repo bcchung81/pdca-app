@@ -128,8 +128,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                       </colgroup>
                       <thead>
                         <tr className={T.headRow}>
-                          {["부서", "과제", "과제별 초안", "확인할 것", "계량 실적", "추가자료", "상태", "확정일", "미해결 코멘트", "검토 메모", ""].map((h) => (
-                            <th key={h} scope="col" className={T.th}>
+                          {["부서", "과제", "과제별 초안", "확인할 것", "계량 실적", "추가자료", "상태", "확정일", "미해결 코멘트", "검토 메모", ""].map((h, i) => (
+                            <th key={h} scope="col" className={`${T.th} ${i === 0 ? T.stickTh : ""}`}>
                               {h}
                             </th>
                           ))}
@@ -143,7 +143,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                           const ready = submitReadiness(submitCards.get(submitKey(r.evalUnitId, r.teamId)) ?? []);
                           return (
                             <tr key={r.id} className={T.row}>
-                              <td className={`${T.td} truncate`}>
+                              <td className={`${T.td} ${T.stickTd} truncate`}>
                                 <Link href={withReturn(`/reports/${r.id}`, selfHref)} className="font-semibold text-navy no-underline hover:underline" title={`${r.hq ?? ""} ${r.teamName}`}>
                                   {r.teamName}
                                 </Link>

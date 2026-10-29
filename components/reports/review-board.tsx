@@ -1,8 +1,9 @@
 "use client";
 
+import { MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { COMMENT_BODY_MAX } from "../../lib/reports/input-limits.ts";
 import { addComment, setCommentStatus } from "../../app/(app)/reports/actions";
 import { fmtDateTime } from "../../lib/format.ts";
@@ -11,6 +12,8 @@ import { DRAFT_STATE_LABEL, type DraftState } from "../../lib/reports/submission
 import { FIT_RANGE_TEXT, fitVerdict } from "../../lib/reports/fit.ts";
 import { T, Tag, type Tone } from "../ui/kit";
 import { FIT_TAG } from "../ui/status-tone.ts";
+import { NarrowSheet, SheetButton } from "../workspace/narrow-sheet";
+import { NARROW_QUERY, mediaMatches, useMedia } from "../workspace/use-narrow.ts";
 
 /** 과제 칸 머리의 동작 버튼(카드 보기·과제별 초안 열기·코멘트) — 글자 링크 대신 같은 모양의 작은 버튼 */
 const HEAD_BTN = "flex h-7 shrink-0 items-center rounded-md border border-field-line bg-paper px-2.5 text-xs font-semibold whitespace-nowrap text-ink no-underline hover:border-navy";
@@ -79,10 +82,43 @@ function flashTo(anchor: string) {
   setTimeout(() => el.classList.remove("kc-flash"), 2600);
 }
 
-/** 미리보기 문서(sectionHtml) — 코멘트를 달 수 있으면 블록을 눌러 그 블록을 코멘트 대상으로 고릅니다 */
-function CardDoc({ uid, html, live, onPick }: { uid: string; html: string; live: boolean; onPick: (anchor: string, label: string) => void }) {
+/**
+ * 좁은 폭(64rem 미만)에서만 종이(182mm)를 상자 폭에 맞춰 CSS zoom으로 줄임(읽기용 — 1배를 넘겨 키우지 않음).
+ * 넓은 폭이면 zoom을 걸지 않아 예전 그대로(좁으면 가로 스크롤). 안쪽 상자는 좁은 폭에서만 w-max라 그 폭 ÷ 지금 배율 = 1배 폭
+ */
+function useShrinkToFit(on: boolean) {
+  const box = useRef<HTMLDivElement>(null);
+  const doc = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  useLayoutEffect(() => {
+    const b = box.current;
+    const d = doc.current;
+    if (!on || !b || !d) {
+      setZoom(1);
+      return;
+    }
+    const measure = () => {
+      const cur = Number(d.style.zoom) || 1;
+      const natural = d.getBoundingClientRect().width / cur;
+      if (!natural || !b.clientWidth) return;
+      const next = Math.min(1, Math.floor((b.clientWidth / natural) * 100) / 100);
+      setZoom((prev) => (Math.abs(prev - next) < 0.005 ? prev : next));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(b);
+    ro.observe(d);
+    return () => ro.disconnect();
+  }, [on]);
+  return { box, doc, zoom: on && zoom < 1 ? zoom : undefined };
+}
+
+/** 미리보기 문서(sectionHtml) — 코멘트를 달 수 있으면 블록을 눌러 그 블록을 코멘트 대상으로 고릅니다. 좁은 폭에서는 종이를 화면 폭에 맞춰 줄임 */
+function CardDoc({ uid, html, live, narrow, onPick }: { uid: string; html: string; live: boolean; narrow: boolean; onPick: (anchor: string, label: string) => void }) {
+  const { box, doc, zoom } = useShrinkToFit(narrow);
   return (
     <div
+      ref={box}
       id={`rv-card-${uid}`}
       className={`rv-doc min-w-0 overflow-x-auto ${live ? "rv-doc--live" : ""}`}
       onClick={
@@ -95,8 +131,9 @@ function CardDoc({ uid, html, live, onPick }: { uid: string; html: string; live:
             }
           : undefined
       }
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    >
+      <div ref={doc} className="max-lg:w-max" style={zoom === undefined ? undefined : { zoom }} dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
   );
 }
 
@@ -129,6 +166,9 @@ export function ReviewBoard({
   const [kind, setKind] = useState<string>("수정");
   const [body, setBody] = useState("");
   const [show, setShow] = useState<"all" | "open" | "resolved">("all");
+  // 좁은 폭(64rem 미만): 코멘트 패널은 아래 시트(처음엔 닫힘 — 떠 있는 「코멘트」 단추로 엶), 종이는 화면 폭에 맞춰 줄임
+  const narrow = useMedia(NARROW_QUERY);
+  const [sheet, setSheet] = useState(false);
 
   const run = (fn: () => Promise<{ ok: boolean; message?: string }>, okText?: string) =>
     start(async () => {
@@ -137,7 +177,11 @@ export function ReviewBoard({
       if (res.ok) router.refresh();
     });
 
-  const pick = (anchor: string, label: string) => setTarget({ anchor, label });
+  // 코멘트 대상 고르기 — 좁은 폭에서는 쓰는 칸이 시트에 있으므로 시트를 엶(넓은 폭에서는 sheet 값이 화면에 영향 없음)
+  const pick = (anchor: string, label: string) => {
+    setTarget({ anchor, label });
+    setSheet(true);
+  };
   const countsOf = (uid: string) => {
     const mine = comments.filter((c) => c.anchor === `card:${uid}` || c.anchor.startsWith(`card:${uid}#`));
     return { total: mine.length, open: mine.filter((c) => c.status === "open").length };
@@ -151,13 +195,13 @@ export function ReviewBoard({
         .rv-doc--live [data-block]{cursor:pointer}
         .rv-doc--live [data-block]:hover{outline:1.5px dashed rgba(27,23,96,.4);outline-offset:2px}
       `}</style>
-      <main className="min-w-0 grow overflow-auto bg-desk px-8 py-6">
+      <main className="min-w-0 grow overflow-auto bg-desk px-8 py-6 max-md:px-2 max-md:py-3">
         <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
           {cards.length === 0 && <p className="rounded-md border border-dashed border-field-line bg-paper px-4 py-3 text-ui text-muted-2">목차에 든 과제가 없습니다.</p>}
           {cards.map((c) => {
             const cnt = countsOf(c.uid);
             return (
-              <section key={c.id} className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-paper p-4">
+              <section key={c.id} className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-paper p-4 max-md:p-2.5">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span className="shrink-0 font-mono text-sm text-navy">{c.taskNo}</span>
                   <h3 className="min-w-0 flex-1 truncate text-base font-bold text-ink" title={c.title}>
@@ -188,7 +232,7 @@ export function ReviewBoard({
                   )}
                 </div>
                 {c.html ? (
-                  <CardDoc uid={c.uid} html={c.html} live={canComment} onPick={pick} />
+                  <CardDoc uid={c.uid} html={c.html} live={canComment} narrow={narrow} onPick={pick} />
                 ) : (
                   <div id={`rv-card-${c.uid}`} className="flex items-center gap-2 rounded-md border border-dashed border-field-line bg-field px-4 py-6 text-ui text-muted-2">
                     초안 없음
@@ -202,90 +246,102 @@ export function ReviewBoard({
           })}
         </div>
       </main>
-      <aside aria-label="코멘트" className="flex w-[380px] max-w-[42%] shrink-0 flex-col border-l border-line-strong bg-paper">
-        <h2 className="border-b border-line px-4 py-3 text-sm font-bold text-navy">코멘트 {comments.length}</h2>
-        {canComment && (
-          <div className="flex flex-col gap-2 border-b border-line p-4">
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate rounded-md border border-field-line bg-field px-2 py-1.5 text-xs text-ink" title={target?.label ?? "보고서 전체"}>
-                대상: {target?.label ?? "보고서 전체"}
-              </span>
-              {target && (
-                <button type="button" onClick={() => setTarget(null)} className="shrink-0 text-xs text-link">
-                  초기화
-                </button>
-              )}
-            </div>
-            <div className="flex shrink-0 gap-1" role="radiogroup" aria-label="코멘트 종류">
-              {COMMENT_KINDS.map((k) => (
-                <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)} className={`h-8 rounded-md border px-2 text-xs font-semibold ${kind === k ? "border-navy bg-navy text-white" : "border-field-line bg-paper text-muted-2"}`}>
-                  {k}
-                </button>
-              ))}
-            </div>
-            <textarea value={body} maxLength={COMMENT_BODY_MAX} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="코멘트 내용" aria-label="코멘트 내용" className="rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
-            <div className="flex items-center gap-2">
-              {msg && (
-                <span role={msg.ok ? "status" : "alert"} className={`max-w-[220px] truncate text-xs ${msg.ok ? "text-muted-2" : "text-error"}`} title={msg.text}>
-                  {msg.text}
+      <SheetButton open={sheet} onOpen={() => setSheet(true)} label="코멘트" icon={<MessageSquare size={16} aria-hidden />} badge={comments.filter((c) => c.status === "open").length} />
+      <NarrowSheet open={sheet} onClose={() => setSheet(false)} label={`코멘트 ${comments.length}`}>
+        <aside aria-label="코멘트" className="flex w-[380px] max-w-[42%] shrink-0 flex-col border-l border-line-strong bg-paper">
+          <h2 className="border-b border-line px-4 py-3 text-sm font-bold text-navy">코멘트 {comments.length}</h2>
+          {canComment && (
+            <div className="flex flex-col gap-2 border-b border-line p-4">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate rounded-md border border-field-line bg-field px-2 py-1.5 text-xs text-ink" title={target?.label ?? "보고서 전체"}>
+                  대상: {target?.label ?? "보고서 전체"}
                 </span>
-              )}
-              <button
-                type="button"
-                disabled={pending || !body.trim()}
-                onClick={() =>
-                  run(async () => {
-                    const r = await addComment(reportId, target?.anchor ?? "all", kind, body);
-                    if (r.ok) setBody("");
-                    return r;
-                  })
-                }
-                className={`${primary} ml-auto`}
-              >
-                보내기
-              </button>
-            </div>
-          </div>
-        )}
-        <div className="flex gap-1 border-b border-line px-4 py-2 text-xs">
-          {(
-            [
-              ["all", `전체 ${comments.length}`],
-              ["open", `미해결 ${comments.filter((c) => c.status === "open").length}`],
-              ["resolved", `해결됨 ${comments.filter((c) => c.status === "resolved").length}`],
-            ] as const
-          ).map(([k, l]) => (
-            <button key={k} type="button" aria-pressed={show === k} onClick={() => setShow(k)} className={`rounded-full px-2.5 py-0.5 ${show === k ? "bg-navy text-white" : "text-muted-2 hover:bg-row-hover"}`}>
-              {l}
-            </button>
-          ))}
-        </div>
-        <ol className="flex min-h-0 grow flex-col overflow-y-auto">
-          {shown.length === 0 && <li className="px-4 py-8 text-center text-ui text-muted">코멘트가 없습니다.</li>}
-          {shown.map((c) => (
-            <li key={c.id} className={`flex flex-col gap-1.5 border-b border-row-line px-4 py-3 ${c.status === "resolved" ? "opacity-70" : ""}`}>
-              <div className="flex min-w-0 items-center gap-2 text-xs">
-                <button type="button" onClick={() => flashTo(c.anchor)} className="min-w-0 truncate font-semibold text-navy hover:underline" title="눌러 그 자리로">
-                  {anchorLabel(c.anchor, cards, legacyBlocks)}
-                </button>
-                <span className="shrink-0 rounded-chip border border-field-line px-1 text-muted-2">{c.kind}</span>
-                <span className={`ml-auto shrink-0 ${c.status === "open" ? "text-warn" : "text-link"}`}>{c.status === "open" ? "미해결" : "해결됨"}</span>
-              </div>
-              <p className="text-ui leading-5 whitespace-pre-wrap text-ink">{c.body}</p>
-              <div className="flex items-center gap-2 text-xs text-muted">
-                <span className="truncate">
-                  {c.author} · {fmtDateTime(c.createdAt)}
-                </span>
-                {(canResolve || c.authorId === meId) && (
-                  <button type="button" disabled={pending} onClick={() => run(() => setCommentStatus(c.id, reportId, c.status === "open" ? "resolved" : "open"))} className="ml-auto shrink-0 text-link underline">
-                    {c.status === "open" ? "해결로 표시" : "다시 열기"}
+                {target && (
+                  <button type="button" onClick={() => setTarget(null)} className="shrink-0 text-xs text-link">
+                    초기화
                   </button>
                 )}
               </div>
-            </li>
-          ))}
-        </ol>
-      </aside>
+              <div className="flex shrink-0 gap-1" role="radiogroup" aria-label="코멘트 종류">
+                {COMMENT_KINDS.map((k) => (
+                  <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)} className={`h-8 rounded-md border px-2 text-xs font-semibold ${kind === k ? "border-navy bg-navy text-white" : "border-field-line bg-paper text-muted-2"}`}>
+                    {k}
+                  </button>
+                ))}
+              </div>
+              <textarea value={body} maxLength={COMMENT_BODY_MAX} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="코멘트 내용" aria-label="코멘트 내용" className="rounded-md border border-field-line bg-paper px-2.5 py-1.5 text-ui" />
+              <div className="flex items-center gap-2">
+                {msg && (
+                  <span role={msg.ok ? "status" : "alert"} className={`max-w-[220px] truncate text-xs ${msg.ok ? "text-muted-2" : "text-error"}`} title={msg.text}>
+                    {msg.text}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  disabled={pending || !body.trim()}
+                  onClick={() =>
+                    run(async () => {
+                      const r = await addComment(reportId, target?.anchor ?? "all", kind, body);
+                      if (r.ok) setBody("");
+                      return r;
+                    })
+                  }
+                  className={`${primary} ml-auto`}
+                >
+                  보내기
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="flex gap-1 border-b border-line px-4 py-2 text-xs">
+            {(
+              [
+                ["all", `전체 ${comments.length}`],
+                ["open", `미해결 ${comments.filter((c) => c.status === "open").length}`],
+                ["resolved", `해결됨 ${comments.filter((c) => c.status === "resolved").length}`],
+              ] as const
+            ).map(([k, l]) => (
+              <button key={k} type="button" aria-pressed={show === k} onClick={() => setShow(k)} className={`rounded-full px-2.5 py-0.5 ${show === k ? "bg-navy text-white" : "text-muted-2 hover:bg-row-hover"}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+          <ol className="flex min-h-0 grow flex-col overflow-y-auto">
+            {shown.length === 0 && <li className="px-4 py-8 text-center text-ui text-muted">코멘트가 없습니다.</li>}
+            {shown.map((c) => (
+              <li key={c.id} className={`flex flex-col gap-1.5 border-b border-row-line px-4 py-3 ${c.status === "resolved" ? "opacity-70" : ""}`}>
+                <div className="flex min-w-0 items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // 좁은 폭: 시트를 닫아 종이가 보이게 한 뒤 그 자리로
+                      if (mediaMatches(NARROW_QUERY)) setSheet(false);
+                      flashTo(c.anchor);
+                    }}
+                    className="min-w-0 truncate font-semibold text-navy hover:underline"
+                    title="눌러 그 자리로"
+                  >
+                    {anchorLabel(c.anchor, cards, legacyBlocks)}
+                  </button>
+                  <span className="shrink-0 rounded-chip border border-field-line px-1 text-muted-2">{c.kind}</span>
+                  <span className={`ml-auto shrink-0 ${c.status === "open" ? "text-warn" : "text-link"}`}>{c.status === "open" ? "미해결" : "해결됨"}</span>
+                </div>
+                <p className="text-ui leading-5 whitespace-pre-wrap text-ink">{c.body}</p>
+                <div className="flex items-center gap-2 text-xs text-muted">
+                  <span className="truncate">
+                    {c.author} · {fmtDateTime(c.createdAt)}
+                  </span>
+                  {(canResolve || c.authorId === meId) && (
+                    <button type="button" disabled={pending} onClick={() => run(() => setCommentStatus(c.id, reportId, c.status === "open" ? "resolved" : "open"))} className="ml-auto shrink-0 text-link underline">
+                      {c.status === "open" ? "해결로 표시" : "다시 열기"}
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      </NarrowSheet>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { patternOf } from "./framework-patterns.ts";
 import { sourceKey } from "./section.ts";
 import { mgPlanPrompt } from "./mg-draft.ts";
 import { warningLevel } from "./warning-levels.ts";
+import { linkedBundles } from "./mg-bundles.ts";
 
 const sec = (evalNo: number, themeNo: number, mark: string, title: string, text = "본문"): MgPriorSection => ({ key: `rpt25-mg-09/MG-9/${evalNo}/${themeNo}/${mark || "body"}`, evalNo, evalTitle: `평가내용 ${evalNo} 제목`, themeNo, themeTitle: `대주제 ${evalNo}-${themeNo}`, mark, title, markers: [], text, page: null });
 const PRIOR = [sec(1, 1, "", ""), sec(1, 2, "가", "가 절"), sec(1, 2, "나", "나 절"), sec(3, 1, "가", "셋째 가"), sec(4, 1, "가", "넷째 가"), sec(5, 1, "가", "다섯째 가")];
@@ -604,11 +605,39 @@ test("구성안 요청 「수치 묶음 재료」: 카드 원장의 묶음과 �
     { from: "monthly", unit: "명", values: ["1명0", "2명0", "3명0"], lines: Array.from({ length: 8 }, (_, i) => `줄${i}`) },
   ]);
   const lines = text.split("\n");
-  assert.match(lines[0], /^「수치 묶음 재료」 — 앱이 카드 원장에서 찾은 같은 단위 값 3개 이상의 묶음 2개입니다\. 그 내용을 다루는 절에 이 묶음을 재료로 뽑아 데이터 블록 하나에 담습니다/);
+  assert.match(lines[0], /같은 단위 값 3개 이상의 묶음 2개입니다\. 그 내용을 다루는 절에 이 묶음을 재료로 뽑아 데이터 블록 하나에 담습니다/);
   assert.equal(lines[1], "  - [계량지표 · 점 값 3개: 71.4점·85점·85.3점] 가 지표: 71.4점 · 85점 / 나 지표: 85.3점");
   assert.match(lines[2], /^ {2}- \[월별 실적 · 명 값 3개: [^\]]+\] 줄0 \/ 줄1 \/ 줄2 \/ 줄3 \/ 줄4 \/ 줄5 외 2줄$/);
   assert.equal(mgBundlePrompt(op, []), "");
+  assert.match(lines[0], /^「수치 묶음 재료」 — 앱이 카드 원장과 이 과제에 연결된 근거 조각의 표에서 찾은/);
   assert.match(op.system.system, /근거에 같은 단위 값 3개 이상이 묶인 수치 묶음\(카드 계량지표 행·월별 실적 표·실사 답변 표·첨부 표 등, 요청의 「수치 묶음 재료」\)이 있으면 그 내용을 다루는 절에 그 묶음을 재료로 뽑아 데이터 블록\([^)]*table:bars[^)]*\) 하나를 두고, 근거에 없는 표는 만들지 않습니다/);
+});
+
+test("구성안 요청 「수치 묶음 재료」 연결 조각 표(2026-10-29 S2 보강): 조각 이름·키·표 머리를 붙이고, 값이 많은 4개까지(카드 묶음은 늘 앞) — 넘는 수는 한 줄로", () => {
+  const op = reportOutlinePromptsMg().prompts;
+  const linked = (n: number) => ({ from: "linked" as const, unit: "점", values: Array.from({ length: n }, (_, i) => `${50 + i}점`), lines: ["1 | 가 항목 | 50점"], ref: { key: `qa25-mg-99/q${n}`, name: `'25 실사 질문 · 9-(1) Q${n}`, head: "순위 | 항목명 | 총점" } });
+  const one = mgBundlePrompt(op, [linked(3)]).split("\n");
+  assert.equal(one[1], "  - [연결 근거 '25 실사 질문 · 9-(1) Q3(qa25-mg-99/q3) 표 「순위 | 항목명 | 총점」 · 점 값 3개: 50점·51점·52점] 1 | 가 항목 | 50점");
+  const kpi = { from: "kpi" as const, unit: "건", values: ["12건", "15건", "18건"], lines: ["가 지표: 12건 · 15건 · 18건"] };
+  const many = mgBundlePrompt(op, [linked(3), linked(7), linked(4), kpi, linked(9), linked(5), linked(6)]).split("\n");
+  assert.match(many[0], /묶음 5개입니다/, "카드 1 + 연결 4");
+  assert.match(many[1], /^ {2}- \[계량지표 /);
+  assert.deepEqual(many.slice(2, 6).map((l) => /Q(\d+)\(/.exec(l)?.[1]), ["7", "9", "5", "6"], "값이 많은 4개를 나온 순서대로");
+  assert.equal(many[6], "  - 연결 근거의 표 묶음 2개는 목록에서 뺐습니다(값이 많은 4개만 보임 — 그 표도 같게 다룸).");
+  assert.equal(many.length, 7);
+});
+
+test("구성안 점검 「데이터 블록」: 연결 조각 표 묶음(linkedBundles)의 행을 재료로 뽑은 절에 데이터 블록이 없으면 경고 — 재료 글로 출처와 상관없이 봄", () => {
+  const [b] = linkedBundles([{ key: "qa25-mg-99/q09", title: "'25 실사 질문 · 9-(1) Q9 · 가짜 질문", text: "<table><tr><th>순위</th><th>항목명</th><th>총점</th></tr><tr><td>1</td><td>가 항목</td><td>85</td></tr><tr><td>2</td><td>나 항목</td><td>78</td></tr><tr><td>3</td><td>다 항목</td><td>71</td></tr></table>" }]);
+  const m = { ...om("m5", b.lines.join(" / ")), source: "'25 실사 질문 Q9(qa25-mg-99/q09)", quote: "1 | 가 항목 | 85" };
+  const plan = (blocks: ReturnType<typeof ob>[]) => {
+    const c = outcomePlan(blocks);
+    return { ...c, materials: [...c.materials, m] };
+  };
+  const warned = mgBundleIssues(plan([ob("1.2.가", "추진내용", ["m5"]), ob("1.2.나", "추진성과", ["m2"])]));
+  assert.equal(warned.length, 1, warned.join("\n"));
+  assert.match(warned[0], /m5\(점 값 3개\)/);
+  assert.deepEqual(mgBundleIssues(plan([{ ...ob("1.2.가", "평가 결과", ["m5"]), kind: "table" as never, variant: "bars" }, ob("1.2.나", "추진성과", ["m2"])])), []);
 });
 
 test("AI 답 정리: 절을 둔 이유(why)는 400자까지 그대로, 넘으면 문장 끝에서 자름(2026-10-29 — 160자에서 「값 어긋남 → 쓴 값」이 끊겼음)", () => {

@@ -143,8 +143,9 @@ export function PaneResizer({ width, onWidth, onDragging, onCommit, label }: Pan
     }
   };
 
+  // 좁은 폭(64rem 미만)에서는 오른쪽 패널이 아래 시트(narrow-sheet.tsx)라 끌 구분선이 없음
   return (
-    <div ref={barRef} className="relative w-0 shrink-0">
+    <div ref={barRef} className="relative w-0 shrink-0 max-lg:hidden">
       <div
         role="separator"
         aria-orientation="vertical"

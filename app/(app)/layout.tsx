@@ -4,6 +4,7 @@ import Link from "next/link";
 import { NAV_COOKIE, type NavMode, navSectionsFor } from "../../components/shell/nav-items";
 import { BrandLogo } from "../../components/shell/brand-mark";
 import { NavProvider } from "../../components/shell/nav-context";
+import { NavDrawer } from "../../components/shell/nav-drawer";
 import { ReportFontProbe } from "../../components/reports/report-font-probe";
 import { type FindItem, QuickFind } from "../../components/shell/quick-find";
 import { SideNav } from "../../components/shell/side-nav";
@@ -51,27 +52,54 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       </a>
       {/* 경평 초안 글꼴 표지(<html data-kfont> — 진짜 원본 글꼴이면 화면 자간 보정을 끔, lib/reports/report-fonts.ts) */}
       <ReportFontProbe />
-      <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line-strong pr-6 pl-5">
-        <div className="flex min-w-0 items-center gap-3.5">
+      {/* 좁은 폭(md 미만): 메뉴 단추(서랍) + 로고 심볼 + 짧은 트랙 스위치 + 과제 찾기만 — 도움말·계정·로그아웃은 서랍 아래로 옮김. 높이는 같음 */}
+      <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-line-strong pr-6 pl-5 max-md:gap-2 max-md:px-2">
+        <div className="flex min-w-0 items-center gap-3.5 max-md:gap-1.5">
+          <NavDrawer
+            roleLabel={ROLE_LABEL[user.role]}
+            sections={sections}
+            badges={badges}
+            account={
+              <>
+                <span className="flex min-w-0 items-center gap-2.5 px-3 py-1.5 text-ui" title={`${user.email} · ${place}`}>
+                  <span className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-navy font-serif text-sm font-semibold text-navy" aria-hidden="true">
+                    {who.slice(0, 1)}
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <b className="truncate font-bold text-navy">{who}</b>
+                    <span className="truncate text-xs text-muted">{place}</span>
+                  </span>
+                </span>
+                <Link href="/help" className="flex h-10 items-center rounded-md px-3 text-sm font-medium text-muted-2 no-underline hover:bg-paper/60">
+                  도움말
+                </Link>
+                <form action={signOut}>
+                  <button type="submit" className="flex h-10 w-full items-center rounded-md px-3 text-sm font-medium text-link underline">
+                    로그아웃
+                  </button>
+                </form>
+              </>
+            }
+          />
           {/* 로고(심볼 + 글자) = 홈(역할별 첫 화면 — 부서 담당자는 내 과제, 성과관리팀·관리자는 현황) */}
           <Link href={homeFor(user.role)} title="홈으로" aria-label="경평AI비서 — 홈으로" className="flex shrink-0 items-center no-underline hover:opacity-80">
             <BrandLogo />
           </Link>
           {tracks.has("경영관리") && tracks.has("주요사업") && <TrackSwitch track={track} />}
         </div>
-        <div className="flex min-w-0 shrink items-center gap-2.5">
+        <div className="flex min-w-0 shrink items-center gap-2.5 max-md:gap-1">
           <QuickFind items={findItems} base={user.role === "dept_user" ? "/my" : "/cards"} />
-          <Link href="/help" className="shrink-0 text-xs whitespace-nowrap text-link no-underline hover:underline">
+          <Link href="/help" className="shrink-0 text-xs whitespace-nowrap text-link no-underline hover:underline max-md:hidden">
             도움말
           </Link>
-          <div className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-navy font-serif text-sm font-semibold text-navy" aria-hidden="true">
+          <div className="flex size-[30px] shrink-0 items-center justify-center rounded-full border border-navy font-serif text-sm font-semibold text-navy max-md:hidden" aria-hidden="true">
             {who.slice(0, 1)}
           </div>
-          <span className="max-w-[420px] min-w-0 truncate text-ui whitespace-nowrap" title={`${user.email} · ${place}`}>
+          <span className="max-w-[420px] min-w-0 truncate text-ui whitespace-nowrap max-md:hidden" title={`${user.email} · ${place}`}>
             <b className="font-bold text-navy">{who}</b>
             <span className="text-muted"> · {place}</span>
           </span>
-          <form action={signOut}>
+          <form action={signOut} className="max-md:hidden">
             <button type="submit" className="ml-1 shrink-0 text-xs whitespace-nowrap text-link underline">
               로그아웃
             </button>

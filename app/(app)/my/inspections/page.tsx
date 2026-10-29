@@ -81,7 +81,7 @@ export default async function MyInspectionsPage({ searchParams }: PageProps<"/my
     >
       {scope.preview && (
         <PreviewBanner teamName={scope.team?.name ?? null}>
-          <span className="ml-auto">
+          <span className="ml-auto max-md:ml-0 max-md:w-full max-md:min-w-0">
             <TeamPicker teams={scope.teams} value={scope.team?.id ?? null} />
           </span>
         </PreviewBanner>

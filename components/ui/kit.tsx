@@ -4,6 +4,7 @@ import { GroupSeg } from "../shell/group-seg";
 import { PeekEscape } from "../shell/peek-escape";
 
 // C3 교정쇄 스튜디오 공용 부품(서버 컴포넌트). 한 화면 한 가지 일 · 글자 넘침 없음(min-w-0, truncate + title).
+// 좁은 폭(휴대폰, md 768px 미만)에서만 바뀌는 것은 max-md: 접두로만 적어 데스크톱 모양은 그대로 둡니다(docs/design/screen-frame.md 「모바일」).
 
 /**
  * 한 줄 머리(2026-10-01 「H1」): 제목은 왼쪽, 화면 선택(세그먼트)과 버튼은 같은 줄 오른쪽. 56px.
@@ -12,11 +13,12 @@ import { PeekEscape } from "../shell/peek-escape";
  */
 export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line-strong px-8 py-2">
+    <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line-strong px-8 py-2 max-md:px-3">
       <h1 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy" title={title}>
         {title}
       </h1>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-2">
+      {/* 좁은 폭에서 다음 줄로 내려가면 왼쪽부터(오른쪽 정렬이면 넘친 부분이 왼쪽 밖으로 밀림) */}
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-2 max-md:justify-start">
         <Suspense fallback={null}>
           <GroupSeg />
         </Suspense>
@@ -33,7 +35,7 @@ export function Screen({ children, peek, header }: { children: ReactNode; peek?:
       {header}
       <div className="relative flex min-h-0 min-w-0 grow">
         {/* 세로 flex 스크롤 상자 안에서 표·탭(overflow 상자)이 화면 높이에 눌려 잘리지 않게 직계 요소는 줄이지 않음 */}
-        <main className="flex min-w-0 grow flex-col gap-3 overflow-y-auto px-8 pt-3 pb-4 [&>*]:shrink-0">{children}</main>
+        <main className="flex min-w-0 grow flex-col gap-3 overflow-y-auto px-8 pt-3 pb-4 max-md:px-3 [&>*]:shrink-0">{children}</main>
         {peek}
       </div>
     </div>
@@ -124,7 +126,7 @@ export function StatPanel({ title, total, unit = "건", segments, allHref, allOn
   );
   const metricCls = "flex min-w-0 flex-col gap-0.5";
   return (
-    <section aria-label={title ?? "요약"} className="flex min-h-14 min-w-0 flex-wrap items-center gap-x-7 gap-y-3 rounded-lg border border-line bg-paper px-5 py-2">
+    <section aria-label={title ?? "요약"} className="flex min-h-14 min-w-0 flex-wrap items-center gap-x-7 gap-y-3 rounded-lg border border-line bg-paper px-5 py-2 max-md:gap-x-4 max-md:px-4">
       {title !== undefined && (
         <div className="flex shrink-0 flex-col">
           <span className="text-xs font-semibold text-muted">{title}</span>
@@ -135,7 +137,7 @@ export function StatPanel({ title, total, unit = "건", segments, allHref, allOn
         </div>
       )}
       {segments && (
-        <div className="flex min-w-[260px] grow basis-[320px] flex-col gap-1.5">
+        <div className="flex min-w-[260px] grow basis-[320px] flex-col gap-1.5 max-md:min-w-0">
           <div role="group" aria-label={`${title ?? "상태"} 분포`} className="flex h-2.5 gap-0.5">
             {shown.map((s) => {
               const cls = `block h-2.5 min-w-[3px] rounded-chip ${SEG_TONE[s.tone]}`;
@@ -175,7 +177,7 @@ export function StatPanel({ title, total, unit = "건", segments, allHref, allOn
       {metrics && metrics.length > 0 &&
         (segments ? (
           metrics.map((m) => {
-            const cls = `${metricCls} shrink-0 border-l border-row-line pl-7`;
+            const cls = `${metricCls} shrink-0 border-l border-row-line pl-7 max-md:pl-4`;
             return m.href ? (
               <Link key={m.label} href={m.href} title={m.title} className={`${cls} no-underline hover:text-navy`}>
                 {metricBody(m)}
@@ -209,9 +211,10 @@ export function Panel({ title, aside, children, className = "", dense }: { title
   return (
     <section className={`flex min-w-0 flex-col rounded-lg border border-line bg-paper ${className}`}>
       {(title || aside) && (
-        <div className={`flex min-w-0 shrink-0 items-center justify-between gap-3 border-b border-line ${dense ? "h-9 px-4" : "px-5 py-3"}`}>
+        // 좁은 폭: 머리 오른쪽 설명(aside)이 제목을 밀어내지 않게 줄바꿈 — 넘치면 다음 줄에서 글이 접힘
+        <div className={`flex min-w-0 shrink-0 items-center justify-between gap-3 border-b border-line max-md:flex-wrap max-md:gap-y-1 ${dense ? "h-9 px-4 max-md:h-auto max-md:min-h-9 max-md:py-1.5" : "px-5 py-3 max-md:px-4"}`}>
           <h2 className="min-w-0 truncate text-sm font-bold text-navy">{title}</h2>
-          {aside && <div className="flex shrink-0 items-center gap-2 text-xs text-muted">{aside}</div>}
+          {aside && <div className="flex shrink-0 items-center gap-2 text-xs text-muted max-md:min-w-0 max-md:shrink">{aside}</div>}
         </div>
       )}
       {children}
@@ -231,14 +234,15 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 /** 도구 줄의 필터 칩 묶음(2026-10-01 — 예전 전폭 밑줄 탭 줄 대신 검색 옆에 놓는 작은 칩). 화면 종류 전환은 머리의 세그먼트(GroupSeg), 상태 분포는 StatPanel 범례가 맡음 */
 export function LinkTabs({ label, tabs }: { label: string; tabs: Array<{ href: string; label: string; n?: number; on: boolean }> }) {
   return (
-    <nav className="flex min-w-0 shrink-0 gap-0.5 overflow-x-auto rounded-lg border border-line-strong bg-paper p-0.5 [scrollbar-width:none]" aria-label={label}>
+    // 좁은 폭: 줄어들어 가로 스크롤 한 줄(넘쳐서 옆 영역을 덮지 않게), 칩 높이 36px
+    <nav className="flex min-w-0 shrink-0 gap-0.5 overflow-x-auto rounded-lg border border-line-strong bg-paper p-0.5 [scrollbar-width:none] max-md:max-w-full max-md:shrink" aria-label={label}>
       {tabs.map((t) => (
         <Link
           key={t.href}
           aria-current={t.on ? "page" : undefined}
           href={t.href}
           scroll={false}
-          className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-ui whitespace-nowrap no-underline ${t.on ? "bg-desk font-bold text-navy shadow-[inset_0_0_0_1px_var(--line)]" : "font-medium text-muted-2 hover:text-navy"}`}
+          className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-ui whitespace-nowrap no-underline max-md:h-9 ${t.on ? "bg-desk font-bold text-navy shadow-[inset_0_0_0_1px_var(--line)]" : "font-medium text-muted-2 hover:text-navy"}`}
         >
           {t.label}
           {t.n !== undefined && <span className="font-mono text-xs">{t.n}</span>}
@@ -258,7 +262,7 @@ export function Peek({ label, title, eyebrow, closeHref, width = 560, actions, f
       className="peek-sheet flex w-full flex-col border-l border-line-strong bg-paper shadow-peek"
     >
       <PeekEscape closeHref={closeHref} />
-      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 pt-4 pb-3">
+      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-6 pt-4 pb-3 max-md:gap-2 max-md:px-4">
         <div className="flex min-w-0 flex-col gap-1">
           {eyebrow && <span className="truncate font-mono text-xs text-muted">{eyebrow}</span>}
           <h2 className="truncate font-serif text-lg font-bold text-navy" title={title}>
@@ -267,7 +271,7 @@ export function Peek({ label, title, eyebrow, closeHref, width = 560, actions, f
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {actions}
-          <Link href={closeHref} scroll={false} aria-label="닫기 (Esc)" title="닫기 (Esc)" className="flex size-8 shrink-0 items-center justify-center rounded-md border border-field-line text-muted no-underline hover:border-navy">
+          <Link href={closeHref} scroll={false} aria-label="닫기 (Esc)" title="닫기 (Esc)" className="flex size-8 shrink-0 items-center justify-center rounded-md border border-field-line text-muted no-underline hover:border-navy max-md:size-10">
             ✕
           </Link>
         </div>
@@ -281,7 +285,8 @@ export function Peek({ label, title, eyebrow, closeHref, width = 560, actions, f
 const OFF = "disabled:cursor-not-allowed disabled:border-dashed disabled:border-field-line disabled:bg-paper disabled:text-muted";
 const BTN = "flex shrink-0 items-center gap-1.5 rounded-md border text-xs font-semibold whitespace-nowrap no-underline";
 
-/** 표·단추 공용 클래스. 단추는 크기별 완성 문자열을 씀(h-7·h-8을 이어 붙여 덮으면 CSS 순서에 따라 결과가 갈림) */
+/** 표·단추 공용 클래스. 단추는 크기별 완성 문자열을 씀(h-7·h-8을 이어 붙여 덮으면 CSS 순서에 따라 결과가 갈림).
+ *  좁은 폭(md 미만)에서는 손가락으로 누르기 쉽게 32px 단추를 36px, 32px 아이콘 단추를 40px로 키움 */
 export const T = {
   wrap: "min-w-0 overflow-hidden rounded-lg border border-line bg-paper",
   table: "w-full table-fixed border-collapse text-sm",
@@ -289,11 +294,14 @@ export const T = {
   th: "border-b border-line px-3 whitespace-nowrap",
   td: "border-b border-row-line px-3 whitespace-nowrap",
   row: "h-12 hover:bg-row-hover",
+  /** 좁은 폭(md 미만)에서 가로 스크롤 표의 첫 열을 왼쪽에 고정(머리 칸·본문 칸) — 데스크톱은 그대로 */
+  stickTh: "max-md:sticky max-md:left-0 max-md:z-sticky max-md:bg-thead",
+  stickTd: "max-md:sticky max-md:left-0 max-md:z-sticky max-md:bg-paper",
   rowOn: "h-12 bg-row-hover",
   /** 보조 단추 32px */
-  btn: `${BTN} h-8 border-field-line bg-paper px-3 text-ink hover:border-navy ${OFF}`,
+  btn: `${BTN} h-8 border-field-line bg-paper px-3 text-ink hover:border-navy max-md:h-9 ${OFF}`,
   /** 주 단추 32px — 한 영역에 하나 */
-  btnPrimary: `${BTN} h-8 border-navy bg-navy px-3 text-white ${OFF}`,
+  btnPrimary: `${BTN} h-8 border-navy bg-navy px-3 text-white max-md:h-9 ${OFF}`,
   /** 표 안·작은 영역의 보조 단추 28px */
   btnSm: `${BTN} h-7 border-field-line bg-paper px-2.5 text-ink hover:border-navy ${OFF}`,
   /** 표 안·작은 영역의 주 단추 28px */
@@ -301,7 +309,7 @@ export const T = {
   /** 조용한 단추(글자만, 링크 색) */
   btnQuiet: "flex shrink-0 items-center gap-1 rounded-md px-1 text-xs font-medium whitespace-nowrap text-link no-underline hover:underline disabled:cursor-not-allowed disabled:text-muted disabled:no-underline",
   /** 아이콘만 있는 단추 32×32 — 모양만, 줄·글자 색은 쓰는 곳이 더함(켜짐 border-navy text-navy 등). aria-label·title 필수 */
-  iconBtn: `flex size-8 shrink-0 items-center justify-center rounded-md border no-underline ${OFF}`,
+  iconBtn: `flex size-8 shrink-0 items-center justify-center rounded-md border no-underline max-md:size-10 ${OFF}`,
   /** 모양을 따로 둔 단추(둥근 칩·큰 로그인 단추 등)의 끈 상태 */
   off: OFF,
   field: "h-9 w-full min-w-0 rounded-md border border-field-line bg-paper px-2.5 text-sm text-ink",
@@ -318,7 +326,7 @@ export function PreviewBanner({ teamName, all, children }: { teamName: string | 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-link/40 bg-info-bg px-4 py-2.5 text-ui text-ink">
       <Tag tone="link">{all && !teamName ? "전체 과제" : "부서 화면 보기"}</Tag>
-      <span className="min-w-0 truncate">{text}</span>
+      <span className="min-w-0 truncate max-md:whitespace-normal">{text}</span>
       {children}
     </div>
   );

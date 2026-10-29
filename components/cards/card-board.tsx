@@ -159,15 +159,16 @@ export function CardBoard(props: {
       {props.emptyNote && props.rows.length === 0 && <p className="text-sm text-muted-2">{props.emptyNote}</p>}
       {props.fixed && <FixedLockBulk locked={props.fixed.locked} total={props.fixed.total} exportHref={props.fixed.exportHref} label={props.fixed.label} />}
 
-      {/* 평가단위 선택 상자(왼쪽) + 도구(오른쪽) — 트랙·단위 개수와 상관없이 같은 틀(경영관리 14개 ↔ 주요사업 3개), 많은 선택지는 칩 줄로 펼치지 않음 */}
-      <div className="flex min-w-0 items-center justify-between gap-x-4 border-b border-line-strong">
+      {/* 평가단위 선택 상자(왼쪽) + 도구(오른쪽) — 트랙·단위 개수와 상관없이 같은 틀(경영관리 14개 ↔ 주요사업 3개), 많은 선택지는 칩 줄로 펼치지 않음.
+          좁은 폭(md 미만): 도구 묶음을 다음 줄 전체 폭으로 내리고 검색 칸은 그 안에서 한 줄 전체 폭 */}
+      <div className="flex min-w-0 items-center justify-between gap-x-4 border-b border-line-strong max-md:flex-wrap">
         <div className="flex min-w-0 items-center py-2">
           {(props.staff || props.units.length > 0) && (
             <select
               aria-label="대상사업"
               value={view.unit}
               onChange={(e) => setView((v) => ({ ...v, unit: e.target.value, filters: EMPTY_VIEW.filters }))}
-              className="h-8 max-w-[320px] min-w-0 rounded-md border border-line-strong bg-field px-2.5 text-ui text-ink focus:border-navy"
+              className="h-8 max-w-[320px] min-w-0 rounded-md border border-line-strong bg-field px-2.5 text-ui text-ink focus:border-navy max-md:h-9"
             >
               {[{ id: "", label: "전체", name: props.allLabel ?? "주요사업 전체" }, ...props.units].map((u) => {
                 const n = u.id ? rows.filter((r) => r.evalUnitId === u.id).length : rows.length;
@@ -180,7 +181,7 @@ export function CardBoard(props: {
             </select>
           )}
         </div>
-        <div className="relative ml-auto flex shrink-0 items-center gap-2 py-2">
+        <div className="relative ml-auto flex shrink-0 items-center gap-2 py-2 max-md:ml-0 max-md:w-full max-md:flex-wrap max-md:pt-0">
           <span className="text-xs whitespace-nowrap text-muted-2" aria-live="polite">
             {props.note && <>{props.note} · </>}
             {countText}
@@ -189,16 +190,16 @@ export function CardBoard(props: {
             type="button"
             aria-expanded={filterOpen}
             onClick={() => setFilterOpen(!filterOpen)}
-            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-ui ${filterOpen || activeFilters.length ? "bg-paper text-navy" : "text-muted-2 hover:bg-paper"}`}
+            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-ui max-md:h-9 ${filterOpen || activeFilters.length ? "bg-paper text-navy" : "text-muted-2 hover:bg-paper"}`}
           >
             필터{activeFilters.length ? ` ${activeFilters.length}` : ""}
           </button>
           {view.sort && (
-            <button type="button" onClick={() => setView((v) => ({ ...v, sort: null }))} className="flex h-8 items-center rounded-md px-2.5 text-ui text-navy hover:bg-paper" title="정렬 풀기">
+            <button type="button" onClick={() => setView((v) => ({ ...v, sort: null }))} className="flex h-8 items-center rounded-md px-2.5 text-ui text-navy hover:bg-paper max-md:h-9" title="정렬 풀기">
               {COLS.find((c) => c.key === view.sort!.key)?.label} {view.sort.dir === "asc" ? "↑" : "↓"} ✕
             </button>
           )}
-          <label className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-field px-2.5 text-muted focus-within:border-navy">
+          <label className="flex h-8 items-center gap-1.5 rounded-md border border-line-strong bg-field px-2.5 text-muted focus-within:border-navy max-md:order-first max-md:h-10 max-md:basis-full">
             <span className="sr-only">과제 검색</span>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
@@ -212,12 +213,12 @@ export function CardBoard(props: {
               onKeyDown={(e) => e.key === "Escape" && setView((v) => ({ ...v, q: "" }))}
               placeholder="검색 (/)"
               aria-label="과제명·담당자·부서·과제번호 검색"
-              className="w-[180px] border-0 bg-transparent text-ui text-ink outline-none"
+              className="w-[180px] border-0 bg-transparent text-ui text-ink outline-none max-md:w-auto max-md:min-w-0 max-md:grow"
             />
           </label>
           {filterOpen && (
             <div className="absolute top-full right-0 z-menu mt-1 w-[520px] max-w-[90vw] rounded-lg border border-line bg-paper p-4 shadow-lg" data-keep-peek>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 max-md:grid-cols-1">
                 {filterDefs.map((f) => (
                   <fieldset key={f.key} className="min-w-0">
                     <legend className="mb-1.5 text-xs font-semibold text-muted">{f.label}</legend>

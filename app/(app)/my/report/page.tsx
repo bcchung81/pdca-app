@@ -96,8 +96,8 @@ function DraftTable({ rows, teamQs, from, preview }: { rows: CardSubmitRow[]; te
           </colgroup>
           <thead>
             <tr className={T.headRow}>
-              {["과제", "과제명", "쪽", "초안 상태", "판면", "채울 자료", "없는 숫자", "고친 블록"].map((h) => (
-                <th key={h} scope="col" className={T.th} title={HEAD_TITLE[h]}>
+              {["과제", "과제명", "쪽", "초안 상태", "판면", "채울 자료", "없는 숫자", "고친 블록"].map((h, i) => (
+                <th key={h} scope="col" className={`${T.th} ${i === 0 ? T.stickTh : ""}`} title={HEAD_TITLE[h]}>
                   {h}
                 </th>
               ))}
@@ -114,7 +114,7 @@ function DraftTable({ rows, teamQs, from, preview }: { rows: CardSubmitRow[]; te
               const has = r.state === "draft" || r.state === "stale";
               return (
                 <ClickableRow key={r.id} href={href} className={T.row}>
-                  <td className={`${T.td} font-mono text-ui text-navy`}>{r.taskNo}</td>
+                  <td className={`${T.td} ${T.stickTd} font-mono text-ui text-navy`}>{r.taskNo}</td>
                   <td className={`${T.td} truncate`} title={r.title}>
                     {r.title}
                   </td>
@@ -292,7 +292,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
     <Screen header={<PageHeader title="경평 초안" />}>
       {scope.preview && (
         <PreviewBanner teamName={scope.team?.name ?? null}>
-          <span className="ml-auto">
+          <span className="ml-auto max-md:ml-0 max-md:w-full max-md:min-w-0">
             <TeamPicker teams={scope.teams} value={scope.team?.id ?? null} />
           </span>
         </PreviewBanner>

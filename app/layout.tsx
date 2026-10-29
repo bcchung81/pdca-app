@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Hahmlet, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   title: "경평AI비서",
   description: "경평AI비서 — 과제관리카드 · 월간 점검 · 경영실적보고서 작성 지원",
 };
+
+// 휴대폰에서 키보드가 뜨면 화면 높이(dvh)를 줄여 아래 시트의 입력창이 가리지 않게(components/workspace/narrow-sheet.tsx — Next 기본 viewport에 resizes-content만 더함)
+export const viewport: Viewport = { width: "device-width", initialScale: 1, interactiveWidget: "resizes-content" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

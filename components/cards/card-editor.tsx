@@ -12,6 +12,7 @@ import { renderCard } from "../../lib/cards/render.ts";
 import { fitHwpText } from "../../lib/hwp/fit.ts";
 import type { CardLayout } from "../../lib/hwp/layout.ts";
 import { useFitZoom } from "../workspace/use-fit-zoom.ts";
+import { NARROW_QUERY, PHONE_QUERY, useMedia } from "../workspace/use-narrow.ts";
 import { ZoomControl } from "../workspace/zoom-control";
 import { PAIR_LABEL, PairRowTools } from "./pair-row-tools";
 import { type ComposerState, type PickKind, Composer, NotesColumn, SelectionBar, Toast } from "./review/review-ui";
@@ -38,6 +39,8 @@ export interface CardEditorHandle {
 
 /** 카드 쪽 좌우 여백(px-6 두 번, wrapRef) */
 const CARD_PAD_PX = 48;
+/** 휴대폰 폭(md 미만)의 좌우 여백(px-2 두 번) */
+const CARD_PAD_PHONE_PX = 16;
 /** 여백 메모 열 폭 + 카드와의 간격(gap-5) */
 const CARD_NOTES_PX = 300 + 20;
 const CARD_ZOOM_KEY = "card-zoom";
@@ -332,10 +335,14 @@ export function CardEditor(props: {
   const docRef = useRef<HTMLDivElement>(null);
   // 카드 배율 한도 1.1(2026-09-28 실측): 1.2배부터 크롬의 소수 픽셀 반올림으로 흘려 그린 문단(AX 붙임 등)의 줄이 원본보다 한 줄 늘어남
   // (카드 1-가 193문단 — 0.8~1.1배 0개, 1.2배 2개, 1.25배 12개). 원본 줄 배치가 그대로여야 하므로 맞춤·손 조정 모두 1.1까지만
+  // 좁은 폭(64rem 미만 — 오른쪽 패널이 시트라 카드가 전체 폭)은 손으로 고른 배율을 따로 기억(데스크톱 배율이 휴대폰에 넘어가지 않게).
+  // 배율 한도(0.6~1.1)는 그대로 — 휴대폰(390px)에서는 0.6배로도 원본 폭(약 680px)이 조금 넘쳐 상자 안 가로 스크롤(원본 배치는 다시 그리지 않음)
+  const narrow = useMedia(NARROW_QUERY);
+  const phone = useMedia(PHONE_QUERY);
   const { scrollRef, zoom, hand, setZoom, handRange } = useFitZoom({
-    storageKey: CARD_ZOOM_KEY,
+    storageKey: narrow ? `${CARD_ZOOM_KEY}-narrow` : CARD_ZOOM_KEY,
     measureRef: docRef,
-    reservePx: CARD_PAD_PX + (wide ? CARD_NOTES_PX : 0),
+    reservePx: (phone ? CARD_PAD_PHONE_PX : CARD_PAD_PX) + (wide ? CARD_NOTES_PX : 0),
     fitRange: CARD_FIT_ZOOM,
     handRange: CARD_HAND_ZOOM,
     paused: props.zoomPaused,
@@ -694,7 +701,7 @@ export function CardEditor(props: {
             if (timer.current) clearTimeout(timer.current);
             void save(true);
           }}
-          className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-thead px-5 py-2"
+          className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-thead px-5 py-2 max-md:px-3"
         >
           <input type="hidden" name="uid" value={uid} />
           <input ref={payloadRef} type="hidden" name="payload" defaultValue="" />
@@ -716,7 +723,7 @@ export function CardEditor(props: {
             </button>
           </span>
           {props.metaSlot}
-          <div className="ml-auto flex items-center gap-2.5">
+          <div className="ml-auto flex items-center gap-2.5 max-md:flex-wrap max-md:gap-y-2">
             {exact && layout?.page && <ViewToggle value={view} onChange={setView} />}
             <ZoomControl zoom={zoom} fitted={hand === null} range={handRange} onZoom={setZoom} />
             <AutosaveSwitch on={autosave} onToggle={toggleAutosave} />
@@ -742,7 +749,7 @@ export function CardEditor(props: {
         </form>
       )}
       <div ref={scrollRef} data-card-scroll className="min-h-0 grow overflow-auto">
-        <div ref={wrapRef} className="relative flex w-max min-w-full items-start justify-center gap-5 px-6 py-5">
+        <div ref={wrapRef} className="relative flex w-max min-w-full items-start justify-center gap-5 px-6 py-5 max-md:px-2 max-md:py-3">
           <div className="shrink-0">
             {props.readOnly && (
               <div className="mb-3 flex items-center justify-end gap-2">
@@ -756,7 +763,7 @@ export function CardEditor(props: {
                   <div ref={pagesRef} className="rounded-lg bg-desk p-4" dangerouslySetInnerHTML={{ __html: pagesView ?? "" }} />
                 </div>
               )}
-              <div hidden={showPages} className={`w-max ${exact ? "" : "min-w-[900px]"} rounded-lg border border-line bg-paper p-6 ${props.readOnly ? "card-reading" : "card-editing"}`}>
+              <div hidden={showPages} className={`w-max ${exact ? "" : "min-w-[900px]"} rounded-lg border border-line bg-paper p-6 max-md:p-3 ${props.readOnly ? "card-reading" : "card-editing"}`}>
                 <div
                   ref={boxRef}
                   className={exact ? "w-max" : "w-[852px]"}

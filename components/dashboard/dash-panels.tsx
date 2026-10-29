@@ -3,6 +3,7 @@ import { Panel } from "../ui/kit";
 
 // 현황 대시보드 패널들(두 트랙 공통 틀) — 한 화면에 스크롤 없이 들어가도록 머리를 낮추고(dense) 표 대신 막대·타일로 압축.
 // 서버 컴포넌트(상호작용 없음). 높이는 호출하는 쪽(dashboard/page.tsx)의 flex가 나눠 줌.
+// 좁은 폭(휴대폰, md 미만)은 「스크롤 없는 한 화면」 대상이 아님 — 세로로 쌓고 본문이 스크롤함(max-md: 접두로만 바꿈).
 
 /** 창 높이 880px 이상이면 평가단위 줄(24 → 32px)과 목록 위아래에 여백을 더 줌 — 낮은 창은 촘촘하게 두어 한 화면을 지킴 */
 const TALL_ROW = "[@media(min-height:880px)]:h-8";
@@ -97,10 +98,11 @@ export interface UnitRow {
 export function UnitsPanel({ units, title = "대상사업별", inspection = true, columns = 1 }: { units: UnitRow[]; title?: string; inspection?: boolean; columns?: 1 | 2 }) {
   const two = columns === 2;
   // 2열(xl 이상)이면 한 줄이 ≈400px라 넓은 막대 열을 두면 이름 칸이 0폭으로 접힘(경영관리 지표 14개) — 막대 열을 좁히고 작은 라벨은 숨김(머리 오른쪽 설명이 같은 말)
+  // 좁은 폭(md 미만)도 같은 까닭으로 막대 열을 80px로 줄이고 작은 라벨을 숨김
   const grid = inspection
-    ? `grid-cols-[minmax(0,1fr)_32px_minmax(0,176px)_minmax(0,176px)] ${two ? "xl:grid-cols-[minmax(0,1fr)_24px_minmax(0,96px)_minmax(0,96px)] xl:gap-2" : ""}`
-    : `grid-cols-[minmax(0,1fr)_32px_minmax(0,176px)] ${two ? "xl:grid-cols-[minmax(0,1fr)_24px_minmax(0,96px)] xl:gap-2" : ""}`;
-  const barLabel = `w-9 shrink-0 text-xs whitespace-nowrap text-muted ${two ? "xl:hidden" : ""}`;
+    ? `grid-cols-[minmax(0,1fr)_32px_minmax(0,176px)_minmax(0,176px)] max-md:grid-cols-[minmax(0,1fr)_24px_minmax(0,80px)_minmax(0,80px)] max-md:gap-2 ${two ? "xl:grid-cols-[minmax(0,1fr)_24px_minmax(0,96px)_minmax(0,96px)] xl:gap-2" : ""}`
+    : `grid-cols-[minmax(0,1fr)_32px_minmax(0,176px)] max-md:grid-cols-[minmax(0,1fr)_24px_minmax(0,80px)] max-md:gap-2 ${two ? "xl:grid-cols-[minmax(0,1fr)_24px_minmax(0,96px)] xl:gap-2" : ""}`;
+  const barLabel = `w-9 shrink-0 text-xs whitespace-nowrap text-muted max-md:hidden ${two ? "xl:hidden" : ""}`;
   return (
     <Panel title={title} aside={inspection ? "이달 작성본(확정) · 점검(보냄·확인)" : "이달 작성본(확정)"} dense className="shrink-0">
       <ul className={`${TALL_PAD_LIST} ${columns === 2 ? "grid grid-cols-1 gap-x-6 xl:grid-cols-2" : "flex flex-col"}`}>
@@ -182,7 +184,8 @@ export function HqDeptPanel({ groups }: { groups: HqGroup[] }) {
     >
       <ul className="flex grow flex-col">
         {groups.map((g) => (
-          <li key={g.hq} className="grid grow grid-cols-[176px_minmax(0,1fr)] items-center gap-3 border-b border-row-line px-3 py-1 last:border-b-0 [@media(min-height:880px)]:py-2">
+          // 좁은 폭: 본부 칸 아래로 부서 타일을 쌓음
+          <li key={g.hq} className="grid grow grid-cols-[176px_minmax(0,1fr)] items-center gap-3 border-b border-row-line px-3 py-1 last:border-b-0 max-md:grid-cols-1 max-md:gap-2 max-md:py-2 [@media(min-height:880px)]:py-2">
             <span className="flex min-w-0 flex-col gap-0.5">
               <b className="truncate text-ui leading-4 font-semibold text-navy" title={g.hq}>
                 {g.hq}

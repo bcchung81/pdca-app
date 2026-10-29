@@ -77,7 +77,8 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
 
   return (
     <div className="flex min-h-0 min-w-0 grow flex-col">
-      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line-strong bg-paper px-8 py-2">
+      {/* 휴대폰 폭(md 미만): 좌우 여백만 줄임(이미 줄바꿈 — 상태·단추는 다음 줄) */}
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line-strong bg-paper px-8 py-2 max-md:px-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <h1 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy" title={report.unitName}>
             {report.unitName}
@@ -103,9 +104,9 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
       <style>{REPORT_CSS}</style>
       <ReviewBoard reportId={report.id} cards={cards} comments={comments} canComment={canComment} canResolve={canResolve} meId={deptView ? null : me.id} legacyBlocks={legacyBlocks} />
       {blocks.length > 0 && (
-        <details className="shrink-0 border-t border-line-strong bg-paper px-8 py-4">
+        <details className="shrink-0 border-t border-line-strong bg-paper px-8 py-4 max-md:px-3">
           <summary className="cursor-pointer text-sm font-bold text-navy">원고 — 사업 공통 부분 {blocks.length}블록</summary>
-          <article aria-label="보고서 원고" className="mx-auto mt-4 flex w-full max-w-[794px] flex-col gap-4 bg-desk px-10 py-8">
+          <article aria-label="보고서 원고" className="mx-auto mt-4 flex w-full max-w-[794px] flex-col gap-4 bg-desk px-10 py-8 max-md:px-3 max-md:py-4">
             {blocks.map((b) =>
               b.type === "heading" ? (
                 <h2 key={b.id} id={b.id} className={`font-serif font-bold text-navy ${b.level && b.level > 1 ? "text-base" : "text-lg"}`}>

@@ -31,7 +31,13 @@ export function useCardWorkspace(props: WorkspaceProps) {
   const [leaving, setLeaving] = useState<null | (() => void)>(null);
   const aiOpen = side === "ai";
   const inspOpen = side === "inspection";
-  const toggle = (next: NonNullable<typeof other>) => setOther((cur) => (cur === next ? null : next));
+  // 좁은 폭(64rem 미만)에서는 오른쪽 패널을 아래 시트로(components/workspace/narrow-sheet.tsx): 처음엔 닫혀 카드가 전체 폭,
+  // 떠 있는 단추·머리 아이콘으로 열고 ✕·바깥·Esc로 닫음. 넓은 폭에서는 이 값이 화면에 영향이 없음(패널은 늘 옆에)
+  const [sheet, setSheet] = useState(false);
+  const toggle = (next: NonNullable<typeof other>) => {
+    setOther((cur) => (cur === next ? null : next));
+    setSheet(true);
+  };
   // 두 탭은 한 패널: 탭을 바꿔도 AI 입력·첨부와 불러온 점검표가 남게 한 번 연 탭은 숨겨 둠(자료·수정 이력으로 바꾸면 내림)
   const assistPane = other === null;
   const [inspSeen, setInspSeen] = useState(inspOpen);
@@ -123,7 +129,7 @@ export function useCardWorkspace(props: WorkspaceProps) {
     });
 
   return {
-    router, editor, shell, tab, setTab, other, setOther, side, menu, setMenu, menuRef, archiving, setArchiving, savedTick, leaving, setLeaving,
+    router, editor, shell, tab, setTab, other, setOther, side, sheet, setSheet, menu, setMenu, menuRef, archiving, setArchiving, savedTick, leaving, setLeaving,
     aiOpen, inspOpen, toggle, assistPane, inspSeen, paneId, paneW, setPaneW, setPaneLive, paneDragging, setPaneDragging, sidePane, sidePaneStyle,
     imageUrls, setImageUrls, message, setMessage, pending, draftMode, pageHref, listLabel, reportHref, close, onSaved, draftOp,
   };

@@ -9,7 +9,7 @@ import { AttachmentError } from "./material-text.ts";
 import { BudgetError, checkBudget } from "./budget.ts";
 import type { MaterialDoc } from "./material-text.ts";
 import { userBlocks } from "./user-blocks.ts";
-import { type BundleChunk, type KnowledgeBundle, listText, sharedTexts } from "../knowledge/bundle.ts";
+import { type BundleChunk, type KnowledgeBundle, listText, relevantRefs, sharedTexts } from "../knowledge/bundle.ts";
 import type { EditTarget } from "../cards/patch.ts";
 import { CliFailedError, CliUnavailableError, runClaudeCli } from "./cli.ts";
 import { isDegenerateChat, isDegenerateWriter, retryIfDegenerate } from "./degenerate.ts";
@@ -44,7 +44,7 @@ import { type LinkIndexRow, parseLinkIndex } from "../inspections/biz-links.ts";
 import { type MgDraftContext, type MgDraftOutput, mgMaterialsPrompt, mgPlanPrompt, mgVolumePrompt } from "../reports/mg-draft.ts";
 import type { PlanRevise } from "../reports/draft-sources.ts";
 import type { UnitAiOutput } from "../reports/unit-parts-ai.ts";
-import { cardBundles } from "../reports/mg-bundles.ts";
+import { cardBundles, linkedBundles } from "../reports/mg-bundles.ts";
 import { ledgerOutcomeItems } from "../reports/mg-close.ts";
 import { MG_LIMITS, type MgOutlineOutput, type MgPartRedo, type MgSibling, mgBundlePrompt, mgClosePrompt, mgDiagramPrompt, mgOutcomePrompt, mgPartPrompt, mgSiblingsPrompt } from "../reports/mg-outline.ts";
 import type { DiagramHint } from "../reports/diagram-hints.ts";
@@ -576,8 +576,8 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
       mgClosePrompt(prompts, input.ctx.prior, input.ctx.indicator),
       // 절 성과 재료(원장 성과 줄 · 수치 유무 — 절별 다시 짜기는 지금 구성안의 재료 번호·그 재료로 닫는 다른 절까지, 2026-10-29)
       mgOutcomePrompt(prompts, input.part?.outcomes ?? ledgerOutcomeItems(input.card, cleanLine, Infinity)),
-      // 수치 묶음 재료(카드 계량지표 표·월별 실적 줄의 같은 단위 값 3개 이상 — 데이터 블록 후보, 스타일 규칙 S2, 2026-10-29)
-      mgBundlePrompt(prompts, cardBundles(input.card, input.actuals)),
+      // 수치 묶음 재료(카드 계량지표 표·월별 실적 줄·이 카드에 연결된 공통 지식 조각의 표 행의 같은 단위 값 3개 이상 — 데이터 블록 후보, 스타일 규칙 S2, 2026-10-29)
+      mgBundlePrompt(prompts, [...cardBundles(input.card, input.actuals), ...linkedBundles(input.kb ? relevantRefs(input.kb) : [])]),
       input.memo?.trim() ? fillFrom(prompts, "request", "memo", { memo: input.memo.trim() }) : "",
     ]
       .filter(Boolean)

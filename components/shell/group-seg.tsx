@@ -9,6 +9,7 @@ import { activeItem, activeTab } from "./nav-items";
 /**
  * 한 줄 머리 오른쪽의 화면 선택(세그먼트). 한 메뉴에 묶은 화면(과제 원장 → 원장·현행화·보관함 등)이면 그림.
  * 부서 화면 보기(?team=)는 탭을 옮겨도 고른 부서를, 월간 점검은 고른 달(?period=)을 그대로 둡니다.
+ * 좁은 폭(md 미만)에서는 줄어들어 가로 스크롤 한 줄(넘쳐서 왼쪽 레일 쪽으로 번지지 않게), 칸 높이 36px.
  */
 export function GroupSeg() {
   const nav = useNav();
@@ -21,7 +22,7 @@ export function GroupSeg() {
   const team = params.get("team");
   const period = params.get("period");
   return (
-    <nav aria-label={`${item.label} 화면`} className="flex shrink-0 gap-0.5 rounded-lg border border-field-line bg-paper p-0.5">
+    <nav aria-label={`${item.label} 화면`} className="flex shrink-0 gap-0.5 rounded-lg border border-field-line bg-paper p-0.5 max-md:max-w-full max-md:min-w-0 max-md:shrink max-md:overflow-x-auto max-md:[scrollbar-width:none]">
       {item.tabs.map((t) => {
         const current = t.href === on;
         const n = nav.badges[t.href] ?? 0;
@@ -37,7 +38,7 @@ export function GroupSeg() {
             href={href}
             aria-current={current ? "page" : undefined}
             title={n ? `${t.label} · 할 일 ${n}` : undefined}
-            className={`flex h-[30px] shrink-0 items-center gap-1.5 rounded-md px-3.5 text-ui font-semibold whitespace-nowrap no-underline ${current ? "bg-navy text-white" : "text-muted-2 hover:text-navy"}`}
+            className={`flex h-[30px] shrink-0 items-center gap-1.5 rounded-md px-3.5 text-ui font-semibold whitespace-nowrap no-underline max-md:h-9 max-md:px-3 ${current ? "bg-navy text-white" : "text-muted-2 hover:text-navy"}`}
           >
             {t.label}
             {n > 0 && (

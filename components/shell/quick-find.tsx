@@ -60,7 +60,7 @@ export function QuickFind({ items, base }: { items: FindItem[]; base: "/cards" |
         aria-keyshortcuts="Meta+K Control+K"
         aria-label="과제 찾기 (⌘K)"
         title="과제 찾기 (⌘K / Ctrl+K)"
-        className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-line-strong bg-field px-2.5 text-ui whitespace-nowrap text-muted hover:border-navy"
+        className="flex h-8 shrink-0 items-center gap-2 rounded-md border border-line-strong bg-field px-2.5 text-ui whitespace-nowrap text-muted hover:border-navy max-md:size-10 max-md:justify-center max-md:px-0"
       >
         <Search size={15} strokeWidth={1.8} aria-hidden="true" />
         <span className="hidden lg:inline">과제 찾기</span>

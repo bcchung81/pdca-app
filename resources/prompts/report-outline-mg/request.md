@@ -1,7 +1,7 @@
 경영관리 경평 초안 구성안 요청 글입니다. 코드(lib/ai/run.ts callReportOutlineMg)가 집필과 같은 자료 블록(report-draft-mg/request.md — 카드·전년 보고서 구성·올해 실적 재료·평가 근거·전년 절·첨부) 뒤에 도식 고르기(diagram.* — 후보가 있을 때)·같은 지표 다른 카드의 짜임(siblings.* — 다른 카드 구성안이 있을 때, lib/reports/mg-outline.ts)·task 절을, 사람 메모가 있으면 memo 절을 붙입니다.
 틀 고르기(storyHints.* — lib/reports/story-hints-mg.ts가 카드·첨부·추천 평가내용의 2025 절 글과 같은 지표 다른 카드가 쓴 틀로 뽑은 후보, 전체 구성안만 — 2026-10-12)는 task 뒤에 붙입니다.
 task 뒤에는 분량 목표(volume.* — 목차·쪽 배정의 이 카드 쪽수가 있을 때만, 절별 다시 짜기에는 안 붙임)와 이 지표의 닫기 관례(close.* — lib/reports/mg-outline.ts mgCloseRule)를 붙입니다(2026-10-12 사용자 결정 D1·D2).
-닫기 관례 뒤에는 절 성과 재료(outcomes.* — 카드 원장의 정량 성과·월별 실적 수치 줄·정성 성과, lib/reports/mg-close.ts ledgerOutcomeItems, 원장에 없으면 안 붙임 — 2026-10-29)를 붙입니다. 절별 다시 짜기는 지금 구성안의 재료 번호·그 재료로 닫는 다른 절을 줄마다 붙입니다. 그 뒤에 수치 묶음 재료(bundles.* — 카드 계량지표 표·월별 실적 줄에서 같은 단위 값 3개 이상인 묶음, lib/reports/mg-bundles.ts cardBundles, 없으면 안 붙임 — 2026-10-29 스타일 규칙 S2)를 붙입니다.
+닫기 관례 뒤에는 절 성과 재료(outcomes.* — 카드 원장의 정량 성과·월별 실적 수치 줄·정성 성과, lib/reports/mg-close.ts ledgerOutcomeItems, 원장에 없으면 안 붙임 — 2026-10-29)를 붙입니다. 절별 다시 짜기는 지금 구성안의 재료 번호·그 재료로 닫는 다른 절을 줄마다 붙입니다. 그 뒤에 수치 묶음 재료(bundles.* — 카드 계량지표 표·월별 실적 줄과 이 카드에 연결된 공통 지식 조각의 표 행에서 같은 단위 값 3개 이상인 묶음, lib/reports/mg-bundles.ts cardBundles·linkedBundles, 연결 조각 표는 값이 많은 4개까지·넘으면 bundles.cut, 없으면 안 붙임 — 2026-10-29 스타일 규칙 S2)를 붙입니다.
 갈래 축(split.* — 2026-10-13, lib/reports/split-axes.ts): 전체 구성안이면 task 뒤에 split.head(축 사전 — 주요사업 절을 끼움, 축 줄은 경영관리 트랙 것)를 붙이고, 같은 지표 다른 카드에 축이 있으면 siblings.axis 줄을, 절별 다시 짜기에 카드 축이 있으면 part.split 줄을 붙입니다.
 절별 다시 짜기(part.*)는 담당자가 이야기 틀을 골랐으면 그 틀 하나로(part.asked.story·part.story), 구성 패턴·2025 예시 절·요청 글만 골랐으면 AI가 그 절의 틀을 고르게(part.asked.free·part.storyFree) 하고, 고른 짜임은 frame.*·여러 안의 「AI가 다르게」 안은 alt.*(주요사업 report-outline/request.md 절을 끼움 — lib/reports/framework-pick.ts framePrompt, 2026-10-12)를 다른 절 목록 뒤에 붙입니다.
 
@@ -101,7 +101,7 @@ story(주 틀)·subStory(보조 틀)는 이 절의 성격과 아래 담당자가
  — 지금 재료 {{ids}}(어느 다른 절 추진성과도 쓰지 않음)
 
 <!-- @bundles.head -->
-「수치 묶음 재료」 — 앱이 카드 원장에서 찾은 같은 단위 값 3개 이상의 묶음 {{count}}개입니다. 그 내용을 다루는 절에 이 묶음을 재료로 뽑아 데이터 블록 하나에 담습니다(작업 절차 5번 — 근거의 실사 답변 표·첨부 표에 있는 묶음도 같음). 앱이 구성안에서 수치 묶음 재료를 맡은 절에 데이터 블록이 없으면 알립니다.
+「수치 묶음 재료」 — 앱이 카드 원장과 이 과제에 연결된 근거 조각의 표에서 찾은 같은 단위 값 3개 이상의 묶음 {{count}}개입니다. 그 내용을 다루는 절에 이 묶음을 재료로 뽑아 데이터 블록 하나에 담습니다(작업 절차 5번 — 목록에 없는 실사 답변 표·첨부 표의 묶음도 같음). 앱이 구성안에서 수치 묶음 재료를 맡은 절에 데이터 블록이 없으면 알립니다.
 
 <!-- @bundles.item -->
   - [{{from}} · {{unit}} 값 {{count}}개: {{values}}] {{lines}}
@@ -112,8 +112,14 @@ story(주 틀)·subStory(보조 틀)는 이 절의 성격과 아래 담당자가
 <!-- @bundles.from.monthly -->
 월별 실적
 
+<!-- @bundles.from.linked -->
+연결 근거 {{name}}({{key}}) 표 「{{head}}」
+
 <!-- @bundles.more -->
  외 {{n}}줄
+
+<!-- @bundles.cut -->
+  - 연결 근거의 표 묶음 {{n}}개는 목록에서 뺐습니다(값이 많은 {{shown}}개만 보임 — 그 표도 같게 다룸).
 
 <!-- @memo -->
 {{> report-outline/request.md#memo}}

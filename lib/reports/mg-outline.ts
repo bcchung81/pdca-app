@@ -245,7 +245,7 @@ export type MgOutlineOutput = z.infer<typeof MgOutlineOut>;
 /** 경영관리 구성안 프롬프트 파일(resources/prompts/report-outline-mg)에 있어야 하는 절 */
 export const MG_OUTLINE_PROMPT_SPEC: PromptSpec = {
   system: ["system"],
-  request: ["task", "memo", "storyHints", "storyHints.item", "storyHints.none", "storyHints.siblings", "siblings.head", "siblings.item", "diagram.head", "diagram.item", "part.head", "part.asked.story", "part.asked.free", "part.story", "part.storyFree", "part.item", "volume.head", "volume.part", "volume.tail", "close.strict", "close.majority", "close.loose", "close.none", ...INSPECTION_INPUT_SECTIONS, ...FRAME_INPUT_SECTIONS, ...SPLIT_INPUT_SECTIONS, "siblings.axis", "part.split", "outcomes.head", "outcomes.item", "outcomes.from.quantitative", "outcomes.from.monthly", "outcomes.from.qualitative", "outcomes.figure", "outcomes.plain", "outcomes.used", "outcomes.listed", "bundles.head", "bundles.item", "bundles.from.kpi", "bundles.from.monthly", "bundles.more"],
+  request: ["task", "memo", "storyHints", "storyHints.item", "storyHints.none", "storyHints.siblings", "siblings.head", "siblings.item", "diagram.head", "diagram.item", "part.head", "part.asked.story", "part.asked.free", "part.story", "part.storyFree", "part.item", "volume.head", "volume.part", "volume.tail", "close.strict", "close.majority", "close.loose", "close.none", ...INSPECTION_INPUT_SECTIONS, ...FRAME_INPUT_SECTIONS, ...SPLIT_INPUT_SECTIONS, "siblings.axis", "part.split", "outcomes.head", "outcomes.item", "outcomes.from.quantitative", "outcomes.from.monthly", "outcomes.from.qualitative", "outcomes.figure", "outcomes.plain", "outcomes.used", "outcomes.listed", "bundles.head", "bundles.item", "bundles.from.kpi", "bundles.from.monthly", "bundles.from.linked", "bundles.more", "bundles.cut"],
   schema: MG_OUTLINE_OUT_FIELDS,
 };
 
@@ -759,19 +759,30 @@ export function mgOutcomePrompt(p: PromptSet, items: ReadonlyArray<MgOutcome & {
 const BUNDLE_LINES_SHOWN = 6;
 
 /**
- * 구성안 요청 「수치 묶음 재료」(report-outline-mg/request.md bundles.* — 2026-10-29 S2): 카드 원장에서 찾은 같은 단위 값 3개 이상의 묶음(mg-bundles.ts cardBundles)과 그 값이 든 줄.
- * 실사 답변·첨부의 표는 여기서 찾지 않음(머리 글이 그 묶음도 같게 다루라고 알림 — 구성안 뒤 점검 mgBundleIssues는 재료 글로 모든 출처를 봄). 후보가 없으면 빈 글
+ * 구성안 요청에 보이는 연결 조각 표 묶음 수 상한(값이 많은 것부터) — S2는 묶음을 다루는 절마다 데이터 블록 하나라, 구성안 절(보통 3~5개, 상한 MG_LIMITS.parts 8개)보다
+ * 많은 후보는 고를 수 없음. 카드 묶음(계량지표·월별 실적 최대 2개) + 4 = 6줄이면 절 수 안쪽이고, 넘는 표 수는 bundles.cut으로 알림(표 전체는 같은 요청의 공통 지식에 있음)
+ */
+const LINKED_BUNDLES_SHOWN = 4;
+
+/**
+ * 구성안 요청 「수치 묶음 재료」(report-outline-mg/request.md bundles.* — 2026-10-29 S2): 같은 단위 값 3개 이상의 묶음과 그 값이 든 줄 —
+ * 카드 원장(mg-bundles.ts cardBundles)과 이 카드에 연결된 공통 지식 조각의 표(linkedBundles — 조각 이름·키·표 머리, LINKED_BUNDLES_SHOWN개까지).
+ * 연결 안 된 실사 답변·첨부의 표는 여기서 찾지 않음(머리 글이 그 묶음도 같게 다루라고 알림 — 구성안 뒤 점검 mgBundleIssues는 재료 글로 모든 출처를 봄). 후보가 없으면 빈 글
  */
 export function mgBundlePrompt(p: PromptSet, bundles: readonly MgBundle[]): string {
-  if (!bundles.length) return "";
+  const linked = bundles.filter((b) => b.from === "linked");
+  const shownLinked = [...linked].sort((a, b) => b.values.length - a.values.length).slice(0, LINKED_BUNDLES_SHOWN);
+  const shown = [...bundles.filter((b) => b.from !== "linked"), ...linked.filter((b) => shownLinked.includes(b))];
+  if (!shown.length) return "";
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   return [
-    r("bundles.head", { count: bundles.length }),
-    ...bundles.map((b) => {
-      const shown = b.lines.slice(0, BUNDLE_LINES_SHOWN).join(" / ");
+    r("bundles.head", { count: shown.length }),
+    ...shown.map((b) => {
+      const rows = b.lines.slice(0, BUNDLE_LINES_SHOWN).join(" / ");
       const more = b.lines.length > BUNDLE_LINES_SHOWN ? r("bundles.more", { n: b.lines.length - BUNDLE_LINES_SHOWN }) : "";
-      return r("bundles.item", { from: r(`bundles.from.${b.from}`), unit: b.unit, count: b.values.length, values: b.values.join("·"), lines: `${shown}${more}` });
+      return r("bundles.item", { from: r(`bundles.from.${b.from}`, b.ref ?? {}), unit: b.unit, count: b.values.length, values: b.values.join("·"), lines: `${rows}${more}` });
     }),
+    ...(linked.length > shownLinked.length ? [r("bundles.cut", { n: linked.length - shownLinked.length, shown: LINKED_BUNDLES_SHOWN })] : []),
   ].join("\n");
 }
 

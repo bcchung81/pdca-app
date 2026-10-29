@@ -324,7 +324,9 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@5928aee4");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@e5deeb90");
+  // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜
+  // (@e5deeb90 → @12d3277a — 집필·블록 고치기·주요사업 판 그대로)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@12d3277a");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
   assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@e0653ee9");
 });

@@ -162,7 +162,7 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
       peek={
         peek && (
           <Peek label="지식 조각" eyebrow={`${docTitle.get(peek.doc_id) ?? peek.doc_id}`} title={peek.title} closeHref={href({ chunk: "" })} width={680}>
-            <div className="flex flex-col gap-4 px-6 py-5">
+            <div className="flex flex-col gap-4 px-6 py-5 max-md:px-4">
               <div className="flex flex-wrap gap-1.5">
                 <Tag tone="link">{UNIT_LABEL[peek.unit_type] ?? peek.unit_type}</Tag>
                 {peek.business && <Tag>{BUSINESSES.find((b) => b.id === peek.business)?.name2026 ?? MGMT_INDICATORS.find((m) => m.id === peek.business)?.name ?? peek.business}</Tag>}
