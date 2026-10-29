@@ -121,7 +121,7 @@ export default async function BusinessLayoutPage({ params, searchParams }: PageP
     >
       <BusinessZoom>
       {/* 한 줄 요약 막대(2026-09-28 — 쪽이 주 콘텐츠: 예전 요약 카드 4장·검사 패널·높이 표는 이 막대와 오른쪽 레일로 줄임). 내려도 위에 붙어 있음(-top-3 = Screen 위 여백만큼 올려 스크롤 상자 맨 위에) */}
-      <div className="sticky -top-3 z-pop -mx-8 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-desk px-8 py-2">
+      <div className="sticky -top-3 z-pop -mx-8 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-desk px-8 py-2 max-md:-mx-3 max-md:px-3">
         <nav aria-label={mg ? "지표 고르기" : "주요사업 고르기"} className="flex shrink-0 flex-wrap items-center gap-1">
           <span className="mr-0.5 text-xs font-semibold text-muted-2">{mg ? "지표" : "주요사업"}</span>
           {units.map((x, i) => (

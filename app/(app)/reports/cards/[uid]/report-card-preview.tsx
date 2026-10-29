@@ -14,11 +14,15 @@ export function ReportCardPreview({ spec, unknown, weak, canWrite, hasOutline }:
       <div className="w-[182mm]">
         <section className={T.wrap}>
           <Empty title="아직 초안이 없습니다.">
-            {canWrite
-              ? hasOutline
-                ? "오른쪽에서 구성안을 확인하고 「승인하고 집필」을 누르세요."
-                : "오른쪽 아래 요청 칸에서 시작하세요."
-              : "이 과제를 맡은 부서나 성과관리팀이 만듭니다."}
+            {canWrite ? (
+              <>
+                {/* 휴대폰(md 미만)은 옆 창 대신 아래 「AI」 단추로 여는 시트(components/workspace/narrow-sheet.tsx) */}
+                <span className="max-md:hidden">{hasOutline ? "오른쪽에서 구성안을 확인하고 「승인하고 집필」을 누르세요." : "오른쪽 아래 요청 칸에서 시작하세요."}</span>
+                <span className="md:hidden">{hasOutline ? "아래 「AI」 단추로 구성안을 확인하고 「승인하고 집필」을 누르세요." : "아래 「AI」 단추를 눌러 시작하세요."}</span>
+              </>
+            ) : (
+              "이 과제를 맡은 부서나 성과관리팀이 만듭니다."
+            )}
           </Empty>
         </section>
       </div>

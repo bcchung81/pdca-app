@@ -148,6 +148,22 @@
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
+/* 휴대폰 Safari·Chrome이 가로 모드 등에서 글자를 멋대로 키워 칸·칩 줄이 넘치는 것을 막음(2026-10-29 실기기 화면 깨짐 — 데스크톱은 영향 없음) */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* 아이폰 Safari는 글자 16px 미만 입력칸을 누르면 화면을 확대하고 되돌리지 않음 — 휴대폰 폭(md 미만, Tailwind max-md와 같은 조건)과
+   터치 화면(가로 모드 휴대폰·태블릿 — 폭이 md 이상이어도)에서 입력칸 글자 16px. 레이어 밖 규칙이라 Tailwind 유틸리티(text-ui 등)보다 앞섬. 마우스 데스크톱은 그대로 */
+@media not all and (min-width: 48rem), (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 body {
   background: var(--desk);
   color: var(--ink);

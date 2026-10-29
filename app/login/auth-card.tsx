@@ -4,7 +4,7 @@ import { BrandLogo } from "../../components/shell/brand-mark";
 /** 로그인 화면 틀: 책상(배경) 위 종이 한 장. C3 교정쇄 스튜디오 토큰 */
 export function AuthCard({ title, lead, children }: { title: string; lead?: string; children: ReactNode }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-desk px-4 py-12">
+    <main className="flex min-h-dvh items-center justify-center bg-desk px-4 py-12">
       <section className="w-full max-w-sm min-w-0 rounded-lg border border-[var(--line)] bg-paper p-8 shadow-sm">
         <div>
           <BrandLogo size="login" />

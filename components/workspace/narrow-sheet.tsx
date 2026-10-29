@@ -34,14 +34,16 @@ export function NarrowSheet({ open, onClose, label, closeLabel, children }: { op
   return (
     <div className={`lg:contents ${open ? "max-lg:flex" : "max-lg:hidden"} max-lg:fixed max-lg:inset-0 max-lg:z-peek max-lg:flex-col max-lg:justify-end`}>
       <div aria-hidden onClick={onClose} className="min-h-0 grow bg-black/30 lg:hidden" />
-      <div className="lg:contents max-lg:flex max-lg:h-[88dvh] max-lg:shrink-0 max-lg:flex-col max-lg:overflow-hidden max-lg:rounded-t-xl max-lg:bg-paper max-lg:shadow-pop">
+      {/* 가로 모드(높이가 낮음)는 시트를 화면 높이 전체로 — 88dvh(약 340px)에서는 입력창·보내기가 시트 밖으로 밀렸음(2026-10-29 점검) */}
+      <div className="lg:contents max-lg:flex max-lg:h-[88dvh] max-lg:shrink-0 max-lg:flex-col max-lg:overflow-hidden max-lg:rounded-t-xl max-lg:bg-paper max-lg:shadow-pop max-lg:landscape:h-dvh max-lg:landscape:rounded-none">
         <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-line pr-1.5 pl-4 lg:hidden">
           <span className="min-w-0 truncate text-sm font-bold text-navy">{label}</span>
           <button ref={closeRef} type="button" onClick={onClose} aria-label={closeLabel ?? `${label} 닫기`} title="닫기 (Esc)" className="flex size-10 shrink-0 items-center justify-center rounded-md text-muted hover:bg-row-hover hover:text-navy">
             <X size={18} aria-hidden />
           </button>
         </div>
-        <div className="lg:contents max-lg:flex max-lg:min-h-0 max-lg:grow max-lg:flex-col max-lg:*:min-h-0 max-lg:*:max-w-none! max-lg:*:grow max-lg:*:border-l-0 max-lg:*:w-full!">{children}</div>
+        {/* 본문이 시트 높이보다 길면(가로 모드·키보드가 올라온 때) 시트 안에서 스크롤 — 입력창·보내기 단추가 늘 닿게 */}
+        <div className="lg:contents max-lg:flex max-lg:min-h-0 max-lg:grow max-lg:flex-col max-lg:overflow-y-auto max-lg:*:min-h-0 max-lg:*:max-w-none! max-lg:*:grow max-lg:*:border-l-0 max-lg:*:w-full!">{children}</div>
       </div>
     </div>
   );
