@@ -309,8 +309,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 2026-10-29 추진실적 열 표를 2025 경영관리 원본 모양으로(a3166f1a… → a62585f4…): 결과 칸 어두운 바탕·흰 글과 칸 안 머리·큰 수치·뜻 규칙(.k-res__h·__v·__l·__r .k-need)을
 // 주석 + 「추진실적」 머리 칸(thead th.k-res__hd)만 어둡게·밝은 결과 칸·「뜻 수치」 줄(.k-res__s — lh.resSeries)·괄호 시점 줄(.k-res__t 바탕 9.5pt)·칸 안 불릿 왼쪽 정렬로 바꿈
 // (REPORT_STYLE.lh resHead·resValue → resSeries) — 이 덩어리를 옛 여섯 줄로 되돌린 글이 옛 고정값 a3166f1a…과 같음을 확인
+// 2026-10-29 블록 제목을 2025 경영관리 도식 위 제목 띠 모양으로(a62585f4… → 1bdb720e…): .k-dg-title 앞에 주석 한 줄 + 띠 안 여백(REPORT_STYLE.titleBand 1px 5px)·
+// 연회색 바탕(g2)·왼쪽 정렬을 이어 붙이고 margin 4px 0 0 → 0(뒤 「.k-frame :where(p){margin:0}」에 져 화면은 늘 0이던 값) — 이 두 줄을 옛 한 줄로 되돌린 글이 옛 고정값 a62585f4…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "a62585f4169a6bdd8c2e8dc32752ed8cb96f1a9151c27caa35b5e7b2beffd2a8");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "1bdb720e2c3d7757f52ce7b8765dcad24bf71c5bf363414573918a5959905b92");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {
@@ -619,4 +621,21 @@ test("되풀이 표시(k-rep)는 한글에 안 나감: 반복 수치·문장이 
   for (const c of ["ffe680", "fff7cc"]) assert.ok(!json.includes(c), `한글 양식에 되풀이 바탕(#${c})이 없음`);
   assert.ok(!json.includes("k-rep"));
   assert.ok(JSON.stringify(input.paras).includes("1,922곳"), "글은 그대로");
+});
+
+test("블록 제목 띠(2026-10-29 — 화면 .k-dg-title): 놓인 폭 전체 1×1 칸(연회색 g2 바탕·안 여백 REPORT_STYLE.titleBand) 안 제목 한 문단 · 수치 띠 상자 안 제목도 같은 띠", async () => {
+  const tb = REPORT_STYLE.titleBand;
+  const spec = makeSpec([block({ kind: "bullets", label: "추진내용", title: "띠 제목 글", items: ["본문"] }), block({ kind: "stats", label: "추진실적", title: "상자 띠 제목", cells: [cell("1건", ["성과"])] })]);
+  const { doc } = await convert(spec);
+  const fill = (c: { borderFill: number }) => doc.borderFills[c.borderFill]!.fill?.color?.toLowerCase() ?? null;
+  for (const title of ["띠 제목 글", "상자 띠 제목"]) {
+    const t = allTables(doc.sections[0].paras).find((x) => x.rows === 1 && x.cols === 1 && textOf(x.cells[0].paras).join("") === title);
+    assert.ok(t, `${title}: 1×1 칸`);
+    assert.equal(fill(t.cells[0]), REPORT_STYLE.gray.g2, `${title}: 연회색 바탕`);
+    assert.deepEqual(t.cells[0].margin, [tb.padX * 75, tb.padX * 75, tb.padY * 75, tb.padY * 75], `${title}: 안 여백`);
+  }
+  // 제목이 없으면 띠 칸이 없음
+  const bare = await convert(makeSpec([block({ kind: "bullets", label: "추진내용", items: ["본문"] })]));
+  const bareFill = (c: { borderFill: number }) => bare.doc.borderFills[c.borderFill]!.fill?.color?.toLowerCase() ?? null;
+  assert.ok(!allTables(bare.doc.sections[0].paras).some((x) => x.rows === 1 && x.cols === 1 && bareFill(x.cells[0]) === REPORT_STYLE.gray.g2));
 });

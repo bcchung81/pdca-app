@@ -8,7 +8,7 @@ import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
 import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, tableBars } from "./blocks.ts";
 import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
-import { type RepeatMarks, figureSpans, repeatMarks } from "./repeat-figures.ts";
+import { NUM_SRC, type RepeatMarks, UNIT_SRC, figureSpans, repeatMarks } from "./repeat-figures.ts";
 import { type Diagram, type LadderRow, type MiniChart, type ReportSectionSpec, numberTokens } from "./section.ts";
 
 /** 칸 사이 기호 칸(카드 묶음 ✚·▶·시기 흐름 ▶) — grid 열 템플릿에 끼우는 글(REPORT_STYLE.join.gapMm, fit.ts slotOf와 같은 값) */
@@ -49,7 +49,7 @@ let UNIT = -1;
 
 /** 글 → 이스케이프 + 모르는 숫자 표시 + 채울 자료 자리표시 + 강조(**…** → 굵게, AI가 핵심 수치·결과 어구에 붙임) + 위첨자(^{…}) + 근거 약함 + 반복 문장 */
 function txt(s: string, unknown: Marks): string {
-  const h = sup(emph(needs(parenJosa(marked(s, unknown)))));
+  const h = sup(numUnit(emph(needs(parenJosa(marked(s, unknown))))));
   const w = unknown.weak?.has(s) ? `<span class="k-weak" title="근거 글과 겹치는 말이 적은 문장 — 원자료로 확인(신호, 판정 아님)">${h}</span>` : h;
   const others = sameOf(s, unknown);
   return others.length ? `<span class="k-rep k-rep--line" title="${esc(`비슷한 문장이 ${others.join("·")}에도 있음`)}">${w}</span>` : w;
@@ -60,6 +60,16 @@ function txt(s: string, unknown: Marks): string {
  * 조사만 다음 줄 첫머리에 남던 것(「통합(’26.9.) / 에 맞춰」, 2026-10-28 표본). 괄호 안이 짧고(12자) 빈칸이 없을 때만 — 묶음이 길면 칸이 넘침
  */
 const parenJosa = (h: string) => h.replace(/\([^()\s]{1,12}\)[가-힣]{1,2}(?=[\s,.]|$)/g, '<span class="k-nb">$&</span>');
+
+/**
+ * 이스케이프한 글의 「값 + 단위」(「340건」·「18.4초」·「1,922곳」 — 단위는 repeat-figures.ts UNITS)를 한 덩어리로(.k-nb): 본문 글은 글자 단위로 끊어(section-css)
+ * 좁은 칸(추진실적 열 결과 칸 등)에서 「340 / 건」으로 갈라지던 것(2026-10-29). 숫자 표시(k-unv)·강조(<b>)에 싸인 값은 그 태그째 묶고,
+ * 태그 안(title 속성 글 — 「같은 수치 3곳 반복」)은 건드리지 않음. 날짜 꼴(앞이 숫자·점·작은따옴표)은 묶지 않음
+ */
+const NUM_ONLY = String.raw`(?:${NUM_SRC})`;
+const UNV_NUM = String.raw`<span class="k-unv"[^>]*>${NUM_ONLY}</span>`;
+const NUM_UNIT = new RegExp(String.raw`((?:<b>${UNV_NUM}</b>|${UNV_NUM}|<b>${NUM_ONLY}</b>|(?<![\d.,’'‘])${NUM_ONLY})\s?(?:${UNIT_SRC})(?![A-Za-z]))|<[^>]*>`, "g");
+const numUnit = (h: string) => h.replace(NUM_UNIT, (m, fig?: string) => (fig ? `<span class="k-nb">${fig}</span>` : m));
 
 /** 이스케이프한 글의 ^{…} → 위첨자(2025 추진성과 비교 「’24년100국 → ’25년200국」의 시점·기존/개선 — 짝이 없는 표기는 그대로) */
 const sup = (h: string) => h.replace(/\^\{([^{}]{1,120}?)\}/g, '<sup class="k-sup">$1</sup>');

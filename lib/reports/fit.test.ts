@@ -18,6 +18,7 @@ import {
   blockCosts,
   blockHeight,
   blockHeightWithFigures,
+  blockTitleMm,
   blockRooms,
   blockWidth,
   canonicalBlock,
@@ -804,4 +805,22 @@ test("fitVerdict: 톤 — 맞음은 끝(중립), 빔·조금 넘침은 우리 �
   assert.deepEqual([90, 100, 103, 110].map((p) => fitVerdict(p).label), ["분량 빔", "분량 맞음", "조금 넘침", "넘침"]);
   assert.match(fitVerdict(110).hint, /제출 전 확인/);
   assert.equal(FIT_RANGE_TEXT, "맞음 95~102% · 조금 넘침 ~104% · 넘침 104% 초과");
+});
+
+// 2026-10-29 블록 제목 띠(.k-dg-title — REPORT_STYLE.titleBand): 줄 수 × 돋움 10.6pt/1.5 + 안 여백 위아래(바깥 여백 0 — 화면 실측). 예전은 늘 한 줄 + 1mm
+test("블록 제목 띠 높이: 없으면 0 · 한 줄 = 줄 높이 + 위아래 안 여백 · 좁은 칸에서 접히면 줄 수만큼 · 블록 높이 차이 = 띠 높이", () => {
+  const PX = 25.4 / 96;
+  const PT = 25.4 / 72;
+  const tb = REPORT_STYLE.titleBand;
+  const one = 10.6 * 1.5 * PT + 2 * tb.padY * PX;
+  assert.equal(blockTitleMm("", 100), 0);
+  assert.ok(Math.abs(blockTitleMm("짧은 제목", 150) - one) < 1e-9);
+  const long = "가나다라마 바사아자차 카타파하 가나다라마 바사아자차 카타파하 가나다라마 바사아자차";
+  const lines = lineCount(long, 60 - 2 * tb.padX * PX, 10.6, true);
+  assert.ok(lines >= 2);
+  assert.ok(Math.abs(blockTitleMm(long, 60) - (lines * 10.6 * 1.5 * PT + 2 * tb.padY * PX)) < 1e-9, "띠 폭 = 놓인 폭 − 안 여백 좌우");
+  for (const b of [blk("bullets", { items: ["글"] }), blk("table", { items: ["구분", "값"], cells: [cell("가", ["1건"])] }), blk("stats", { cells: [cell("1건", ["성과"])] })]) {
+    const w = blockWidth(b);
+    assert.ok(Math.abs(blockHeight({ ...b, title: "제목" }, w) - blockHeight(b, w) - blockTitleMm("제목", w)) < 1e-9, b.kind);
+  }
 });

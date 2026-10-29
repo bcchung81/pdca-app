@@ -58,6 +58,12 @@ export const REPORT_STYLE = {
    * 머리 18mm = 돋움 굵게 9.5pt 한글 다섯 자(「공공데이터」 같은 낱말이 쪼개지지 않음) + 안 여백. 높이 어림 fit.ts sideChartMm, 한글 A안 section-hwpx.ts chart(side)
    */
   sideChart: { headMm: 18, barMm: 42 },
+  /**
+   * 블록 제목 띠(.k-dg-title — 2025 경영관리 도식 위 제목 줄 모양, 2026-10-29): 칸 폭 전체 연회색 띠(표 머리 칸과 같은 g2 바탕) 안에 돋움 굵게 왼쪽 정렬.
+   * 띠 안 여백(px) 위아래·좌우. 띠 바깥 여백은 0 — 예전 규칙의 margin-top 4px는 뒤의 「.k-frame :where(p){margin:0}」(같은 구체성, 뒤 규칙)에 져서 화면에서 늘 0이었음(2026-10-29 실측).
+   * 높이 어림 fit.ts blockTitleMm, 한글 A안 section-hwpx.ts title(1×1 칸 바탕)
+   */
+  titleBand: { padY: 1, padX: 5 },
 } as const;
 const G = REPORT_STYLE.gray;
 const L = REPORT_STYLE.line;
@@ -67,6 +73,7 @@ const J = REPORT_STYLE.join;
 const BX = REPORT_STYLE.boxPadX;
 const LH = REPORT_STYLE.lh;
 const SC = REPORT_STYLE.sideChart;
+const TB = REPORT_STYLE.titleBand;
 const SP = FONT_SPACING.base;
 const A = { body: REPORT_FONTS.body.alias, dotum: REPORT_FONTS.dotum.alias, label: REPORT_FONTS.label.alias, head: REPORT_FONTS.head.alias, num: REPORT_FONTS.num.alias };
 
@@ -259,7 +266,9 @@ ${fontSpacingCss()}
 .kca-dg-doc table.k-act th.k-act__r{background:var(--k-g4);color:#fff}
 .kca-dg-doc table.k-act td{padding:2px 5px;border-bottom:var(--k-hair) solid var(--k-g4);vertical-align:middle}
 .kca-dg-doc table.k-act td + td{border-left:var(--k-hair) solid var(--k-g3);font-weight:700}
-.kca-dg-doc .k-dg-title{font:700 10.6pt/${LH.title} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);margin:4px 0 0}
+/* 블록 제목 띠(REPORT_STYLE.titleBand — 2025 경영관리 도식 위 제목 줄): 칸 폭 전체 연회색 바탕 + 굵게 왼쪽 정렬. 바깥 여백 0(화면에서 늘 0이던 값 그대로 적음) */
+.kca-dg-doc .k-dg-title{font:700 10.6pt/${LH.title} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);margin:0;
+  padding:${TB.padY}px ${TB.padX}px;background:var(--k-g2);text-align:left}
 /* v2: 기존·개선 열 균형, ✚ 잇기, 행 옆 막대, 인용 상자 1개, 사진 없는 우수사례, 3칸 추진성과 */
 /* 단계 결과 줄을 단계끼리 같은 높이에(subgrid) */
 .kca-dg-doc ol.k-proc{grid-template-rows:auto 1fr auto}

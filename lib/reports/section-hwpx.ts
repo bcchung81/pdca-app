@@ -458,8 +458,15 @@ class SectionWriter extends Writer {
     return [this.para(ps, this.tag(m[1], false, LABEL), LABEL), ...(m[2] ? [this.para(ps, [this.run(m[2], LABEL)], LABEL)] : [])];
   }
 
-  title(b: Pick<Block, "title">): Para[] {
-    return b.title ? [this.p(b.title, HEAD, { align: "LEFT", before: px(4), line: pct(LH.title) })] : [];
+  /**
+   * 블록 제목 띠(화면 .k-dg-title — REPORT_STYLE.titleBand, 2026-10-29): 놓인 폭 w 전체의 1×1 칸(연회색 g2 바탕·테두리 없음, 안 여백 = 띠 안 여백) 안에
+   * 돋움 굵게 왼쪽 정렬, 위 여백 0(화면과 같음). 예전은 바탕 없는 굵은 글 문단 + 위 여백 4px(화면은 0이었음)
+   */
+  title(b: Pick<Block, "title">, w: number): Para[] {
+    if (!b.title) return [];
+    const tb = ST.titleBand;
+    const cell: TCell = { r: 0, c: 0, paras: [this.p(b.title, HEAD, { align: "LEFT", line: pct(LH.title) })], box: { fill: G.g2 }, m: [px(tb.padX), px(tb.padX), px(tb.padY), px(tb.padY)] };
+    return [this.host(this.table([w], [lineH(F.body, px(2 * tb.padY))], [cell]))];
   }
 
   /** 그림 자리(화면 .k-fig): 크기 등급 mm 그대로의 점선 상자 + 빗금 바탕 + 종류 칩 + 서술 */
@@ -543,7 +550,7 @@ class SectionWriter extends Writer {
   }
 
   core(b: Block, w: number): Para[] {
-    const title = b.title && !["define", "case"].includes(b.kind) ? this.title(b) : [];
+    const title = b.title && !["define", "case"].includes(b.kind) ? this.title(b, w) : [];
     const wMm = w / HU_PER_MM;
     switch (b.kind) {
       case "bullets":
@@ -1212,7 +1219,7 @@ class SectionWriter extends Writer {
     // 수치 띠 상자(화면 statsBox — 소항목 추진성과 상자와 같은 틀, 굵은 불릿 + 오른쪽 막대). 사다리 밖 수치 띠도 상자(own이면 불릿 그대로)
     const statsBox = (label: string, main: number[], chart: number | undefined, w: number) => {
       const c = chart === undefined ? null : blocks[chart];
-      return this.resultBox(label, () => main.flatMap((j) => [...this.title(blocks[j]), ...this.statsUl(blocks[j], BODY_B)]), c && { title: c.title, series: c.series, badge: c.badge }, "", w);
+      return this.resultBox(label, (mw) => main.flatMap((j) => [...this.title(blocks[j], mw), ...this.statsUl(blocks[j], BODY_B)]), c && { title: c.title, series: c.series, badge: c.badge }, "", w);
     };
     const outer = (j: number, w: number) => (blocks[j].kind === "stats" && !own ? [statsBox(statsBoxLabel(blocks[j]), [j], undefined, w)] : one(j, w));
     const unit = (us: number[], w: number, outside = false): Para[] => {
@@ -1382,7 +1389,7 @@ class SectionWriter extends Writer {
 
   /** 옛 도식(v1·v2 행) → 같은 모양(section-html.ts diagramHtml): 기존·개선 표·단계 흐름·시기 흐름·칸 카드(추진배경·현황 행은 ✚)·노력/성과 표 */
   diagram(d: Diagram, label: string, w: number): Para[] {
-    const title = d.title ? this.title(d) : [];
+    const title = d.title ? this.title(d, w) : [];
     switch (d.type) {
       case "before_after":
         return [...title, this.host(this.beforeAfter(d.rows, w))];

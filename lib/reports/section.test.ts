@@ -218,7 +218,7 @@ test("HTML: 이스케이프·마커·도식·추진성과, 모르는 숫자는 �
   assert.match(raw, /R&amp;D “협업” &lt;script&gt;alert\(1\)&lt;\/script&gt;/, "렌더러는 모든 글을 이스케이프");
   assert.doesNotMatch(raw, /<script>/);
   assert.match(html, /<div class="k-result__label">추진성과<\/div>/);
-  assert.match(html, /<span class="k-unv" title="카드에 없는 숫자 — 원자료로 확인">98%<\/span>/);
+  assert.match(html, /<span class="k-unv" title="카드에 없는 숫자 — 원자료로 확인"><span class="k-nb">98%<\/span><\/span>/);
   assert.doesNotMatch(html, /k-unv[^>]*>45,000/, "카드에 있는 숫자는 표시 안 함");
   const doc = sectionDocument(v.spec, v.unknownNumbers, { year: 2026, generatedAt: "9.26 13:00", model: "m" });
   assert.match(doc, /^<!doctype html>/);
@@ -539,7 +539,7 @@ test("HTML 강조: **…**는 이스케이프 후 굵게(<b>), 짝이 없는 **�
   const ctx = sectionContext(card, group("주요사업1"));
   const v = verifySection(out(), card, ctx);
   const html1 = sectionHtml({ ...v.spec, results: ["**4.5만회** 달성"] }, []);
-  assert.match(html1, /<b>4\.5만회<\/b> 달성/);
+  assert.match(html1, /<b><span class="k-nb">4\.5만회<\/span><\/b> 달성/);
   const html2 = sectionHtml({ ...v.spec, results: ["**<script>** 위험"] }, []);
   assert.match(html2, /<b>&lt;script&gt;<\/b> 위험/, "이스케이프 후 굵게 — 원문 태그가 살아나지 않음");
   assert.doesNotMatch(html2, /<script>/);
@@ -608,7 +608,7 @@ test("v3 HTML: stats(수치 띠 — 저장된 초안)는 추진성과 상자가 
   // 2026-10-28부터 새 주요사업 초안은 수치 띠를 빼므로(verifySection) 저장된 초안처럼 spec에 직접 넣어 그림 — 2026-10-28부터 추진성과 모양
   const stats = { kind: "stats" as const, label: "", title: "", variant: "", text: "", items: [], cells: [cell("40,000건", ["설명"]), cell("98%", ["설명2"])], rows: [], series: [], badge: "" };
   const html = sectionHtml({ ...v.spec, blocks: [stats, ...v.spec.blocks!] }, []);
-  assert.match(html, /<th scope="row">추진실적<\/th><td><ul><li>설명\(40,000건\)<\/li><li>설명2\(98%\)<\/li><\/ul>/);
+  assert.match(html, /<th scope="row">추진실적<\/th><td><ul><li>설명\(<span class="k-nb">40,000건<\/span>\)<\/li><li>설명2\(<span class="k-nb">98%<\/span>\)<\/li><\/ul>/);
   assert.equal(html.match(/k-result__label/g)?.length, 1, "추진성과 상자는 하나");
   assert.match(html, /➀/, "As-Is 번호");
   assert.match(html, /➊/, "To-Be 번호");
@@ -1116,8 +1116,8 @@ test("HTML: ^{…} 표기는 <sup>로 바뀌고, 짝이 없는 ^{는 그대로 �
   const ctx = sectionContext(card, group("주요사업1"));
   const v = verifySection(out({ results: ["^{’24년}100국 → ^{’25년}200국 확대"] }), card, ctx);
   const html = sectionHtml(v.spec, []);
-  assert.match(html, /<sup class="k-sup">’24년<\/sup>100국/);
-  assert.match(html, /<sup class="k-sup">’25년<\/sup>200국/);
+  assert.match(html, /<sup class="k-sup">’24년<\/sup><span class="k-nb">100국<\/span>/);
+  assert.match(html, /<sup class="k-sup">’25년<\/sup><span class="k-nb">200국<\/span>/);
   const raw = sectionHtml({ ...v.spec, results: ["짝 없는 ^{닫히지 않음"] }, []);
   assert.doesNotMatch(raw, /<sup/);
   assert.match(raw, /\^\{닫히지 않음/);
@@ -1152,7 +1152,7 @@ test("HTML: table(수치 표)은 table.k-tbl + colgroup, 빈 칸은 빈 td", { s
   const html = sectionHtml(v.spec, []);
   assert.match(html, /<table class="k-tbl"><colgroup>/);
   assert.match(html, /<th scope="col">구분<\/th><th scope="col">’24년<\/th><th scope="col">’25년<\/th>/);
-  assert.match(html, /<th scope="row">매출<\/th><td><\/td><td>8억<\/td>/, "빈 칸은 빈 td");
+  assert.match(html, /<th scope="row">매출<\/th><td><\/td><td><span class="k-nb">8억<\/span><\/td>/, "빈 칸은 빈 td");
 });
 
 test("HTML: cards vs(대립)는 k-cards--vs로, 두 칸 사이 VS 표지", { skip: NO_SEED_CARDS }, () => {

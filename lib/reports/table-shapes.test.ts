@@ -141,7 +141,7 @@ test("기본 표 HTML은 예전 모양 그대로(class k-tbl, 막대·쉐브론 
   const h = blocksSampleHtml([blk("table", { items: ["구분", "’25", "’26"], cells: [cell("건수", ["10건", "20건"]), cell("비율", ["1%", "2%"])] })]);
   // 2026-10-29 열 폭이 글 길이를 따름(fit.ts tableColsMm): 짧은 행 머리는 최소 18mm(170mm 중 10.59%), 짧은 값 열 둘은 균등 — 예전 고정 22%(34mm 상한 20%)·나머지 균등에서 바뀜
   assert.match(h, /<table class="k-tbl"><colgroup><col style="width:10\.59%"><col style="width:44\.71%"><col style="width:44\.71%"><\/colgroup><thead><tr><th scope="col">구분<\/th>/);
-  assert.match(h, /<tr><th scope="row">건수<\/th><td>10건<\/td><td>20건<\/td><\/tr>/);
+  assert.match(h, /<tr><th scope="row">건수<\/th><td><span class="k-nb">10건<\/span><\/td><td><span class="k-nb">20건<\/span><\/td><\/tr>/);
   assert.doesNotMatch(h, /k-barc|k-chev|k-res|k-lad/);
 });
 
@@ -181,9 +181,9 @@ test("수치 표 열 폭: 행 머리 상한(표 폭 TABLE_COL.headCap)·값 열 
 test("bars: 막대가 되는 칸만 k-barc(너비 %), 수치가 아닌 칸은 예전 칸 그대로", () => {
   const h = blocksSampleHtml([blk("table", { variant: "bars", items: ["지표", "’25", "’26"], cells: [cell("단축률", ["46.8%", "50%"]), cell("자동화율", ["(신규)", "65%"])] })]);
   assert.match(h, /class="k-tbl k-tbl--bars"/);
-  assert.match(h, /<span class="k-barc__v">46\.8%<\/span><span class="k-barc__t" aria-hidden="true"><span class="k-barc__b" style="width:93\.6%"><\/span><\/span>/);
+  assert.match(h, /<span class="k-barc__v"><span class="k-nb">46\.8%<\/span><\/span><span class="k-barc__t" aria-hidden="true"><span class="k-barc__b" style="width:93\.6%"><\/span><\/span>/);
   assert.match(h, /style="width:100%"/);
-  assert.match(h, /<td>\(신규\)<\/td><td>65%<\/td>/);
+  assert.match(h, /<td>\(신규\)<\/td><td><span class="k-nb">65%<\/span><\/td>/);
 });
 
 test("chevron: 값 열 머리마다 k-chev(마지막은 k-chev--last), 첫 머리(행 머리 열)는 보통 머리", () => {
@@ -211,11 +211,11 @@ test("result: 머리 행 「구분 | 추진내용 | 추진실적」(「추진실
 test("result 결과 칸: 밝은 칸 하나가 모든 행에 걸침(rowspan) — series마다 「뜻 수치」 굵은 줄, text는 괄호 시점 줄(이미 괄호면 그대로), series가 없으면 text 불릿", () => {
   const b = blk("table", { variant: "result", cells: [cell("측정기준", ["a"]), cell("로그", ["b", "c"])], series: [{ label: "유형 배정", value: "20건" }, { label: "", value: "11개" }], text: "’26.8 기준" });
   const h = blocksSampleHtml([b]);
-  assert.match(h, /<td class="k-res__r" rowspan="2"><p class="k-res__s">유형 배정 20건<\/p><p class="k-res__s">11개<\/p><p class="k-res__t">\(’26\.8 기준\)<\/p><\/td>/);
+  assert.match(h, /<td class="k-res__r" rowspan="2"><p class="k-res__s">유형 배정 <span class="k-nb">20건<\/span><\/p><p class="k-res__s"><span class="k-nb">11개<\/span><\/p><p class="k-res__t">\(’26\.8 기준\)<\/p><\/td>/);
   assert.equal((h.match(/class="k-res__r"/g) ?? []).length, 1);
   assert.doesNotMatch(h, /k-res__h"|k-res__v|k-res__l/, "예전 칸 안 머리·큰 수치 없음");
-  assert.match(blocksSampleHtml([{ ...b, text: "(’25년 8건 → ’26년 2건)" }]), /<p class="k-res__t">\(’25년 8건 → ’26년 2건\)<\/p>/);
-  assert.match(blocksSampleHtml([{ ...b, series: [], text: "지적 0건(3년 연속)" }]), /<td class="k-res__r" rowspan="2"><ul><li>지적 0건\(3년 연속\)<\/li><\/ul><\/td>/);
+  assert.match(blocksSampleHtml([{ ...b, text: "(’25년 8건 → ’26년 2건)" }]), /<p class="k-res__t">\(’25년 <span class="k-nb">8건<\/span> → ’26년 <span class="k-nb">2건<\/span>\)<\/p>/);
+  assert.match(blocksSampleHtml([{ ...b, series: [], text: "지적 0건(3년 연속)" }]), /<td class="k-res__r" rowspan="2"><ul><li>지적 <span class="k-nb">0건<\/span>\(3년 연속\)<\/li><\/ul><\/td>/);
   // 화면 CSS: 결과 칸은 바탕을 칠하지 않고(흰 글 없음) 「추진실적」 머리 칸만 어두움
   assert.match(REPORT_CSS, /table\.k-tbl--res thead th\.k-res__hd\{background:var\(--k-g5\);color:#fff\}/);
   const rule = /table\.k-tbl--res td\.k-res__r\{([^}]*)\}/.exec(REPORT_CSS)?.[1] ?? "";
@@ -235,9 +235,9 @@ test("result 행마다 결과: 어느 행이든 note가 있으면 결과 칸을 
   const h = blocksSampleHtml([b]);
   assert.doesNotMatch(h, /rowspan/);
   assert.equal((h.match(/<td class="k-res__r">/g) ?? []).length, 3);
-  assert.match(h, /<td class="k-res__r"><p class="k-res__s">뜻 20건<\/p><ul><li>처리 기간 30% 단축<\/li><\/ul><\/td>/);
+  assert.match(h, /<td class="k-res__r"><p class="k-res__s">뜻 <span class="k-nb">20건<\/span><\/p><ul><li>처리 기간 <span class="k-nb">30%<\/span> 단축<\/li><\/ul><\/td>/);
   assert.match(h, /<td class="k-res__b"><ul><li>b<\/li><\/ul><\/td><td class="k-res__r"><\/td>/, "결과 없는 행은 빈 칸");
-  assert.match(h, /<td class="k-res__r"><ul><li>참여 12곳<\/li><\/ul><\/td>/);
+  assert.match(h, /<td class="k-res__r"><ul><li>참여 <span class="k-nb">12곳<\/span><\/li><\/ul><\/td>/);
   assert.ok(resultPerRow(b) && !resultPerRow({ cells: [cell("가", ["a"])] }));
   assert.deepEqual(resultHeads(b), ["구분", "추진내용", "추진실적"]);
 });

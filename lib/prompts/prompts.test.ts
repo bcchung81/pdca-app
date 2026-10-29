@@ -328,7 +328,9 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-10-29 집필 지침 process.md 3번의 불릿 예시를 중립 예시로 바꿈(공개 저장소라 실제 카드 값 제거 — 집필 판만 바뀜 @713be917 → @5928aee4)
   // 2026-10-29 분량 목표를 블록 영역의 90~100% → 100~110%로(집필이 어림보다 짧게 끝남 — 6-2 일곱 번 첫 초안 배정의 60~83%), 칸 불릿 1~3개 → 2~3개 — 집필 판만 바뀜 @5928aee4 → @d2b75d91
   // 2026-10-29 추진실적 열 표를 2025 경영관리 원본 모양으로(report-draft-mg/blocks.md#choose result 한 줄 — 머리 행·오른쪽 칸은 「뜻 수치」 짧게·시점은 text·행마다 결과는 cells[i].note·items 머리 글·옆 그림 자리 없음)로 셋 다 바뀜(draft @d2b75d91 → @a2d03082, outline @12d3277a → @7ed0f810, block @c9d8bf92 → @b358c751 — 주요사업 판 그대로)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@a2d03082");
+  // 2026-10-29 블록 제목을 2025 경영관리 도식 위 제목 띠의 뜻으로(report-draft-mg/schema.md block.title — 공용 조각 끼움 대신 경영관리 글: 표·도식 설명 이름이 아니라 성과·주장 한 줄,
+  // 근거 수치 포함, 표는 머리 행·라벨로 충분하면 빈 글)로 집필 판만 바뀜(@a2d03082 → @f54c1e78 — 구성안 판 그대로, 블록 고치기 판은 집필 schema 설명을 끼워 쓰지만 판 해시에 안 들어가 @b358c751 그대로, 주요사업 판 그대로)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@f54c1e78");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜

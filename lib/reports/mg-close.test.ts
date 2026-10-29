@@ -116,7 +116,7 @@ test("추진성과 행에 막대만 남으면 막대 앞에 원장 줄 글 블�
     assert.deepEqual(lines, ["활용 300건 달성", "만족도 4.5점 기록"]);
     assert.ok(v.warnings.some((w) => w.startsWith("추진성과 보강: 막대만 남은 추진성과 행 1곳의 왼쪽을 원장 성과 줄 2개로 채움")));
     const html = sectionDocument(v.spec, [], { year: 2026, generatedAt: "", model: "" });
-    assert.match(html, /<div class="k-row2"><div>[\s\S]*?활용 300건 달성[\s\S]*?<\/div><figure class="k-chart/, "글 블록 왼쪽 · 막대 오른쪽");
+    assert.match(html, /<div class="k-row2"><div>[\s\S]*?활용 <span class="k-nb">300건<\/span> 달성[\s\S]*?<\/div><figure class="k-chart/, "글 블록 왼쪽 · 막대 오른쪽");
   }
 });
 

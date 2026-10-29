@@ -20,8 +20,9 @@ export const REPEAT_MIN_BLOCKS = 3;
 
 /** 수치 단위(긴 것 먼저) — 단위 없는 맨 숫자는 세지 않음(표 칸 번호·순번·산식 숫자가 섞임) */
 export const UNITS = ["백만원", "억원", "만원", "천원", "만건", "만명", "만회", "만국", "시간", "개소", "개사", "%p", "MHz", "GHz", "㎒", "kW", "km", "%", "건", "명", "곳", "개", "국", "종", "억", "만", "천", "회", "점", "원", "배", "초", "분", "일", "톤", "호", "대"];
-const UNIT_SRC = UNITS.join("|");
-const NUM_SRC = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`;
+/** 단위·값 정규식 원문 — 화면 렌더러(section-html.ts numUnit)가 「값 + 단위」를 한 덩어리로 묶을 때도 씀 */
+export const UNIT_SRC = UNITS.join("|");
+export const NUM_SRC = String.raw`\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?`;
 /** 값 + 단위(뒤에 한글이 바로 붙어도 됨 — 「1,922곳을」). 앞이 숫자·점·작은따옴표(’26)면 아님 */
 const FIGURE_RE = new RegExp(String.raw`(?<![\d.,’'‘])(${NUM_SRC})\s?(${UNIT_SRC})(?![A-Za-z])`, "g");
 /** 「12 → 22명」처럼 화살표 앞 맨 숫자는 뒤 값의 단위를 받음 */

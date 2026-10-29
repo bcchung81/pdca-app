@@ -459,6 +459,15 @@ export function statsRow(g: LayoutGroup, blocks: LayoutBlock[], own: boolean): {
 
 const HEAD_MM = 10.6 * 1.5 * PT; // 돋움 10.6pt/1.5
 const HEAD11_MM = 11 * 1.5 * PT;
+/**
+ * 블록 제목 띠(section-css .k-dg-title — REPORT_STYLE.titleBand, 2026-10-29) 높이: 줄 수 × 돋움 10.6pt/1.5 + 안 여백 위아래(바깥 여백 0).
+ * 줄 수는 띠 폭(놓인 폭 − 안 여백 좌우)에서 돋움 굵게 어절 단위로 셈. 예전은 늘 한 줄 + 위 여백 1mm로 셌으나 화면의 위 여백은 0이었음(초기화 규칙이 이김). 제목이 없으면 0
+ */
+export function blockTitleMm(title: string, widthMm: number): number {
+  if (!title) return 0;
+  const tb = REPORT_STYLE.titleBand;
+  return Math.max(1, lineCount(title, widthMm - 2 * tb.padX * PX, 10.6, true)) * HEAD_MM + 2 * tb.padY * PX;
+}
 // 칸 글(본문)은 자간 맞춤을 반영한 줄 수로 셈(화면과 같게)
 const lines = (xs: string[], w: number, pt = BODY_PT, dotum = false) => xs.reduce((s, x) => s + (dotum || pt !== BODY_PT ? lineCount(x, w, pt, dotum) : bodyLayout(x, w).lines), 0);
 const max = (xs: number[]) => (xs.length ? Math.max(...xs) : 0);
@@ -505,20 +514,20 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
   const notes = max(b.cells.map((c) => lineCount(c.note, s.note))) * L;
   switch (b.kind) {
     case "bullets":
-      return (b.title ? HEAD_MM + 1 : 0) + lines(b.items, s.body) * L + 0.5;
+      return blockTitleMm(b.title, width) + lines(b.items, s.body) * L + 0.5;
     case "cards":
-      return (b.title ? HEAD_MM + 1 : 0) + heads() + max(b.cells.map(cellBody)) + (notes ? notes + 0.6 : 0) + 1.9;
+      return blockTitleMm(b.title, width) + heads() + max(b.cells.map(cellBody)) + (notes ? notes + 0.6 : 0) + 1.9;
     case "steps":
       if (b.variant === "zigzag") {
         const row = (cs: Block["cells"]) => max(cs.map((c) => lineCount(c.head, s.head, 10.6, true))) * HEAD_MM + max(cs.map((c) => lines(c.bullets, s.body) * L + (c.note ? lineCount(c.note, s.note) * L + 0.8 : 0))) + 1.2;
         // ㄹ자: 위 줄 = 1·4단계, 아래 줄 = 2·3단계
         return row([b.cells[0], b.cells[3]].filter(Boolean)) + row([b.cells[1], b.cells[2]].filter(Boolean)) + 5 + 2.4;
       }
-      return (b.title ? HEAD_MM + 1 : 0) + heads(11) + max(b.cells.map(cellBody)) + (notes ? notes + 0.8 : 0) + 2.6;
+      return blockTitleMm(b.title, width) + heads(11) + max(b.cells.map(cellBody)) + (notes ? notes + 0.8 : 0) + 2.6;
     case "timeline":
       // 연혁 점 칸 글은 문단 p(자간 맞춤 없음)
       if (b.variant === "dots") return 4.6 + 5.6 + max(b.cells.map((c) => c.bullets.reduce((n, x) => n + bodyLines(x, s.body), 0) * L + (c.note ? 5.2 : 0))) + 2.6;
-      return (b.title ? HEAD_MM + 1 : 0) + heads(11) + max(b.cells.map((c) => cellBody(c) + (c.note ? lineCount(c.note, s.note) * L + 0.3 : 0))) + 1.8;
+      return blockTitleMm(b.title, width) + heads(11) + max(b.cells.map((c) => cellBody(c) + (c.note ? lineCount(c.note, s.note) * L + 0.3 : 0))) + 1.8;
     case "compare":
       if (isPanelCompare(b)) {
         // 그림(section-html): 왼쪽 = As-Is 패널 안·오른쪽 = To-Be 패널 안(그 패널 글 폭만 그림 폭 + 사이 2mm + 오른쪽 여백 2mm 줄어듦), 가운데 = 두 패널 사이 칸(그림 폭 + 4mm)
@@ -530,15 +539,15 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
             max([lineCount(b.items[to ? 1 : 0] ?? "", s.head, 10.6, true), 1]) * HEAD_MM + b.rows.reduce((n, r) => n + bodyLines(panelRowText(r, to), panelTextMm(b, s, to)) * L, 0) + 1.6,
             ...inside(to).map((f) => HEAD_MM + figureBoxMm(f) + 1.2),
           );
-        return (b.title ? HEAD_MM + 1 : 0) + Math.max(side(false), side(true), 18, center ? figureBoxMm(center) + 1 : 0) + 1;
+        return blockTitleMm(b.title, width) + Math.max(side(false), side(true), 18, center ? figureBoxMm(center) + 1 : 0) + 1;
       }
       // 기존→개선 화살표 칸(세로 24mm)이 표 몸통의 최소 높이
       // 표 테두리·머리 행 여백: 행별 실측(2026-09-27, 32행)이 평균 1.8mm 커서 끝 여백 1 → 2.6mm
-      return (b.title ? HEAD_MM + 1 : 0) + HEAD11_MM + Math.max(24.5, b.rows.reduce((n, r) => n + Math.max(lineCount(r.key, s.head, 11, true) * HEAD11_MM, lines(r.before, s.body) * L, lines(r.after, s.note) * L) + 1.1, 0)) + 2.6;
+      return blockTitleMm(b.title, width) + HEAD11_MM + Math.max(24.5, b.rows.reduce((n, r) => n + Math.max(lineCount(r.key, s.head, 11, true) * HEAD11_MM, lines(r.before, s.body) * L, lines(r.after, s.note) * L) + 1.1, 0)) + 2.6;
     case "hub": {
       const [center, ...nodes] = b.cells;
       if (!center) return 0;
-      const t = b.title ? HEAD_MM + 1 : 0;
+      const t = blockTitleMm(b.title, width);
       if (nodes.length === 2) return t + max([HEAD_MM + lines(center.bullets, s.body) * L + centerExtra, ...nodes.map((c) => HEAD_MM + bodyLines(c.bullets.join(" / "), s.note) * L + 1.3)]) + 1.2;
       const list = nodes.reduce((n, c) => n + Math.max(lineCount(c.head, s.head, 10.2, true) * 5, lines(c.bullets, s.note) * L) + 0.6, 0);
       return t + Math.max(HEAD_MM + lines(center.bullets, s.body) * L + 1 + centerExtra, list) + 1.2;
@@ -546,7 +555,7 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
     case "voices": {
       const cols = Math.min(2, b.cells.length);
       const rowsN = Math.ceil(b.cells.length / cols);
-      return (b.title ? HEAD_MM + 1 : 0) + rowsN * Math.max(15, max(b.cells.map((c) => bodyLines(`“${c.bullets[0] ?? ""}”`, s.body) * L + 1.2))) + (rowsN - 1) * 4 + 1.6;
+      return blockTitleMm(b.title, width) + rowsN * Math.max(15, max(b.cells.map((c) => bodyLines(`“${c.bullets[0] ?? ""}”`, s.body) * L + 1.2))) + (rowsN - 1) * 4 + 1.6;
     }
     case "quotes":
       return max(b.cells.map((c) => HEAD_MM + 0.3 + quoteLines(c, s.body) * L)) + 0.8;
@@ -564,11 +573,11 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       return CHART_MM;
     case "qa":
       // 쌍마다 질문 줄(돋움 굵게) + 답(하나면 불릿 점·들여쓰기 없음), 쌍 사이 0.8mm, 상자 테두리·여백 1.6mm
-      return (b.title ? HEAD_MM + 1 : 0) + b.cells.reduce((n, c) => n + lineCount(c.head, s.head, 10.6, true) * HEAD_MM + lines(c.bullets, qaAnswerWidth(c, s)) * L + 0.8, 0) + 1.6;
+      return blockTitleMm(b.title, width) + b.cells.reduce((n, c) => n + lineCount(c.head, s.head, 10.6, true) * HEAD_MM + lines(c.bullets, qaAnswerWidth(c, s)) * L + 0.8, 0) + 1.6;
     case "table": {
       // 머리 줄(맑은 고딕 10.4pt/1.45) + 행마다 가장 긴 칸(행 머리는 돋움 10.4pt, 값은 본문) + 칸 여백 2px, 위 굵은 선·아래 선 1.2mm
       const TH = 10.4 * 1.45 * PT;
-      const t = b.title ? HEAD_MM + 1 : 0;
+      const t = blockTitleMm(b.title, width);
       if (b.variant === "result") {
         // 머리 행(resultHeads — 수치 표 머리 칸과 같은 맑은 고딕 10.4pt) + 본문. 결과 칸(section-html resultTableHtml): series마다 「뜻 수치」 돋움 굵게 본문 크기 한 줄(어절 단위) ·
         // 시점 줄(text — 괄호, 바탕 9.5pt, 위 1px) · series 없으면 text는 불릿 · 행마다 결과(note)는 그 행 칸의 불릿. 칸 안 여백 위아래 2px(왼쪽 칸은 1px)
@@ -595,7 +604,7 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       const bodyW = (k: number) => colAt(k) - 8 * PX - (b.variant === "bars" ? TABLE_SHAPE_MM.bar + TABLE_SHAPE_MM.barGap : 0);
       const head = max([lineCount(b.items[0] ?? "", s.note, 10.4, true), ...b.items.slice(1).map((x, k) => lineCount(x, headW(k), 10.4, true))]) * TH + 2 * PX + (b.variant === "chevron" ? 2 * PX : 0);
       const body = b.cells.reduce((n, c) => n + Math.max(lineCount(c.head, s.note, 10.4, true) * TH, max(c.bullets.map((x, k) => bodyLines(x, bodyW(k)) * L))) + 2 * PX, 0);
-      return (b.title ? HEAD_MM + 1 : 0) + head + body + 1.2;
+      return blockTitleMm(b.title, width) + head + body + 1.2;
     }
     case "strategy": {
       // 표 행마다 칸 안 여백 위아래 2px + 테두리: 목표 띠(돋움 굵게, 있을 때) · 열 머리(돋움 굵게) · 과제(본문 불릿) · 지표(9.5pt 돋움, 있을 때) — 층 이름 칸(9.5pt 돋움)이 더 길면 그 높이
@@ -608,17 +617,17 @@ export function blockHeight(b: Block, width: number, centerExtra = 0): number {
       const body = Math.max(max(b.cells.map((c) => lines(c.bullets, s.body))) * L, tier(b.text ? 2 : 1)) + ROW;
       const hasNote = b.cells.some((c) => c.note);
       const foot = hasNote ? Math.max(max(b.cells.map((c) => lineCount(c.note, s.note, 9.5, true))) * 9.5 * 1.45 * PT, tier(b.text ? 3 : 2)) + ROW : 0;
-      return (b.title ? HEAD_MM + 1 : 0) + top + head + body + foot + 0.8;
+      return blockTitleMm(b.title, width) + top + head + body + foot + 0.8;
     }
     case "pdca": {
       // 4칸(머리 = 단계 표지 원 + 단계 이름, 몸통 = 불릿, 꼬리 = 결과 줄) + 환류 띠(9.5pt 돋움, 있을 때)
       const heads4 = max(b.cells.map((c) => lineCount(c.head, s.head, 10.6, true))) * HEAD_MM;
       const fb = b.text ? lineCount(`↺ ${b.text}`, width - 12 * PX, 9.5, true) * 9.5 * 1.45 * PT + 4 * PX + 1.2 : 0;
-      return (b.title ? HEAD_MM + 1 : 0) + heads4 + max(b.cells.map(cellBody)) + (notes ? notes + 0.6 : 0) + 1.9 + fb;
+      return blockTitleMm(b.title, width) + heads4 + max(b.cells.map(cellBody)) + (notes ? notes + 0.6 : 0) + 1.9 + fb;
     }
     case "stats":
       // 불릿 목록 모양(사다리 칸 안 — 상자 모양은 statsBoxMm): 칸마다 「성과 문장(시점 수치)」 한 불릿
-      return (b.title ? HEAD_MM + 1 : 0) + lines(statsLines(b), s.body) * L + 0.5;
+      return blockTitleMm(b.title, width) + lines(statsLines(b), s.body) * L + 0.5;
   }
 }
 
@@ -778,7 +787,7 @@ const resultBoxMm = (body: number) => Math.max(12, body + 2.6) + 1.6;
  */
 export function statsBoxMm(main: Block[], width: number, chart?: ChartHead): number {
   const w = resultWidth({ chart: Boolean(chart) }, width);
-  const text = main.reduce((n, b) => n + (b.title ? HEAD_MM + 1 : 0) + lines(statsLines(b), w) * LINE_MM, 0);
+  const text = main.reduce((n, b) => n + blockTitleMm(b.title, w) + lines(statsLines(b), w) * LINE_MM, 0);
   return resultBoxMm(Math.max(text, chart ? sideChartMm(chart) : 0));
 }
 

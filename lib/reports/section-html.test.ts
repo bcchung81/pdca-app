@@ -5,6 +5,7 @@ import { test } from "node:test";
 import type { Block } from "./blocks.ts";
 import type { MgPart } from "./mg-types.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
+import { REPORT_CSS } from "./section-css.ts";
 import { blockHtml, blocksSampleHtml, markRoots, miniChartHtml, sectionBodyHtml, sectionDocument, sectionHtml } from "./section-html.ts";
 
 const B = (kind: Block["kind"], label: string, over: Partial<Block> = {}): Block => ({ kind, label, title: "", variant: "", text: "", items: [], cells: [], rows: [], series: [], badge: "", ...over });
@@ -226,7 +227,7 @@ test("수치 띠: 수치 띠만 있는 사다리 행은 표를 닫고 추진성�
   const spec = base({ version: 3, blocks: [B("bullets", "추진내용", { items: ["내용"] }), statsB("추진성과")], results: [] });
   const html = sectionBodyHtml(spec);
   assert.match(html, /<\/table>\n<div class="k-result"><div class="k-result__label">추진성과<\/div><div class="k-result__body"><ul>/);
-  assert.match(html, /<li>인명피해 감소\(<sup class="k-sup">’25년<\/sup>23\.2%\)<\/li>/, "시점뿐인 덧글은 위첨자(「기준」 뺌)");
+  assert.match(html, /<li>인명피해 감소\(<sup class="k-sup">’25년<\/sup><span class="k-nb">23\.2%<\/span>\)<\/li>/, "시점뿐인 덧글은 위첨자(「기준」 뺌)");
   assert.match(html, /<li><span class="k-tag">검사<\/span>검사 완료\(<span class="k-need"[^>]*>’26년 건수<\/span>, ’26\.12 확정 예정\)<\/li>/, "시점이 아닌 덧글은 수치 뒤");
   assert.ok(!html.includes("k-stat"), "큰 수치 칸 없음");
   assert.equal(html.match(/<th scope="row">/g)?.length, 1, "수치 띠 행은 사다리에 없음");
@@ -283,7 +284,8 @@ test("수치 띠 표지: 상자 하나가 블록 하나면 상자에 data-block,
 // ───────────────────────── 되풀이 표시(2026-10-29 — repeat-figures.ts, k-rep)
 
 const v3 = (blocks: Block[], over: Partial<ReportSectionSpec> = {}) => base({ version: 3, blocks, ...over });
-const REP_FIG = /<span class="k-rep" title="같은 수치 (\d+)곳 반복 — 한 곳만 남기고 다른 실적으로">([^<]*)<\/span>/g;
+// 값 + 단위는 k-rep 안에서 .k-nb 한 덩어리(2026-10-29 section-html numUnit — 좁은 칸에서 「340 / 건」으로 갈라지지 않게)
+const REP_FIG = /<span class="k-rep" title="같은 수치 (\d+)곳 반복 — 한 곳만 남기고 다른 실적으로">(?:<span class="k-nb">)?([^<]*)(?:<\/span>)?<\/span>/g;
 
 test("반복 수치: repeats일 때만 모든 자리를 k-rep으로 감쌈(강조 안·추진성과 상자 포함), 흔한 값·두 블록뿐인 값은 안 감쌈", () => {
   const spec = v3([B("bullets", "추진내용", { items: ["취약시설 **1,922곳** 관리, 무재해 0건·준수율 100%·3명"] }), B("bullets", "추진실적", { items: ["1,922곳 점검 · 0건 · 100% · 3명 · 45건"] })], { results: ["1,922곳 관리 · 0건 · 100% · 3명 · 45건"] });
@@ -292,7 +294,7 @@ test("반복 수치: repeats일 때만 모든 자리를 k-rep으로 감쌈(강�
   const on = sectionBodyHtml(spec, [], { repeats: true });
   const hits = [...on.matchAll(REP_FIG)].map((m) => [m[1], m[2]]);
   assert.deepEqual(hits, [["3", "1,922곳"], ["3", "1,922곳"], ["3", "1,922곳"]]);
-  assert.match(on, /<b><span class="k-rep"[^>]*>1,922곳<\/span><\/b>/, "강조 안");
+  assert.match(on, /<b><span class="k-rep"[^>]*><span class="k-nb">1,922곳<\/span><\/span><\/b>/, "강조 안");
   // 반복이 없으면 repeats를 켜도 바이트까지 같음
   const plain = v3([B("bullets", "추진내용", { items: ["1,922곳 관리"] })], { results: ["12건"] });
   assert.equal(sectionBodyHtml(plain, ["12"], { repeats: true }), sectionBodyHtml(plain, ["12"]));
@@ -305,7 +307,7 @@ test("반복 문장: 불릿 전체를 옅은 k-rep--line으로, title에 다른 
   assert.match(html, /<span class="k-rep k-rep--line" title="비슷한 문장이 추진실적·추진성과에도 있음">/);
   assert.match(html, /<span class="k-rep k-rep--line" title="비슷한 문장이 추진내용·추진실적에도 있음">/, "추진성과 상자 줄");
   // 겹침: 반복 수치(k-rep)가 바깥, 없는 숫자(k-unv)가 안 — 둘 다 남음
-  assert.equal(html.match(/<span class="k-rep" title="같은 수치 3곳 반복[^"]*"><span class="k-unv" title="카드에 없는 숫자 — 원자료로 확인">1,922<\/span>곳<\/span>/g)?.length, 3);
+  assert.equal(html.match(/<span class="k-rep" title="같은 수치 3곳 반복[^"]*"><span class="k-nb"><span class="k-unv" title="카드에 없는 숫자 — 원자료로 확인">1,922<\/span>곳<\/span><\/span>/g)?.length, 3);
 });
 
 test("경영관리도 같은 렌더러: 두 절의 같은 수치(절 2개)를 감싸고, 내려받기 문서는 기본으로 켜 범례를 달고 한글 사본({ repeats: false })은 표시가 없음", () => {
@@ -325,4 +327,28 @@ test("반복 문장: 번호를 떼고 줄을 「 / 」로 이어 그리는 전�
   const html = sectionBodyHtml(spec, [], { repeats: true });
   assert.match(html, /<li><span class="k-panel__no"[^>]*>[^<]*<\/span><span class="k-rep k-rep--line" title="비슷한 문장이 현황에도 있음">/);
   assert.match(html, /<span class="k-rep k-rep--line" title="비슷한 문장이 블록 2에도 있음">/, "라벨·제목 없는 블록은 순번 이름");
+});
+
+// ───────────────────────── 블록 제목 띠·값 + 단위 묶음(2026-10-29)
+
+test("블록 제목 띠: 제목은 p.k-dg-title 한 줄(칸 폭 전체 연회색 띠 — CSS 바탕 g2·왼쪽 정렬·안 여백), 제목이 없으면 그 문단만 빠지고 나머지는 바이트까지 같음", () => {
+  assert.match(REPORT_CSS, /\.kca-dg-doc \.k-dg-title\{[^}]*margin:0;\n  padding:1px 5px;background:var\(--k-g2\);text-align:left\}/);
+  for (const b of [B("bullets", "추진내용", { items: ["글"] }), B("table", "", { items: ["구분", "값"], cells: [{ head: "가", tag: "", bullets: ["1"], note: "" }] }), B("cards", "", { cells: [{ head: "칸", tag: "", bullets: ["글"], note: "" }] })]) {
+    const titled = blockHtml({ ...b, title: "성과 주장 <한 줄>" }, new Set());
+    assert.ok(titled.startsWith('<p class="k-dg-title">성과 주장 &lt;한 줄&gt;</p>'), b.kind);
+    assert.equal(titled.replace('<p class="k-dg-title">성과 주장 &lt;한 줄&gt;</p>', ""), blockHtml(b, new Set()), `${b.kind}: 제목 없는 출력 불변`);
+    assert.doesNotMatch(blockHtml(b, new Set()), /k-dg-title/);
+  }
+});
+
+test("값 + 단위 묶음: 「340건」·「18.4초」·「1,922곳」은 .k-nb 한 덩어리(강조·없는 숫자 표시째) — 날짜·단위 없는 숫자·태그 속성 글은 그대로", () => {
+  const b = B("bullets", "추진실적", { items: ["검토 통과 340건, 중앙값 18.4초", "**12**명 · 1,922곳을 ’26.3.14 기준 2026년 3회"] });
+  const html = blockHtml(b, new Set(["12"]));
+  assert.match(html, /통과 <span class="k-nb">340건<\/span>, 중앙값 <span class="k-nb">18\.4초<\/span>/);
+  assert.match(html, /<span class="k-nb"><b><span class="k-unv"[^>]*>12<\/span><\/b>명<\/span>/, "강조 + 없는 숫자 표시째");
+  assert.match(html, /<span class="k-nb">1,922곳<\/span>을 ’26\.3\.14 기준 2026년 <span class="k-nb">3회<\/span>/, "날짜·단위 없는 연도는 묶지 않음");
+  // 반복 수치 표시의 title 속성(「같은 수치 3곳 반복」) 안은 건드리지 않음
+  const rep = sectionBodyHtml(base({ version: 3, blocks: [B("bullets", "가", { items: ["45건 처리"] }), B("bullets", "나", { items: ["45건 점검"] }), B("bullets", "다", { items: ["45건 완료"] })], rows: [], results: [] }), [], { repeats: true });
+  assert.match(rep, /<span class="k-rep" title="같은 수치 3곳 반복[^"]*"><span class="k-nb">45건<\/span><\/span>/);
+  assert.doesNotMatch(rep, /title="[^"]*k-nb/);
 });
