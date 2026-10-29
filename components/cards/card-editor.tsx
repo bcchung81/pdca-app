@@ -182,7 +182,11 @@ export function CardEditor(props: {
   const toastSeq = useRef(0);
   const setToast = useCallback((spec: ToastSpec | null) => setToastState(spec ? { spec, key: ++toastSeq.current } : null), []);
   const clearToast = useCallback(() => setToastState(null), []);
-  const reviewMode = props.readOnly ? "ask" : "edit";
+  // 휴대폰 폭(md 미만)은 보기 중심: 편집 칸을 켜지 않고(글 직접 고치기·□ 누르기·지적/환류 행 도구 없음 — 실수 입력 방지) 끌어 고르기는 「질문」만.
+  // 저장 경로(flush·자동 저장)는 그대로 props.readOnly를 따름(AI 작성지원의 카드 반영은 휴대폰에서도 저장됨). 서버·첫 하이드레이션은 넓은 폭(편집)
+  const phone = useMedia(PHONE_QUERY);
+  const viewOnly = props.readOnly || phone;
+  const reviewMode = viewOnly ? "ask" : "edit";
   const action = props.saveAction ?? saveCard;
   const actionRef = useRef(action);
   useLayoutEffect(() => {
@@ -194,7 +198,7 @@ export function CardEditor(props: {
   const lockedKey = (props.locked ?? []).join(",");
   const { layout } = props;
   const { html, exact } = useMemo(() => {
-    const opts = props.readOnly ? { selectable: true } : { editable: true, locked: lockedKey ? lockedKey.split(",") : undefined };
+    const opts = viewOnly ? { selectable: true } : { editable: true, locked: lockedKey ? lockedKey.split(",") : undefined };
     // 원본 배치가 있으면 원본 그대로(글이 바뀐 곳만 같은 모양으로 흘려 그림), 없거나 못 맞추면 원본 양식 렌더러
     if (layout) {
       try {
@@ -205,7 +209,7 @@ export function CardEditor(props: {
       }
     }
     return { html: rewriteCardImages(renderCard(card, opts), urls), exact: false };
-  }, [card, urls, props.readOnly, lockedKey, layout]);
+  }, [card, urls, viewOnly, lockedKey, layout]);
   // 쪽 보기(인쇄 모양, 읽기 전용): 한글이 쪽을 나누는 규칙대로 — 원본 배치가 있을 때만
   const [view, setView] = useState<"flow" | "pages">("flow");
   const pagesRef = useRef<HTMLDivElement>(null);
@@ -338,9 +342,9 @@ export function CardEditor(props: {
   // 좁은 폭(64rem 미만 — 오른쪽 패널이 시트라 카드가 전체 폭)은 손으로 고른 배율을 따로 기억(데스크톱 배율이 휴대폰에 넘어가지 않게).
   // 배율 한도(0.6~1.1)는 그대로 — 휴대폰(390px)에서는 0.6배로도 원본 폭(약 680px)이 조금 넘쳐 상자 안 가로 스크롤(원본 배치는 다시 그리지 않음)
   const narrow = useMedia(NARROW_QUERY);
-  const phone = useMedia(PHONE_QUERY);
   const { scrollRef, zoom, hand, setZoom, handRange } = useFitZoom({
-    storageKey: narrow ? `${CARD_ZOOM_KEY}-narrow` : CARD_ZOOM_KEY,
+    // 휴대폰 폭은 확대 단추가 없어 늘 폭 맞춤(아무도 쓰지 않는 열쇠 — 태블릿에서 고른 배율이 넘어오지 않게)
+    storageKey: phone ? `${CARD_ZOOM_KEY}-phone` : narrow ? `${CARD_ZOOM_KEY}-narrow` : CARD_ZOOM_KEY,
     measureRef: docRef,
     reservePx: (phone ? CARD_PAD_PHONE_PX : CARD_PAD_PX) + (wide ? CARD_NOTES_PX : 0),
     fitRange: CARD_FIT_ZOOM,
@@ -539,7 +543,7 @@ export function CardEditor(props: {
   };
   const onClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const t = (e.target as HTMLElement).closest<HTMLElement>("[data-toggle]");
-    if (!t || props.readOnly || !window.getSelection()?.isCollapsed) return;
+    if (!t || viewOnly || !window.getSelection()?.isCollapsed) return;
     e.preventDefault();
     restructure(toggleBox(cardRef.current, t.dataset.toggle!), null);
   };
@@ -622,10 +626,10 @@ export function CardEditor(props: {
   // 경영관리 원장 편집: 짝 칸 표(전년도 환류·지적 및 개선방안) 행 추가·삭제 — 고정 영역이라 부서 작성본·미리보기·읽기 전용·잠근 구역에서는 없음
   const pairKeys = useMemo<PairKey[]>(
     () =>
-      !props.readOnly && !props.preview && (props.variant ?? "ledger") === "ledger" && isMgmtCard(card)
+      !viewOnly && !props.preview && (props.variant ?? "ledger") === "ledger" && isMgmtCard(card)
         ? (["feedback", "findings"] as const).filter((k) => !lockedKey.split(",").includes(k))
         : [],
-    [props.readOnly, props.preview, props.variant, card, lockedKey],
+    [viewOnly, props.preview, props.variant, card, lockedKey],
   );
   const pairCounts = useMemo(() => ({ feedback: card?.feedback?.rows?.length ?? 0, findings: card?.findings?.rows?.length ?? 0 }), [card]);
   const addPairRow = (key: PairKey, after: number) => {
@@ -701,7 +705,8 @@ export function CardEditor(props: {
             if (timer.current) clearTimeout(timer.current);
             void save(true);
           }}
-          className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-thead px-5 py-2 max-md:px-3"
+          // 휴대폰 폭: 도구줄(월별 실적·고정 영역 확정·보기·확대·자동 저장·저장)을 그리지 않음 — 보기 중심(편집 칸도 꺼짐, viewOnly)
+          className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-thead px-5 py-2 max-md:hidden"
         >
           <input type="hidden" name="uid" value={uid} />
           <input ref={payloadRef} type="hidden" name="payload" defaultValue="" />
@@ -752,7 +757,8 @@ export function CardEditor(props: {
         <div ref={wrapRef} className="relative flex w-max min-w-full items-start justify-center gap-5 px-6 py-5 max-md:px-2 max-md:py-3">
           <div className="shrink-0">
             {props.readOnly && (
-              <div className="mb-3 flex items-center justify-end gap-2">
+              // 휴대폰 폭: 이어/쪽 보기·확대도 그리지 않음(이어 보기, 폭 맞춤 배율)
+              <div className="mb-3 flex items-center justify-end gap-2 max-md:hidden">
                 {exact && layout?.page && <ViewToggle value={view} onChange={setView} />}
                 <ZoomControl zoom={zoom} fitted={hand === null} range={handRange} onZoom={setZoom} />
               </div>
@@ -763,7 +769,7 @@ export function CardEditor(props: {
                   <div ref={pagesRef} className="rounded-lg bg-desk p-4" dangerouslySetInnerHTML={{ __html: pagesView ?? "" }} />
                 </div>
               )}
-              <div hidden={showPages} className={`w-max ${exact ? "" : "min-w-[900px]"} rounded-lg border border-line bg-paper p-6 max-md:p-3 ${props.readOnly ? "card-reading" : "card-editing"}`}>
+              <div hidden={showPages} className={`w-max ${exact ? "" : "min-w-[900px]"} rounded-lg border border-line bg-paper p-6 max-md:p-3 ${viewOnly ? "card-reading" : "card-editing"}`}>
                 <div
                   ref={boxRef}
                   className={exact ? "w-max" : "w-[852px]"}

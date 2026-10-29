@@ -260,8 +260,8 @@ export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext,
 /** 분량 목표 쪽수(0보다 큰 수만) */
 const targetPages = (pages: number | null | undefined) => (typeof pages === "number" && pages > 0 ? pages : null);
 
-/** 절 머리만 있는 빈 초안 — mgSpecHeight(사업 조판과 같은 셈)로 머리 높이(평가내용 상자·대주제 띠·절 제목 줄 + 위아래 여백)를 잼 */
-const headOnly = (parts: MgPart[]): ReportSectionSpec => ({ version: 3, card: { id: "", taskNo: "", title: "" }, business: { no: 0, name: "" }, task: { no: "", title: "", bp: false }, sub: { mark: "", title: "", markers: [] }, rows: [], blocks: [], results: [], caption: "", module: 1, mg: { indicator: "", parts, at: [] } });
+/** 절 머리만 있는 빈 초안 — mgSpecHeight(사업 조판과 같은 셈)로 머리 높이(평가내용 상자·대주제 띠·절 제목 줄 + 위아래 여백)를 잼(구성안 분량 어림 mg-data-blocks.ts도 이 틀에 블록을 얹음) */
+export const headOnly = (parts: MgPart[]): ReportSectionSpec => ({ version: 3, card: { id: "", taskNo: "", title: "" }, business: { no: 0, name: "" }, task: { no: "", title: "", bp: false }, sub: { mark: "", title: "", markers: [] }, rows: [], blocks: [], results: [], caption: "", module: 1, mg: { indicator: "", parts, at: [] } });
 
 /** 블록 종류별 어림 높이 줄(주요사업 「판면 예산」과 같은 표 — lib/reports/fit.ts blockCosts, 표 모양 4종 줄은 경영관리만 tableShapeCosts). 칸 불릿은 글 한도와 같은 「불릿 하나 = L줄」(2026-10-29) */
 const costLines = () => [...blockCosts(true, true), tableShapeCosts(true)].map((x) => `  - ${x}`).join("\n");

@@ -23,6 +23,8 @@
 //   HTML·<HTML>.json은 보강한 초안, <HTML>.meta.json fill에 보강 전후 높이·사유와 라운드별(rounds — 최대 2회) 고른 블록·사유(빈 칸·분량·반복·안 쓴 사실)·블록 몫·늘어난 mm·
 //   반복 수치 제거 결과(removed·kept)·성공/실패·시간·토큰(DB에 쓰지 않음). 반복 수치 남길 자리는 구성안 성과 배정(plan)을 봄. 호출 기록이 없어 호출 한도(startAiRequest)로는 멈추지 않음.
 //   --no-fill이면 보강 없이(1차 초안만 — 비교용, meta.fill.off)
+//   빠진 구성안 블록(2026-10-29): 보강 맨 앞에 서버와 같게 집필이 빠뜨린 구성안 블록을 빈 모양으로 끼워 채움 — meta.fill.missing(구성안 블록 번호·라벨·모양·절·데이터 블록 여부),
+//   meta.fill.revived(블록마다 받음/못 받음·늘어난 mm·까닭·시간·토큰). 구성안 지킴 셈은 서버처럼 앱이 뺀 블록(droppedShapes)을 덜어냄
 import { createClient } from "@supabase/supabase-js";
 import { loadCardBundle, setSelectionSource } from "../../lib/ai/context.ts";
 import { selectionFromDir } from "../lib/select-dir.ts";
@@ -31,7 +33,7 @@ import { materialState, MATERIAL_COLS, type MaterialRow } from "../../lib/ai/mat
 import { fileRelation } from "../../lib/reports/material-match.ts";
 import { aiProvider, callReportBlock, callReportDraftMg, callReportOutlineMg, modelLabel, outlineSystem, reportSystem } from "../../lib/ai/run.ts";
 import { fixDeadlineMs } from "../../lib/ai/fix-policy.ts";
-import { type FillPlan, type FillTarget, type MgFillInput, type MgFillReasons, mgFillPatch, mgFillReasons, runMgFill } from "../../lib/reports/mg-fill.ts";
+import { type FillPlan, type FillTarget, type MgFillInput, type MgFillReasons, mgAdherenceWarning, mgFillPatch, mgFillReasons, missingBlocks, runMgFill } from "../../lib/reports/mg-fill.ts";
 import { isoDay } from "../../lib/format.ts";
 import { sharedTexts, listText, relevantRefs } from "../../lib/knowledge/bundle.ts";
 import { mgStoryHintsFor } from "../../lib/reports/story-hints-mg.ts";
@@ -40,6 +42,7 @@ import { yearActuals } from "../../lib/reports/actuals.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { type MgDraftContext, mgCardAsOf, mgMarkers, mgMaterialsPrompt, mgPlanPrompt, mgVolumePrompt, verifyMgDraft } from "../../lib/reports/mg-draft.ts";
 import { sectionDocument } from "../../lib/reports/section-html.ts";
+import { addMgDataBlocks } from "../../lib/reports/mg-data-blocks.ts";
 import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgBundlePrompt, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOutcomePrompt, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
 import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../lib/reports/mg-queries.ts";
 import { cleanLine, draftEvidence, evidenceOf, sectionHints } from "../../lib/reports/section.ts";
@@ -158,11 +161,13 @@ const noFill = process.argv.includes("--no-fill");
 // 함수 안에서는 위의 카드 null 확인이 이어지지 않아 값을 따로 둠
 const cardData = card.data;
 async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[], t0: number, firstMs: number, plan: FillPlan) {
-  const input: MgFillInput = { card: cardData, known: [ev.known, numbers].join("\n"), quoteOnly: ev.quoteOnly, year, today: actuals.today, closed: v.closed, plan };
-  const brief = (r: MgFillReasons) => ({ short: r.short, hollow: r.hollow.map((h) => h.index + 1), facts: r.facts, repeats: r.repeats.map((x) => ({ figure: x.figure, keep: x.keep + 1, others: x.others.map((i) => i + 1) })) });
+  const input: MgFillInput = { card: cardData, known: [ev.known, numbers].join("\n"), quoteOnly: ev.quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes };
+  // 빠진 구성안 블록(서버와 같은 missingBlocks — 앱이 뺀 블록·원장 보강한 추진성과 제외, 데이터 블록 먼저)
+  const missing = missingBlocks(v.spec, plan, v.droppedShapes, v.closed).map((m) => ({ plan: m.plan + 1, label: m.label, shape: m.shape, part: m.at, data: m.data }));
+  const brief = (r: MgFillReasons) => ({ short: r.short, hollow: r.hollow.map((h) => h.index + 1), facts: r.facts, repeats: r.repeats.map((x) => ({ figure: x.figure, keep: x.keep + 1, others: x.others.map((i) => i + 1) })), sentences: r.sentences.map((x) => ({ block: x.index + 1, keep: x.keep < 0 ? "상자" : x.keep + 1, text: x.text })) });
   const reasons = mgFillReasons(v.spec, cardData, plan);
   const first = { spec: v.spec, warnings, unknownNumbers: v.unknownNumbers };
-  if (noFill) return { ...first, meta: { off: true, before: reasons.height, target: reasons.target, reasons: brief(reasons) } };
+  if (noFill) return { ...first, meta: { off: true, before: reasons.height, target: reasons.target, reasons: brief(reasons), missing } };
   const t = Date.now();
   const prompts = reportBlockPromptsMg().prompts;
   const run = await runMgFill(v.spec, input, {
@@ -176,32 +181,36 @@ async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[],
     },
   });
   const ms = Date.now() - t;
-  if (!run) return { ...first, meta: { off: false, before: reasons.height, after: reasons.height, target: reasons.target, reasons: brief(reasons), rounds: [], ms, usage: null, promptVersion: prompts.version } };
+  if (!run) return { ...first, meta: { off: false, before: reasons.height, after: reasons.height, target: reasons.target, reasons: brief(reasons), missing, revived: [], rounds: [], ms, usage: null, promptVersion: prompts.version } };
   const patch = mgFillPatch(first, run, input);
-  const label = (i: number) => v.spec.blocks?.[i]?.label || "전폭";
+  // 라운드 블록 번호는 빠진 블록을 되살린 뒤의 초안 번호(라운드는 블록을 끼우거나 빼지 않아 보강을 마친 초안과 같음)
+  const label = (i: number) => run.spec.blocks?.[i]?.label || "전폭";
   // 라운드별 블록·사유(빈 칸·분량·반복·안 쓴 사실)·늘어난 mm·반복 제거 결과·시간
-  const why = (x: FillTarget) => [x.boxes.length ? "빈 칸" : "", x.part ? "분량" : "", x.repeats.length ? "반복" : "", x.facts.length ? "안 쓴 사실" : ""].filter(Boolean);
+  const why = (x: FillTarget) => [x.boxes.length ? "빈 칸" : "", x.part ? "분량" : "", x.repeats.length ? "반복" : "", x.sentences.length ? "반복 문장" : "", x.facts.length ? "안 쓴 사실" : ""].filter(Boolean);
   const meta = {
     off: false,
     before: run.before,
     after: run.after,
     target: run.reasons.target,
     reasons: brief(run.reasons),
+    missing,
+    // 빠진 블록 되살리기 결과(block = 받았으면 보강을 마친 초안의 번호, 못 받았으면 끼우려던 자리 — 0이면 자리 없음)
+    revived: run.revived.map((x) => ({ plan: (x.plan ?? -1) + 1, block: x.index + 1, label: x.label || "전폭", ok: x.ok, mm: x.mm ?? null, reason: x.reason ?? null, ms: x.ms ?? null, usage: x.usage ?? null })),
     rounds: run.rounds.map((r) => ({
       round: r.round,
       before: r.before,
       after: r.after,
       ms: r.ms,
       reasons: brief(r.reasons),
-      targets: r.targets.map((x) => ({ block: x.index + 1, label: label(x.index), why: x.why, reasons: why(x), share: x.share, part: x.part ?? null, facts: x.facts, repeats: x.repeats.map((y) => `${y.figure} → ${y.at}`) })),
-      results: r.results.map((x) => ({ block: x.index + 1, label: label(x.index), ok: x.ok, share: x.share, mm: x.mm ?? null, repeats: x.repeats ?? null, reason: x.reason ?? null, ms: x.ms ?? null, usage: x.usage ?? null })),
+      targets: r.targets.map((x) => ({ block: x.index + 1, label: label(x.index), why: x.why, reasons: why(x), share: x.share, part: x.part ?? null, facts: x.facts, repeats: x.repeats.map((y) => `${y.figure} → ${y.at}`), sentences: x.sentences.map((y) => `${y.text} → ${y.at}`) })),
+      results: r.results.map((x) => ({ block: x.index + 1, label: label(x.index), ok: x.ok, share: x.share, mm: x.mm ?? null, repeats: x.repeats ?? null, sentences: x.sentences ?? null, reason: x.reason ?? null, ms: x.ms ?? null, usage: x.usage ?? null })),
       skipped: r.skipped ? { ...r.skipped, blocks: r.skipped.blocks.map((i) => i + 1) } : null,
     })),
     ms,
     usage: run.usage,
     promptVersion: prompts.version,
   };
-  const tally = meta.rounds.map((r) => `${r.round}회차 ${r.before} → ${r.after}mm·블록 ${r.results.filter((x) => x.ok).length}/${r.targets.length}개·${Math.round(r.ms / 1000)}초`).join(" / ");
+  const tally = [...(run.revived.length ? [`빠진 블록 ${run.revived.filter((x) => x.ok).length}/${run.revived.length}개 되살림`] : []), ...meta.rounds.map((r) => `${r.round}회차 ${r.before} → ${r.after}mm·블록 ${r.results.filter((x) => x.ok).length}/${r.targets.length}개·${Math.round(r.ms / 1000)}초`)].join(" / ");
   console.log(`분량 보강 — ${run.before} → ${run.after}${run.reasons.target ? `/${run.reasons.target}` : ""}mm · ${tally} · 합 ${Math.round(ms / 1000)}초`);
   return { ...patch, meta };
 }
@@ -257,10 +266,13 @@ if (partKey) {
         const { hayKey, known } = evidenceOf(card.data, ...evidenceArgs);
         // 갈래 축은 카드 것(서버 mgPartMerge와 같음) — 새 절 칩은 그 축으로 검증
         const cleaned = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, axis: saved.mg?.axis ?? "" });
-        const r = replaceMgPart(saved, cleaned.composition, partKey, { story, frame: outlineFrameOf(f, memo) });
+        // 다시 짠 절에 데이터 블록 넣기(서버 mgPartMerge와 같음)
+        const merged = replaceMgPart(saved, cleaned.composition, partKey, { story, frame: outlineFrameOf(f, memo) });
+        const data = merged.changed ? addMgDataBlocks(merged.composition, ctx.pages, partKey) : { composition: merged.composition, notes: [] };
+        const r = { ...merged, composition: data.composition };
         const blocks = r.composition.blocks.filter((b) => b.at === partKey);
         const part = r.composition.mg!.parts.find((p) => p.key === partKey)!;
-        return { ok: r.changed, label: frameLabel(f), model: modelLabel(call), sec: Math.round((Date.now() - t0) / 1000), usage: call.usage, part: `${mgPartLabel(part)} [${part.story || "—"}${part.subStory ? ` + ${part.subStory}` : ""}]`, axis: saved.mg?.axis ?? null, chip: part.chip ?? null, blocks: blocks.map((b) => `${b.label || "전폭"}:${b.kind}${b.variant ? `:${b.variant}` : ""}${b.layout ? `@${b.layout}` : ""}`), why: part.why, notes: r.notes, warnings: [...cleaned.warnings, ...mgCompositionIssues(r.composition)], sig: r.changed ? altSignature(blocks, part.story, part.subStory ?? "") : null };
+        return { ok: r.changed, label: frameLabel(f), model: modelLabel(call), sec: Math.round((Date.now() - t0) / 1000), usage: call.usage, part: `${mgPartLabel(part)} [${part.story || "—"}${part.subStory ? ` + ${part.subStory}` : ""}]`, axis: saved.mg?.axis ?? null, chip: part.chip ?? null, blocks: blocks.map((b) => `${b.label || "전폭"}:${b.kind}${b.variant ? `:${b.variant}` : ""}${b.layout ? `@${b.layout}` : ""}`), why: part.why, notes: r.notes, warnings: [...cleaned.warnings, ...data.notes, ...mgCompositionIssues(r.composition)], sig: r.changed ? altSignature(blocks, part.story, part.subStory ?? "") : null };
       } catch (e) {
         return { ok: false, label: frameLabel(f), error: String(e), sig: null };
       }
@@ -291,9 +303,11 @@ if (addPaths.length) {
   // 서버 writeMgDraft와 같은 검증 인자(숫자 근거 = 첨부(추가 자료 포함)·실사 답변·계량 실적 입력 + 그 지표 2025 보고서·핵심공통항목)
   const v = verifyMgDraft(dcall.output, card.data, plan, ctx, [ev.known, numbers].join("\n"), ev.quoteOnly, year, actuals.today);
   const out = args[1] ?? `/tmp/mg-revise-${id.replace(/\//g, "_")}.html`;
-  const adherence = planAdherence(plan, v.spec.blocks ?? []);
+  // 서버 writeMgDraft와 같은 셈(앱이 뺀 블록 droppedShapes를 덜어냄)·같은 글
+  const adherence = planAdherence(plan, v.spec.blocks ?? [], v.droppedShapes);
   const draftWarnings = [...v.warnings, ...(skipped.length ? [`첨부: AI가 읽지 못해 빼고 썼습니다 — ${skipped.join(", ")}`] : [])];
-  if (!adherence.same) draftWarnings.push(`구성안: 승인한 짜임 ${adherence.total}블록 중 ${adherence.matched}블록만 같은 순서로 썼습니다 — 다시 만들거나 구성안을 고쳐 주세요.`);
+  const planWarning = mgAdherenceWarning(adherence);
+  if (planWarning) draftWarnings.push(planWarning);
   // 서버와 같게 1차 초안 뒤 분량 채움 보강(저장 안 함 — 파일은 보강한 초안)
   const fin = await fillStep(v, draftWarnings, t1, draftMs, plan);
   writeFileSync(out, sectionDocument(fin.spec, fin.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: modelLabel(dcall) }));
@@ -332,9 +346,12 @@ const t0 = Date.now();
 const call = await callReportOutlineMg({ card: card.data, ctx, year, files, lens, actuals, kb, siblings, hints, inspection });
 const outlineMs = Date.now() - t0;
 const { hayKey, known } = evidenceOf(card.data, ...evidenceArgs);
-const { composition, warnings } = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
+const cleaned = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
+// 데이터 블록 넣기(S2 — 서버 runReportOutlineMg와 같음)
+const data = addMgDataBlocks(cleaned.composition, ctx.pages);
+const composition = data.composition;
 // 서버 runReportOutlineMg가 저장하는 구성안 경고와 같은 목록
-const outlineWarnings = [...warnings, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition)];
+const outlineWarnings = [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition)];
 console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}`), materials: composition.materials.length, warnings: outlineWarnings }, null, 1));
 if (withDraft) {
   // 집필(서버 writeMgDraft와 같은 숫자 근거: 첨부·실사 답변·계량 실적 입력 + 그 지표 2025 보고서 전 장·핵심공통항목)
@@ -346,9 +363,11 @@ if (withDraft) {
   const v = verifyMgDraft(dcall.output, card.data, plan, ctx, [ev.known, numbers].join("\n"), ev.quoteOnly, year, app ? actuals.today : undefined);
   const out = args[1] ?? `/tmp/mg-draft-${id.replace(/\//g, "_")}.html`;
   // 앱이 저장할 경고 — 서버 writeMgDraft와 같은 순서·문구(검증 경고 + 첨부 읽기 실패 + 구성안 지킴), --app은 그 뒤 분량 채움 보강까지(서버와 같음 — 저장 안 함)
-  const adherence = planAdherence(plan, v.spec.blocks ?? []);
+  // 서버 writeMgDraft와 같은 셈(앱이 뺀 블록 droppedShapes를 덜어냄)·같은 글
+  const adherence = planAdherence(plan, v.spec.blocks ?? [], v.droppedShapes);
   const draftWarnings = [...v.warnings, ...(skipped.length ? [`첨부: AI가 읽지 못해 빼고 썼습니다 — ${skipped.join(", ")}`] : [])];
-  if (!adherence.same) draftWarnings.push(`구성안: 승인한 짜임 ${adherence.total}블록 중 ${adherence.matched}블록만 같은 순서로 썼습니다 — 다시 만들거나 구성안을 고쳐 주세요.`);
+  const planWarning = mgAdherenceWarning(adherence);
+  if (planWarning) draftWarnings.push(planWarning);
   const fin = app ? await fillStep(v, draftWarnings, t1, draftMs, plan) : { spec: v.spec, warnings: v.warnings, unknownNumbers: v.unknownNumbers, meta: null };
   writeFileSync(out, sectionDocument(fin.spec, fin.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: modelLabel(dcall) }));
   const jsonOut = flagValue("--json");

@@ -157,7 +157,12 @@ export function CardBoard(props: {
   return (
     <div className="flex min-w-0 flex-col gap-4" data-keep-peek={filterOpen ? "" : undefined}>
       {props.emptyNote && props.rows.length === 0 && <p className="text-sm text-muted-2">{props.emptyNote}</p>}
-      {props.fixed && <FixedLockBulk locked={props.fixed.locked} total={props.fixed.total} exportHref={props.fixed.exportHref} label={props.fixed.label} />}
+      {/* 고정 영역 일괄 확정·목록 내려받기는 휴대폰(md 미만)에서 그리지 않음 — 생략 가능한 기능(2026-10-29 사용자 지시). 넓은 폭은 contents라 배치 그대로 */}
+      {props.fixed && (
+        <div className="contents max-md:hidden">
+          <FixedLockBulk locked={props.fixed.locked} total={props.fixed.total} exportHref={props.fixed.exportHref} label={props.fixed.label} />
+        </div>
+      )}
 
       {/* 평가단위 선택 상자(왼쪽) + 도구(오른쪽) — 트랙·단위 개수와 상관없이 같은 틀(경영관리 14개 ↔ 주요사업 3개), 많은 선택지는 칩 줄로 펼치지 않음.
           좁은 폭(md 미만): 도구 묶음을 다음 줄 전체 폭으로 내리고 검색 칸은 그 안에서 한 줄 전체 폭 */}
@@ -190,7 +195,7 @@ export function CardBoard(props: {
             type="button"
             aria-expanded={filterOpen}
             onClick={() => setFilterOpen(!filterOpen)}
-            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-ui max-md:h-9 ${filterOpen || activeFilters.length ? "bg-paper text-navy" : "text-muted-2 hover:bg-paper"}`}
+            className={`flex h-8 items-center gap-1 rounded-md px-2.5 text-ui max-md:hidden ${filterOpen || activeFilters.length ? "bg-paper text-navy" : "text-muted-2 hover:bg-paper"}`}
           >
             필터{activeFilters.length ? ` ${activeFilters.length}` : ""}
           </button>

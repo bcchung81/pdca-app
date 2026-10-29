@@ -252,8 +252,10 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-10-29 분량 채움 보강(report-block-mg/request.md fill·fill.hollow·fill.short·fill.room·fill.keep·fill.none — 집필 뒤 앱이 보내는 요청 글 조각, lib/reports/mg-fill.ts)으로 판 바뀜(@61724437 → @63f470c1 — 주요사업 report-block@afffeff8 그대로)
   // 2026-10-29 주요사업 칸 글 한도 = 2025 주요사업 불릿 기준(공용 문체 report-draft/style.md 불릿 길이 — 「도식 칸 안은 글 한도의 불릿 하나 글자 수대로」)으로 판 바뀜(@63f470c1 → @b7065808)
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.room 줄·불릿 수 + fill.room.cell·fill.room.bullet·fill.room.line·fill.repeat·fill.repeat.item, fill 「줄을 줄이지 않음」)로 판 바뀜(@b7065808 → @e0653ee9 — 주요사업 report-block@d2197db2 그대로)
-  assert.equal(mg.prompts.version, "report-block-mg@e0653ee9");
-  for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item"]) {
+  // 2026-10-29 반복 문장을 분량 보강 사유로(report-block-mg/request.md fill.sentence·fill.sentence.item, fill 「「비슷한 문장 되풀이」를 고치는 것 말고는」 — lib/reports/mg-fill.ts sentencesOf)로 판 바뀜(@e0653ee9 → @8302d6f6 — 주요사업 report-block@d2197db2 그대로)
+  // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none, 머리 설명 — lib/reports/mg-fill.ts missingBlocks)로 판 바뀜(@8302d6f6 → @0c7d879b — 주요사업 report-block@d2197db2 그대로)
+  assert.equal(mg.prompts.version, "report-block-mg@0c7d879b");
+  for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none"]) {
     assert.ok(mg.prompts.request[k], `report-block-mg/request.md @${k}`);
     assert.equal(bp.request[k], undefined, `주요사업 report-block에는 @${k} 없음`);
   }
@@ -328,7 +330,9 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // (@e5deeb90 → @12d3277a — 집필·블록 고치기·주요사업 판 그대로)
   assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@12d3277a");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@e0653ee9");
+  // 2026-10-29 반복 문장 보강 사유(report-block-mg/request.md fill.sentence·fill.sentence.item)로 블록 고치기 판만 바뀜(@e0653ee9 → @8302d6f6 — 집필·구성안·주요사업 판 그대로)
+  // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none)로 블록 고치기 판만 바뀜(@8302d6f6 → @0c7d879b — 집필·구성안·주요사업 판 그대로)
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@0c7d879b");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {

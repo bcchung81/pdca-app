@@ -14,7 +14,7 @@ import { matchName, shapeName, storyLabel } from "./frameworks.ts";
 import { type FrameInput, type OutlineFrame, framePrompt } from "./framework-pick.ts";
 import { hasFigure } from "./actuals.ts";
 import { CLOSE_LABEL, outcomeRefs } from "./mg-outcomes.ts";
-import { type MgBundle, materialBundle } from "./mg-bundles.ts";
+import { type FigureBundle, type MgBundle, materialBundle } from "./mg-bundles.ts";
 import { type MgOutcome, type MgPart, mgPartKey } from "./mg-types.ts";
 import { cleanLine, clipLine } from "./section.ts";
 import { cleanChip, matchAxis } from "./split-axes.ts";
@@ -461,17 +461,22 @@ export const isDataBlock = (b: Pick<PlanBlock, "kind" | "variant">) => b.kind ==
  * 그 절에 데이터 블록(isDataBlock)이 하나도 없으면 절마다 한 줄. 재료가 근거 원문 그대로라 표를 지어내라는 뜻이 아님(그 묶음을 표·막대로 옮기라는 알림)
  */
 export function mgBundleIssues(c: Composition): string[] {
+  return mgBundleGaps(c).map(({ part, bundles }) => `데이터 블록: ${mgPartLabel(part)}에 수치 묶음 재료 ${bundles.map(({ id, bundle }) => `${id}(${bundle.unit} 값 ${bundle.values.length}개)`).join(" · ")}가 있는데 수치 표·막대 표 같은 데이터 블록이 없습니다 — 그 묶음을 표(table·table:bars·table:result)나 같은 라벨 글 블록 오른쪽 막대(chart)로 보여 주세요.`);
+}
+
+/** 데이터 블록이 빈 절(mgBundleIssues 판정 — 구성안 점검 경고와 데이터 블록 넣기(mg-data-blocks.ts)가 같은 셈): 절 순서, 묶음 재료는 그 절 블록이 처음 쓴 순 */
+export function mgBundleGaps(c: Composition): Array<{ part: MgPart; bundles: Array<{ id: string; bundle: FigureBundle }> }> {
   const bundled = new Map(c.materials.flatMap((m) => {
     const g = materialBundle(m);
     return g ? [[m.id, g] as const] : [];
   }));
   if (!bundled.size) return [];
-  const out: string[] = [];
+  const out: ReturnType<typeof mgBundleGaps> = [];
   for (const p of c.mg?.parts ?? []) {
     const bs = c.blocks.filter((b) => b.at === p.key);
     if (bs.some(isDataBlock)) continue;
     const ids = [...new Set(bs.flatMap((b) => b.materials))].filter((id) => bundled.has(id));
-    if (ids.length) out.push(`데이터 블록: ${mgPartLabel(p)}에 수치 묶음 재료 ${ids.map((id) => `${id}(${bundled.get(id)!.unit} 값 ${bundled.get(id)!.values.length}개)`).join(" · ")}가 있는데 수치 표·막대 표 같은 데이터 블록이 없습니다 — 그 묶음을 표(table·table:bars·table:result)나 같은 라벨 글 블록 오른쪽 막대(chart)로 보여 주세요.`);
+    if (ids.length) out.push({ part: p, bundles: ids.map((id) => ({ id, bundle: bundled.get(id)! })) });
   }
   return out;
 }

@@ -72,7 +72,11 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
     <Screen
       header={
         <PageHeader title="경평 초안">
-          {(reports.length === 0 || missingReports > 0) && <PrepareButton year={year} label={reports.length ? `빠진 부서 보고서 ${missingReports}개 추가` : `${year} 보고서 준비`} />}
+          {(reports.length === 0 || missingReports > 0) && (
+            <span className={T.deskOnlyWrap}>
+              <PrepareButton year={year} label={reports.length ? `빠진 부서 보고서 ${missingReports}개 추가` : `${year} 보고서 준비`} />
+            </span>
+          )}
         </PageHeader>
       }
     >
@@ -109,7 +113,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                 <Panel
                   key={u.id}
                   title={mg ? u.name : `${u.card_group ?? "공통지표"} · ${u.name}`}
-                  aside={unitTeams.length ? <LeadTeamSelect unitId={u.id} value={u.lead_team_id} teams={unitTeams.sort((a, b) => a.name.localeCompare(b.name, "ko"))} /> : <span>과제관리카드 없음{mg ? "" : " — 주요사업 공통 계량지표"}</span>}
+                  aside={unitTeams.length ? <span className={T.deskOnlyWrap}><LeadTeamSelect unitId={u.id} value={u.lead_team_id} teams={unitTeams.sort((a, b) => a.name.localeCompare(b.name, "ko"))} /></span> : <span>과제관리카드 없음{mg ? "" : " — 주요사업 공통 계량지표"}</span>}
                 >
                   <div className="overflow-x-auto">
                     <table className={`${T.table} min-w-[1220px]`}>

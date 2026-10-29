@@ -77,11 +77,13 @@ export default async function InspectionsPage({ searchParams }: PageProps<"/insp
               ›
             </Link>
           </nav>
-          <a href={`/inspections/export?period=${period}`} className={T.btn} download>
+          <a href={`/inspections/export?period=${period}`} className={`${T.btn} ${T.deskOnly}`} download>
             결과 내려받기(CSV)
           </a>
-          <AiBatchButton period={period} targets={shown.filter((r) => statusOf(r.id) === "none").map((r) => ({ uid: r.uid, taskNo: r.taskNo, title: r.title }))} />
-          <SendAllButton period={period} drafts={counts.draft} />
+          <span className={T.deskOnlyWrap}>
+            <AiBatchButton period={period} targets={shown.filter((r) => statusOf(r.id) === "none").map((r) => ({ uid: r.uid, taskNo: r.taskNo, title: r.title }))} />
+            <SendAllButton period={period} drafts={counts.draft} />
+          </span>
         </PageHeader>
       }
       peek={
@@ -194,7 +196,10 @@ export default async function InspectionsPage({ searchParams }: PageProps<"/insp
                 <tbody key={u}>
                   <tr className="h-9 bg-desk/60">
                     <th colSpan={9} scope="rowgroup" className="border-b border-line px-3 text-left text-xs font-bold text-navy">
-                      {list[0]?.business} · {list.length}
+                      {/* 좁은 폭에서 가로로 밀어도 그룹 이름이 왼쪽에 남게(th는 표 폭 전체라 안쪽 글만 sticky) */}
+                      <span className="max-md:sticky max-md:left-0 max-md:inline-block">
+                        {list[0]?.business} · {list.length}
+                      </span>
                     </th>
                   </tr>
                   {list.map((r) => {

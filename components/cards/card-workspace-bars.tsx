@@ -45,8 +45,9 @@ export function ReviewBar({ review, editor, onDone }: { review: ReviewProps; edi
       } else onDone(res.message ?? "돌려보내지 못했습니다.");
     });
 
+  // 휴대폰 폭(md 미만, 보기 중심)에서는 그리지 않음 — 비교·확정은 넓은 화면에서
   return (
-    <div className="border-t border-line bg-info-bg">
+    <div className="border-t border-line bg-info-bg max-md:hidden">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 px-6 py-2 text-ui">
         <span className="shrink-0 font-semibold text-navy">{review.periodLabel} 제출됨</span>
         <span className="min-w-0 truncate text-muted-2">

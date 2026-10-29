@@ -186,7 +186,7 @@ export default async function LinksPage({ searchParams }: PageProps<"/links">) {
             { href: "/links?tab=tasks", label: "과제 대응", n: taskRows.length, on: tab === "tasks" },
           ]}
         />
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 max-md:hidden">
           {filterTabs(tab === "tasks" ? "확정 전" : "확정·제외 전").map((f) => (
             <Link key={f.label} href={f.href} className={`rounded-full border px-2.5 py-0.5 text-xs no-underline ${f.on ? "border-navy bg-navy text-white" : "border-field-line bg-paper text-muted-2 hover:border-navy"}`}>
               {f.label}

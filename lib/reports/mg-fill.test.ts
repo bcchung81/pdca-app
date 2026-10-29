@@ -8,7 +8,9 @@ import type { Block, BlockOutput } from "./blocks.ts";
 import { mgSpecHeight } from "./business-layout.ts";
 import { DRAFT_CONFLICT_MSG } from "./draft-store.ts";
 import { PAGE_MM, hollowBoxes } from "./fit.ts";
-import { type FillCall, type FillPlan, type FillTarget, type MgFillInput, type MgFillRun, MG_FILL, acceptFill, fillMessage, fillRequestText, fillWarnings, hollowByBlock, mgFillPatch, mgFillReasons, pickFillTargets, repeatsOf, runMgFill, saveFirstThenFill, unusedLedgerFacts } from "./mg-fill.ts";
+import { type FillCall, type FillPlan, type FillTarget, type MgFillInput, type MgFillRun, MG_FILL, acceptFill, emptyBlock, fillMessage, fillRequestText, fillWarnings, hollowByBlock, mgAdherenceWarning, mgFillPatch, mgFillReasons, missingBlocks, missingSlot, pickFillTargets, repeatsOf, runMgFill, saveFirstThenFill, sentencesOf, unusedLedgerFacts } from "./mg-fill.ts";
+import { type PlanBlock, planAdherence } from "./composition.ts";
+import { blockShapeCode } from "./block-shape.ts";
 import { AI_LIMITS } from "../ai/request-log.ts";
 import { reportBlockPromptsMg } from "../prompts/sets.ts";
 import type { MgPart } from "./mg-types.ts";
@@ -178,7 +180,7 @@ test("고르기: 안 쓴 원장 사실은 블록 하나에만 — 그 블록이 
 // 3. 요청 글 · 여유 mm
 
 test("요청 글: 코드가 fill.* 조각으로 만듦(칸 x/y줄·안 쓴 원장 사실·늘려도 되는 mm·짜임 그대로) — 자리표시 없음", () => {
-  const t: FillTarget = { index: 1, why: "hollow", boxes: [{ where: "추진내용 2번째 칸", used: 1, most: 4, perLine: 14, add: 30 }], share: 37, facts: ["직무교육 120명 수료"], repeats: [] };
+  const t: FillTarget = { index: 1, why: "hollow", boxes: [{ where: "추진내용 2번째 칸", used: 1, most: 4, perLine: 14, add: 30 }], share: 37, facts: ["직무교육 120명 수료"], repeats: [], sentences: [] };
   const text = fillRequestText(P, t, { unit: "cell", perLine: 14, now: 4, max: 9, slack: 37, bullet: 2 });
   assert.match(text, /^분량 채움 보강 — /);
   assert.match(text, /\[추진내용 2번째 칸\] 지금 1\/4줄/);
@@ -312,6 +314,8 @@ test("경고·저장 값: 보강한 블록·채운 mm(참고 「분량 보강」
 
 /** 부를 때마다 그 블록에 숫자 없는 긴 줄을 하나씩 더 붙여 돌려주는 가짜 AI(앞 라운드에 받은 줄 위에 이어 붙음) — grow에 없는 블록은 그대로(받지 않음) */
 const EXTRA = ["현장 의견을 모아 교육 과정의 순서와 실습 비중을 다시 짜서 운영함", "부서별 담당자 협의로 운영 방식을 바꾸고 결과를 공유함", "참여 부서의 요청을 반영해 다음 과정 구성을 고침", "운영 결과를 점검해 미흡한 과정을 보완함"];
+/** 홀수 번째 블록에 붙일 다른 줄 — 두 블록에 같은 줄을 붙이면 반복 문장(⑤ 사유)이 생겨 라운드 시험의 후보가 바뀜 */
+const EXTRA_ODD = ["신규 입사자 안내 자료를 만들어 첫 주 적응을 도움", "외부 강사 풀을 넓혀 전문 과목 강의를 늘림", "온라인 강좌 신청 절차를 줄여 접수를 쉽게 함", "분기마다 수강 기록을 모아 부서장에게 알림"];
 function growCall(spec: ReportSectionSpec, grow: (i: number) => boolean, clock?: { t: number; step: number }) {
   const n = new Map<number, number>();
   return async (_p: string, t: FillTarget): Promise<FillCall> => {
@@ -320,7 +324,7 @@ function growCall(spec: ReportSectionSpec, grow: (i: number) => boolean, clock?:
     if (!grow(t.index)) return { ok: true, output: { block: out(b), reply: "" }, usage, model: "fake" };
     const k = (n.get(t.index) ?? 0) + 1;
     n.set(t.index, k);
-    return { ok: true, output: { block: out({ ...b, items: [...b.items, ...EXTRA.slice(0, k)] }), reply: "" }, usage, model: "fake" };
+    return { ok: true, output: { block: out({ ...b, items: [...b.items, ...(t.index % 2 ? EXTRA_ODD : EXTRA).slice(0, k)] }), reply: "" }, usage, model: "fake" };
   };
 }
 const twoRows: Array<[MgPart, Block]> = [[A, bullets("추진내용", ["교육 체계 개편 추진"])], [B, bullets("추진내용", ["운영 방식 개선"])]];
@@ -409,7 +413,7 @@ test("블록 몫(blockRoom share): 보강은 「지금 줄 + 4줄」 상한 없�
   const cards = mgSpec([[A, evenCards]], 6);
   assert.ok(blockRoom(cards, 0, 150)!.max > blockRoom(cards, 0)!.max, "칸 블록도 몫만큼");
   // 요청 글: 늘릴 줄·불릿 수를 코드가 셈 — 사람 요청 글(몫 없음)은 예전과 같은 글
-  const t: FillTarget = { index: 0, why: "short", boxes: [], part: { share: 200, short: 120 }, share: 120, facts: [], repeats: [] };
+  const t: FillTarget = { index: 0, why: "short", boxes: [], part: { share: 200, short: 120 }, share: 120, facts: [], repeats: [], sentences: [] };
   assert.match(fillRequestText(P, t, big), new RegExp(`약 120mm — 불릿 줄 합 약 ${big.max - big.now}줄 더`));
   const req = { blockIndex: 0, kind: "edit" as const, request: "요청", quote: "" };
   assert.match(blockEditPrompt(P, many, req, { card: "", extra: "" }), new RegExp(`최대 ${human.now + 4}줄까지`));
@@ -487,6 +491,66 @@ test("받기: 높이가 줄면 안 받음, 배정 × 1.25를 넘게 늘면 안 �
   })))!;
   const w = fillWarnings(run)[0];
   assert.match(w, /^분량 보강: [^\n]*1번 「추진내용」 \+\d+mm·반복 그대로 120명/);
+  assert.equal(warningLevel(w), "info");
+});
+
+// ---------------------------------------------------------------------------
+// 3-3. 반복 문장(⑤ — 2026-10-29 S7, 지어낸 글)
+
+const S1 = "교육 과정을 현장 요구에 맞춰 다시 짜고 부서별 운영 방식을 바꿈";
+const S2 = "협약 기관과 공동 점검반을 꾸려 분기마다 현장 안전 상태를 살핌";
+const S3 = "담당자 의견을 받아 신청 화면의 입력 칸을 절반으로 줄임";
+const sentRows: Array<[MgPart, Block]> = [
+  [A, bullets("추진내용", [S1, "교육 체계 개편 추진"])],
+  [A, bullets("추진성과", [S1])],
+  [B, bullets("추진배경", [S2])],
+  [B, bullets("추진내용", [S2, "점검 결과를 모아 공유함"])],
+  [B, bullets("개선", [S3, "접수 안내문을 고침"])],
+  [B, block({ kind: "quotes", label: "목소리", cells: [cell("담당", [S3])] })],
+];
+
+test("반복 문장 남길 자리(⑤): 「반복 문장」 경고와 같은 쌍 — 추진성과·띠 쪽 → 다시 쓸 수 없는 쪽(인용) → 처음 나온 블록을 남기고 다른 쪽을 바꿀 블록으로", () => {
+  const spec = mgSpec(sentRows);
+  const ss = sentencesOf(spec);
+  assert.deepEqual(ss.map((x) => [x.index, x.keep, x.at]).sort((a, b) => Number(a[0]) - Number(b[0])), [
+    [0, 1, "2번 「추진성과」"],
+    [3, 2, "3번 「추진배경」"],
+    [4, 5, "6번 「목소리」"],
+  ]);
+  assert.ok(ss.every((x) => x.text === x.other), "같은 글 쌍");
+  assert.equal(mgFillReasons(spec, card).sentences.length, 3);
+  assert.deepEqual(sentencesOf(mgSpec([[A, bullets("추진내용", [S1])], [B, bullets("추진내용", [S2])]])), [], "닮지 않은 글은 쌍이 아님");
+});
+
+test("반복 문장 고르기·요청 글: 배정이 없어도 반복 문장만으로 고르고(why sentence, 블록 순), 안 쓴 원장 사실을 먼저 주며, 요청 글에 그 문장·남길 자리·바꾸는 법", () => {
+  const spec = mgSpec(sentRows);
+  const ts = pickFillTargets(spec, mgFillReasons(spec, card));
+  assert.deepEqual(ts.map((t) => [t.index, t.why]), [[0, "sentence"], [3, "sentence"], [4, "sentence"]]);
+  assert.deepEqual(ts[0].sentences, [{ text: S1, keep: 1, other: S1, at: "2번 「추진성과」" }]);
+  assert.deepEqual(ts.map((t) => t.facts.length), [1, 1, 0], "안 쓴 원장 사실 둘을 반복 블록에 하나씩 먼저");
+  const text = fillRequestText(P, ts[0], blockRoom(spec, 0));
+  assert.ok(text.includes(`비슷한 문장 되풀이 — 이 블록의 「${S1}」(이미 [2번 「추진성과」]에 비슷한 문장이 있음). 같은 주장을 되풀이하지 말고 뒤의 「아직 안 쓴 원장 사실」이나 근거 사실로 바꿉니다. 바꿀 사실이 없으면 이 블록 고유의 구체(대상·수단·시점)로 다시 씁니다. 줄 수는 줄이지 않습니다.`), text);
+  assert.match(text, /「같은 수치 되풀이」·「비슷한 문장 되풀이」를 고치는 것 말고는/);
+  assert.doesNotMatch(text, /\{\{/);
+});
+
+test("반복 문장 받기: 바꿨으면 받음(fixed), 그대로인데 분량도 그대로면 안 받음, 그대로여도 분량이 늘면 받고 경고에 「반복 그대로 「…」」", async () => {
+  const found = () => true;
+  const spec = mgSpec(sentRows);
+  const t0 = pickFillTargets(spec, mgFillReasons(spec, card)).find((t) => t.index === 0)!;
+  const b0 = spec.blocks![0];
+  const fixed = acceptFill(spec, 0, out({ ...b0, items: ["참여 기관 23곳으로 늘려 협업 범위를 넓히고 공동 과정을 운영함", b0.items[1]] }), input, found, null, [], t0.sentences);
+  assert.ok(fixed.ok && fixed.sentences?.fixed[0] === S1 && !fixed.sentences.kept.length, JSON.stringify(fixed));
+  const same = acceptFill(spec, 0, out({ ...b0, items: [S1, "교육 체계를 개편"] }), input, found, null, [], t0.sentences);
+  assert.match(!same.ok ? same.reason : "", /^반복 문장 1개를 바꾸지 않았고 분량도 늘지 않음$/);
+  const grown = acceptFill(spec, 0, out({ ...b0, items: [...b0.items, EXTRA[0]] }), input, found, null, [], t0.sentences);
+  assert.ok(grown.ok && grown.mm > 0 && grown.sentences?.kept[0] === S1, JSON.stringify(grown));
+  const run = (await runMgFill(spec, input, deps(async (_p, t) => {
+    const b = spec.blocks![t.index];
+    return { ok: true, output: { block: out({ ...b, items: [...b.items, [...EXTRA, ...EXTRA_ODD][t.index]] }), reply: "" }, usage, model: "fake" };
+  })))!;
+  const w = fillWarnings(run)[0];
+  assert.match(w, /^분량 보강: [^\n]*1번 「추진내용」 \+\d+mm·반복 그대로 「교육 과정을 현장 요구에 맞춰 다시 짜고 부…」/, "블록마다 다른 줄을 보태 분량은 늘었지만 반복 문장은 그대로");
   assert.equal(warningLevel(w), "info");
 });
 
@@ -580,4 +644,156 @@ test("저장 흐름: 보강하는 사이 사람이 고쳤으면 덮지 않고 �
   });
   assert.equal(err.ok && err.second, "error");
   assert.deepEqual(k.row!.spec, { a: 1 }, "1차는 남음");
+});
+
+// ---------------------------------------------------------------------------
+// 0. 빠진 구성안 블록 되살리기(2026-10-29 — 집필이 구성안 블록을 통째로 빠뜨림)
+
+const plan = (b: Partial<PlanBlock> & Pick<PlanBlock, "kind" | "at">): PlanBlock => ({ variant: "", label: "", purpose: "", cells: 2, materials: [], figures: [], ...b });
+/** 구성안: A절 [추진배경 불릿 · 추진내용 막대 든 수치 표(데이터 블록, m1) · 추진성과], B절 [추진내용 카드 2칸(m2) · 추진성과] */
+const missPlan: FillPlan = {
+  materials: [
+    { id: "m1", kind: "figure", text: "교육 만족도 81점·86점·91점", when: "", source: "첨부", quote: "만족도 81점, 86점, 91점", found: true },
+    { id: "m2", kind: "fact", text: "교육 과정 개편과 운영 방식 개선", when: "", source: "카드", quote: "", found: true },
+    { id: "m3", kind: "need", text: "참여 인원 자료", when: "", source: "", quote: "", found: false },
+  ],
+  blocks: [
+    plan({ kind: "bullets", label: "추진배경", at: A.key, cells: 1 }),
+    plan({ kind: "table", variant: "bars", label: "추진내용", at: A.key, cells: 1, purpose: "만족도 세 해 값을 보임", materials: ["m1", "m3"] }),
+    plan({ kind: "bullets", label: "추진성과", at: A.key, cells: 1 }),
+    plan({ kind: "cards", variant: "plain", label: "추진내용", at: B.key, purpose: "개편과 운영 개선", materials: ["m2"] }),
+    plan({ kind: "bullets", label: "추진성과", at: B.key, cells: 1 }),
+  ],
+  mg: { indicator: "지표", parts: [A, B] } as any,
+};
+/** 집필 초안: 두 블록(표·카드)을 빠뜨림 */
+const missRows: Array<[MgPart, Block]> = [[A, bullets("추진배경", ["교육 체계 개편 추진"])], [A, bullets("추진성과", ["운영 개선"])], [B, bullets("추진성과", ["현장 호응 확대"])]];
+const missSpec = (pages?: number) => mgSpec(missRows, pages);
+const missInput: MgFillInput = { ...input, known: "만족도 81점 86점 91점 · 참여율 61% 66% 71%", plan: missPlan };
+const SAT_ROWS = [cell("만족도", ["81점", "86점", "91점"]), cell("참여율", ["61%", "66%", "71%"])];
+const SAT = block({ kind: "table", variant: "bars", label: "추진내용", items: ["구분", "’24년", "’25년", "’26년"], cells: SAT_ROWS });
+const CARDS = block({ kind: "cards", variant: "plain", label: "추진내용", cells: [cell("개편", ["교육 과정을 현장 요구에 맞춰 다시 짬"]), cell("운영", ["운영 방식을 부서 의견으로 다시 정함"])] });
+/** 빠진 블록 요청(why missing)에는 모양대로 채운 블록, 그 밖은 그대로(받지 않음) */
+const reviveCall = (fill: (shape: string) => Block | null, seen: Array<{ prompt: string; t: FillTarget }> = []) => async (prompt: string, t: FillTarget): Promise<FillCall> => {
+  seen.push({ prompt, t });
+  const b = t.missing ? fill(t.missing.shape) : null;
+  return b ? { ok: true, output: { block: out(b), reply: "" }, usage, model: "fake" } : { ok: false, stop: false, message: "부르지 않을 블록" };
+};
+const byShape = (shape: string) => (shape.includes("막대") ? SAT : CARDS);
+
+test("빠진 블록 찾기: 구성안 짝이 없는 블록만, 데이터 블록 먼저 → 구성안 순 · 자리는 같은 절 앞뒤 짝 사이", () => {
+  const spec = missSpec();
+  const found = missingBlocks(spec, missPlan);
+  assert.deepEqual(found.map((m) => [m.plan, m.shape, m.at, m.data]), [[1, "table:bars", A.key, true], [3, "cards:plain", B.key, false]]);
+  assert.equal(missingSlot(spec, missPlan, 1), 1, "A절 추진배경(0)과 추진성과(1) 사이");
+  assert.equal(missingSlot(spec, missPlan, 3), 2, "B절 첫 블록(추진성과) 앞");
+  assert.equal(missingSlot(spec, missPlan, 0), null, "짝이 있는 블록은 빠진 것이 아님");
+});
+
+test("빠진 블록 찾기: 앱이 정리하며 뺀 블록(droppedShapes)·원장 보강한 절의 추진성과·다른 모양으로 쓴 자리·절째 빠진 블록은 빼고 이유가 같음", () => {
+  const spec = missSpec();
+  assert.deepEqual(missingBlocks(spec, missPlan, [{ kind: "table", variant: "bars" }]).map((m) => m.plan), [3], "앱이 뺀 같은 모양 하나는 되살리지 않음");
+  // 추진성과가 빠진 초안 — 원장 보강(closed)이 채운 절의 추진성과는 빼고, 아닌 절은 되살림 대상
+  const noClose = mgSpec([[A, bullets("추진배경", ["교육 체계 개편 추진"])], [A, SAT], [B, CARDS], [B, bullets("추진성과", ["현장 호응 확대"])]]);
+  assert.deepEqual(missingBlocks(noClose, missPlan).map((m) => m.plan), [2]);
+  assert.deepEqual(missingBlocks(noClose, missPlan, [], [A.key]), [], "원장 보강한 절의 추진성과는 이미 되살린 것");
+  // 그 자리에 집필이 다른 모양(불릿)을 썼으면 대응 블록이 있는 것 — 되살리면 같은 내용이 둘
+  const other = mgSpec([[A, bullets("추진배경", ["교육 체계 개편 추진"])], [A, bullets("추진내용", ["만족도 조사"])], [A, bullets("추진성과", ["운영 개선"])], [B, bullets("추진성과", ["현장 호응 확대"])]]);
+  assert.deepEqual(missingBlocks(other, missPlan).map((m) => m.plan), [3]);
+  // B절이 통째로 없으면 그 절 블록은 되살리지 않음(절 제목을 못 세움 — 「구성안: 승인한 절」 경고가 알림)
+  assert.deepEqual(missingBlocks(mgSpec(missRows.slice(0, 2)), missPlan).map((m) => m.plan), [1]);
+});
+
+test("빈 모양: 구성안 종류·모양·칸 수·라벨·배치 그대로, 글·견본 값은 모두 비움", () => {
+  const e = emptyBlock(plan({ kind: "table", variant: "bars", label: "추진내용", at: A.key, cells: 2, layout: "full" }));
+  assert.equal(blockShapeCode(e), "table:bars");
+  assert.equal(e.label, "추진내용");
+  assert.equal(e.layout, "full");
+  assert.equal(e.cells.length, 2);
+  assert.ok([e.title, e.text, ...e.items, ...e.cells.flatMap((c) => [c.head, ...c.bullets]), ...e.series.map((x) => x.value)].every((t) => t === ""), JSON.stringify(e));
+  assert.equal(emptyBlock(plan({ kind: "cards", variant: "plain", at: A.key, cells: 3 })).cells.length, 3);
+});
+
+test("되살리기: 데이터 블록 먼저 구성안 자리에 끼워 채우고(요청 글 = fill.missing — 라벨·모양·목적·재료·원문, 자료 필요 재료 뺌), 받으면 절 열쇠도 맞고 경고에 「빠진 블록 되살림」", async () => {
+  const seen: Array<{ prompt: string; t: FillTarget }> = [];
+  const spec = missSpec();
+  const run = (await runMgFill(spec, missInput, deps(reviveCall(byShape, seen))))!;
+  assert.ok(run);
+  assert.ok(run.revived.every((r) => r.ok), JSON.stringify(run.revived));
+  assert.deepEqual(seen.map((x) => x.t.why), ["missing", "missing"]);
+  assert.ok(seen[0].t.missing!.shape.includes("막대") && !seen[1].t.missing!.shape.includes("막대"), `데이터 블록 먼저 — ${seen.map((x) => x.t.missing!.shape)}`);
+  assert.match(seen[0].prompt, /- 요청: 분량 채움 보강 — [^\n]*구성안이 정한 블록인데 집필이 빠뜨려/);
+  assert.match(seen[0].prompt, /라벨 「추진내용」 · 모양 [^·]*막대[^·]* · 목적: 만족도 세 해 값을 보임/);
+  assert.match(seen[0].prompt, /m1 교육 만족도 81점·86점·91점\(원문 「만족도 81점, 86점, 91점」\)/);
+  assert.doesNotMatch(seen[0].prompt, /참여 인원 자료/, "자료 필요 재료는 근거가 아니라 넣지 않음");
+  assert.doesNotMatch(seen[0].prompt, /12,345건|’24년", "’25년/, "견본 값은 빈 모양에 없음");
+  assert.ok(run.revived.every((r) => r.ok), JSON.stringify(run.revived));
+  const kinds = run.spec.blocks!.map((b) => blockShapeCode(b));
+  assert.deepEqual(kinds, ["bullets", "table:bars", "bullets", "cards:plain", "bullets"]);
+  assert.deepEqual(run.spec.mg!.at, [A.key, A.key, A.key, B.key, B.key]);
+  assert.deepEqual(run.revived.map((r) => [r.plan, r.index]), [[1, 1], [3, 3]], "결과 번호는 보강을 마친 초안 번호(뒤에 끼운 블록이 앞 번호를 밀지 않음)");
+  assert.equal(run.spec.humanEdits, undefined, "AI 글이라 사람이 고친 블록 표시 없음");
+  assert.equal(planAdherence(missPlan, run.spec.blocks!).same, true);
+  const ws = fillWarnings(run);
+  assert.match(ws[0], /^분량 보강: 빠진 블록 되살림: 2번 「추진내용」 \+\d+mm · 4번 「추진내용」 \+\d+mm\(구성안이 정한 블록을 집필이 빠뜨려 구성안 재료로 채움\) — 분량 어림 \d+ → \d+mm/);
+  assert.equal(warningLevel(ws[0]), "info");
+  assert.match(fillMessage(run, "saved"), /빠진 블록 2\/2개 되살림/);
+  // 구성안 지킴을 다시 셈 — 1차 경고(5블록 중 3블록)는 다 맞아 빠지고 짜임 칩도 5/5
+  const first = { spec: { ...spec, plan: { story: "", matched: 3, total: 5 } }, warnings: [mgAdherenceWarning(planAdherence(missPlan, spec.blocks!))!] };
+  assert.match(first.warnings[0], /^구성안: 승인한 짜임 5블록 중 3블록만/);
+  const patch = mgFillPatch(first, { ...run, spec: { ...run.spec, plan: first.spec.plan } }, missInput);
+  assert.ok(!patch.warnings.some((w) => w.startsWith("구성안: 승인한 짜임")), patch.warnings.join("\n"));
+  assert.deepEqual(patch.spec.plan, { story: "", matched: 5, total: 5 });
+});
+
+test("되살리기 받기: 하나만 받으면 경고는 새 셈(5블록 중 4블록), 빈 칸이 남거나·근거 밖 숫자·모양이 바뀌거나·배정 125%를 넘으면 빈 모양을 빼고 원래 초안 그대로", async () => {
+  const spec = missSpec();
+  const one = (await runMgFill(spec, missInput, deps(reviveCall((sh) => (sh.includes("막대") ? SAT : null)))))!;
+  assert.deepEqual(one.revived.map((r) => r.ok), [true, false]);
+  assert.equal(one.spec.blocks!.length, 4, "못 받은 카드는 빈 모양 없이");
+  const patch = mgFillPatch({ spec, warnings: [mgAdherenceWarning(planAdherence(missPlan, spec.blocks!))!] }, one, missInput);
+  assert.ok(patch.warnings.includes(mgAdherenceWarning(planAdherence(missPlan, one.spec.blocks!))!), "구성안 지킴 경고를 새로 셈");
+  assert.match(patch.warnings.join("\n"), /구성안: 승인한 짜임 5블록 중 4블록만/);
+  assert.match(fillWarnings(one).find((w) => w.startsWith("분량 보강 실패"))!, /^분량 보강 실패: 빠진 블록 1개는 되살리지 못했습니다\(「추진내용」\(cards:plain\) — 부르지 않을 블록\)\.$/);
+  const cases: Array<[string, Block, RegExp, ReportSectionSpec?]> = [
+    ["빈 칸", { ...SAT, cells: [SAT_ROWS[0], cell("참여율", ["61%", "", "71%"])] }, /빈 칸이 남음\(1곳\)/],
+    ["근거 밖 숫자", { ...SAT, cells: [SAT_ROWS[0], cell("참여율", ["61%", "66%", "77%"])] }, /근거 밖 숫자 1개\(77%\)/],
+    ["모양", { ...SAT, variant: "" }, /모양이 바뀜/],
+    // 배정을 지금 어림 바로 위로 — 블록 하나가 통째로 더해지면 125%를 넘음
+    ["분량", SAT, /분량이 배정의 125%를 넘음/, mgSpec(missRows, (mgSpecHeight(missSpec()) * 1.01) / PAGE_MM.height)],
+  ];
+  for (const [name, b, why, sp] of cases) {
+    const base = sp ?? spec;
+    const run = (await runMgFill(base, missInput, deps(reviveCall((sh) => (sh.includes("막대") ? b : null)))))!;
+    assert.equal(run.revived[0].ok, false, name);
+    assert.match(run.revived[0].reason ?? "", why, name);
+    assert.deepEqual(run.spec.blocks!.map(blockShapeCode), base.blocks!.map(blockShapeCode), `${name}: 원래 초안 그대로(빈 모양 없음)`);
+    assert.deepEqual(run.spec.mg!.at, base.mg!.at, name);
+  }
+});
+
+test("되살리기 멈춤·조건: 기한이면 빠진 블록을 시작하지 않고 라운드도 없음, 호출 한도면 남은 빠진 블록만 멈춤, 구성안이 없으면 되살리지 않음", async () => {
+  let calls = 0;
+  const timed = (await runMgFill(missSpec(2), missInput, deps(async () => ((calls += 1), { ok: false, stop: false, message: "x" }), { t0: 0, now: () => 600_000, firstMs: 100_000, deadlineMs: 690_000 })))!;
+  assert.equal(calls, 0);
+  assert.deepEqual(timed.revived.map((r) => [r.ok, r.reason]), [[false, "시간이 모자라 시작하지 않음"], [false, "시간이 모자라 시작하지 않음"]]);
+  assert.equal(timed.rounds.length, 0, "시간이 없으면 라운드도 없음");
+  const limited = (await runMgFill(missSpec(), missInput, deps(async () => ({ ok: false, stop: true, message: "요청이 너무 잦습니다." }))))!;
+  assert.deepEqual(limited.revived.map((r) => r.reason), ["호출 한도(요청이 너무 잦습니다.)", "호출 한도(요청이 너무 잦습니다.)"]);
+  assert.equal(await runMgFill(missSpec(), { ...missInput, plan: undefined }, deps(async () => assert.fail("부르면 안 됨"))), null, "구성안이 없으면 빠진 블록을 모름 — 다른 사유도 없으면 보강 없음");
+});
+
+
+test("되살린 뒤 라운드: 1~3 사유는 되살린 초안에서 다시 잼(블록 번호 = 보강을 마친 초안), 되살린 블록은 라운드 결과와 따로", async () => {
+  const spec = missSpec(3);
+  const calls: FillTarget[] = [];
+  const run = (await runMgFill(spec, missInput, deps(async (_p, t) => {
+    calls.push(t);
+    return reviveCall(byShape)(_p, t);
+  })))!;
+  assert.ok(run.revived.every((r) => r.ok));
+  assert.ok(run.rounds.length > 0, "배정 3쪽이면 분량 부족으로 라운드가 돎");
+  assert.equal(run.rounds[0].before, Math.round(run.rounds[0].reasons.height), "1회차 사유는 되살린 초안의 어림");
+  assert.ok(run.rounds[0].reasons.height > run.reasons.height, "되살린 블록만큼 1회차 어림이 큼(run.reasons는 보강 전)");
+  for (const t of calls.filter((x) => x.why !== "missing")) assert.ok(t.index < run.spec.blocks!.length && run.spec.mg!.at[t.index], `라운드 블록 ${t.index}`);
 });

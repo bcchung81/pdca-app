@@ -133,10 +133,10 @@ export default async function DashboardPage() {
     <Screen
       header={
         <PageHeader title="현황">
-          <Link href="/cards" className={T.btn}>
+          <Link href="/cards" className={`${T.btn} ${T.deskOnly}`}>
             과제 원장
           </Link>
-          <Link href="/inspections" className={T.btnPrimary}>
+          <Link href="/inspections" className={`${T.btnPrimary} ${T.deskOnly}`}>
             월간 점검
           </Link>
         </PageHeader>

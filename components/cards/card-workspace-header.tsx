@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import type { DraftProps } from "../../lib/cards/versions.ts";
 import { fmtDateTime } from "../../lib/format.ts";
-import { ListIconButton } from "../workspace/list-icon-button";
+import { ListIconButton, PhoneBackButton } from "../workspace/list-icon-button";
 import { ArchiveCardForm } from "./archive-controls";
 import type { WorkspaceProps } from "./card-workspace";
 import { useAsk } from "../ui/confirm-dialog";
@@ -61,7 +61,7 @@ function EditHint() {
   const closed = useSyncExternalStore(hintStore.subscribe, hintStore.closed, () => true);
   if (closed) return null;
   return (
-    <div className="flex min-w-0 items-start gap-2 border-t border-line bg-field px-6 py-1.5 text-xs text-muted-2">
+    <div className="flex min-w-0 items-start gap-2 border-t border-line bg-field px-6 py-1.5 text-xs text-muted-2 max-md:hidden">
       <p className="min-w-0 grow">카드의 글을 눌러 바로 고칩니다 · 자동 저장됩니다 · 원장은 「확정(원장 반영)」을 누를 때 바뀝니다</p>
       <button type="button" aria-label="안내 닫기" title="안내 닫기" onClick={hintStore.close} className="-my-1 inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-row-hover hover:text-navy">
         <X size={14} aria-hidden />
@@ -78,15 +78,16 @@ export function WorkspaceHeader({ props, ws }: HeaderProps) {
   return (
     <div className="flex shrink-0 flex-col border-b border-line">
       {/* 전체 페이지(전체 보기)는 머리 한 줄 — 돌아가기·과제번호·과제명 · 버튼(메뉴·화면 탭은 틀이 숨김, 머리띠 아래 전부 작성 영역) */}
-      {/* 휴대폰 폭(md 미만): 좌우 여백을 줄이고 제목이 아이콘에 밀리지 않게 아이콘은 더보기로 접음(HeaderButtons·MoreMenu) */}
-      <div className={`flex justify-between gap-4 max-md:gap-2 ${variant === "page" ? "min-h-14 items-center px-5 py-2 max-md:px-3" : "items-start px-6 pt-4 pb-3 max-md:px-3 max-md:pt-3"}`}>
+      {/* 휴대폰 폭(md 미만, 보기 중심): 머리는 한 줄(높이 48px) [‹ 목록으로] 과제번호 · 제목(말줄임)뿐 — 오른쪽 아이콘 묶음·작성본 막대·안내 줄·제출 확인 막대는 그리지 않음(max-md:hidden) */}
+      <div className={`flex justify-between gap-4 max-md:min-h-12 max-md:items-center max-md:gap-1.5 max-md:px-2 max-md:py-1.5 ${variant === "page" ? "min-h-14 items-center px-5 py-2" : "items-start px-6 pt-4 pb-3"}`}>
+        <PhoneBackButton label={ws.listLabel} onClick={() => void ws.close()} />
         <HeaderTitle props={props} />
         <HeaderButtons props={props} ws={ws} />
       </div>
 
       {draft && <DraftBar props={props} ws={ws} />}
       {draft && ws.draftMode && !props.readOnly && <EditHint />}
-      {props.notice && <p className="border-t border-line bg-field px-6 py-1.5 text-xs text-muted-2">{props.notice}</p>}
+      {props.notice && <p className="border-t border-line bg-field px-6 py-1.5 text-xs text-muted-2 max-md:hidden">{props.notice}</p>}
       {props.review && <ReviewBar review={props.review} editor={ws.editor} onDone={ws.setMessage} />}
 
       {ws.archiving && <ArchiveCardForm uid={props.uid} onDone={ws.setMessage} onCancel={() => ws.setArchiving(false)} />}
@@ -103,23 +104,27 @@ export function WorkspaceHeader({ props, ws }: HeaderProps) {
 function HeaderTitle({ props }: { props: WorkspaceProps }) {
   if (props.variant === "page") {
     return (
-      // 휴대폰 폭: 과제번호를 제목 위 줄로(제목은 한 줄 말줄임)
-      <div className="flex min-w-0 items-baseline gap-3 max-md:flex-col max-md:items-stretch max-md:gap-0">
-        <span className="shrink-0 font-mono text-xs whitespace-nowrap text-muted max-md:truncate" title={`${props.group} · ${props.taskNo} · ${props.editionLabel} 현행 카드 · 원본 양식`}>
-          {props.group} · {props.taskNo}
+      // 휴대폰 폭: 과제번호 · 제목 한 줄(묶음 이름은 숨김, 제목은 남는 폭만큼 말줄임)
+      <div className="flex min-w-0 items-baseline gap-3 max-md:gap-1.5">
+        <span className="shrink-0 font-mono text-xs whitespace-nowrap text-muted" title={`${props.group} · ${props.taskNo} · ${props.editionLabel} 현행 카드 · 원본 양식`}>
+          <span className="max-md:hidden">{props.group} · </span>
+          {props.taskNo}
         </span>
-        <h2 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy max-md:text-lg max-md:leading-7" title={props.title}>
+        <h2 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy max-md:text-base max-md:leading-6" title={props.title}>
           {props.title}
         </h2>
       </div>
     );
   }
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <span className="truncate font-mono text-xs text-muted">
-        {props.group} · {props.taskNo} · {props.editionLabel} 현행 카드 · 원본 양식
+    // 휴대폰 폭: 전체 페이지와 같은 한 줄(과제번호 · 제목 말줄임)
+    <div className="flex min-w-0 flex-col gap-1 max-md:flex-row max-md:items-baseline max-md:gap-1.5">
+      <span className="truncate font-mono text-xs text-muted max-md:shrink-0">
+        <span className="max-md:hidden">{props.group} · </span>
+        {props.taskNo}
+        <span className="max-md:hidden"> · {props.editionLabel} 현행 카드 · 원본 양식</span>
       </span>
-      <h2 className="line-clamp-2 font-serif text-lg leading-snug font-bold text-navy" title={props.title}>
+      <h2 className="line-clamp-2 font-serif text-lg leading-snug font-bold text-navy max-md:line-clamp-1 max-md:min-w-0 max-md:text-base max-md:leading-6" title={props.title}>
         {props.title}
       </h2>
     </div>
@@ -137,20 +142,20 @@ async function openPage(ws: CardWorkspaceState) {
   else await go();
 }
 
-/** 머리 오른쪽 아이콘 묶음: 목록 · 경평 초안 · 자료 · 수정 이력 · 더보기 · (옆 창) 전체 페이지·닫기. 휴대폰 폭에서는 경평 초안·자료·수정 이력·전체 페이지를 더보기 메뉴로 접음 */
+/** 머리 오른쪽 아이콘 묶음: 목록 · 경평 초안 · 자료 · 수정 이력 · 더보기 · (옆 창) 전체 페이지·닫기. 휴대폰 폭에서는 묶음째 그리지 않음(보기 중심 — 목록으로는 머리 맨 앞 ‹) */
 function HeaderButtons({ props, ws }: HeaderProps) {
   const { variant } = props;
   const { side, toggle } = ws;
   return (
-    <div className="flex shrink-0 items-center justify-end gap-2 max-md:gap-1.5">
+    <div className="flex shrink-0 items-center justify-end gap-2 max-md:hidden">
       <ListIconButton label={ws.listLabel} onClick={() => void ws.close()} />
-      <Link href={ws.reportHref} aria-label="경평 초안" title="경평 초안 — 과제별 초안 열기" className={`${T.iconBtn} border-field-line text-ink hover:border-navy max-md:hidden`}>
+      <Link href={ws.reportHref} aria-label="경평 초안" title="경평 초안 — 과제별 초안 열기" className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}>
         <FileText size={16} aria-hidden />
       </Link>
-      <button type="button" aria-pressed={side === "materials"} aria-label="자료" title="자료 — 카드 전용 자료" onClick={() => toggle("materials")} className={`${T.iconBtn} ${side === "materials" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"} max-md:hidden`}>
+      <button type="button" aria-pressed={side === "materials"} aria-label="자료" title="자료 — 카드 전용 자료" onClick={() => toggle("materials")} className={`${T.iconBtn} ${side === "materials" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
         <FolderOpen size={16} aria-hidden />
       </button>
-      <button type="button" aria-pressed={side === "history"} aria-label="수정 이력" title="수정 이력" onClick={() => toggle("history")} className={`${T.iconBtn} ${side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"} max-md:hidden`}>
+      <button type="button" aria-pressed={side === "history"} aria-label="수정 이력" title="수정 이력" onClick={() => toggle("history")} className={`${T.iconBtn} ${side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
         <History size={16} aria-hidden />
       </button>
       <MoreMenu props={props} ws={ws} />
@@ -163,7 +168,7 @@ function HeaderButtons({ props, ws }: HeaderProps) {
           }}
           aria-label="전체 페이지로 열기"
           title="전체 페이지로 열기"
-          className={`${T.iconBtn} border-field-line text-ink hover:border-navy max-md:hidden`}
+          className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}
         >
           <Maximize2 size={15} aria-hidden />
         </Link>
@@ -190,47 +195,7 @@ function MoreMenu({ props, ws }: HeaderProps) {
         <Ellipsis size={16} aria-hidden />
       </button>
       {menu && (
-        <div role="menu" aria-label="카드 더보기" className="absolute top-9 right-0 z-menu flex w-60 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu max-md:top-11">
-          {/* 휴대폰 폭(md 미만): 머리에서 접은 아이콘(경평 초안·자료·수정 이력·전체 페이지)을 메뉴 맨 위에 */}
-          <Link role="menuitem" href={ws.reportHref} onClick={() => setMenu(false)} className="px-3 py-2 text-ink no-underline hover:bg-row-hover md:hidden">
-            경평 초안
-          </Link>
-          <button
-            role="menuitem"
-            type="button"
-            onClick={() => {
-              setMenu(false);
-              ws.toggle("materials");
-            }}
-            className="px-3 py-2 text-left text-ink hover:bg-row-hover md:hidden"
-          >
-            자료
-          </button>
-          <button
-            role="menuitem"
-            type="button"
-            onClick={() => {
-              setMenu(false);
-              ws.toggle("history");
-            }}
-            className="px-3 py-2 text-left text-ink hover:bg-row-hover md:hidden"
-          >
-            수정 이력
-          </button>
-          {props.variant === "peek" && (
-            <button
-              role="menuitem"
-              type="button"
-              onClick={() => {
-                setMenu(false);
-                void openPage(ws);
-              }}
-              className="px-3 py-2 text-left text-ink hover:bg-row-hover md:hidden"
-            >
-              전체 페이지로 열기
-            </button>
-          )}
-          <span aria-hidden className="my-1 border-t border-line md:hidden" />
+        <div role="menu" aria-label="카드 더보기" className="absolute top-9 right-0 z-menu flex w-60 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu">
           <a role="menuitem" href={`/cards/${props.uid}/hwpx`} download onClick={() => setMenu(false)} className="px-3 py-2 text-ink no-underline hover:bg-row-hover">
             한글(HWPX)로 내려받기
             <span className="block text-xs text-muted">지금 보이는 {draftMode ? "작성본" : "원장"} 카드 · 9.16 양식</span>
@@ -298,7 +263,7 @@ function DraftBar({ props, ws }: HeaderProps) {
   const { pending, draftMode, draftOp } = ws;
   const month = draft.label.replace(/ 작성본$/, "");
   return (
-    <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-6 py-2 text-ui ${draft.note && draft.status === "draft" ? "bg-warn-bg" : "bg-info-bg"}`}>
+    <div className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-6 py-2 text-ui max-md:hidden ${draft.note && draft.status === "draft" ? "bg-warn-bg" : "bg-info-bg"}`}>
       <span className="shrink-0 font-semibold text-navy">{draft.label}</span>
       <span className="shrink-0 rounded-chip border border-link px-[5px] text-xs leading-5 text-link">{DRAFT_LABEL[draft.status]}</span>
       {draftMode && <span className="min-w-0 text-xs text-muted">{draftScopeNote(draft)}</span>}

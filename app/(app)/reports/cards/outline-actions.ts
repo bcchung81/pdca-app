@@ -26,6 +26,7 @@ import { ledgerOutcomeItems } from "../../../../lib/reports/mg-close.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { type SplitSibling, splitSiblingIssues } from "../../../../lib/reports/split-axes.ts";
 import type { MgDraftContext } from "../../../../lib/reports/mg-draft.ts";
+import { addMgDataBlocks } from "../../../../lib/reports/mg-data-blocks.ts";
 import { type MgOutlineOutput, type MgPartRedo, applyMgCompositionEdit, cleanMgComposition, isMgMainStory, mgCompositionIssues, mgHintOptions, mgOutlineOutSchema, mgOverlapIssues, mgPartLabel, mgPartRedo, replaceMgPart } from "../../../../lib/reports/mg-outline.ts";
 import { DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginAi, beginAiBatch, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
 import { writeDraft } from "./draft-write.ts";
@@ -128,14 +129,16 @@ async function runReportOutlineMg(p: Prepared & { mg: MgDraftContext }, uid: str
     const { hayKey, known: numbers } = evidenceOf(card.data, known, quoteOnly);
     // 요청에 준 절 성과 재료를 구성안에 남김(구성안 점검 「성과 배정」 — mg-outline.ts mgOutcomeIssues)
     const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
+    // 수치 묶음 재료를 맡은 절에 데이터 블록이 없으면 하나 넣음(S2 — lib/reports/mg-data-blocks.ts, 연기 시험과 같음)
+    const data = addMgDataBlocks(cleaned.composition, p.mg.pages);
     const composition: Composition = {
-      ...cleaned.composition,
+      ...data.composition,
       memo: (memo ?? "").slice(0, 500),
       module: 1,
       head: "all",
       sources: { card: picked.filter((x) => x.kind === "card").map((x) => x.id), report: picked.filter((x) => x.kind === "report").map((x) => x.id), prior: [] },
     };
-    const saved = await saveOutlineRow(supabase, card.id, year, composition, [...cleaned.warnings, ...mgOverlapIssues(composition, p.mgSiblings), ...mgCompositionIssues(composition)], modelLabel(oc), p.base);
+    const saved = await saveOutlineRow(supabase, card.id, year, composition, [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, p.mgSiblings), ...mgCompositionIssues(composition)], modelLabel(oc), p.base);
     if (!saved.ok) {
       if (!saved.conflict) console.error("runReportOutlineMg save", saved.message);
       return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
@@ -162,11 +165,14 @@ function mgPartMerge(p: MgPrepared, o: LoadedOutline, out: MgOutlineOutput, key:
   const { hayKey, known } = evidenceOf(p.card.data, p.known, p.quoteOnly);
   // 갈래 축은 카드 것(절 다시 짜기에서 안 바뀜) — 새 절 칩은 그 축으로 검증
   const cleaned = cleanMgComposition(out, hayKey, known, { indicator: p.mg.indicator, prior: p.mg.prior, axis: o.outline.mg?.axis ?? "" });
-  const r = replaceMgPart(o.outline, cleaned.composition, key, { story, frame });
+  const merged = replaceMgPart(o.outline, cleaned.composition, key, { story, frame });
+  // 다시 짠 절에 데이터 블록이 없으면 그 절에만 넣음(S2 — 다른 절의 사람 편집은 건드리지 않음)
+  const data = merged.changed ? addMgDataBlocks(merged.composition, p.mg.pages, key) : { composition: merged.composition, notes: [] };
+  const r = { ...merged, composition: data.composition };
   const materialWarnings = [...o.materialWarnings, ...cleaned.warnings.filter((w) => w.startsWith("재료:"))];
   // 새 절 칩을 뺀 경고(「갈래:」)도 이번 저장 경고에
   const chipWarnings = cleaned.warnings.filter((w) => w.startsWith("갈래:"));
-  return { r, newMaterialWarnings: cleaned.warnings.filter((w) => w.startsWith("재료:")), warnings: [...materialWarnings, ...chipWarnings, ...mgOverlapIssues(r.composition, o.mgSiblings), ...mgCompositionIssues(r.composition)] };
+  return { r, newMaterialWarnings: cleaned.warnings.filter((w) => w.startsWith("재료:")), dataNotes: data.notes, warnings: [...materialWarnings, ...chipWarnings, ...data.notes, ...mgOverlapIssues(r.composition, o.mgSiblings), ...mgCompositionIssues(r.composition)] };
 }
 
 /**
@@ -355,7 +361,7 @@ async function mgAlternatives(uid: string, key: string, alts: FrameChoice[], req
       try {
         const oc = await callMgPart(mp, inspection, redo, request);
         await req.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
-        const { r, newMaterialWarnings } = mgPartMerge(mp, o, oc.output, key, story, frameRecord(frame, request) ?? (request ? { request } : undefined));
+        const { r, newMaterialWarnings, dataNotes } = mgPartMerge(mp, o, oc.output, key, story, frameRecord(frame, request) ?? (request ? { request } : undefined));
         if (!r.changed) return { no: k + 1, label, frame, ok: false, error: r.notes.join(" "), sig: null };
         // 견본·점검은 그 절만(다른 절은 지금 구성안 그대로)
         const meta = r.composition.mg!;
@@ -373,7 +379,7 @@ async function mgAlternatives(uid: string, key: string, alts: FrameChoice[], req
           message: np?.why ?? "",
           blocks: blockRows(sub.blocks),
           fit: { total: 0, budget: 0 },
-          warnings: [...newMaterialWarnings, ...mgCompositionIssues(sub)],
+          warnings: [...newMaterialWarnings, ...dataNotes, ...mgCompositionIssues(sub)],
           materials: new Set(sub.blocks.flatMap((b) => b.materials)).size,
           need: sub.materials.filter((m) => m.kind === "need" && sub.blocks.some((b) => b.materials.includes(m.id))).length,
           sheetHtml: mgSheetHtml(sub),

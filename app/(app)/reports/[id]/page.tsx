@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ReportStatusButtons } from "../../../../components/reports/report-controls";
-import { type ReviewCard, ReviewBoard } from "../../../../components/reports/review-board";
+import { PhoneCommentsButton, type ReviewCard, ReviewBoard } from "../../../../components/reports/review-board";
+import { PhoneBackButton } from "../../../../components/workspace/list-icon-button";
 import { REPORT_STATUS_TONE } from "../../../../components/ui/status-tone.ts";
 import { T, Tag } from "../../../../components/ui/kit";
 import { requireUser } from "../../../../lib/auth/dal.ts";
@@ -77,16 +78,18 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
 
   return (
     <div className="flex min-h-0 min-w-0 grow flex-col">
-      {/* 휴대폰 폭(md 미만): 좌우 여백만 줄임(이미 줄바꿈 — 상태·단추는 다음 줄) */}
-      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line-strong bg-paper px-8 py-2 max-md:px-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <h1 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy" title={report.unitName}>
+      {/* 휴대폰 폭(md 미만, 보기 중심): 한 줄(높이 48px) [‹ 목록으로] 제목(말줄임) [코멘트 N] — 부서·주관 표지와 오른쪽 묶음(상태·검토 메모·상태 단추·목록 아이콘)은 그리지 않음 */}
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line-strong bg-paper px-8 py-2 max-md:min-h-12 max-md:flex-nowrap max-md:gap-x-1.5 max-md:px-2 max-md:py-1.5">
+        <div className="flex min-w-0 items-center gap-2.5 max-md:gap-1.5 max-md:[&>span]:hidden">
+          <PhoneBackButton href={target.href} label={target.label} />
+          <h1 className="min-w-0 truncate font-serif text-title leading-8 font-bold tracking-[-0.3px] text-navy max-md:text-base max-md:leading-6" title={report.unitName}>
             {report.unitName}
           </h1>
           <Tag title={`${report.year}년도 · ${report.cardGroup ?? report.evalUnitId}${report.hq ? ` · ${report.hq}` : ""}`}>{report.teamName}</Tag>
           {report.leadTeamId === report.teamId && <Tag tone="solid">주관 부서</Tag>}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <PhoneCommentsButton open={comments.filter((c) => c.status === "open").length} />
+        <div className="flex shrink-0 flex-wrap items-center gap-2 max-md:hidden">
           <Tag tone={REPORT_STATUS_TONE[report.status].tag}>{REPORT_STATUS_LABEL[report.status]}</Tag>
           {report.reviewNote && (
             <span className="max-w-[280px] truncate rounded-md border border-warn/40 bg-warn-bg px-2 py-1 text-xs text-warn" title={`${report.reviewNote}${report.reviewedAt ? ` (${fmtDateTime(report.reviewedAt)})` : ""}`}>

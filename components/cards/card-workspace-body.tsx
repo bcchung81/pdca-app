@@ -24,6 +24,8 @@ const PANE_TABS: PaneTabItem<"ai" | "inspection">[] = [
 
 /** 좁은 폭 시트 머리·떠 있는 단추의 이름(지금 오른쪽 자리에 든 패널) */
 const SIDE_LABEL = { ai: "AI 작성지원", inspection: "점검 결과", materials: "자료", history: "수정 이력", import: "한글 파일로 채우기" } as const;
+/** 휴대폰 폭 떠 있는 단추의 짧은 이름(없으면 SIDE_LABEL) */
+const SIDE_SHORT: Partial<Record<keyof typeof SIDE_LABEL, string>> = { ai: "AI", inspection: "점검" };
 
 /** 본문: 왼쪽 카드 편집기 + 오른쪽 패널(AI 작성지원·점검 결과 / 자료·한글 파일 채우기·수정 이력) */
 export function WorkspaceBody({ props, ws }: { props: WorkspaceProps; ws: CardWorkspaceState }) {
@@ -64,7 +66,7 @@ export function WorkspaceBody({ props, ws }: { props: WorkspaceProps; ws: CardWo
       </div>
       <PaneResizer width={ws.paneW} onWidth={ws.setPaneLive} onDragging={ws.setPaneDragging} onCommit={ws.setPaneW} label="오른쪽 패널 폭 조절" />
       {/* 좁은 폭: 아래 패널들을 시트로(처음엔 닫힘 — 떠 있는 단추로 엶). 넓은 폭: 감싼 상자가 display:contents라 예전처럼 옆에 붙음 */}
-      <SheetButton open={ws.sheet} onOpen={() => ws.setSheet(true)} label={SIDE_LABEL[side]} icon={<Sparkles size={16} aria-hidden />} />
+      <SheetButton open={ws.sheet} onOpen={() => ws.setSheet(true)} label={SIDE_LABEL[side]} short={SIDE_SHORT[side]} icon={<Sparkles size={16} aria-hidden />} />
       <NarrowSheet open={ws.sheet} onClose={() => ws.setSheet(false)} label={SIDE_LABEL[side]}>
         {assistPane && (
           <div className={`${sidePane} ${aiOpen ? "" : "hidden"}`} style={sidePaneStyle}>

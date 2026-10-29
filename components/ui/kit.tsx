@@ -312,6 +312,10 @@ export const T = {
   iconBtn: `flex size-8 shrink-0 items-center justify-center rounded-md border no-underline max-md:size-10 ${OFF}`,
   /** 모양을 따로 둔 단추(둥근 칩·큰 로그인 단추 등)의 끈 상태 */
   off: OFF,
+  /** 휴대폰 폭(md 미만)에서 숨김 — 일괄 처리·내려받기·올리기·설정성 단추. 단추 자신의 className 끝에 붙임(데스크톱은 그대로) */
+  deskOnly: "max-md:hidden",
+  /** 같은 뜻, 단추가 여러 개거나 자기 className을 못 받는 부품을 감쌀 때 — 넓은 폭에서는 상자를 만들지 않음(display: contents) */
+  deskOnlyWrap: "contents max-md:hidden",
   field: "h-9 w-full min-w-0 rounded-md border border-field-line bg-paper px-2.5 text-sm text-ink",
   label: "flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted",
 };

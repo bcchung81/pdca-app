@@ -69,7 +69,7 @@ export type ResultEditOutput = z.infer<ReturnType<typeof resultEditSchema>>;
 /** 두 트랙 블록 고치기 요청 절(고치기·질문·다른 모양으로 + 블록 JSON·근거) */
 const BLOCK_EDIT_REQUEST = ["edit", "ask", "shapes", "block", "evidence"] as const;
 /** 경영관리 「분량 채움 보강」 요청 글 조각(lib/reports/mg-fill.ts fillRequestText — 2026-10-29, 경영관리만: 주요사업 report-block 절·판은 그대로) */
-export const MG_FILL_SECTIONS = ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item"] as const;
+export const MG_FILL_SECTIONS = ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none"] as const;
 /** 블록 고치기 프롬프트 파일에 있어야 하는 절 — 경영관리(report-block-mg: 추진성과 상자가 없어 result 절 없음, 분량 채움 보강 절이 더 있음) */
 export const BLOCK_EDIT_MG_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...BLOCK_EDIT_REQUEST, ...MG_FILL_SECTIONS], schema: BLOCK_EDIT_OUT_FIELDS };
 /** 주요사업(report-block) — 공용 절 + 추진성과 고치기·질문(result·resultAsk)과 답 필드 */

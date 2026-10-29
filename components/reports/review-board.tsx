@@ -3,7 +3,7 @@
 import { MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useLayoutEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { COMMENT_BODY_MAX } from "../../lib/reports/input-limits.ts";
 import { addComment, setCommentStatus } from "../../app/(app)/reports/actions";
 import { fmtDateTime } from "../../lib/format.ts";
@@ -13,7 +13,29 @@ import { FIT_RANGE_TEXT, fitVerdict } from "../../lib/reports/fit.ts";
 import { T, Tag, type Tone } from "../ui/kit";
 import { FIT_TAG } from "../ui/status-tone.ts";
 import { NarrowSheet, SheetButton } from "../workspace/narrow-sheet";
-import { NARROW_QUERY, mediaMatches, useMedia } from "../workspace/use-narrow.ts";
+import { NARROW_QUERY, PHONE_QUERY, mediaMatches, useMedia } from "../workspace/use-narrow.ts";
+
+/** 휴대폰 폭 머리의 「코멘트」 단추 → 이 화면의 ReviewBoard가 코멘트 시트를 엶(머리는 서버 화면이라 창 이벤트로 잇는다) */
+const OPEN_COMMENTS_EVENT = "pdca-review-open-comments";
+
+/** 휴대폰 폭(md 미만) 검토 머리 오른쪽의 「코멘트 N」(N = 미해결) — 떠 있는 코멘트 단추 대신. 휴대폰 폭에서만 그림(데스크톱 DOM 그대로) */
+export function PhoneCommentsButton({ open }: { open: number }) {
+  const phone = useMedia(PHONE_QUERY);
+  if (!phone) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new Event(OPEN_COMMENTS_EVENT))}
+      aria-label="코멘트 열기"
+      title={open ? `코멘트 — 미해결 ${open}건` : "코멘트"}
+      className="flex h-9 shrink-0 items-center gap-1 rounded-md border border-field-line bg-paper px-2 text-xs font-semibold whitespace-nowrap text-ink hover:border-navy"
+    >
+      <MessageSquare size={14} aria-hidden />
+      코멘트
+      {open > 0 && <span className="rounded-full bg-navy px-1.5 font-mono leading-[18px] text-white">{open > 99 ? "99+" : open}</span>}
+    </button>
+  );
+}
 
 /** 과제 칸 머리의 동작 버튼(카드 보기·과제별 초안 열기·코멘트) — 글자 링크 대신 같은 모양의 작은 버튼 */
 const HEAD_BTN = "flex h-7 shrink-0 items-center rounded-md border border-field-line bg-paper px-2.5 text-xs font-semibold whitespace-nowrap text-ink no-underline hover:border-navy";
@@ -168,7 +190,14 @@ export function ReviewBoard({
   const [show, setShow] = useState<"all" | "open" | "resolved">("all");
   // 좁은 폭(64rem 미만): 코멘트 패널은 아래 시트(처음엔 닫힘 — 떠 있는 「코멘트」 단추로 엶), 종이는 화면 폭에 맞춰 줄임
   const narrow = useMedia(NARROW_QUERY);
+  // 휴대폰 폭: 떠 있는 단추 대신 머리의 「코멘트」(PhoneCommentsButton)가 시트를 엶
+  const phone = useMedia(PHONE_QUERY);
   const [sheet, setSheet] = useState(false);
+  useEffect(() => {
+    const on = () => setSheet(true);
+    window.addEventListener(OPEN_COMMENTS_EVENT, on);
+    return () => window.removeEventListener(OPEN_COMMENTS_EVENT, on);
+  }, []);
 
   const run = (fn: () => Promise<{ ok: boolean; message?: string }>, okText?: string) =>
     start(async () => {
@@ -204,7 +233,7 @@ export function ReviewBoard({
               <section key={c.id} className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-paper p-4 max-md:p-2.5">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span className="shrink-0 font-mono text-sm text-navy">{c.taskNo}</span>
-                  <h3 className="min-w-0 flex-1 truncate text-base font-bold text-ink" title={c.title}>
+                  <h3 className="min-w-0 flex-1 truncate text-base max-md:min-w-[10rem] font-bold text-ink" title={c.title}>
                     {c.title}
                   </h3>
                   {!c.included && <Tag tone="muted">목차 제외</Tag>}
@@ -246,10 +275,11 @@ export function ReviewBoard({
           })}
         </div>
       </main>
-      <SheetButton open={sheet} onOpen={() => setSheet(true)} label="코멘트" icon={<MessageSquare size={16} aria-hidden />} badge={comments.filter((c) => c.status === "open").length} />
-      <NarrowSheet open={sheet} onClose={() => setSheet(false)} label={`코멘트 ${comments.length}`}>
+      {!phone && <SheetButton open={sheet} onOpen={() => setSheet(true)} label="코멘트" icon={<MessageSquare size={16} aria-hidden />} badge={comments.filter((c) => c.status === "open").length} />}
+      <NarrowSheet open={sheet} onClose={() => setSheet(false)} label={`코멘트 ${comments.length}`} closeLabel="코멘트 시트 닫기">
         <aside aria-label="코멘트" className="flex w-[380px] max-w-[42%] shrink-0 flex-col border-l border-line-strong bg-paper">
-          <h2 className="border-b border-line px-4 py-3 text-sm font-bold text-navy">코멘트 {comments.length}</h2>
+          {/* 좁은 폭에서는 시트 머리가 같은 글(코멘트 N)을 이미 보임 */}
+          <h2 className="border-b border-line px-4 py-3 text-sm font-bold text-navy max-lg:hidden">코멘트 {comments.length}</h2>
           {canComment && (
             <div className="flex flex-col gap-2 border-b border-line p-4">
               <div className="flex items-center gap-2">

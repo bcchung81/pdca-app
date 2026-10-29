@@ -12,6 +12,7 @@ import { ATTACH_ACCEPT, ATTACH_LABEL, isAttachableName } from "../../lib/ai/writ
 import { AiComposer } from "../workspace/ai-composer";
 import { AiProgress } from "../workspace/ai-progress";
 import { holdScroll } from "../workspace/scroll-within";
+import { PHONE_QUERY, useMedia } from "../workspace/use-narrow.ts";
 import { DropMenu } from "../ui/drop-menu";
 import { uploadSigned } from "../ui/file-drop";
 import { type AskStep, useAsk } from "../ui/confirm-dialog";
@@ -570,6 +571,17 @@ const SHOW_TITLE: Partial<Record<StageAction["key"], string>> = {
  */
 function DraftRail(props: { stage: DraftStage; meta: DraftMeta; draftInfo: string | null; blocked: boolean; hint: (k: DraftMode) => string | undefined; onAction: (a: StageAction) => void }) {
   const { stage, meta, draftInfo } = props;
+  // 휴대폰 폭(md 미만): 파이프라인은 지금 단계 한 칸(메타 줄 없이)만 + 「단계 N」 펼치기 — 펼치면 예전 그대로. 서버·첫 하이드레이션은 넓은 폭
+  const phone = useMedia(PHONE_QUERY);
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const folded = phone && !stepsOpen;
+  const nowAt = Math.max(0, stage.steps.findIndex((s) => s.now));
+  const stepsToggle = phone && stage.steps.length > 1 && (
+    <button type="button" aria-expanded={stepsOpen} onClick={() => setStepsOpen((v) => !v)} className="ml-auto flex h-6 shrink-0 items-center gap-0.5 text-xs font-semibold text-navy">
+      {stepsOpen ? "접기" : `단계 ${stage.steps.length}`}
+      <ChevronRight size={13} aria-hidden="true" className={stepsOpen ? "-rotate-90" : "rotate-90"} />
+    </button>
+  );
   const fitPct = meta.fit ? Math.round((meta.fit.total / meta.fit.budget) * 100) : null;
   const fv = fitPct !== null ? fitVerdict(fitPct) : null;
 
@@ -618,21 +630,25 @@ function DraftRail(props: { stage: DraftStage; meta: DraftMeta; draftInfo: strin
     <div className="flex min-w-0 flex-col gap-3">
       {/* 파이프라인: 컨테이너 폭 20rem(320px) 이상이면 세 칸 한 줄 + 칸 사이 ›, 그보다 좁으면 세로 */}
       <div className="@container min-w-0">
-        <ol aria-label="초안 단계" className="m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[20rem]:grid-cols-3 @min-[20rem]:gap-x-4">
-          {stage.steps.map((s, i) => (
-            <li key={s.key} aria-current={s.now ? "step" : undefined} className={`relative flex min-w-0 flex-col gap-1 rounded-md border px-2 py-1.5 ${s.now ? "border-navy bg-thead" : "border-line"}`}>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                <span className="flex h-5 shrink-0 items-center">
-                  <StatusMark tone={s.tone} />
-                </span>
-                <span className={`text-sm leading-5 font-semibold whitespace-nowrap ${s.now ? "text-navy" : "text-ink"}`}>{s.label}</span>
-                <Tag tone={MARK_TAG[s.tone]}>{s.state}</Tag>
-              </div>
-              {metaLine(s.key)}
-              {i < stage.steps.length - 1 && <ChevronRight size={14} aria-hidden="true" className="absolute top-2.5 -right-[15px] hidden text-muted-2 @min-[20rem]:block" />}
-            </li>
-          ))}
+        <ol aria-label="초안 단계" className={folded ? "m-0 flex list-none flex-col p-0" : "m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[20rem]:grid-cols-3 @min-[20rem]:gap-x-4"}>
+          {stage.steps.map((s, i) =>
+            folded && i !== nowAt ? null : (
+              <li key={s.key} aria-current={s.now ? "step" : undefined} className={`relative flex min-w-0 flex-col gap-1 rounded-md border px-2 py-1.5 ${s.now ? "border-navy bg-thead" : "border-line"}`}>
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <span className="flex h-5 shrink-0 items-center">
+                    <StatusMark tone={s.tone} />
+                  </span>
+                  <span className={`text-sm leading-5 font-semibold whitespace-nowrap ${s.now ? "text-navy" : "text-ink"}`}>{s.label}</span>
+                  <Tag tone={MARK_TAG[s.tone]}>{s.state}</Tag>
+                  {folded && stepsToggle}
+                </div>
+                {!folded && metaLine(s.key)}
+                {!folded && i < stage.steps.length - 1 && <ChevronRight size={14} aria-hidden="true" className="absolute top-2.5 -right-[15px] hidden text-muted-2 @min-[20rem]:block" />}
+              </li>
+            ),
+          )}
         </ol>
+        {phone && stepsOpen && <div className="mt-1 flex">{stepsToggle}</div>}
       </div>
       {/* 제출은 과제별 화면에서 하지 않음 — 부서 허브(성과관리팀은 보고서 검토)로. 잠기면 주 단추가 그리로 감 */}
       {meta.submit && stage.primary?.key !== "report" && stage.steps.some((s) => s.key === "check") && (

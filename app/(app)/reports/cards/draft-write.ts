@@ -8,7 +8,7 @@ import { type ReportSectionSpec, type ReportSource, verifySection } from "../../
 import { draftTimings, fixDeadlineMs } from "../../../../lib/ai/fix-policy.ts";
 import { saveDraftRow } from "../../../../lib/reports/draft-store.ts";
 import { type MgDraftContext, verifyMgDraft } from "../../../../lib/reports/mg-draft.ts";
-import { type MgFillDeps, type MgFillInput, type MgFillRun, fillMessage, mgFillPatch, runMgFill, saveFirstThenFill } from "../../../../lib/reports/mg-fill.ts";
+import { type MgFillDeps, type MgFillInput, type MgFillRun, fillMessage, mgAdherenceWarning, mgFillPatch, runMgFill, saveFirstThenFill } from "../../../../lib/reports/mg-fill.ts";
 import { reportBlockPromptsMg } from "../../../../lib/prompts/sets.ts";
 import { mgPartLabel } from "../../../../lib/reports/mg-outline.ts";
 import type { PlanRevise } from "../../../../lib/reports/draft-sources.ts";
@@ -42,7 +42,7 @@ const fillCall =
 
 /**
  * 경영관리 집필(승인된 구성안대로 한 번 — 판면 맞추기 없음): 검증 → 1차 저장(구성안도 승인으로) → 분량 채움 보강(lib/reports/mg-fill.ts — 2026-10-29 사용자 승인,
- * 분량 부족·빈 칸·안 쓴 원장 성과·반복 수치가 있을 때만 고른 블록을 하나씩 다시 씀 — 최대 2회, Vercel에서는 fixDeadlineMs·로컬은 MG_FILL.maxSec 안에서만) → 1차 저장 버전 조건으로 갱신(그 사이 사람이 고쳤으면 건너뜀)
+ * 집필이 빠뜨린 구성안 블록을 먼저 되살리고, 분량 부족·빈 칸·안 쓴 원장 성과·반복 수치가 있을 때만 고른 블록을 하나씩 다시 씀 — 최대 2회, Vercel에서는 fixDeadlineMs·로컬은 MG_FILL.maxSec 안에서만) → 1차 저장 버전 조건으로 갱신(그 사이 사람이 고쳤으면 건너뜀)
  */
 async function writeMgDraft(p: Prepared & { mg: MgDraftContext }, plan?: Composition, revise?: PlanRevise | null): Promise<ReportDraftState> {
   if (!plan?.mg) return { ok: false, message: "경영관리 초안은 「구성안 만들기」로 평가내용·대주제·절을 정하고 승인한 뒤 씁니다." };
@@ -58,7 +58,8 @@ async function writeMgDraft(p: Prepared & { mg: MgDraftContext }, plan?: Composi
     const v = verifyMgDraft(call.output, card.data, plan, p.mg, known, quoteOnly, year, actuals.today);
     const adherence = planAdherence(plan, v.spec.blocks ?? [], v.droppedShapes);
     const warnings = [...v.warnings, ...(skipped.length ? [`첨부: AI가 읽지 못해 빼고 썼습니다 — ${skipped.join(", ")}`] : [])];
-    if (!adherence.same) warnings.push(`구성안: 승인한 짜임 ${adherence.total}블록 중 ${adherence.matched}블록만 같은 순서로 썼습니다 — 다시 만들거나 구성안을 고쳐 주세요.`);
+    const planWarning = mgAdherenceWarning(adherence);
+    if (planWarning) warnings.push(planWarning);
     const evals = new Set(plan.mg.parts.map((x) => x.evalNo));
     const spec: ReportSectionSpec = {
       ...v.spec,
@@ -73,7 +74,8 @@ async function writeMgDraft(p: Prepared & { mg: MgDraftContext }, plan?: Composi
     };
     const row: Record<string, unknown> = { card_id: card.id, year, spec, warnings, unknown_numbers: v.unknownNumbers, model: modelLabel(call), source_rev: card.data_rev, created_by: me.id, outline: plan, outline_status: "approved", outline_approved_by: me.id, outline_approved_at: new Date().toISOString() };
     // 1차 초안을 먼저 저장한 뒤 분량 채움 보강(사유가 없으면 보강 없이 1차만) — 보강 판은 1차 저장 버전 조건으로만 씀(자료 반영 고치기도 이 경로)
-    const fillIn: MgFillInput = { card: card.data, known, quoteOnly, year, today: actuals.today, closed: v.closed, plan };
+    // 빠진 구성안 블록 되살리기는 앱이 뺀 블록(droppedShapes)을 빼고 셈(구성안 지킴 셈과 같음)
+    const fillIn: MgFillInput = { card: card.data, known, quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes };
     const saved = await saveFirstThenFill<MgFillRun>(supabase, { cardId: card.id, year }, row, p.base, async () => {
       const run = await runMgFill(spec, fillIn, { prompts: reportBlockPromptsMg().prompts, call: fillCall(p), t0, firstMs, deadlineMs: fixDeadlineMs() });
       if (!run) return null;

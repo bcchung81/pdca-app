@@ -125,7 +125,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
           scroll={false}
           aria-label={createLabel}
           title={createLabel}
-          className="ml-auto flex size-[34px] shrink-0 items-center justify-center rounded-lg bg-navy text-white no-underline hover:opacity-90 max-md:size-10"
+          className="ml-auto flex size-[34px] shrink-0 items-center justify-center rounded-lg bg-navy text-white no-underline hover:opacity-90 max-md:hidden"
         >
           <UserPlus size={16} aria-hidden />
         </Link>

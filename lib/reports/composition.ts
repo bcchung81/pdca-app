@@ -871,7 +871,7 @@ const sig = (xs: Array<{ kind: string; variant: string }>) => xs.map((b) => (b.v
  * 집필 초안이 구성안 짜임을 따랐는지: 같은 순서로 맞은 블록 수(가장 긴 공통 부분열) / 구성안 블록 수.
  * droppedByApp = 앱이 정리하며 뺀 블록(cleanBlocks droppedShapes) — 같은 모양의 구성안 블록을 셈에서 덜어냄(앱이 뺀 것을 AI가 안 따랐다고 세지 않음)
  */
-export function planAdherence(c: Composition, blocks: Block[], droppedByApp: Array<{ kind: string; variant: string }> = []): { matched: number; total: number; same: boolean } {
+export function planAdherence(c: Pick<Composition, "blocks">, blocks: Block[], droppedByApp: Array<{ kind: string; variant: string }> = []): { matched: number; total: number; same: boolean } {
   const a = sig(c.blocks);
   for (const s of sig(droppedByApp)) {
     const i = a.indexOf(s);
