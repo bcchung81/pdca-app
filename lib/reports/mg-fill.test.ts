@@ -884,6 +884,25 @@ test("빠진 블록 찾기: 앱이 정리하며 뺀 블록(droppedShapes)·원�
   assert.deepEqual(missingBlocks(mgSpec(missRows.slice(0, 2)), missPlan).map((m) => m.plan), [1]);
 });
 
+test("빠진 블록 찾기: 데이터 블록 다음은 PDCA 단계 P·C·A 블록 먼저, 그다음 구성안 순(stage 없는 옛 구성안은 예전 순서)", () => {
+  // A절 구성안: 추진배경 · 막대 표(데이터, D) · 카드(D) · 단계 도식(C) · 추진성과 — 초안에는 추진배경·추진성과만
+  const st = (on: boolean, stage: string) => (on ? { stage } : {});
+  const pdcaPlan = (on: boolean): FillPlan => ({
+    ...missPlan,
+    blocks: [
+      plan({ kind: "bullets", label: "추진배경", at: A.key, cells: 1, ...st(on, "P") }),
+      plan({ kind: "table", variant: "bars", label: "추진내용", at: A.key, cells: 1, materials: ["m1"], ...st(on, "D") }),
+      plan({ kind: "cards", variant: "plain", label: "추진내용", at: A.key, materials: ["m2"], ...st(on, "D") }),
+      plan({ kind: "steps", variant: "row", label: "점검", at: A.key, cells: 3, materials: ["m2"], ...st(on, "C") }),
+      plan({ kind: "bullets", label: "추진성과", at: A.key, cells: 1, ...st(on, "C") }),
+    ],
+    mg: { indicator: "지표", parts: [A] } as any,
+  });
+  const spec = mgSpec([[A, bullets("추진배경", ["교육 체계 개편 추진"])], [A, bullets("추진성과", ["운영 개선"])]]);
+  assert.deepEqual(missingBlocks(spec, pdcaPlan(false)).map((m) => m.plan), [1, 2, 3], "옛 구성안: 데이터 블록 → 구성안 순");
+  assert.deepEqual(missingBlocks(spec, pdcaPlan(true)).map((m) => m.plan), [1, 3, 2], "데이터 블록 → 점검(C) → 실행(D)");
+});
+
 test("빈 모양: 구성안 종류·모양·칸 수·라벨·배치 그대로, 글·견본 값은 모두 비움", () => {
   const e = emptyBlock(plan({ kind: "table", variant: "bars", label: "추진내용", at: A.key, cells: 2, layout: "full" }));
   assert.equal(blockShapeCode(e), "table:bars");

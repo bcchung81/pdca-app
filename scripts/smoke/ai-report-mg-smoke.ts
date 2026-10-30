@@ -5,7 +5,7 @@
 //    (화면 기본 선택과 같게 읽기 실패 자료는 빼고, 준비 안 된 자료는 읽거나 DB에 쓰지 않고 이름만 「건너뜀」으로 출력). 확정 연결(report_material_cards confirmed)로 숫자 근거 인정, 보고서 inputs.kpi도 실적에 반영. 없으면 첨부 없음(기본)
 //  --json <경로>: --draft일 때 구성안(composition)과 초안 spec·unknownNumbers·warnings를 JSON으로 저장(비교용)
 //  서버(draft-prepare.ts prepareMgDraft)와 같은 입력: 분량 목표 쪽수(loadMgCardPages — 목차·쪽 배정)·닫기 관례(2025 절 글 — mgCloseRule)를 구성안·집필 요청에 넣음(2026-10-12)
-//  --dry: 구성안 요청 크기 + 분량 목표·닫기 관례 줄, 저장된 구성안이 있으면 집필 요청의 「승인된 구성안」 글 크기·새 줄도 보임(AI 호출 없음)
+//  --dry: 구성안 요청 크기 + 분량 목표·닫기 관례 줄 · PDCA 뼈대 단계별 줄 수(2026-10-30), 저장된 구성안이 있으면 집필 요청의 「승인된 구성안」 글 크기·새 줄도 보임(AI 호출 없음)
 //  --draft: 구성안을 그대로 승인한 셈 치고 집필까지(callReportDraftMg → verifyMgDraft) — HTML 경로에 초안 문서를 씀(저장하지 않음, 2026-10-09)
 //  --part <절 열쇠> --story <이야기 틀>: 저장된 구성안의 그 절만 그 틀로 다시 짜고(callReportOutlineMg part → replaceMgPart) 바뀐 절·그대로인 절을 보여 줌(저장하지 않음, 2026-10-10)
 //  짜임 고르기·여러 안(2026-10-12 — 서버 regenerateMgPart·runOutlineAlternatives와 같은 요청 글, 저장 안 함): --part와 함께
@@ -41,6 +41,8 @@ import { reportBlockPromptsMg, reportDraftPromptsMg, reportOutlinePromptsMg } fr
 import { yearActuals } from "../../lib/reports/actuals.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { type MgDraftContext, mgCardAsOf, mgMarkers, mgMaterialsPrompt, mgPlanPrompt, mgVolumePrompt, verifyMgDraft } from "../../lib/reports/mg-draft.ts";
+import { mgPdcaSkeleton } from "../../lib/reports/mg-pdca.ts";
+import { PDCA_STAGES } from "../../lib/tracks/index.ts";
 import { sectionDocument } from "../../lib/reports/section-html.ts";
 import { addMgDataBlocks } from "../../lib/reports/mg-data-blocks.ts";
 import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgBundlePrompt, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOutcomePrompt, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
@@ -273,7 +275,7 @@ if (partKey) {
         const r = { ...merged, composition: data.composition };
         const blocks = r.composition.blocks.filter((b) => b.at === partKey);
         const part = r.composition.mg!.parts.find((p) => p.key === partKey)!;
-        return { ok: r.changed, label: frameLabel(f), model: modelLabel(call), sec: Math.round((Date.now() - t0) / 1000), usage: call.usage, part: `${mgPartLabel(part)} [${part.story || "—"}${part.subStory ? ` + ${part.subStory}` : ""}]`, axis: saved.mg?.axis ?? null, chip: part.chip ?? null, blocks: blocks.map((b) => `${b.label || "전폭"}:${b.kind}${b.variant ? `:${b.variant}` : ""}${b.layout ? `@${b.layout}` : ""}`), why: part.why, notes: r.notes, warnings: [...cleaned.warnings, ...data.notes, ...mgCompositionIssues(r.composition)], sig: r.changed ? altSignature(blocks, part.story, part.subStory ?? "") : null };
+        return { ok: r.changed, label: frameLabel(f), model: modelLabel(call), sec: Math.round((Date.now() - t0) / 1000), usage: call.usage, part: `${mgPartLabel(part)} [${part.story || "—"}${part.subStory ? ` + ${part.subStory}` : ""}]`, axis: saved.mg?.axis ?? null, chip: part.chip ?? null, blocks: blocks.map((b) => `${b.label || "전폭"}:${b.kind}${b.variant ? `:${b.variant}` : ""}${b.layout ? `@${b.layout}` : ""}`), why: part.why, notes: r.notes, warnings: [...cleaned.warnings, ...data.notes, ...mgCompositionIssues(r.composition, mgPdcaSkeleton(card.data))], sig: r.changed ? altSignature(blocks, part.story, part.subStory ?? "") : null };
       } catch (e) {
         return { ok: false, label: frameLabel(f), error: String(e), sig: null };
       }
@@ -333,6 +335,9 @@ if (addPaths.length) {
 }
 if (dry) {
   console.log(`--- 구성안 요청: 분량 목표·닫기 관례·절 성과 재료 ---\n${volumeClose}`);
+  // PDCA 뼈대(2026-10-30 — 카드 글 바로 뒤, 구성안·집필 공용): 단계별 줄 수와 라벨(카드 칸 머리)만 — 줄 글은 요청에 있음
+  const sk = mgPdcaSkeleton(card.data);
+  console.log(`--- PDCA 뼈대: 요청에 ${request.includes("「PDCA 뼈대」") ? "있음" : "없음"} · ${PDCA_STAGES.map((s) => `${s} ${sk[s].length}줄`).join(" · ")} · 라벨 ${[...new Set(PDCA_STAGES.flatMap((s) => sk[s].map((x) => x.label.replace(/ · .*$/, ""))))].join(" / ") || "—"}`);
   // 저장된 구성안이 있으면 집필 요청의 「승인된 구성안」 글(닫기 관례·분량 목표·블록 글 한도)도 — AI 호출 없음
   const { data: row } = await db.from("card_report_drafts").select("outline, spec").eq("card_id", card.id).eq("year", year).maybeSingle();
   const saved = readComposition(row?.outline);
@@ -358,7 +363,7 @@ const cleaned = cleanMgComposition(call.output, hayKey, known, { indicator: indi
 const data = addMgDataBlocks(cleaned.composition, ctx.pages);
 const composition = data.composition;
 // 서버 runReportOutlineMg가 저장하는 구성안 경고와 같은 목록
-const outlineWarnings = [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition)];
+const outlineWarnings = [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))];
 console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}`), materials: composition.materials.length, warnings: outlineWarnings }, null, 1));
 if (withDraft) {
   // 집필(서버 writeMgDraft와 같은 숫자 근거: 첨부·실사 답변·계량 실적 입력 + 그 지표 2025 보고서 전 장·핵심공통항목)

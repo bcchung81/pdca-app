@@ -23,6 +23,9 @@ test("주요사업 스펙은 예전에 코드에 흩어져 있던 값 그대로(
     reportBulletChars: 28,
   });
   assert.equal(DEFAULT_TRACK, BIZ_TRACK);
+  // 경평 초안 PDCA 대응표(2026-10-30)는 경영관리만 — 주요사업 카드에는 Plan·Check 칸이 있어 대응표를 두지 않음(주요사업 요청·점검 무변경)
+  assert.equal("pdca" in BIZ_TRACK, false);
+  assert.ok(MGMT_TRACK.pdca.sources.length > 0);
   assert.equal(FORM_ID, "biz14", "점검표 양식 id는 스펙에서 오지만 값은 DB에 저장된 그대로");
   assert.equal(TRACK_SPECS["주요사업"], BIZ_TRACK);
   assert.equal(TRACK_SPECS["경영관리"], MGMT_TRACK);

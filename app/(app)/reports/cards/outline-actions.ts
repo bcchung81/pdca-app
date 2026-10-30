@@ -27,6 +27,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { type SplitSibling, splitSiblingIssues } from "../../../../lib/reports/split-axes.ts";
 import type { MgDraftContext } from "../../../../lib/reports/mg-draft.ts";
 import { addMgDataBlocks } from "../../../../lib/reports/mg-data-blocks.ts";
+import { mgPdcaSkeleton } from "../../../../lib/reports/mg-pdca.ts";
 import { type MgOutlineOutput, type MgPartRedo, applyMgCompositionEdit, cleanMgComposition, isMgMainStory, mgCompositionIssues, mgHintOptions, mgOutlineOutSchema, mgOverlapIssues, mgPartLabel, mgPartRedo, replaceMgPart } from "../../../../lib/reports/mg-outline.ts";
 import { DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginAi, beginAiBatch, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
 import { writeDraft } from "./draft-write.ts";
@@ -138,7 +139,7 @@ async function runReportOutlineMg(p: Prepared & { mg: MgDraftContext }, uid: str
       head: "all",
       sources: { card: picked.filter((x) => x.kind === "card").map((x) => x.id), report: picked.filter((x) => x.kind === "report").map((x) => x.id), prior: [] },
     };
-    const saved = await saveOutlineRow(supabase, card.id, year, composition, [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, p.mgSiblings), ...mgCompositionIssues(composition)], modelLabel(oc), p.base);
+    const saved = await saveOutlineRow(supabase, card.id, year, composition, [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, p.mgSiblings), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))], modelLabel(oc), p.base);
     if (!saved.ok) {
       if (!saved.conflict) console.error("runReportOutlineMg save", saved.message);
       return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
@@ -172,7 +173,7 @@ function mgPartMerge(p: MgPrepared, o: LoadedOutline, out: MgOutlineOutput, key:
   const materialWarnings = [...o.materialWarnings, ...cleaned.warnings.filter((w) => w.startsWith("재료:"))];
   // 새 절 칩을 뺀 경고(「갈래:」)도 이번 저장 경고에
   const chipWarnings = cleaned.warnings.filter((w) => w.startsWith("갈래:"));
-  return { r, newMaterialWarnings: cleaned.warnings.filter((w) => w.startsWith("재료:")), dataNotes: data.notes, warnings: [...materialWarnings, ...chipWarnings, ...data.notes, ...mgOverlapIssues(r.composition, o.mgSiblings), ...mgCompositionIssues(r.composition)] };
+  return { r, newMaterialWarnings: cleaned.warnings.filter((w) => w.startsWith("재료:")), dataNotes: data.notes, warnings: [...materialWarnings, ...chipWarnings, ...data.notes, ...mgOverlapIssues(r.composition, o.mgSiblings), ...mgCompositionIssues(r.composition, mgPdcaSkeleton(p.card.data))] };
 }
 
 /**
@@ -509,7 +510,7 @@ async function saveMgOutline(uid: string, o: Extract<Awaited<ReturnType<typeof l
   if ("fit" in change) return { ok: false, message: "경영관리 구성안은 판면을 어림하지 않습니다(판형·글자 규격 자료가 없어 분량은 목차·쪽 배정 쪽수와 견줘 경고만 합니다)." };
   const r = applyMgCompositionEdit(o.outline, change.edit, o.hayKey);
   if (!r.composition.blocks.length) return { ok: false, message: "블록을 모두 뺄 수는 없습니다." };
-  const saved = await saveDraftRow(o.supabase, { cardId: o.card.id, year: o.year }, { outline: r.composition, outline_status: "draft", outline_warnings: [...o.materialWarnings, ...mgOverlapIssues(r.composition, o.mgSiblings), ...mgCompositionIssues(r.composition)], outline_approved_by: null, outline_approved_at: null }, o.version);
+  const saved = await saveDraftRow(o.supabase, { cardId: o.card.id, year: o.year }, { outline: r.composition, outline_status: "draft", outline_warnings: [...o.materialWarnings, ...mgOverlapIssues(r.composition, o.mgSiblings), ...mgCompositionIssues(r.composition, mgPdcaSkeleton(o.card.data))], outline_approved_by: null, outline_approved_at: null }, o.version);
   if (!saved.ok) return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
   refresh(uid);
   return { ok: true, message: `구성안을 고쳤습니다(절 ${r.composition.mg?.parts.length ?? 0}개 · 블록 ${r.composition.blocks.length}개).${r.notes.length ? ` 바꾸지 않은 것: ${r.notes.join(" · ")}` : ""}` };
@@ -520,7 +521,7 @@ export async function previewReportOutline(uid: string, edit: CompositionEdit): 
   const o = await loadOutline(uid);
   if (!o.ok) return o;
   const r = o.outline.mg ? applyMgCompositionEdit(o.outline, edit, o.hayKey) : applyCompositionEdit(o.outline, edit, undefined, o.hayKey);
-  return { ok: true, view: outlineView(r.composition, o.ctx.module, o.ctx.head, [...o.materialWarnings, ...mgOverlapIssues(r.composition, o.mgSiblings), ...splitSiblingIssues(r.composition.split, o.splitSiblings)]), notes: r.notes };
+  return { ok: true, view: outlineView(r.composition, o.ctx.module, o.ctx.head, [...o.materialWarnings, ...mgOverlapIssues(r.composition, o.mgSiblings), ...splitSiblingIssues(r.composition.split, o.splitSiblings)], o.outline.mg ? mgPdcaSkeleton(o.card.data) : undefined), notes: r.notes };
 }
 
 /** 도식 목록(블록 pos의 도식 바꾸기 또는 pos 뒤에 더하기): 모양마다 고를 수 있는지·판면 차이 */

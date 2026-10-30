@@ -1,4 +1,4 @@
-경영관리 경평 초안 요청 글입니다. 코드(lib/reports/mg-draft.ts mgMaterialsPrompt·mgPlanPrompt)가 절을 골라 채웁니다(plan.added·plan.request는 구성안 뒤 추가된 자료·담당자 요청이 있을 때만 — composition.ts planReviseText) — 구성안(report-outline-mg)과 집필이 같은 자료 블록을 씁니다. 공통 지식 절(kb.*)은 _shared/knowledge-mg.md.
+경영관리 경평 초안 요청 글입니다. 코드(lib/reports/mg-draft.ts mgMaterialsPrompt·mgPlanPrompt, PDCA 뼈대 pdca.*는 lib/reports/mg-pdca.ts mgPdcaPrompt — 카드 글 바로 뒤)가 절을 골라 채웁니다(plan.added·plan.request는 구성안 뒤 추가된 자료·담당자 요청이 있을 때만 — composition.ts planReviseText) — 구성안(report-outline-mg)과 집필이 같은 자료 블록을 씁니다. 공통 지식 절(kb.*)은 _shared/knowledge-mg.md.
 닫기 관례(close.* — 이 지표 2025 절이 모두 「추진성과」로 닫혔는지, mg-outline.ts mgCloseRule)와 분량 목표(volume.plan — 목차·쪽 배정의 이 카드 쪽수, 없으면 넣지 않음)는 2026-10-12 사용자 결정 D1·D2로 「승인된 구성안」 머리 뒤에 붙습니다.
 
 <!-- @header -->
@@ -10,6 +10,27 @@
 
 <!-- @markers.none -->
 없음
+
+<!-- @pdca.head -->
+「PDCA 뼈대」 — 앱이 위 「카드」의 칸을 PDCA 단계로 나눈 것입니다(경영관리 카드에는 Plan·Check 칸이 없어 작성지원 지침의 대응대로 나눔: P = 전년도 환류·지적 및 개선방안·계량지표 목표, D = 추진내용·월별 실적, C = 추진성과와 추진내용·월별 실적 중 리스크 대응·점검을 적은 줄, A = 카드 칸 없음). 줄 글은 카드 그대로이고 [ ] 안은 카드 칸 머리입니다. 단계마다 쓸 재료의 출발점으로 쓰되, P의 개선방안·목표는 계획이라 실적으로 쓰지 않습니다.
+
+<!-- @pdca.stage.P -->
+P 문제·계획({{count}}줄) — 전년 자체평가의 보완점·지적과 그 개선방안, 계량지표 목표:
+
+<!-- @pdca.stage.D -->
+D 실행({{count}}줄) — 추진내용·월별 실적:
+
+<!-- @pdca.stage.C -->
+C 점검·성과({{count}}줄) — 추진성과, 리스크 대응·점검을 적은 줄:
+
+<!-- @pdca.stage.A -->
+A 보완({{count}}줄) — 올해 점검 결과로 바꾼 것:
+
+<!-- @pdca.item -->
+- [{{label}}] {{text}}
+
+<!-- @pdca.empty -->
+- 카드에 없음 — 근거(첨부·월별 실적)에 있으면 쓰고, 없으면 지어내지 않고 「자료 필요」(need)로 남기거나 생략합니다
 
 <!-- @skeleton.head -->
 「전년도({{priorYear}}) 보고서 구성」 — 이 지표의 평가내용 → 대주제 → 절(2025 보고서 연번 — 올해도 이 번호로 씁니다):
@@ -137,7 +158,7 @@
 - 절 [{{key}}] {{where}} · 이야기 틀 {{story}}({{fit}}) · 둔 이유 {{why}}
 
 <!-- @plan.block -->
-  {{n}}. [{{label}}] {{kind}}{{layout}} — {{purpose}} · 칸 {{cells}}개(늘리지 않음) · 글 한도 {{limit}} · 재료 {{materials}} · 그림 {{figures}}
+  {{n}}. [{{label}}] {{kind}}{{layout}}{{stage}} — {{purpose}} · 칸 {{cells}}개(늘리지 않음) · 글 한도 {{limit}} · 재료 {{materials}} · 그림 {{figures}}
 
 <!-- @plan.human -->
      ↳ 담당자가 고른 블록 — 모양·라벨·목적·재료를 바꾸지 않고 그대로 씁니다. 담당자 메모: {{memo}} (메모는 쓰는 방향에 대한 요청이고 근거가 아닙니다 — 메모에만 있는 사실·수치는 쓰지 않습니다)

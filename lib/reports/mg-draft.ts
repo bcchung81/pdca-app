@@ -25,6 +25,7 @@ import { GROUND_WEAK, bigramSet, groundScores } from "./ground.ts";
 import { LENS_GROUPS, type LensRef } from "./lens.ts";
 import { MG_LIMITS, type MgPriorSection, mgCloseRule, mgClosePrompt, mgPartLabel, partOrder, skeletonLines, unclosedPartKeys } from "./mg-outline.ts";
 import type { MgDraftMeta, MgPart } from "./mg-types.ts";
+import { PDCA_REQUEST_SECTIONS, mgPdcaPrompt, mgPdcaSkeleton } from "./mg-pdca.ts";
 import { proseIssues } from "./prose.ts";
 import { resultPlanWarning } from "./result-plan.ts";
 import { type Marker, type ReportFile, type ReportSectionSpec, cleanLine, evidenceKey, knownNumbers, quoteFoundIn, resultRepeatIssue, sectionText, signalWarnings, styleWarnings, unknownNumbersIn } from "./section.ts";
@@ -175,6 +176,7 @@ export const MG_REQUEST_SECTIONS = [
   "plan.tail",
   "plan.added",
   "plan.request",
+  ...PDCA_REQUEST_SECTIONS,
 ] as const;
 type RequestKey = (typeof MG_REQUEST_SECTIONS)[number];
 
@@ -198,12 +200,14 @@ export type MgDraftOutput = z.infer<typeof MgDraftOut>;
 const yy = (n: number) => String(n % 100).padStart(2, "0");
 
 /**
- * 요청 글의 자료 블록(구성안·집필 공용): 머리(지표·카드·마커) → 전년 보고서 골격과 추천 평가내용 → 올해 실적 재료 → 평가 기준·평가위원 관점 →
+ * 요청 글의 자료 블록(구성안·집필 공용 — 절 다시 짜기도 구성안 요청이라 같음): 머리(지표·카드·마커) → PDCA 뼈대(카드 칸을 단계별로 — mg-pdca.ts, 평문 카드 글은 그대로) → 전년 보고서 골격과 추천 평가내용 → 올해 실적 재료 → 평가 기준·평가위원 관점 →
  * 전년 보고서 절 글(evals의 절 — 상한 MG_PRIOR_CHARS) → 첨부. evals = 글을 넣을 평가내용(구성안은 추천 값, 집필은 승인된 구성안의 평가내용)
  */
 export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext, year: number, evals: number[], files: ReportFile[] = [], lens: LensRef[] = [], actuals?: YearActuals): string {
   const r = (key: RequestKey, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   const lines = [r("header", { year, indicator: ctx.indicator, taskNo: ctx.taskNo, title: String(card?.title ?? ""), markers: ctx.markers.join("·") || r("markers.none"), card: inspectionCardText(card), asOf: ctx.cardAsOf || "시점 모름" })];
+  const pdca = mgPdcaPrompt(p, mgPdcaSkeleton(card));
+  if (pdca) lines.push("", pdca);
   lines.push("", r("skeleton.head", { priorYear: year - 1 }));
   const sk = skeletonLines(ctx.prior);
   if (sk.length) lines.push(...sk.map((line) => r("skeleton.line", { line })));
@@ -325,7 +329,7 @@ export function mgPlanPrompt(p: PromptSet, c: Composition, ctx: Pick<MgDraftCont
     for (const b of c.blocks.filter((x) => x.at === part.key)) {
       n += 1;
       const figs = b.figures.map((f) => `${FIGURE_LABEL[f.kind]}/${f.size}/${f.pos} 「${f.desc}」`).join(", ");
-      lines.push(r("plan.block", { n, kind: b.variant ? `${b.kind}:${b.variant}` : b.kind, label: b.label || "전폭", layout: planLayoutText(b), purpose: b.purpose || "—", cells: b.cells, limit: mgLimitText(b), materials: b.materials.join("·") || "—", figures: figs || "없음" }));
+      lines.push(r("plan.block", { n, kind: b.variant ? `${b.kind}:${b.variant}` : b.kind, label: b.label || "전폭", layout: planLayoutText(b), stage: b.stage ? ` · 단계 ${b.stage}` : "", purpose: b.purpose || "—", cells: b.cells, limit: mgLimitText(b), materials: b.materials.join("·") || "—", figures: figs || "없음" }));
       if (b.by === "human" || b.memo) lines.push(r("plan.human", { memo: b.memo || "없음" }));
     }
   }

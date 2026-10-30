@@ -16,6 +16,7 @@ import { hasFigure } from "./actuals.ts";
 import { CLOSE_LABEL, outcomeRefs } from "./mg-outcomes.ts";
 import { type FigureBundle, type MgBundle, materialBundle } from "./mg-bundles.ts";
 import { type MgOutcome, type MgPart, mgPartKey } from "./mg-types.ts";
+import { type PdcaSkeleton, cleanStage, pdcaIssues } from "./mg-pdca.ts";
 import { cleanLine, clipLine } from "./section.ts";
 import { cleanChip, matchAxis } from "./split-axes.ts";
 import type { LooseJson } from "../loose-json.ts";
@@ -188,6 +189,7 @@ export const MG_OUTLINE_OUT_FIELDS = [
   "block.alts",
   "block.layout",
   "block.span",
+  "block.stage",
   "splitAxis",
 ] as const;
 
@@ -228,6 +230,8 @@ export function mgOutlineOutSchema(desc?: Descriptions) {
     // 배치(라벨 사다리·전폭·단 띠)·폭(가로 반씩) — 2026-10-12, 주요사업 구성안과 같은 값(lib/reports/layout.ts)
     layout: d(z.enum(PLAN_LAYOUTS), "block.layout").optional(),
     span: d(z.enum(PLAN_SPANS), "block.span").optional(),
+    // PDCA 단계(2026-10-30 — P·D·C·A, 빈 글 허용): 한 값 enum으로 묶지 않고 문자열로 받아 정리가 넷만 남김(cleanStage — 한 글자 어긋남으로 답 전체 파싱이 실패하지 않게)
+    stage: d(z.string(), "block.stage").optional(),
   });
   return z.object({
     message: d(z.string(), "message"),
@@ -361,7 +365,8 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
       lost += 1;
       continue;
     }
-    blocks.push({ ...x, at });
+    const stage = cleanStage(b.stage);
+    blocks.push({ ...x, at, ...(stage ? { stage } : {}) });
   }
   if (lost) warnings.push(`구성: 놓일 절을 알 수 없는 블록 ${lost}개를 뺐습니다.`);
   const figs = dropResultFigures(blocks);
@@ -425,8 +430,12 @@ const TEXT_KINDS = new Set<BlockKind>(["band", "banner", "subhead"]);
 /** '25 지적 대응 어휘(2026-10-17 서사 순서 측정과 같은 정규식) */
 const FINDING_WORDS = /지적|평가위원|개선\s?요구|평가\s?의견/;
 
+/** 목적이 지적 어휘로 시작(앞의 공백·따옴표·'25 같은 연도 머리는 건너뜀 — 2026-10-30) */
+const FINDING_LEAD = /^[\s'"‘’“”]*(?:['‘’]?\d{2}\s*)?(?:지적|평가위원|개선\s?요구|평가\s?의견)/;
+
 /**
  * 여는 블록이 '25 지적 대응에서 시작하는지(경영관리 구성안 — 경고만, 2026-10-17 서사 순서 S): 핵심 메시지 또는 절마다 첫 블록의 목적·라벨에 지적 어휘.
+ * 2026-10-30 사용자 결정: 문제 칸 한 줄까지 허용 — 첫 항목·라벨이 지적일 때만 경고(라벨에 지적 어휘, 목적이 지적으로 시작, 첫 재료가 지적 어휘를 담음).
  * 2025 경영관리 보고서는 지적 대응을 지표 단위 「Ⅰ. 지적사항 조치실적」 표가 맡고 본문 절은 지적에서 시작하지 않음. 없으면 빈 글
  */
 export function mgFindingOpenIssue(c: Composition): string {
@@ -434,7 +443,11 @@ export function mgFindingOpenIssue(c: Composition): string {
   if (FINDING_WORDS.test(c.message)) where.push("핵심 메시지");
   for (const p of c.mg?.parts ?? []) {
     const first = c.blocks.find((b) => b.at === p.key);
-    if (first && (FINDING_WORDS.test(first.purpose) || FINDING_WORDS.test(first.label))) where.push(`${mgPartLabel(p)} 첫 블록`);
+    if (!first) continue;
+    const id = first.materials[0];
+    const m = c.materials.find((x) => x.id === id);
+    const material = m ? [m.text, m.quote].some((s) => FINDING_WORDS.test(s ?? "")) : false;
+    if (FINDING_WORDS.test(first.label) || FINDING_LEAD.test(first.purpose) || material) where.push(`${mgPartLabel(p)} 첫 블록`);
   }
   return where.length ? `구성안: 여는 블록이 '25 지적 대응에서 시작 — 이 과제의 가치(왜)에서 시작하고 지적 대응은 그것을 해소하는 블록 하나로(${where.join(" · ")}).` : "";
 }
@@ -496,8 +509,11 @@ export function mgBundleGaps(c: Composition): Array<{ part: MgPart; bundles: Arr
   return out;
 }
 
-/** 구성안 점검(경영관리 — 화면 경고): 블록 없는 절, 추진성과로 닫지 않은 절, 지적으로 여는 절(mgFindingOpenIssue), 성과 배정(mgOutcomeIssues), 데이터 블록(mgBundleIssues), 자료 필요, 재료·목적 없는 블록. 판면 어림은 하지 않음 */
-export function mgCompositionIssues(c: Composition): string[] {
+/**
+ * 구성안 점검(경영관리 — 화면 경고): 블록 없는 절, 추진성과로 닫지 않은 절, 지적으로 여는 절(mgFindingOpenIssue), 성과 배정(mgOutcomeIssues), 데이터 블록(mgBundleIssues),
+ * PDCA 단계 빠짐(pdca — 카드로 만든 뼈대 mg-pdca.ts mgPdcaSkeleton를 줄 때만, 카드 전체 구성안에서만 — 절 하나만 본 견본에는 주지 않음), 자료 필요, 재료·목적 없는 블록. 판면 어림은 하지 않음
+ */
+export function mgCompositionIssues(c: Composition, pdca?: PdcaSkeleton): string[] {
   if (!c.blocks.length) return ["구성안에 블록이 없습니다."];
   const out: string[] = [];
   const parts = c.mg?.parts ?? [];
@@ -515,6 +531,7 @@ export function mgCompositionIssues(c: Composition): string[] {
   if (opening) out.push(opening);
   out.push(...mgOutcomeIssues(c));
   out.push(...mgBundleIssues(c));
+  if (pdca) out.push(...pdcaIssues(c, pdca));
   const need = c.materials.filter((m) => m.kind === "need");
   if (need.length) out.push(`자료 필요 ${need.length}건: ${need.map((m) => m.text).join(" · ")}`);
   const name = (b: PlanBlock, i: number) => `${i + 1}번 ${b.label || shapeName(b.kind, b.variant)}`;

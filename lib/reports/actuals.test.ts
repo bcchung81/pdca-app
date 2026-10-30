@@ -276,6 +276,17 @@ test("yearActuals: wide 표는 colspan을 따라 열을 맞춤(머리 colspan 2�
   assert.deepEqual(a.monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 10건(’26.6 기준)", "가짜 20건(’26.6 기준)"]);
 });
 
+test("yearActuals(wide): 데이터 칸 줄 앞에 그 행의 이름(수치 없는 첫 칸 글 또는 행 머리 th)을 붙임", () => {
+  const card = tableCard([[th("구분"), th("’26.8월"), th("’26.9월")], [td("가짜 유형"), td("대상 9건"), td("대상 1건")], [th("가짜 행 머리"), td("대상 4건"), td("설명만")]]);
+  const lines = yearActuals(card, {}, "", { wide: true }).monthly.map((m) => m.line);
+  assert.deepEqual(lines.slice(1), ["가짜 유형 · 대상 9건(’26.8 기준)", "가짜 유형 · 대상 1건(’26.9 기준)", "가짜 행 머리 · 대상 4건(’26.8 기준)"]);
+});
+
+test("yearActuals(wide): 행 이름이 없는 표(첫 칸부터 수치)는 예전 줄 그대로", () => {
+  const card = tableCard([[th("’26.8월"), th("’26.9월")], [td("대상 9건"), td("대상 1건")]]);
+  assert.deepEqual(yearActuals(card, {}, "", { wide: true }).monthly.map((m) => m.line).slice(1), ["대상 9건(’26.8 기준)", "대상 1건(’26.9 기준)"]);
+});
+
 // periodLabel(머리 칸 시점 정리 — 2026-10-29): 「’YY.M」로 줄이고 대괄호·백틱·「월」 꼬리·진행 표지를 뺌
 test("periodLabel: 원문 머리 형식을 ’YY.M으로(따옴표는 ’·`·'·‘ 무엇이든, 「~」는 유지)", () => {
   assert.equal(periodLabel("[`26.8.월](진행중)"), "’26.8", "운영에서 본 원문 형식");

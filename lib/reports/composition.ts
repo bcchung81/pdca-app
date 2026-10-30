@@ -70,6 +70,8 @@ export interface PlanBlock {
   layout?: BlockLayout;
   /** 폭: half = 다음 블록과 가로 반씩(짝이 없으면 정리 때 지움) */
   span?: BlockSpan;
+  /** 경영관리: 이 블록이 맡는 PDCA 단계(P·D·C·A — mg-outline.ts cleanMgComposition이 정리, 구성안 점검 mg-pdca.ts pdcaIssues·빠진 블록 되살리기 순서만 씀). 초안 블록·판면 어림에는 옮기지 않음 */
+  stage?: string;
 }
 
 /** 블록 대안 모양(같은 재료로 그릴 수 있는 다른 도식) */
@@ -723,6 +725,8 @@ export function applyCompositionEdit(c: Composition, e: CompositionEdit, maxBloc
       ...(cleanLine(x?.memo, EDIT_LIMITS.memo) ? { memo: cleanLine(x?.memo, EDIT_LIMITS.memo) } : {}),
       ...(orig?.ai ? { ai: orig.ai } : {}),
       ...(orig?.alts?.length ? { alts: orig.alts } : {}),
+      // 경영관리 PDCA 단계는 원래 블록 것을 그대로 옮김(편집 화면은 단계를 고치지 않음 — 복제도 같은 단계, 새 블록은 없음)
+      ...(orig?.stage ? { stage: orig.stage } : {}),
       // 경영관리 절 표지는 그대로 옮김(열쇠 검증·절 순서 정렬은 lib/reports/mg-outline.ts applyMgCompositionEdit)
       ...(typeof x?.at === "string" && x.at ? { at: x.at } : orig?.at ? { at: orig.at } : {}),
       // 배치·폭은 화면이 보낸 값(없으면 라벨 사다리·그릇 폭) — 목록 밖·이 종류에 뜻 없는 값은 지움

@@ -246,6 +246,29 @@ test("구성안 점검 — 여는 블록이 '25 지적 대응(2026-10-17 서사 
   assert.equal(warningLevel(w), "info", "참고 등급 — 자동 고치기·막힘 아님");
 });
 
+test("구성안 점검 — 여는 블록 문제 칸 한 줄 허용(2026-10-30 사용자 결정): 첫 항목·라벨이 지적일 때만 경고", () => {
+  const base = cleanMgComposition(out(), "", new Set(), { indicator: "지표", prior: PRIOR }).composition;
+  const parts = [
+    { ...base.mg!.parts[0], key: "1.2.가", themeNo: 2, mark: "가", title: "첫 절" },
+    { ...base.mg!.parts[0], key: "1.2.나", themeNo: 2, mark: "나", title: "둘째 절" },
+  ];
+  const blk = (at: string, label: string, purpose: string, materials: string[]) => ({ ...base.blocks[0], at, label, kind: "cards" as never, materials, purpose });
+  const mat = (id: string, kind: "fact" | "quote", text: string) => ({ id, kind, text, when: "", source: "", quote: "", found: false });
+  const mats = [mat("m1", "fact", "전년 자체평가 보완점 글"), mat("m2", "quote", "평가위원 지적 글")];
+  const c = (blocks: ReturnType<typeof blk>[]) => ({ ...base, message: "현장 민원 처리 시간을 줄여 이용자 불편 해소", materials: mats, mg: { ...base.mg!, parts }, blocks });
+  // (a) 목적이 자체평가로 시작하고 첫 재료가 자체평가 글이면 둘째 재료가 지적이어도 경고 없음
+  const a = c([blk("1.2.가", "추진배경", "전년 자체평가 보완점과 지적을 함께 풀어 보인다", ["m1", "m2"]), blk("1.2.나", "추진배경", "정부 지침 요구", ["m1"])]);
+  assert.equal(mgFindingOpenIssue(a), "");
+  // (b) 첫 재료가 지적 글이면 목적이 지적으로 시작하지 않아도 경고
+  const b = c([blk("1.2.가", "추진배경", "현장 민원 지연 문제", ["m2"]), blk("1.2.나", "추진배경", "정부 지침 요구", ["m1"])]);
+  const w = mgFindingOpenIssue(b);
+  assert.match(w, /첫 절 첫 블록/);
+  assert.doesNotMatch(w, /둘째 절/);
+  // 목적이 연도 머리 뒤 지적 어휘로 시작하면 경고(첫 재료는 지적 아님)
+  const d = c([blk("1.2.가", "추진배경", "'25 지적을 풀어 보인다", ["m1"]), blk("1.2.나", "추진배경", "정부 지침 요구", ["m1"])]);
+  assert.match(mgFindingOpenIssue(d), /첫 절 첫 블록/);
+});
+
 // 절별 「이 틀로 다시 짜기」(2026-10-10 사용자 결정): 그 절 블록만 바꾸고 다른 절은 그대로
 const current = () => {
   const { composition } = cleanMgComposition(out(), sourceKey("원문 구절 하나 둘 셋"), new Set(), { indicator: "조직 및 인적자원관리", prior: PRIOR });

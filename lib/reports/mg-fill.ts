@@ -136,7 +136,8 @@ export function hollowByBlock(spec: ReportSectionSpec): MgFillReasons["hollow"] 
 
 /**
  * ③ 아직 안 쓴 원장 사실: 원장 성과 재료(mg-close.ts ledgerOutcomeItems — 정량 성과 칸 · 월별 실적의 수치 줄(actuals.ts yearActuals wide) · 정성 성과 칸, 계획·【확인】 줄은 뺌) 중
- * 수치 열쇠(repeat-figures.ts figureKeys — 값 + 단위, 흔한 값·날짜는 뺌)가 있고 그 수치가 하나도 초안 글(절 제목 포함 — mgSpecText)에 없는 줄. 수치 없는 줄은 쓰였는지 셀 수 없어 넣지 않음
+ * 수치 열쇠(repeat-figures.ts figureKeys — 값 + 단위, 흔한 값·날짜는 뺌)가 있고 그 수치가 하나도 초안 글(절 제목 포함 — mgSpecText)에 없는 줄. 수치 없는 줄은 쓰였는지 셀 수 없어 넣지 않음.
+ * PDCA 뼈대(mg-pdca.ts)의 P 재료(전년도 환류·지적의 개선방안·계량지표 목표)는 넣지 않음(2026-10-30): 보강 대상이 칸 글 블록이라 계획 글이 실적 칸에 들어가 「실적 칸」 막힘 경고를 부름
  */
 export function unusedLedgerFacts(spec: ReportSectionSpec, card: Json): string[] {
   const used = figureKeys(mgSpecText(spec));
@@ -322,8 +323,14 @@ function dataElsewhere(spec: ReportSectionSpec, plan: Pick<Composition, "blocks"
  *    같은 모양을 하나씩 덜어냄(planAdherence가 구성안 셈에서 덜어내는 것과 같은 뜻). 단 데이터 블록(S2 — isDataBlock)은 앱이 모양 조건(표 행·열 수 등)으로 뺐어도 되살림:
  *    6-2 11회차에서 집필이 쓴 막대 표를 앱이 빼 절에 데이터 블록이 없어졌음. 되살린 판도 받기 검사(근거 밖 숫자·모양·빈 칸)를 거치므로 근거 없는 표는 들어가지 않음
  * ② 추진성과 원장 보강(mg-close.ts fillClosingOutcome)이 이미 채운 절(closed)의 「추진성과」 — 코드가 원장 줄로 되살렸음(막대 행 글 블록처럼 모양이 달라 짝이 안 맞아도 같은 자리)
- * 순서: 데이터 블록 먼저(S2 — 수치 묶음을 담는 블록), 그다음 구성안 순
+ * 순서: 데이터 블록 먼저(S2 — 수치 묶음을 담는 블록), 그다음 PDCA 단계가 P·C·A인 블록(FILL_FIRST_STAGES), 그다음 구성안 순
  */
+/**
+ * 빠진 블록 되살리기에서 데이터 블록 다음으로 먼저 되살릴 PDCA 단계(2026-10-30 — 구성안 블록 stage, mg-pdca.ts): P(문제·계획)·C(점검)·A(보완)는 카드 전체에 한두 블록뿐이라
+ * 빠지면 사이클이 끊기고(「결과만 나열」), D(실행)는 보통 블록이 여럿이라 하나 빠져도 이어짐. stage가 없는 옛 구성안은 예전 순서(데이터 블록 → 구성안 순) 그대로
+ */
+const FILL_FIRST_STAGES: readonly string[] = ["P", "C", "A"];
+
 export function missingBlocks(spec: ReportSectionSpec, plan: Pick<Composition, "blocks" | "materials">, dropped: Array<{ kind: string; variant: string }> = [], closed: string[] = []): FillMissing[] {
   const pairs = new Map<string, ReturnType<typeof partPairs>>();
   const free = dropped.map((d) => shapeCode(d.kind, d.variant));
@@ -342,7 +349,8 @@ export function missingBlocks(spec: ReportSectionSpec, plan: Pick<Composition, "
     if (missingSlot(spec, plan, i) === null) return;
     out.push({ plan: i, label: b.label, shape: blockShapeCode(b), at: b.at, data: isDataBlock(b) });
   });
-  return out.sort((a, b) => Number(b.data) - Number(a.data) || a.plan - b.plan);
+  const rank = (m: FillMissing) => (m.data ? 0 : FILL_FIRST_STAGES.includes(plan.blocks[m.plan].stage ?? "") ? 1 : 2);
+  return out.sort((a, b) => rank(a) - rank(b) || a.plan - b.plan);
 }
 
 /**

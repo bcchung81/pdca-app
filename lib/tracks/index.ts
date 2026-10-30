@@ -30,6 +30,43 @@ export interface TrackSpec {
    * 집필 요청 글 한도 「불릿 하나 약 T자(한 줄 P자 × L줄)」의 L = max(1, round(이 값 ÷ P))(lib/reports/fit.ts bulletLines). 「한 줄 약 P자」만 주면 좁은 칸에 한 줄 조각 불릿이 나옴
    */
   reportBulletChars: number;
+  /** 경평 초안 PDCA 대응표(단계 ↔ 카드 칸 — lib/reports/mg-pdca.ts). 카드 양식에 Plan·Check 칸이 없는 트랙만 둠 — 주요사업은 없음 */
+  pdca?: PdcaSpec;
+}
+
+/** PDCA 단계(구성안 블록 stage 값도 이 넷뿐) */
+export const PDCA_STAGES = ["P", "D", "C", "A"] as const;
+export type PdcaStage = (typeof PDCA_STAGES)[number];
+
+/** 라벨 하나 — 카드 머리 칸 경로(path)의 글(연도가 든 원본 머리), 경로가 없거나 비었으면 fallback */
+export interface PdcaLabel {
+  path?: string;
+  fallback: string;
+}
+
+/**
+ * 단계 하나의 재료가 되는 카드 칸 하나(경로·모양·라벨 출처). 모양: pairs = rows[]의 왼쪽 → 오른쪽 짝(한 줄로 이음), kpi = 계량지표 행(이름·단위·전년 실적·목표),
+ * lines = 줄 목록(표 줄은 칸을 이어 한 줄), monthly = 월별 실적({period, items} — 줄마다 기간을 붙임)
+ */
+export interface PdcaSource {
+  stage: PdcaStage;
+  /** 카드 JSON 칸 경로(점 구분) */
+  path: string;
+  shape: "pairs" | "kpi" | "lines" | "monthly";
+  /** pairs: 짝의 왼쪽·오른쪽 칸 이름(rows[] 안) */
+  pair?: readonly [string, string];
+  /** 라벨: pairs는 [왼쪽, 오른쪽], kpi는 [줄 라벨, 전년 실적, 목표], lines·monthly는 [칸 이름] */
+  labels: readonly PdcaLabel[];
+  /** pairs: 왼쪽 줄 중 「지적 없음」 표시 줄은 빼고(lib/reports/findings.ts isNoFindingLine), 다 빠진 행은 버림 */
+  realFindings?: boolean;
+  /** 이 칸 줄 중 Check 낱말(PdcaSpec.checkWords)이 든 줄은 이 단계에서 빼고 C로 옮김 */
+  checkSplit?: boolean;
+}
+
+export interface PdcaSpec {
+  sources: readonly PdcaSource[];
+  /** Check 줄 가르기 낱말 — checkSplit 칸의 줄에 하나라도 있으면 그 줄은 C */
+  checkWords: readonly string[];
 }
 
 export const BIZ_TRACK = {
@@ -58,6 +95,24 @@ export const MGMT_TRACK = {
   unitParts: ["cover", "findings", "prior", "outcome"],
   // 2025 경영관리 보고서 14건(지표마다)의 불릿 평균 중앙값 23.05자(지표별 19.2~30.2자, scripts/eval/mg-fill-baseline.ts 2026-10-29 측정)
   reportBulletChars: 23,
+  // PDCA 대응표(2026-10-30) — 근거: 지침 08(경영관리 작성지원) 「경영관리 양식에는 Plan·Check 칸이 없다 … Plan → '지적 및 개선방안'·'전년도 환류'의 '26년 개선방안 /
+  // Do → 추진내용 / Check(리스크) → 추진내용 하위 불릿 '- (리스크 대응) …'」, 지침 13(경영관리 종합점검) 「환류↔개선방안 인과 → 착안사항 Act」·총평 「경영관리도 P-D-C-A 관점에서
+  // 보고서가 작성(특히, 환류)」, 관리계획 참고3 「P-D-C-A의 논리성·연계성 강화」(Plan: 계획 논리·성과지표·목표 / Check: 성과·산출근거).
+  // P = 전년도 환류(자체평가 → 개선방안)·실제 지적(→ 개선방안)·계량지표 목표, D = 추진내용·월별 실적, C = 추진성과 + 추진내용·월별 줄 중 Check 낱말 줄,
+  // A = 카드에 칸 없음(올해 점검 결과로 바꾼 것은 근거에 있을 때만 — 차년도 환류 계획은 지표 단위 「성과분석 및 환류」가 맡음)
+  pdca: {
+    sources: [
+      { stage: "P", path: "feedback.rows", shape: "pairs", pair: ["self", "plan"], labels: [{ path: "feedback.headers.self", fallback: "전년도 자체평가" }, { path: "feedback.headers.plan", fallback: "개선방안" }] },
+      { stage: "P", path: "findings.rows", shape: "pairs", pair: ["finding", "plan"], labels: [{ path: "findings.headers.finding", fallback: "지적" }, { path: "findings.headers.plan", fallback: "개선방안" }], realFindings: true },
+      { stage: "P", path: "kpi.rows", shape: "kpi", labels: [{ fallback: "계량 성과지표" }, { path: "kpi.headers.prev", fallback: "전년 실적" }, { path: "kpi.headers.target", fallback: "목표" }] },
+      { stage: "D", path: "do.lines", shape: "lines", labels: [{ fallback: "추진내용" }], checkSplit: true },
+      { stage: "D", path: "do.monthly", shape: "monthly", labels: [{ fallback: "월별 실적" }], checkSplit: true },
+      { stage: "C", path: "outcome.quantitative", shape: "lines", labels: [{ path: "outcome.headers.quantitative", fallback: "정량 성과" }] },
+      { stage: "C", path: "outcome.qualitative", shape: "lines", labels: [{ path: "outcome.headers.qualitative", fallback: "정성 성과" }] },
+    ],
+    // 지침 08 Check(리스크)의 「리스크 대응」, 참고3 Check(성과 점검)의 점검·모니터링·검증
+    checkWords: ["리스크", "점검", "모니터링", "검증"],
+  },
 } as const satisfies TrackSpec;
 
 export const TRACK_SPECS: Record<TrackId, TrackSpec> = { 주요사업: BIZ_TRACK, 경영관리: MGMT_TRACK };

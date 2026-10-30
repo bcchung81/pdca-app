@@ -28,6 +28,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "분량 보강 실패": "info", // 보강하지 못해 1차 글을 유지한 블록과 까닭(근거 밖 숫자·모양 바뀜·시간·호출 한도) — 1차 초안의 경고는 따로 남음
   "성과 배정": "info", // 경영관리 구성안: 두 절 추진성과가 같은 성과 재료 · 수치 없이 닫은 절이 있는데 수치 성과 재료가 남음(lib/reports/mg-outline.ts mgOutcomeIssues, 2026-10-29)
   "데이터 블록": "info", // 경영관리 구성안: 수치 묶음 재료(같은 단위 값 3개 이상)를 맡은 절에 수치 표·막대 표가 없음(lib/reports/mg-outline.ts mgBundleIssues, 2026-10-29 S2)
+  PDCA: "info", // 경영관리 구성안: 카드에 재료가 있는 PDCA 단계(P·D·C)를 맡은 블록이 카드 전체에 없음 — stage가 적힌 구성안만(lib/reports/mg-pdca.ts pdcaIssues, 2026-10-30)
   "추진성과 막대": "info",
   "추진성과 강조 띠": "info",
   그림: "info",

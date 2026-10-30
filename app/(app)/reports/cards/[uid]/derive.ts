@@ -12,6 +12,7 @@ import { LABEL_SUGGESTIONS } from "../../../../../lib/reports/frameworks.ts";
 import { lensCover } from "../../../../../lib/reports/lens-cover.ts";
 import { outlineText } from "../../../../../lib/reports/outline-text.ts";
 import { outlineView, shapeTable } from "../../../../../lib/reports/outline-view.ts";
+import { mgPdcaSkeleton } from "../../../../../lib/reports/mg-pdca.ts";
 import { type PriorSection, pickPrior, priorLabel, scorePrior } from "../../../../../lib/reports/prior.ts";
 import { PRIOR_SAME_SCORE, type ReportSectionSpec, sectionText } from "../../../../../lib/reports/section.ts";
 import { REPORT_CSS } from "../../../../../lib/reports/section-css.ts";
@@ -146,8 +147,8 @@ export function checkNeedsOf(spec: ReportSectionSpec | null, cardData: unknown, 
   return { cover, weakSentences, draftNeeds, figureNeeds, kpiNeeds };
 }
 
-/** 구성안 화면 재료(오른쪽 AI 초안 탭 패널 + 왼쪽 여백 메모 + 구성안 판면). 머리 모드(사업 단위 조판)는 만들 때 값 */
-export function outlineDataOf(composition: Composition | null, draft: DraftRow | null, spec: ReportSectionSpec | null, outlineModule: number): OutlineData | null {
+/** 구성안 화면 재료(오른쪽 AI 초안 탭 패널 + 왼쪽 여백 메모 + 구성안 판면). 머리 모드(사업 단위 조판)는 만들 때 값. cardData = 카드 원장(경영관리 구성안 점검 「PDCA」의 뼈대) */
+export function outlineDataOf(composition: Composition | null, draft: DraftRow | null, spec: ReportSectionSpec | null, outlineModule: number, cardData?: unknown): OutlineData | null {
   if (!composition) return null;
   const outlineHead = composition.head ?? "all";
   return {
@@ -167,7 +168,7 @@ export function outlineDataOf(composition: Composition | null, draft: DraftRow |
     },
     edit: editOf(composition),
     // 저장할 때 센 재료 대조·경영관리 절 겹침(같은 지표 다른 카드 — 마지막 저장 때 기준)은 저장된 경고에서, 나머지 점검(판면·틀·재료 없는 블록 등)은 지금 구성안으로 다시 셈
-    view: outlineView(composition, outlineModule, outlineHead, Array.isArray(draft?.outline_warnings) ? draft.outline_warnings.map(String).filter((w: string) => w.startsWith("재료:") || w.startsWith("겹침:") || w.startsWith("갈래:")) : []),
+    view: outlineView(composition, outlineModule, outlineHead, Array.isArray(draft?.outline_warnings) ? draft.outline_warnings.map(String).filter((w: string) => w.startsWith("재료:") || w.startsWith("겹침:") || w.startsWith("갈래:")) : [], composition.mg && cardData ? mgPdcaSkeleton(cardData) : undefined),
     sheetCss: REPORT_CSS + SHEET_CSS,
     text: outlineText(composition),
   };

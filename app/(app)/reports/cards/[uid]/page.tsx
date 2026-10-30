@@ -110,7 +110,7 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
       }
       toolbarEnd={<ReportToolbarEnd uid={uid} spec={spec} canWrite={canWrite} />}
       preview={<ReportCardPreview spec={spec} unknown={unknown} weak={needs.weakSentences} canWrite={canWrite} hasOutline={Boolean(composition)} />}
-      outline={outlineDataOf(composition, draft, spec, outlineModule)}
+      outline={outlineDataOf(composition, draft, spec, outlineModule, card.data)}
       match={composition ? planMatch(composition, spec?.blocks ?? []) : []}
       // 처음 볼 판(2026-09-28 사용자 요구): 초안이 있으면 늘 초안, 초안 없이 구성안만 있으면 구성안 판면
       defaultView={spec ? "draft" : composition ? "outline" : "draft"}

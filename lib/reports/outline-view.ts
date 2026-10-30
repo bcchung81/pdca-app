@@ -16,6 +16,7 @@ import { MG_FRAMEWORKS } from "./frameworks-mg.ts";
 import { FRAMEWORK_PATTERNS, patternSource } from "./framework-patterns.ts";
 import { patternBlockText } from "./framework-pick.ts";
 import { mgCompositionIssues } from "./mg-outline.ts";
+import type { PdcaSkeleton } from "./mg-pdca.ts";
 
 /** 구성안 화면 값(판면·예산·판면 HTML·경고) */
 export interface OutlineView {
@@ -35,14 +36,15 @@ export interface OutlineView {
   figures: number;
 }
 
-export function outlineView(c: Composition, module: number, head: HeadMode, materialWarnings: string[] = []): OutlineView {
+/** pdca = 경영관리 카드의 PDCA 뼈대(mg-pdca.ts mgPdcaSkeleton — 주면 구성안 점검 「PDCA」를 셈, 주요사업은 무시) */
+export function outlineView(c: Composition, module: number, head: HeadMode, materialWarnings: string[] = [], pdca?: PdcaSkeleton): OutlineView {
   // 경영관리: 판면 어림·높이 예산 없음(R4 보류 — fit 0/0이면 화면이 판면 칩을 숨김), 판면은 절 머리가 든 와이어프레임, 점검은 절 단위
   if (c.mg)
     return {
       fit: { total: 0, budget: 0 },
       budgets: c.blocks.map(() => 0),
       sheetHtml: mgSheetHtml(c),
-      warnings: [...materialWarnings, ...mgCompositionIssues(c)],
+      warnings: [...materialWarnings, ...mgCompositionIssues(c, pdca)],
       shapeNames: c.blocks.map((b) => shapeName(b.kind, b.variant)),
       shapeCodes: c.blocks.map((b) => shapeCode(b.kind, b.variant)),
       avail: shapeAvailability(c),

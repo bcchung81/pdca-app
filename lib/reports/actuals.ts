@@ -118,6 +118,7 @@ const TRAILING_PERIOD_RE = /\([^()]*(?:[’'‘`]\d{2}|20\d{2}\s*년?)(?:\.\d{1,
 /**
  * 월별 실적의 표 항목(경영관리 — item.table.rows) → 열마다 「칸 글(’YY.M 기준)」 한 줄, 수치가 든 줄만.
  * 시점을 못 찾은 머리는 「머리 글 칸 글」로 둠. 칸 글 끝에 괄호 시점이 있으면 머리 시점을 겹쳐 붙이지 않음.
+ * 데이터 칸 줄 앞에는 그 행의 이름(행 머리 th 또는 그 칸보다 앞에 있는 수치 없는 첫 칸 글)을 「행 이름 · 」으로 붙여 뜻이 서게 함(행 이름이 없으면 그대로).
  * 머리(th) 칸에 「예정」이 든 열은 계획이라 뺌. 열 위치는 colspan을 따라 셈(채점 도구 mg-para-score-core ledgerLines와 같은 규칙)
  */
 function tableMonthlyLines(item: Json): string[] {
@@ -126,10 +127,12 @@ function tableMonthlyLines(item: Json): string[] {
   const out: string[] = [];
   for (const row of Array.isArray(item?.table?.rows) ? item.table.rows : []) {
     let col = 0;
+    let rowName = ""; // 이 행에서 지금까지 본, 수치 없는 첫 칸 글(또는 행 머리 th) — 행의 이름
     for (const c of Array.isArray(row) ? row : []) {
       const span = Math.max(1, Number(c?.colspan) || 1);
       const text = cellText(c);
       if (c?.th) {
+        if (!rowName && text) rowName = text;
         for (let k = 0; k < span; k++) {
           heads.set(col + k, text);
           if (/예정/.test(text)) planCols.add(col + k);
@@ -138,7 +141,8 @@ function tableMonthlyLines(item: Json): string[] {
         const head = heads.get(col) ?? "";
         const period = periodOf(head);
         const line = period ? (TRAILING_PERIOD_RE.test(text) ? text : `${text}(${period} 기준)`) : [periodLabel(head), text].filter(Boolean).join(" ");
-        if (hasFigure(line)) out.push(line);
+        if (hasFigure(line)) out.push(rowName ? `${rowName} · ${line}` : line);
+        if (!rowName && !hasFigure(text)) rowName = text;
       }
       col += span;
     }
