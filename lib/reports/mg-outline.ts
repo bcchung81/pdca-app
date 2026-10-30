@@ -17,6 +17,7 @@ import { CLOSE_LABEL, outcomeRefs } from "./mg-outcomes.ts";
 import { type FigureBundle, type MgBundle, materialBundle } from "./mg-bundles.ts";
 import { type MgOutcome, type MgPart, mgPartKey } from "./mg-types.ts";
 import { type PdcaSkeleton, cleanStage, pdcaIssues } from "./mg-pdca.ts";
+import { cleanConflicts, sameConflict } from "./mg-consistency.ts";
 import { cleanLine, clipLine } from "./section.ts";
 import { cleanChip, matchAxis } from "./split-axes.ts";
 import type { LooseJson } from "../loose-json.ts";
@@ -191,6 +192,11 @@ export const MG_OUTLINE_OUT_FIELDS = [
   "block.span",
   "block.stage",
   "splitAxis",
+  "conflicts",
+  "conflict.item",
+  "conflict.drop",
+  "conflict.keep",
+  "conflict.why",
 ] as const;
 
 export function mgOutlineOutSchema(desc?: Descriptions) {
@@ -241,6 +247,8 @@ export function mgOutlineOutSchema(desc?: Descriptions) {
     blocks: d(z.array(block), "blocks"),
     // 갈래 축(카드 하나 — 절을 나누는 축, 선택 문자열: 정리가 사전 이름으로 맞춤 — split-axes.ts matchAxis)
     splitAxis: d(z.string(), "splitAxis").optional(),
+    // 값 충돌(2026-10-30 — 선택 목록, 모두 문자열: 정리가 근거 수치로 거름 — mg-consistency.ts cleanConflicts)
+    conflicts: d(z.array(z.object({ item: d(z.string(), "conflict.item"), drop: d(z.string(), "conflict.drop"), keep: d(z.string(), "conflict.keep"), why: d(z.string(), "conflict.why") })), "conflicts").optional(),
   });
 }
 export const MgOutlineOut = mgOutlineOutSchema();
@@ -307,6 +315,8 @@ export function sortByParts(blocks: PlanBlock[], parts: MgPart[]): PlanBlock[] {
  * 이야기 틀은 주 틀 12종만(섞음·모르는 틀은 빈 글), 보조 틀은 주 틀과 다를 때만. 블록은 가리킨 절(1부터 세는 번호)이 없으면 버리고, 블록이 없는 절도 뺌.
  * 갈래 축은 사전 이름으로(모르면 버림 — ctx.axis를 주면(절 다시 짜기) AI 답 대신 그 축), 절 칩은 그 축의 표준 값이거나 근거 원문(hayKey)에 있는 낱말만(split-axes.ts cleanChip — 축이 없거나 절 표지가 없는 절은 칩 없음).
  * ctx.outcomes(요청에 준 절 성과 재료 — mg-close.ts ledgerOutcomeItems)는 mg.outcomes에 남겨 구성안 점검 「성과 배정」이 씀.
+ * 값 충돌(out.conflicts — 2026-10-30)은 두 값의 수치가 근거(known)에 있는 것만 mg.conflicts로(mg-consistency.ts cleanConflicts — 근거로 확인되지 않은 충돌은 지어낸 것으로 보고 경고 없이 버림).
+ * 절마다 첫 블록의 재료가 지적 재료로 시작하면 지적 재료를 첫 비지적 재료 뒤로 옮김(findingAfterFirst).
  */
 export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: Set<string>, ctx: { indicator: string; prior: MgPriorSection[]; axis?: string; outcomes?: MgOutcome[] }): { composition: Composition; warnings: string[] } {
   // 재료 상한의 절 수 = AI가 낸 절 중 번호가 맞는 서로 다른 절(절 상한까지)
@@ -381,6 +391,7 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     const knownEvals = new Set(ctx.prior.map((s) => s.evalNo));
     for (const n of [...new Set(kept.map((p) => p.evalNo))].filter((n) => !knownEvals.has(n))) warnings.push(`평가내용: ${n}번은 2025 보고서에 없는 번호입니다(2025: ${[...knownEvals].sort((a, b) => a - b).join("·")}) — 평가내용 상자가 제목 없이 나옵니다. 새 평가내용이면 확인하고, 아니면 맞는 번호로 다시 만들어 주세요.`);
   }
+  const conflicts = cleanConflicts(out.conflicts, hayKey, known);
   const composition: Composition = {
     version: 1,
     message: cleanLine(out.message, 120),
@@ -388,14 +399,34 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     story: "",
     storyWhy: "",
     alternative: "",
-    blocks: sortByParts(figs.blocks, kept),
+    blocks: findingAfterFirst(sortByParts(figs.blocks, kept), materials, kept),
     results: "",
     resultShape: "bullets",
     materials,
     memo: "",
-    mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}), ...(ctx.outcomes?.length ? { outcomes: ctx.outcomes } : {}) },
+    mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}), ...(ctx.outcomes?.length ? { outcomes: ctx.outcomes } : {}), ...(conflicts.length ? { conflicts } : {}) },
   };
   return { composition, warnings };
+}
+
+/** 지적 재료인지(재료 글·원문 구절에 지적 어휘 — mgFindingOpenIssue의 재료 기준과 같음) */
+const isFindingMaterial = (materials: Composition["materials"], id: string) => {
+  const m = materials.find((x) => x.id === id);
+  return m ? [m.text, m.quote].some((s) => FINDING_WORDS.test(s ?? "")) : false;
+};
+
+/**
+ * 절마다 첫 블록의 재료 순서(AI 답 정리): 재료가 지적 재료로 시작하고 뒤에 지적이 아닌 재료가 있으면, 앞의 지적 재료를 첫 비지적 재료 바로 뒤로 옮김(나머지 순서 유지).
+ * 근거: 2026-10-30 사용자 결정 「지적은 첫 절 여는 블록 문제 칸 한 줄까지, 첫 항목은 아님」(mgFindingOpenIssue와 같은 기준 — 첫 재료가 지적이면 경고). 지적 재료만 있는 블록은 그대로
+ */
+function findingAfterFirst(blocks: PlanBlock[], materials: Composition["materials"], parts: MgPart[]): PlanBlock[] {
+  const firsts = new Set(parts.map((p) => blocks.findIndex((b) => b.at === p.key)).filter((i) => i >= 0));
+  return blocks.map((b, i) => {
+    if (!firsts.has(i) || !b.materials.length || !isFindingMaterial(materials, b.materials[0])) return b;
+    const k = b.materials.findIndex((id) => !isFindingMaterial(materials, id));
+    if (k < 0) return b;
+    return { ...b, materials: [b.materials[k], ...b.materials.slice(0, k), ...b.materials.slice(k + 1)] };
+  });
 }
 
 /**
@@ -895,8 +926,11 @@ export function replaceMgPart(current: Composition, next: Composition, key: stri
     if (ai?.chip && p.mark) out.chip = ai.chip;
     return out;
   });
+  // 값 충돌은 카드 전체의 것 — 지금 목록을 그대로 두고 다시 짠 절 답이 새로 찾은 충돌만 더함(정리를 통과한 것 — cleanMgComposition)
+  const conflicts = [...(current.mg.conflicts ?? []), ...(next.mg?.conflicts ?? []).filter((x) => !(current.mg?.conflicts ?? []).some((y) => sameConflict(x, y)))];
+  const mg = { ...current.mg, parts: nextParts, ...(conflicts.length ? { conflicts } : {}) };
   return {
-    composition: { ...current, blocks: sortByParts([...kept, ...newBlocks], nextParts), materials, mg: { ...current.mg, parts: nextParts } },
+    composition: { ...current, blocks: sortByParts([...kept, ...newBlocks], nextParts), materials, mg },
     changed: true,
     notes,
   };

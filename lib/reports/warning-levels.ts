@@ -18,6 +18,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "빈 칸": "block", // 표·수치 띠의 값 칸이 비어 있음
   "실적 칸": "block", // 추진성과·추진실적 칸에 계획 표현(예정·할 계획)이나 아직 안 온 시점(lib/reports/result-plan.ts, 2026-10-17 F1)
   "제목 폭": "block", // 소항목 제목이 한 줄(판면 폭 170mm)을 넘음 — 2025 소항목 제목은 모두 한 줄, 자동 고치기 사유(lib/reports/title-checks.ts, 2026-10-28)
+  "값 충돌": "block", // 경영관리: 구성안이 근거에서 찾은 같은 항목의 다른 값 중 쓰지 않을 값이 초안 블록에 남음 — 사실 어긋남(lib/reports/mg-consistency.ts conflictWarnings, 2026-10-30)
   // ── info: 문장·표현·짜임
   문장: "info",
   문체: "info",
@@ -61,6 +62,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "반복 수치": "info", // 같은 수치를 서로 다른 블록 3개 이상(경영관리는 절 2개 이상)에 되풀이(lib/reports/repeat-figures.ts, 2026-10-27)
   "반복 문장": "info", // 서로 다른 블록에 거의 같은 문장(textSimilarity ≥ 0.8 — lib/reports/repeat-figures.ts sentenceRepeatWarning, 2026-10-29)
   "계획→실적": "info", // 실적 칸 줄이 카드 계획 줄과 많이 겹치고 실행 근거와는 적게 겹침(lib/reports/result-plan.ts planAsResult, 2026-10-27)
+  "제목 완료형": "info", // 경영관리: 절 제목은 완료 끝말(확정·정착·상승 등)인데 같은 절의 계획 줄(예정·아직 안 온 시점)이 같은 대상을 말함(lib/reports/mg-consistency.ts titleDoneWarning, 2026-10-30)
   계량지표: "info", // 카드 계량지표 이름이 초안에 없음 — 주요사업만(lib/reports/kpi-cover.ts, 2026-10-27)
   // 블록 정리가 근거 없는 인용·사례·정의를 뺀 줄의 머리(블록 종류 또는 종류(라벨))
   quotes: "info",

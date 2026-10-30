@@ -1,5 +1,5 @@
 경영관리 경평 초안 「블록 고치기」 요청 글입니다. 「다른 모양으로」(2026-10-12)는 shapes 절 → block 절 → evidence 절(바꿀 수 있는 모양에 경영관리 표 모양 4종이 들어감). 코드(lib/reports/block-edit.ts blockEditPrompt)가 edit 또는 ask 절 → block 절 → evidence 절 순서로 붙입니다(판면 값 fitTotal·budget은 넘기지만 주요사업 판면이라 쓰지 않음). 글 한도(room)는 경영관리면 배정 쪽 × 판면 높이 − 경영관리 높이 어림(초안 spec.mg.pages — 없으면 「지금 줄 수 안팎」)으로 셈(2026-10-12).
-분량 채움 보강(2026-10-29, lib/reports/mg-fill.ts): 집필 뒤 앱이 고른 블록마다 edit 절의 「요청」 자리에 fill 절(사람 글이 아님)을 넣어 보냅니다 — 까닭(fill.hollow·fill.short·fill.repeat·fill.sentence), 아직 안 쓴 원장 사실(없으면 fill.none), 연결 근거 조각의 아직 안 쓴 사실(fill.refs + fill.refs.item — 블록마다 3개까지, 없으면 빈 글), 다른 블록에 이미 있는 수치·문장(fill.avoid — 되풀이 금지, 없으면 빈 글), 높이(fill.room + fill.room.cell·fill.room.bullet·fill.room.line, 또는 fill.keep)는 코드가 골라 채움. 글 한도(room)의 여유는 그 블록 몫(남은 분량을 줄 수 적은 블록부터 블록당 30mm 이상이 되는 최소 개수에 모아 나눔 — 나머지 블록은 0), 늘릴 줄 수·불릿 수도 코드가 셈. 배정의 90%에 못 미치면 한 번 더(최대 2회), 그 뒤 반복이 남으면 반복 블록만 「반복 정리」 한 번. 그 전에 구성안이 정했는데 집필이 빠뜨린 블록은 앱이 빈 모양으로 구성안 자리에 다시 넣고 fill.missing 절(+ fill.missing.item·fill.missing.quote·fill.missing.none — 라벨·모양·목적·재료는 코드가 구성안에서 채움)로 먼저 채워 달라고 보냅니다(못 받으면 빈 모양을 뺌).
+분량 채움 보강(2026-10-29, lib/reports/mg-fill.ts): 집필 뒤 앱이 고른 블록마다 edit 절의 「요청」 자리에 fill 절(사람 글이 아님)을 넣어 보냅니다 — 까닭(fill.conflict·fill.hollow·fill.short·fill.repeat·fill.sentence — 값 충돌 fill.conflict + fill.conflict.item은 2026-10-30, 초안 spec.mg.conflicts의 쓰지 않을 값이 남은 블록), 아직 안 쓴 원장 사실(없으면 fill.none), 연결 근거 조각의 아직 안 쓴 사실(fill.refs + fill.refs.item — 블록마다 3개까지, 없으면 빈 글), 다른 블록에 이미 있는 수치·문장(fill.avoid — 되풀이 금지, 없으면 빈 글), 높이(fill.room + fill.room.cell·fill.room.bullet·fill.room.line, 또는 fill.keep)는 코드가 골라 채움. 글 한도(room)의 여유는 그 블록 몫(남은 분량을 줄 수 적은 블록부터 블록당 30mm 이상이 되는 최소 개수에 모아 나눔 — 나머지 블록은 0), 늘릴 줄 수·불릿 수도 코드가 셈. 배정의 90%에 못 미치면 한 번 더(최대 2회), 그 뒤 반복이 남으면 반복 블록만 「반복 정리」 한 번. 그 전에 구성안이 정했는데 집필이 빠뜨린 블록은 앱이 빈 모양으로 구성안 자리에 다시 넣고 fill.missing 절(+ fill.missing.item·fill.missing.quote·fill.missing.none — 라벨·모양·목적·재료는 코드가 구성안에서 채움)로 먼저 채워 달라고 보냅니다(못 받으면 빈 모양을 뺌).
 
 <!-- @edit -->
 「이번 요청 — 블록 고치기」 과제 「{{title}}」 초안의 {{n}}번 블록(전체 {{total}}개)을 담당자 요청대로 고칩니다.
@@ -78,6 +78,12 @@
 
 <!-- @fill.sentence.item -->
 「{{text}}」(이미 [{{at}}]에 비슷한 문장이 있음)
+
+<!-- @fill.conflict -->
+값 충돌 — 이 블록의 {{items}}. 쓰지 않을 값은 근거끼리 어긋난 값 중 더 최근 근거와 다른 값입니다 — 그 줄을 쓸 값으로 고치거나(같은 항목이면) 그 줄을 빼고 다른 사실로 채웁니다. 쓰지 않을 값을 다른 칸으로 옮기지 않습니다.
+
+<!-- @fill.conflict.item -->
+「{{drop}}」(항목 {{item}} — 쓸 값 「{{keep}}」, {{why}})
 
 <!-- @fill.missing -->
 분량 채움 보강 — 앱이 집필 뒤 자동으로 보낸 요청입니다(담당자 글이 아님). 이 블록은 승인한 구성안이 정한 블록인데 집필이 빠뜨려, 앱이 구성안의 라벨·모양·칸 수대로 빈 모양을 구성안 자리에 다시 넣었습니다 — 라벨 「{{label}}」 · 모양 {{shape}} · 목적: {{purpose}}. 이 블록에 쓸 구성안 재료(원문 구절 포함): {{materials}}. 라벨·모양·그림 자리는 그대로 두고 빈 칸을 모두 채웁니다 — 위 재료를 먼저 원문의 값 그대로 넣고, 모자라면 근거에 있는 이 블록 목적의 사실로 채웁니다. 표의 행·열은 근거 값 수대로 둡니다. 「글 한도」를 지키고, 근거에 없는 숫자·사실을 만들지 않고, 계획을 한 일처럼 쓰지 않고, 다른 블록에 이미 쓴 성과를 되풀이하지 않습니다. 채울 근거가 없는 칸을 지어내지 않습니다(빈 칸이 남으면 앱이 이 블록을 다시 뺍니다).

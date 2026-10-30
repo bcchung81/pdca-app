@@ -217,7 +217,7 @@ test("고르기: 안 쓴 원장 사실은 블록 하나에만 — 그 블록이 
 // 3. 요청 글 · 여유 mm
 
 test("요청 글: 코드가 fill.* 조각으로 만듦(칸 x/y줄·안 쓴 원장 사실·늘려도 되는 mm·짜임 그대로) — 자리표시 없음", () => {
-  const t: FillTarget = { index: 1, why: "hollow", boxes: [{ where: "추진내용 2번째 칸", used: 1, most: 4, perLine: 14, add: 30 }], share: 37, facts: ["직무교육 120명 수료"], refFacts: [], repeats: [], sentences: [] };
+  const t: FillTarget = { index: 1, why: "hollow", boxes: [{ where: "추진내용 2번째 칸", used: 1, most: 4, perLine: 14, add: 30 }], share: 37, facts: ["직무교육 120명 수료"], refFacts: [], repeats: [], sentences: [], conflicts: [] };
   const text = fillRequestText(P, t, { unit: "cell", perLine: 14, now: 4, max: 9, slack: 37, bullet: 2 });
   assert.match(text, /^분량 채움 보강 — /);
   assert.match(text, /\[추진내용 2번째 칸\] 지금 1\/4줄/);
@@ -450,7 +450,7 @@ test("블록 몫(blockRoom share): 보강은 「지금 줄 + 4줄」 상한 없�
   const cards = mgSpec([[A, evenCards]], 6);
   assert.ok(blockRoom(cards, 0, 150)!.max > blockRoom(cards, 0)!.max, "칸 블록도 몫만큼");
   // 요청 글: 늘릴 줄·불릿 수를 코드가 셈 — 사람 요청 글(몫 없음)은 예전과 같은 글
-  const t: FillTarget = { index: 0, why: "short", boxes: [], part: { share: 200, short: 120 }, share: 120, facts: [], refFacts: [], repeats: [], sentences: [] };
+  const t: FillTarget = { index: 0, why: "short", boxes: [], part: { share: 200, short: 120 }, share: 120, facts: [], refFacts: [], repeats: [], sentences: [], conflicts: [] };
   assert.match(fillRequestText(P, t, big), new RegExp(`약 120mm — 불릿 줄 합 약 ${big.max - big.now}줄 더`));
   const req = { blockIndex: 0, kind: "edit" as const, request: "요청", quote: "" };
   assert.match(blockEditPrompt(P, many, req, { card: "", extra: "" }), new RegExp(`최대 ${human.now + 4}줄까지`));
@@ -652,7 +652,7 @@ test("되풀이 금지 목록(avoidList): 다른 블록의 수치(이 블록에�
     [A, bullets("추진성과", ["참여 기관 23곳으로 협업 범위를 넓힘", "교육 운영 결과를 모아 부서장에게 알림"])],
     [B, bullets("추진내용", ["직무교육 과정 개편을 마치고 120명이 수료함", "외부 강사 31명 위촉"])],
   ], 3);
-  const t = pickFillTargets(spec, mgFillReasons(spec, card)).find((x) => x.index === 0) ?? { index: 0, why: "short" as const, boxes: [], share: 30, facts: [], refFacts: [], repeats: [], sentences: [] };
+  const t = pickFillTargets(spec, mgFillReasons(spec, card)).find((x) => x.index === 0) ?? { index: 0, why: "short" as const, boxes: [], share: 30, facts: [], refFacts: [], repeats: [], sentences: [], conflicts: [] };
   const a = avoidList(spec, t);
   assert.deepEqual(a.figures, ["23곳", "31명"], "120명은 이 블록에도 있어 뺌(반복 수치 요청이 다룸)");
   assert.ok(a.sentences[0].startsWith("「직무교육 과정 개편"), JSON.stringify(a.sentences));

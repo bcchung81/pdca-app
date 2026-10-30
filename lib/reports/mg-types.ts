@@ -41,6 +41,23 @@ export interface MgOutlineMeta {
   axis?: string;
   /** 구성안을 만들 때 카드 원장에서 뽑은 절 성과 재료(mg-close.ts ledgerOutcomeItems, 2026-10-29) — 구성안 점검 「성과 배정」이 씀. 없으면(이 필드 전 구성안) 점검 안 함 */
   outcomes?: MgOutcome[];
+  /** 값 충돌(구성안이 근거에서 찾은 같은 항목의 다른 값 — mg-outline.ts cleanMgComposition이 근거 수치로 거른 것, 2026-10-30). 집필이 초안 spec.mg.conflicts로 옮김. 없으면 충돌 없음 */
+  conflicts?: MgConflict[];
+}
+
+/**
+ * 값 충돌 한 건(2026-10-30): 카드 원장(구판)과 첨부(신판)처럼 근거끼리 같은 항목 값이 다를 때 쓰지 않을 값과 쓸 값. 모두 근거 원문 구절 그대로(앱이 근거 수치로 확인)
+ * — 집필 요청에 목록으로 주고(mg-draft.ts mgPlanPrompt), 초안 점검·분량 보강이 버린 값이 남은 줄을 찾음(mg-consistency.ts)
+ */
+export interface MgConflict {
+  /** 항목 이름(같은 대상 — 「신고 유형 수」처럼) */
+  item: string;
+  /** 쓰지 않을 값(원문 구절 그대로) */
+  drop: string;
+  /** 쓸 값(원문 구절 그대로) */
+  keep: string;
+  /** 출처·시점 한 줄 */
+  why: string;
 }
 
 /** 원장 성과 재료 한 줄(mg-close.ts ledgerOutcomeItems): 어느 칸에서 왔는지와 수치(단위 붙은 숫자) 유무 */
@@ -65,6 +82,8 @@ export interface MgDraftMeta {
    * 없으면 예전처럼 첫 대주제 띠(이 필드 전 초안·겹침이 문턱 아래)
    */
   finding?: string[];
+  /** 값 충돌(구성안 MgOutlineMeta.conflicts를 집필이 옮김 — 다시 점검이 구성안 없이 같은 「값 충돌」 경고를 냄, 2026-10-30). 렌더러·높이 어림은 읽지 않음. 없으면 충돌 없음 */
+  conflicts?: MgConflict[];
 }
 
 export const mgPartKey = (evalNo: number, themeNo: number, mark: string) => `${evalNo}.${themeNo}.${mark || "0"}`;

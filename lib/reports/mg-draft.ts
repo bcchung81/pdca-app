@@ -26,6 +26,7 @@ import { LENS_GROUPS, type LensRef } from "./lens.ts";
 import { MG_LIMITS, type MgPriorSection, mgCloseRule, mgClosePrompt, mgPartLabel, partOrder, skeletonLines, unclosedPartKeys } from "./mg-outline.ts";
 import type { MgDraftMeta, MgPart } from "./mg-types.ts";
 import { PDCA_REQUEST_SECTIONS, mgPdcaPrompt, mgPdcaSkeleton } from "./mg-pdca.ts";
+import { conflictWarnings, titleDoneWarning } from "./mg-consistency.ts";
 import { proseIssues } from "./prose.ts";
 import { resultPlanWarning } from "./result-plan.ts";
 import { type Marker, type ReportFile, type ReportSectionSpec, cleanLine, evidenceKey, knownNumbers, quoteFoundIn, resultRepeatIssue, sectionText, signalWarnings, styleWarnings, unknownNumbersIn } from "./section.ts";
@@ -163,6 +164,8 @@ export const MG_REQUEST_SECTIONS = [
   "files.relation.matched",
   "files.relation.same",
   "plan.head",
+  "plan.conflict.head",
+  "plan.conflict.item",
   "volume.plan",
   "close.strict",
   "close.majority",
@@ -309,10 +312,15 @@ function mgLimitText(b: Composition["blocks"][number]): string {
   return `칸마다 불릿 하나 약 ${l * w.perLine}자(한 줄 약 ${w.perLine}자 × ${l}줄)${sideBySide(b) ? " · 나란한 칸은 불릿 수와 칸 글자 수를 같게" : ""}`;
 }
 
-/** 승인된 구성안 글(집필 요청 — 이 지표의 닫기 관례·분량 목표, 절마다 이야기 틀과 블록·글 한도). revise = 구성안 뒤 추가된 자료·담당자 요청(없으면 예전 글 그대로) */
+/**
+ * 승인된 구성안 글(집필 요청 — 이 지표의 닫기 관례·분량 목표, 절마다 이야기 틀과 블록·글 한도). revise = 구성안 뒤 추가된 자료·담당자 요청(없으면 예전 글 그대로).
+ * 값 충돌(구성안 mg.conflicts — 2026-10-30)이 있으면 머리 바로 뒤에 「쓰지 않을 값 → 쓸 값」 목록(plan.conflict.*), 없으면 예전 글 그대로
+ */
 export function mgPlanPrompt(p: PromptSet, c: Composition, ctx: Pick<MgDraftContext, "indicator" | "prior" | "pages">, revise?: PlanRevise | null): string {
   const r = (key: RequestKey, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   const lines = [r("plan.head", { message: c.message || "—", points: c.points.join(" · ") || "—" })];
+  const conflicts = c.mg?.conflicts ?? [];
+  if (conflicts.length) lines.push(r("plan.conflict.head"), ...conflicts.map((x) => r("plan.conflict.item", { item: x.item, drop: x.drop, keep: x.keep, why: x.why || "—" })));
   lines.push(mgClosePrompt(p, ctx.prior, ctx.indicator));
   const pages = targetPages(ctx.pages);
   const parts = c.mg?.parts ?? [];
@@ -444,7 +452,7 @@ export interface MgDraftCheck {
 /**
  * AI 답 정리 + 점검(경영관리): 절마다 블록 정리(cleanBlocks — 원문 없는 인용·사례·정의는 뺌)를 하고 승인된 구성안의 절 순서로 펼침(spec.mg.at).
  * 숫자 대조 근거 = 카드 + extraText(첨부·전년 보고서 절·실사 답변·계량 실적 입력), quoteOnly = 인용 대조에만(평가 기준·지적).
- * 경고: 구성안에 있는데 안 쓴 절·모르는 절·추진성과로 닫지 않은 절(이 지표 닫기 관례대로)·뺀 블록·빈 칸·그림 자리 0·절 안 같은 도식 반복·분량(배정 ±25%)·근거에 없는 숫자·문체·올해 실적·문장·근거 약함.
+ * 경고: 구성안에 있는데 안 쓴 절·모르는 절·추진성과로 닫지 않은 절(이 지표 닫기 관례대로)·뺀 블록·빈 칸·그림 자리 0·절 안 같은 도식 반복·분량(배정 ±25%)·근거에 없는 숫자·값 충돌·제목 완료형·문체·올해 실적·문장·근거 약함.
  * 판면을 맞추지는 않음(자동 고치기 없음 — 경고만). 배정 쪽수·닫기 관례·지적개선 표지 자리는 spec.mg(pages·strictClose·finding)에 남겨 다시 점검·블록 고치기·렌더러가 씀
  */
 export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition, ctx: MgDraftContext, extraText = "", quoteOnly = "", year?: number, today?: string): MgDraftCheck {
@@ -503,7 +511,8 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
     results: [],
     caption: cleanLine(out.caption, 200),
     module: 1,
-    mg: { indicator: ctx.indicator, parts: used, at, ...(pages ? { pages } : {}), ...(strict ? { strictClose: true } : {}) },
+    // 값 충돌은 구성안 것을 옮김(다시 점검이 구성안 없이 같은 경고를 내게 — 렌더러·높이 어림은 안 읽음)
+    mg: { indicator: ctx.indicator, parts: used, at, ...(pages ? { pages } : {}), ...(strict ? { strictClose: true } : {}), ...(plan.mg?.conflicts?.length ? { conflicts: plan.mg.conflicts } : {}) },
   };
   withFinding(spec, card);
   const known = knownNumbers(card, extraText);
@@ -521,6 +530,7 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
   if (year) warnings.push(...yearIssues(blocks, [], text, year, needsCap(used.length)).map((x) => `올해 실적: ${x}`));
   const where = extraText.trim() ? "카드·근거 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);
+  warnings.push(...consistencyWarnings(spec, today));
   const scores = groundScores(spec, `${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}`);
   const weak = scores.filter((x) => x.overlap < GROUND_WEAK);
   if (weak.length) {
@@ -534,7 +544,13 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
   return { spec, unknownNumbers, warnings, droppedShapes, closed: closed.keys };
 }
 
-/** 사람이 고친 경영관리 초안 다시 점검(블록 고치기·직접 고치기·되돌리기 뒤): 숫자 대조·문체·올해 실적·문장·근거 약함·추진성과로 닫기·빈 칸·그림 자리·도식 반복·분량(spec.mg.pages). 판면 맞추기 없음 */
+/** 값 충돌(막힘 — spec.mg.conflicts의 버린 값이 남은 블록)·제목 완료형(참고) — 집필 점검·다시 점검이 같은 spec에서 같은 글을 냄(mg-consistency.ts, 2026-10-30) */
+function consistencyWarnings(spec: ReportSectionSpec, today?: string): string[] {
+  const title = titleDoneWarning(spec, today);
+  return [...conflictWarnings(spec), ...(title ? [title] : [])];
+}
+
+/** 사람이 고친 경영관리 초안 다시 점검(블록 고치기·직접 고치기·되돌리기 뒤): 숫자 대조·값 충돌·제목 완료형(spec.mg.conflicts — 구성안 없이)·문체·올해 실적·문장·근거 약함·추진성과로 닫기·빈 칸·그림 자리·도식 반복·분량(spec.mg.pages). 판면 맞추기 없음 */
 export function recheckMgSection(spec: ReportSectionSpec, card: Json, extraText = "", year?: number, today?: string): { spec: ReportSectionSpec; unknownNumbers: string[]; warnings: string[] } {
   const known = knownNumbers(card, extraText);
   const next: ReportSectionSpec = { ...spec };
@@ -551,6 +567,7 @@ export function recheckMgSection(spec: ReportSectionSpec, card: Json, extraText 
   if (year) warnings.push(...yearIssues(next.blocks ?? [], [], text, year, needsCap(next.mg?.parts.length ?? 1)).map((x) => `올해 실적: ${x}`));
   const where = extraText.trim() ? "카드·근거 자료" : "카드";
   if (unknownNumbers.length) warnings.push(`${where}에 없는 숫자 ${unknownNumbers.length}개 — 원자료로 확인하거나 지워 주세요: ${unknownNumbers.slice(0, 8).join(", ")}`);
+  warnings.push(...consistencyWarnings(next, today));
   warnings.push(...proseIssues(next).map((x) => `문장: ${x}`), ...mgResultRepeats(next));
   const planned = resultPlanWarning(next, today);
   if (planned) warnings.push(planned);

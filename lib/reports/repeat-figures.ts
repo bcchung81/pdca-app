@@ -42,13 +42,16 @@ function common(value: string, unit: string): boolean {
   return false;
 }
 
-/** 글 → 수치 열쇠(값 쉼표 뺌 + 단위) → 처음 쓴 모양. 자리표시 【확인: …】 안·날짜는 뺌 */
-export function figureKeys(text: string): Map<string, string> {
+/**
+ * 글 → 수치 열쇠(값 쉼표 뺌 + 단위) → 처음 쓴 모양. 자리표시 【확인: …】 안·날짜는 뺌.
+ * all = 흔한 값(common)도 셈 — 값 충돌(mg-consistency.ts, 2026-10-30)은 한 자리 건수·유형 수끼리 어긋나는 일이 흔해 반복 셈과 달리 빼지 않음. 기본은 예전 그대로
+ */
+export function figureKeys(text: string, all = false): Map<string, string> {
   const out = new Map<string, string>();
   const t = plainText(stripNeeds(text)).replace(DATE_RE, " ").replace(ARROW_RE, (_m, num: string, arrow: string, unit: string) => `${num}${unit}${arrow}`);
   for (const m of t.matchAll(FIGURE_RE)) {
     const [, value, unit] = m;
-    if (common(value, unit)) continue;
+    if (!all && common(value, unit)) continue;
     const key = `${value.replace(/,/g, "")}${unit}`;
     if (!out.has(key)) out.set(key, `${value}${unit}`);
   }

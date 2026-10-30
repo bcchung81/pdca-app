@@ -258,8 +258,9 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // fill의 {{refs}}{{avoid}} 자리, 머리 설명 — lib/reports/mg-fill.ts linkedFacts·avoidList)로 판 바뀜(@0c7d879b → @c9d8bf92 — 주요사업 report-block@d2197db2 그대로)
   // 2026-10-29 추진실적 열 표를 2025 경영관리 원본 모양으로(report-draft-mg/blocks.md#choose result 한 줄 — 머리 행·오른쪽 칸은 「뜻 수치」 짧게·시점은 text·행마다 결과는 cells[i].note·items 머리 글·옆 그림 자리 없음)로 판 바뀜(@c9d8bf92 → @b358c751 — 주요사업 report-block@d2197db2 그대로)
   // 2026-10-30 PDCA 뼈대·작성 기준(report-draft-mg/inputs.md 「PDCA 뼈대」·지적은 P 행 한 줄 — 블록 고치기도 inputs를 끼움)로 판 바뀜(@b358c751 → @c2ab69fd — 주요사업 report-block@d2197db2 그대로)
-  assert.equal(mg.prompts.version, "report-block-mg@c2ab69fd");
-  for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none", "fill.refs", "fill.refs.item", "fill.avoid"]) {
+  // 2026-10-30 값 충돌·완료형·비교 기준(report-block-mg/request.md fill.conflict·fill.conflict.item·머리 설명, 끼운 report-draft-mg inputs·blocks#choose 순위표 기준 열)으로 판 바뀜(@c2ab69fd → @52aae17d — 주요사업 report-block@d2197db2 그대로)
+  assert.equal(mg.prompts.version, "report-block-mg@52aae17d");
+  for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none", "fill.refs", "fill.refs.item", "fill.avoid", "fill.conflict", "fill.conflict.item"]) {
     assert.ok(mg.prompts.request[k], `report-block-mg/request.md @${k}`);
     assert.equal(bp.request[k], undefined, `주요사업 report-block에는 @${k} 없음`);
   }
@@ -335,7 +336,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-10-30 집필 요청 블록 줄에 PDCA 단계 「 · 단계 P」(request plan.block {{stage}} — 구성안 블록에 stage가 있을 때만, 없으면 빈 글)으로 request만 바뀜(@56a8287e → @3a4136db)
   // 2026-10-30 PDCA 보정(pdca.md·process.md — 절 안 P → D → C 순서·첫 절 밖 P 하나까지·지적은 첫 절 P 행에서만·점검 행을 더하면 D를 줄여 분량 안에)으로 집필 판만 바뀜(@3a4136db → @ee277e50)
   // 2026-10-30 사용자 결정: 첫 절 여는 블록 문제 칸의 지적 한 줄 문장(report-draft-mg/pdca.md 지적 줄 뒤)으로 집필·구성안 판 바뀜(@ee277e50 → @72845df1 — 주요사업 판 그대로)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@72845df1");
+  // 2026-10-30 값 충돌·완료형·비교 기준(request plan.conflict.* — 구성안 conflicts가 있을 때만, inputs 효과 비교 기준·완료형·직접 비교 제외 표시, process 5번 제목 결과 쪽, blocks#choose 순위표 기준 열)으로 판 바뀜(@72845df1 → @99701910 — 주요사업 판 그대로)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@99701910");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜
@@ -344,14 +346,16 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-10-30 PDCA 작성 기준(pdca.md 끼움 · 블록 stage · 작업 절차 8번 · 블록 몫 · task 줄 · schema block.stage)으로 판 바뀜(@7ed0f810 → @c07133e6 — 주요사업 판 그대로)
   // 2026-10-30 PDCA 보정(pdca.md 끼움 · 작업 절차 8번)으로 outline도 바뀜(@c07133e6 → @4683ed14 — 위 집필 판 줄과 같은 변경)
   // 2026-10-30 사용자 결정(위 집필 판 줄과 같은 pdca.md 문장)으로 outline도 바뀜(@4683ed14 → @2b42964c — 주요사업 판 그대로)
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@2b42964c");
+  // 2026-10-30 값 충돌(schema conflicts·conflict.* · system 3번·출력 규칙 · task 줄) · 제목 완료형(system 2번) · 비교 시점 need(system 3번) · 끼운 inputs·blocks#choose로 판 바뀜(@2b42964c → @b57ceb9e — 주요사업 판 그대로)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@b57ceb9e");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 반복 문장 보강 사유(report-block-mg/request.md fill.sentence·fill.sentence.item)로 블록 고치기 판만 바뀜(@e0653ee9 → @8302d6f6 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none)로 블록 고치기 판만 바뀜(@8302d6f6 → @0c7d879b — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 저녁 보강 재료·되풀이 금지(report-block-mg/request.md fill.refs·fill.refs.item·fill.avoid)로 블록 고치기 판만 바뀜(@0c7d879b → @c9d8bf92 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 추진실적 열 표 원본 모양(report-draft-mg/blocks.md#choose)으로 블록 고치기 판도 바뀜(@c9d8bf92 → @b358c751)
   // 2026-10-30 PDCA 뼈대(report-draft-mg/inputs.md를 끼워 씀)로 블록 고치기 판도 바뀜(@b358c751 → @c2ab69fd)
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@c2ab69fd");
+  // 2026-10-30 값 충돌·완료형·비교 기준(report-block-mg/request.md fill.conflict·fill.conflict.item·머리 설명, 끼운 report-draft-mg inputs·blocks#choose 순위표 기준 열)으로 판 바뀜(@c2ab69fd → @52aae17d — 주요사업 report-block@d2197db2 그대로)
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@52aae17d");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {

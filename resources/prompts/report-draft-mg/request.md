@@ -1,5 +1,6 @@
 경영관리 경평 초안 요청 글입니다. 코드(lib/reports/mg-draft.ts mgMaterialsPrompt·mgPlanPrompt, PDCA 뼈대 pdca.*는 lib/reports/mg-pdca.ts mgPdcaPrompt — 카드 글 바로 뒤)가 절을 골라 채웁니다(plan.added·plan.request는 구성안 뒤 추가된 자료·담당자 요청이 있을 때만 — composition.ts planReviseText) — 구성안(report-outline-mg)과 집필이 같은 자료 블록을 씁니다. 공통 지식 절(kb.*)은 _shared/knowledge-mg.md.
 닫기 관례(close.* — 이 지표 2025 절이 모두 「추진성과」로 닫혔는지, mg-outline.ts mgCloseRule)와 분량 목표(volume.plan — 목차·쪽 배정의 이 카드 쪽수, 없으면 넣지 않음)는 2026-10-12 사용자 결정 D1·D2로 「승인된 구성안」 머리 뒤에 붙습니다.
+값 충돌(plan.conflict.* — 구성안 mg.conflicts, 2026-10-30)은 있을 때만 「승인된 구성안」 머리 바로 뒤에 붙습니다(mg-draft.ts mgPlanPrompt).
 
 <!-- @header -->
 보고서: {{year}}년도 경영실적보고서(경영관리) 「{{indicator}}」 · 과제관리카드 {{taskNo}} {{title}}이(가) 맡는 평가내용·대주제·절
@@ -134,6 +135,12 @@ A 보완({{count}}줄) — 올해 점검 결과로 바꾼 것:
 - 절의 「둔 이유」에 적힌 값 어긋남(카드·첨부의 같은 항목 값이 다름)은 더 최근 자료의 값으로 쓰고, 버린 값은 다른 블록에도 쓰지 않습니다.
 - 핵심 메시지: {{message}}
 - 평가 논점: {{points}}
+
+<!-- @plan.conflict.head -->
+- 값 충돌(구성안이 근거에서 찾은 같은 항목의 다른 값 — 쓰지 않을 값 → 쓸 값): 「쓰지 않을 값」은 어느 블록(표 칸·띠·추진성과 포함)에도 쓰지 않고 그 항목은 「쓸 값」으로만 씁니다. 앱이 초안 줄에서 쓰지 않을 값을 찾아 막힘 경고를 냅니다.
+
+<!-- @plan.conflict.item -->
+  - {{item}}: 「{{drop}}」 → 「{{keep}}」({{why}})
 
 <!-- @volume.plan -->
 - 분량 목표: 목차·쪽 배정이 이 카드에 준 {{pages}}쪽(약 {{height}}mm — 규정인 이 지표 작성분량에서 본문 예산을 2025 경영실적보고서 쪽 비율로 평가내용·카드에 나눈 어림값). 이 구성안(절 {{parts}}개·블록 {{blocks}}개)은 머리(평가내용 상자·대주제 띠·절 제목 줄 약 {{headMm}}mm)를 빼면 블록 영역이 약 {{area}}mm — 절당 약 {{perPart}}mm, 블록 하나 평균 약 {{perBlock}}mm입니다.

@@ -27,6 +27,7 @@ const SOURCES = [
   "lib/reports/mg-close.ts",
   "lib/reports/mg-fill.ts",
   "lib/reports/mg-pdca.ts",
+  "lib/reports/mg-consistency.ts",
   "app/(app)/reports/cards/draft-write.ts",
 ];
 
