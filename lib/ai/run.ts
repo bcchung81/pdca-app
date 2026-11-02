@@ -393,7 +393,7 @@ export interface ReportSectionInput {
   prior?: PriorPick[];
   siblings?: SiblingLayout[];
   lens?: LensRef[];
-  /** 올해 실적 재료(카드 계량지표·월별 실적 + 부서 계량 실적 입력, lib/reports/actuals.ts) — 없으면 카드만으로 뽑음 */
+  /** 올해 실적 재료(카드 원장의 계량지표·정량 성과 칸·월별 실적, lib/reports/actuals.ts) — 없으면 카드로 뽑음(작성일 없이) */
   actuals?: YearActuals;
   /** 고치기: 앞서 쓴 초안과 그 판면 어림·올해 실적 문제 — 있으면 첫 요청 글 뒤에 「판면 맞추기」 또는 「고치기」를 붙여 다시 씀 */
   fit?: { draft: SectionOutput; report: FitReport; need: FitNeed | null; year?: string[]; compose?: string[]; prose?: string[]; unknown?: string[]; title?: string[] };

@@ -66,7 +66,8 @@ test("buildTodoBoard: 줄의 requests는 자료 필요 수(구성안만 있는 �
   const b = buildTodoBoard({
     units: [{ id: "U1", name: "첫째", cardGroup: null }],
     teams: [{ id: 1, name: "가팀" }],
-    cards: [{ unitId: "U1", teamId: 1, kpi: [], submit: sub("x", true) }, { unitId: "U1", teamId: 1, kpi: [], submit: sub("y", false) }],
+    cards: [{ unitId: "U1", teamId: 1, data: {}, submit: sub("x", true) }, { unitId: "U1", teamId: 1, data: {}, submit: sub("y", false) }],
+    today: "2026-11-02",
     reports: [],
   });
   assert.equal(b.rows[0].requests, 2);

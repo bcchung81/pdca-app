@@ -1,6 +1,6 @@
 // 경영관리 지표 단위 부분 AI 문장 칸 채우기(R5c — unit-parts-ai.ts·resources/prompts/report-unit-mg) 시험.
 // 지키는 것: 쓸 칸(빈 칸만·덮어쓰기·고르지 않은 계량 행 제외) · 요청 글(자리표시 없음·행 열쇠·재료 블록, 카드 전용 자료·보고서 추가자료가 안 들어감) ·
-// 답 정리(모르는 행 버림·코드·사람 칸과 이미 쓴 칸 거절·줄 수 상한·빈 답 칸은 안 씀) · 숫자 대조(근거 = 카드·과제별 초안·실적 입력·달성률·2025 보고서·핵심공통항목 —
+// 답 정리(모르는 행 버림·코드·사람 칸과 이미 쓴 칸 거절·줄 수 상한·빈 답 칸은 안 씀) · 숫자 대조(근거 = 카드(원장 ’26 계량 실적 줄 포함)·과제별 초안·달성률·2025 보고서·핵심공통항목 —
 // 평가위원 지적 원문·시정조치 계획의 수치는 근거 아님) · 【확인】 셈 · 답 스키마에 한 값 enum·literal 없음 · AI 경고 갈아 끼우기.
 
 import assert from "node:assert/strict";
@@ -42,6 +42,7 @@ function materials(): MgUnitMaterials {
     card("8-1", {
       findings: { rows: [{ finding: ["∙ 자금운용 전담부서 및 명문화된 검토 규정이 없어 위험 상품 운용 시 전문가 자문이 임의적"], plan: ["∙ 자금운용 심의 규정 신설"] }] },
       kpi: { rows: [{ name: "부채비율", unit: "%", prev: "31.7", target: "31" }] },
+      outcome: { quantitative: ["∙ ’26년 부채비율 실적 30.5% 달성"] },
     }),
   ];
   const report2025: UnitChunk[] = [
@@ -61,7 +62,7 @@ function materials(): MgUnitMaterials {
       { card_id: "경영관리8/8-2", section: "평가내용 1.", subsection: null, sort: 1 },
       { card_id: "경영관리8/8-1", section: "평가내용 1.", subsection: null, sort: 2 },
     ],
-    kpiInputs: [{ "경영관리8/8-1#부채비율": "30.5" }],
+    today: "2026-11-02",
   };
 }
 
@@ -96,11 +97,11 @@ test("쓸 칸: 지적 조치·전년 대비 둘·계량(고른 행만)·비계�
   assert.ok(unitAiTargets(c2, true).some((c) => c.row === "F1"), "덮어쓰기 — 쓴 칸도");
 });
 
-test("요청 글: 자리표시가 남지 않고, 행 열쇠·재료 블록(카드 원장·과제별 초안 목차 순·실적 입력·평가위원 지적·시정조치 약속 표지·2025 같은 장·핵심공통항목·편람)이 들어감", () => {
+test("요청 글: 자리표시가 남지 않고, 행 열쇠·재료 블록(카드 원장·과제별 초안 목차 순·원장 계량 실적 줄·평가위원 지적·시정조치 약속 표지·2025 같은 장·핵심공통항목·편람)이 들어감", () => {
   const p = reportUnitPromptsMg().prompts;
   const text = unitAiPrompt(p, input());
   assert.doesNotMatch(text, /\{\{\w+\}\}/);
-  for (const phrase of ["[F1] 카드 8-1 지적 1행", "[P1] 평가내용1", "[K1] 계량 「부채비율」", "[Q1] 비계량", "[L1] 향후 개선계획", 'field="actions"', "### 8-1 과제별 초안", "### 8-2 — 과제별 초안 없음", "- 8-1 부채비율: 30.5", "※ 시정조치 계획 — 조치계획은", "2025 보고서 전년 대비 평가내용 1", "핵심공통항목 '25", "편람 · 재무예산관리", "달성률 101.6%", "쓸 칸」 8개"])
+  for (const phrase of ["[F1] 카드 8-1 지적 1행", "[P1] 평가내용1", "[K1] 계량 「부채비율」", "[Q1] 비계량", "[L1] 향후 개선계획", 'field="actions"', "### 8-1 과제별 초안", "### 8-2 — 과제별 초안 없음", "- 8-1 부채비율: ’26년 부채비율 실적 30.5% 달성", "※ 시정조치 계획 — 조치계획은", "2025 보고서 전년 대비 평가내용 1", "핵심공통항목 '25", "편람 · 재무예산관리", "달성률 101.6%", "쓸 칸」 8개"])
     assert.ok(text.includes(phrase), phrase);
   assert.ok(text.indexOf("### 카드 8-2") < text.indexOf("### 카드 8-1"), "카드는 목차 순(sort)");
   assert.ok(!text.includes("2025 보고서 평가내용 1\n"), "2025 세부평가내용별 본문은 넣지 않음(카드 밖 장만)");
@@ -168,7 +169,7 @@ test("답 정리: 모르는 행은 버리고, 코드·사람 칸과 빈 칸만 �
   assert.ok(r.warnings.outcome!.some((w) => w.startsWith(`${UNIT_AI_WARN} 쓸 칸 5개 중 5개를 채우지 않음`)));
 });
 
-test("숫자 대조: 근거 = 카드·과제별 초안·실적 입력·앱 달성률·2025 보고서·핵심공통항목, 평가위원 지적 원문·시정조치 계획의 수치는 근거 아님 · 【확인】 안 숫자는 안 셈", () => {
+test("숫자 대조: 근거 = 카드(원장 계량 실적 줄 포함)·과제별 초안·앱 달성률·2025 보고서·핵심공통항목, 평가위원 지적 원문·시정조치 계획의 수치는 근거 아님 · 【확인】 안 숫자는 안 셈", () => {
   const x = input();
   const targets = unitAiTargets(unitAiCells(x.parts, 2026, "MG-8"), false);
   const r = applyUnitAiAnswer(

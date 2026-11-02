@@ -1,11 +1,12 @@
-// 경평 초안 「채울 것」 모음(순수) — 재료 결손(올해 계량 실적 미입력·【확인: …】 자리표시·초안 없음·근거에 없는 숫자)을
-// 평가단위(주요사업은 사업, 경영관리는 지표) × 부서별로 모아 할 일 많은 순으로 줄 세움. 2026-10-17 운영 측정: 보고서 47행 모두 계량 실적 0건,
+// 경평 초안 「채울 것」 모음(순수) — 재료 결손(원장에 올해 실적 없음·【확인: …】 자리표시·초안 없음·근거에 없는 숫자)을
+// 평가단위(주요사업은 사업, 경영관리는 지표) × 부서별로 모아 할 일 많은 순으로 줄 세움. 올해 실적은 별도 입력 없이 카드 원장에서 읽음(2026-11-02, yearActuals·kpiGaps).
+// 2026-10-17 운영 측정: 보고서 47행 모두 계량 실적 0건,
 // 【확인】이 경영관리 초안 43장 모두·주요사업 7/8장·카드 밖 부분에 102개 — 과제별 초안 화면 하나하나에서만 보여 한눈에 못 봤음.
 // 성과관리팀 「보고서 현황」과 부서 「경평 초안」 위쪽이 같은 모음을 씀(부서는 자기 팀 줄만 넘겨 받음).
 
-import { needsIn } from "./actuals.ts";
+import { trackOfUnit } from "../tracks/index.ts";
+import { kpiGaps, needsIn, yearActuals } from "./actuals.ts";
 import { needRequestsOf } from "./material-requests.ts";
-import { kpiKeyedRows } from "./model.ts";
 import { sectionText } from "./section.ts";
 import { type SubmitCard, cardSubmitRow } from "./submission.ts";
 
@@ -21,8 +22,8 @@ export const UNIT_PART_LABEL: Record<string, string> = { cover: "표지", findin
 export interface TodoCard {
   unitId: string;
   teamId: number;
-  /** 카드 계량 성과지표 원자료(cards.data->kpi->rows) */
-  kpi: unknown;
+  /** 카드 원장 JSON(cards.data) — 계량 성과지표와 정량 성과 칸에서 올해 실적을 읽음 */
+  data: unknown;
   submit: SubmitCard;
 }
 
@@ -31,8 +32,10 @@ export interface TodoInput {
   units: Array<{ id: string; name: string; cardGroup: string | null }>;
   teams: Array<{ id: number; name: string }>;
   cards: TodoCard[];
-  /** 보고서 행(평가단위 × 부서) — inputs.kpi[카드 id#지표 이름] = 부서가 넣은 올해 실적 */
-  reports: Array<{ id: number; unitId: string; teamId: number; inputs: unknown }>;
+  /** 작성일(YYYY-MM-DD) — 정량 성과 칸 줄을 지표에 붙이는 기준(yearActuals) */
+  today: string;
+  /** 보고서 행(평가단위 × 부서) */
+  reports: Array<{ id: number; unitId: string; teamId: number }>;
   /** 지표 단위 카드 밖 부분 행(경영관리 — 없으면 빈 목록) */
   parts?: Array<{ unitId: string; part: string; spec: unknown }>;
 }
@@ -53,14 +56,14 @@ export interface TodoRow {
   needs: number;
   /** 자리표시 글 앞 40자 견본(앞에서 3개, 「과제번호 글」) */
   samples: string[];
-  /** 카드 계량 성과지표 행 수 · 그중 부서가 올해 실적을 안 넣은 수 */
+  /** 카드 계량 성과지표 행 수 · 그중 원장에 올해 실적(정량 성과 칸·예상 칸)이 없는 수 */
   kpiTotal: number;
   kpiMissing: number;
   /** 근거에 없는 숫자(과제별 초안 합) */
   unknown: number;
   /** 구성안 재료표의 「자료 필요」 수(과제마다 같은 문구는 한 번, 목차에서 뺀 과제 제외) — 할 일 합에는 안 넣음(부서 「자료 요청」 목록과 같은 셈) */
   requests: number;
-  /** 할 일 합 = 계량 미입력 + 【확인】 + 초안 없는 과제 + 근거에 없는 숫자 (정렬 기준) */
+  /** 할 일 합 = 원장에 올해 실적 없음 + 【확인】 + 초안 없는 과제 + 근거에 없는 숫자 (정렬 기준) */
   todo: number;
 }
 
@@ -88,12 +91,6 @@ export function stringsOf(v: unknown, out: string[] = []): string[] {
   else if (v && typeof v === "object") for (const x of Object.values(v)) stringsOf(x, out);
   return out;
 }
-
-const filled = (inputs: unknown, key: string): boolean => {
-  const kpi = (inputs as { kpi?: Record<string, unknown> } | null | undefined)?.kpi;
-  const v = kpi && typeof kpi === "object" ? kpi[key] : undefined;
-  return typeof v === "string" ? v.trim() !== "" : typeof v === "number";
-};
 
 /**
  * 평가단위 × 부서 줄을 모아 할 일 많은 순(같으면 단위 순서·부서 이름 순)으로 돌려줌.
@@ -125,9 +122,9 @@ export function buildTodoBoard(input: TodoInput): TodoBoard {
     let kpiMissing = 0;
     const samples: string[] = [];
     for (const c of cs) {
-      const rows2 = kpiKeyedRows(c.submit.id, c.kpi);
-      kpiTotal += rows2.length;
-      kpiMissing += rows2.filter((r) => !filled(report?.inputs, r.key)).length;
+      const actuals = yearActuals(c.data, input.today, { wide: trackOfUnit(unitId) === "경영관리" });
+      kpiTotal += actuals.kpi.length;
+      kpiMissing += kpiGaps(actuals).length;
       if (!c.submit.included) continue; // 목차에서 뺀 과제는 초안·자리표시를 따지지 않음(제출 조건과 같음)
       requests += needRequestsOf(c.submit.draft?.outline, c.submit.undatedOutcome).length;
       const row = cardSubmitRow(c.submit);

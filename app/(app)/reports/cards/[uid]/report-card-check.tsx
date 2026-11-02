@@ -18,7 +18,7 @@ type Needs = ReturnType<typeof checkNeedsOf>;
  * 「점검 결과」 탭: 성과관리팀 코멘트 · 편람 논점(낱말 신호) · 근거 약한 문장 · 채울 자료 · 확인할 것.
  * 자리가 있는 항목은 data-jump 단추(누르면 왼쪽 미리보기의 그 자리로)
  */
-export function ReportCheck({ spec, needs, cardComments, warnings, year, own, kpiHref }: { spec: ReportSectionSpec | null; needs: Needs; cardComments: CardComments; warnings: string[]; year: number; own: boolean; kpiHref: string | null }) {
+export function ReportCheck({ spec, needs, cardComments, warnings, year, cardHref }: { spec: ReportSectionSpec | null; needs: Needs; cardComments: CardComments; warnings: string[]; year: number; cardHref: string }) {
   const { cover, weakSentences, draftNeeds, figureNeeds, kpiNeeds } = needs;
   const needCount = draftNeeds.length + kpiNeeds.length + figureNeeds.length;
   const checkCount = needCount + warnings.length;
@@ -63,7 +63,7 @@ export function ReportCheck({ spec, needs, cardComments, warnings, year, own, kp
           </ul>
         </section>
       )}
-      {needCount > 0 && <NeedsSection needs={needs} needCount={needCount} year={year} own={own} kpiHref={kpiHref} />}
+      {needCount > 0 && <NeedsSection needs={needs} needCount={needCount} year={year} cardHref={cardHref} />}
       <WarningList list={warnings} headingClass={h3} />
       {spec && checkCount === 0 && weakSentences.length === 0 && <p className="text-muted-2">채울 자료·확인할 것이 없습니다.</p>}
     </div>
@@ -101,7 +101,7 @@ function CommentsSection({ cardComments }: { cardComments: CardComments }) {
   );
 }
 
-function NeedsSection({ needs, needCount, year, own, kpiHref }: { needs: Needs; needCount: number; year: number; own: boolean; kpiHref: string | null }) {
+function NeedsSection({ needs, needCount, year, cardHref }: { needs: Needs; needCount: number; year: number; cardHref: string }) {
   const { draftNeeds, figureNeeds, kpiNeeds } = needs;
   return (
     <section aria-label="채울 자료" className="flex min-w-0 flex-col gap-1.5">
@@ -127,16 +127,12 @@ function NeedsSection({ needs, needCount, year, own, kpiHref }: { needs: Needs; 
         ))}
         {kpiNeeds.map((k) => (
           <li key={`kpi-${k.name}`} className="px-1.5 py-1 break-keep [overflow-wrap:anywhere]">
-            계량 실적 <b>{k.name}</b>
+            원장에 올해 실적 없음 <b>{k.name}</b>
             {k.unit ? `(${k.unit})` : ""} {year}년 실적 <span className="text-muted">— 목표 {k.target || "—"} · 전년 {k.prev || "—"}</span>
-            {kpiHref && (
-              <>
-                {" "}
-                <Link href={kpiHref} className="text-link no-underline hover:underline">
-                  {own ? "계량 실적 넣기" : "보고서에서 보기"}
-                </Link>
-              </>
-            )}
+            {" "}
+            <Link href={cardHref} className="text-link no-underline hover:underline">
+              카드에서 실적 반영
+            </Link>
           </li>
         ))}
       </ul>

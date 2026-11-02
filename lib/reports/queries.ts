@@ -9,7 +9,7 @@ import type { SubmitCard } from "./submission.ts";
 import { DEFAULT_TRACK, type TrackId, trackOfUnit } from "../tracks/index.ts";
 
 
-/** reports.inputs — 부서가 넣은 올해 계량 실적(`kpiKeyedRows` = 카드 id#지표 이름 → 값) */
+/** reports.inputs — 옛 열(앱이 더는 읽거나 쓰지 않음, 2026-11-02: 올해 계량 실적은 카드 원장에서 읽음) */
 export interface ReportInputs {
   kpi?: Record<string, string>;
 }

@@ -334,19 +334,7 @@ try {
   const mine = reps.find((x) => x.team_id === insp.id && x.eval_unit_id === "BZ-1");
   const theirs = reps.find((x) => x.team_id !== insp.id && x.eval_unit_id === "BZ-2");
   const mr = await d.get("/my/report");
-  check("부서 보고서 초안 화면(주관 부서 공통 부분)", text(mr.html).includes("주관 부서 공통 부분") && text(mr.html).includes("계량 실적 입력"));
-  // 계량 실적: 이 보고서 카드 중 계량지표 행이 있는 카드(시험 카드에 지표가 없을 수 있음)
-  // 첫 지표 행 이름이 있는 카드(「-」 같은 빈 지표는 리뷰 화면에 나오지 않음). 과제번호 순으로 정해 매번 같은 카드
-  const kpiCard = cards
-    .filter((c) => c.team_id === insp.id && c.eval_unit_id === "BZ-1")
-    .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-    .find((c) => {
-      const name = String(c.data.kpi?.rows?.[0]?.name ?? "").trim();
-      return name && !/^[-–—·]+$/.test(name);
-    });
-  // 열쇠 규칙 = lib/reports/model.ts kpiKeyedRows(카드 id#정규화한 지표 이름; 첫 행이라 같은 이름 차례 붙임 없음)
-  r = await call(d, "/my/report", "saveReportInputs", [mine.id, { [`${kpiCard.id}#${String(kpiCard.data.kpi.rows[0].name).trim().normalize("NFC").replace(/\s+/g, " ")}`]: "46,210건" }]);
-  check("계량 실적 저장", r.ok === true, JSON.stringify(r));
+  check("부서 보고서 초안 화면(주관 부서 공통 부분)", text(mr.html).includes("주관 부서 공통 부분") && text(mr.html).includes("원장에 올해 실적이 없는 지표"));
   const s1 = await call(d, "/my/report", "startMaterialUpload", [mine.id, "시험.pdf", 12]);
   check("추가자료 서명 업로드 주소", s1.ok === true && s1.path?.startsWith(`${mine.id}/`), JSON.stringify(s1).slice(0, 100));
   const pub = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, { auth: { persistSession: false } });
@@ -361,7 +349,7 @@ try {
   check("코멘트", r.ok === true, JSON.stringify(r));
   const rv = await p.get(`/reports/${mine.id}`);
   const rvText = text(rv.html);
-  check("성과관리팀 리뷰 화면: 코멘트·계량 실적·자료", rvText.includes("시험 질문") && rvText.includes("46,210건") && rvText.includes("시험.pdf"), JSON.stringify({ status: rv.status, comment: rvText.includes("시험 질문"), kpi: rvText.includes("46,210건"), material: rvText.includes("시험.pdf") }));
+  check("성과관리팀 리뷰 화면: 코멘트·자료", rvText.includes("시험 질문") && rvText.includes("시험.pdf"), JSON.stringify({ status: rv.status, comment: rvText.includes("시험 질문"), material: rvText.includes("시험.pdf") }));
   check("리뷰 화면: 평가내용2 과제별 초안 칸(아직 초안 없음 → 만들기 링크)", rvText.includes("평가내용2 과제별 초안(HTML)") && rvText.includes("초안 만들기"), "");
   const other = await d.get(`/reports/${theirs.id}`);
   check("남의 부서 보고서는 못 봄(404)", other.status === 404, String(other.status));

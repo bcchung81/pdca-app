@@ -3,6 +3,7 @@ import type { OutlineData } from "../../../../../components/reports/outline-pane
 import type { SourceFile } from "../../../../../components/reports/draft-workbench";
 import type { MenuItem } from "../../../../../components/reports/draft-workspace";
 import type { DraftMeta } from "../../../../../components/reports/draft-compose";
+import { isMgmtCard } from "../../../../../lib/cards/mgmt-card.ts";
 import { compareTaskNo } from "../../../../../lib/cards/view.ts";
 import { kpiGaps, needsIn, yearActuals } from "../../../../../lib/reports/actuals.ts";
 import { FIGURE_KINDS, FIGURE_LABEL, figuresOf } from "../../../../../lib/reports/blocks.ts";
@@ -19,7 +20,7 @@ import { REPORT_CSS } from "../../../../../lib/reports/section-css.ts";
 import { overflowLimitMm } from "../../../../../lib/reports/dom-hwpx/policy.ts";
 import { axesFor } from "../../../../../lib/reports/split-axes.ts";
 import { withReturn } from "../../../../../lib/nav/return-to.ts";
-import { fmtDateTime } from "../../../../../lib/format.ts";
+import { fmtDateTime, isoDay } from "../../../../../lib/format.ts";
 import type { CardRow, DraftRow, MaterialRowDb, ReportCardData, ReportRef, SiblingRow } from "./load.ts";
 
 /** 성과관리팀 코멘트(점검 결과 탭 — 이 카드의 부서 보고서에서 이 과제 앵커만): card:<uid>(과제 전체)·card:<uid>#b<블록 순번> */
@@ -134,16 +135,16 @@ export function menuOf(o: { uid: string; teamQs: string; selfHref: string; repor
 }
 
 /**
- * 「점검 결과」 탭 재료: 편람 논점(낱말 신호) · 근거 약한 문장 · 채울 자료(초안의 【확인: …】 + 올해 계량 실적을 아직 안 넣은 지표 + 그림 자리표시)
+ * 「점검 결과」 탭 재료: 편람 논점(낱말 신호) · 근거 약한 문장 · 채울 자료(초안의 【확인: …】 + 원장에 올해 실적이 없는 지표 + 그림 자리표시)
  * 편람 논점 커버(4단계 검증 보강)는 초안 글에 그 논점의 낱말이 있는지만 보는 신호 — 판정이 아님
  */
-export function checkNeedsOf(spec: ReportSectionSpec | null, cardData: unknown, report: ReportRef | null) {
+export function checkNeedsOf(spec: ReportSectionSpec | null, cardData: unknown) {
   const cover = spec && lensCover(spec);
   const weakSentences = spec?.ground?.weak ?? [];
   const draftNeeds = spec ? needsIn(sectionText(spec)) : [];
   // 그림 자리표시(사진·삽화·지도·화면·로고 — 초안은 자리만, 담당자가 채움). 같은 설명이 여럿이면 몇 번째인지(nth)로 찾음
   const figureNeeds = (spec?.blocks ? figuresOf(spec.blocks) : []).map((f, i, all) => ({ ...f, nth: all.slice(0, i).filter((x) => x.desc === f.desc).length }));
-  const kpiNeeds = kpiGaps(yearActuals(cardData, report?.inputs?.kpi ?? {}));
+  const kpiNeeds = kpiGaps(yearActuals(cardData, isoDay(), { wide: isMgmtCard(cardData as Parameters<typeof isMgmtCard>[0]) }));
   return { cover, weakSentences, draftNeeds, figureNeeds, kpiNeeds };
 }
 

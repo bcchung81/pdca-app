@@ -182,25 +182,30 @@ test("2025 셈 방향 추론: 달성률과 맞는 쪽(목표 = 실적·숫자 �
   assert.equal(inferPolarity({ target: "0건", actual: "0건", rate: "100.0%" }), null);
 });
 
-test("계량 표(Q5): 카드 계량 행 전부가 후보, 2025 표와 이름이 같은 행만 미리 체크 · 극성 기본은 2025 셈 방향 · 실적은 부서 입력(kpiKeyedRows) · 비계량·개선계획은 평가내용 줄임", () => {
+test("계량 표(Q5): 카드 계량 행 전부가 후보, 2025 표와 이름이 같은 행만 미리 체크 · 극성 기본은 2025 셈 방향 · ’26 실적은 원장 정량 성과 칸 줄의 값 하나(ledgerFigure — 못 정하면 빈 칸 + 원장 줄 경고) · 비계량·개선계획은 평가내용 줄임", () => {
   const kpi = { rows: [{ name: "부채비율", unit: "%", prev: "31.7%", target: "31.0%" }, { name: "-", prev: "", target: "" }, { name: "자산 운용 수익률", unit: "%", prev: "3.18", target: "3.3" }, { name: "영업이익률", prev: "0.6%", target: "0.9%" }] };
   const rpt = [
     ...skeleton([[1, "재무구조의 안정성 및 건전성 유지를 위한 기관의 노력과 성과"], [2, "예산편성(예비타당성 조사 등)을 통한 집행을 위한 노력과 성과"]]),
     { chunk_key: "k", text: "구분 | ’24년 / 실적 | ’25년 | 성과 분석\n\n〃 | 〃 | 목표 | 실적 | 달성률 | 〃\n\n부채비율 | 32.1% | 31.6% | 31.7% | 99.7% | ∙ 감소\n\n자산운용수익률 | 3.79% | 2.83% | 3.18% | 112.4% | ∙ 개선", meta: { chapter: "outcome", mark: "가" } },
   ];
-  const { part, warnings } = buildOutcomePart({ cards: [card("8-1", { kpi })], report2025: rpt, kpiInputs: [{ "경영관리8/8-1#부채비율": "30.5%" }, { "경영관리8/8-1#부채비율": "30.5%", "경영관리8/8-1#자산 운용 수익률": "" }] });
-  assert.deepEqual(part.kpi.map((k) => [k.id, k.human.checked, k.human.polarity, k.code.match2025, k.code.actual]), [
-    ["경영관리8/8-1#부채비율", true, "down", "부채비율", "30.5%"],
-    ["경영관리8/8-1#자산 운용 수익률", true, "up", "자산운용수익률", ""],
-    ["경영관리8/8-1#영업이익률", false, "up", null, ""],
-  ], "빈 자리표시 행(-)은 빼고 지표 이름을 키로");
+  const outcome = { quantitative: ["∙ ’26년 부채비율 실적 30.5% 달성(목표 31.0%)", "∙ ’26년 자산 운용 수익률 실적 3.4% 달성, 상반기 3.2%"] };
+  const { part, warnings } = buildOutcomePart({ cards: [card("8-1", { kpi, outcome })], report2025: rpt, today: "2026-11-02" });
+  assert.deepEqual(part.kpi.map((k) => [k.id, k.human.checked, k.human.polarity, k.code.match2025, k.code.actual, k.code.ledger]), [
+    ["경영관리8/8-1#부채비율", true, "down", "부채비율", "30.5%", undefined],
+    ["경영관리8/8-1#자산 운용 수익률", true, "up", "자산운용수익률", "", "’26년 자산 운용 수익률 실적 3.4% 달성, 상반기 3.2%"],
+    ["경영관리8/8-1#영업이익률", false, "up", null, "", undefined],
+  ], "빈 자리표시 행(-)은 빼고 지표 이름을 키로 · 값이 둘인 원장 줄은 빈 칸 + 줄");
   assert.equal(kpiRate(part.kpi[0]).text, "101.6%");
   assert.deepEqual(part.qual.map((r) => [r.id, r.human.label]), [["qual/1", "재무구조의 안정성 및 건전성 유지"], ["qual/2", "예산편성을 통한 집행"]]);
   assert.deepEqual(part.plan.map((r) => [r.id, r.ai.self, r.ai.plan]), [["plan/1", [], []], ["plan/2", [], []]]);
-  assert.deepEqual(warnings, ["계량 표: 실적 미입력 1행(8-1 자산 운용 수익률) — 부서 경평 초안 「계량 실적」 입력이 필요"], "체크한 행만 경고");
-  const conflict = buildOutcomePart({ cards: [card("8-1", { kpi })], report2025: rpt, kpiInputs: [{ "경영관리8/8-1#부채비율": "30.5%" }, { "경영관리8/8-1#부채비율": "30.9%" }] });
-  assert.equal(conflict.part.kpi[0].code.actual, "30.5%");
-  assert.ok(conflict.warnings[0].includes("부서 보고서마다 입력값이 다름"));
+  assert.deepEqual(warnings, ["계량 표: 8-1 「자산 운용 수익률」 — 원장 줄에서 실적 값을 하나로 못 정함(값이 여럿이거나 단위가 다르거나 시점 미기재): 「’26년 자산 운용 수익률 실적 3.4% 달성, 상반기 3.2%」"], "체크한 행만 경고");
+  // 원장 줄이 없으면 실적 미입력(카드 현행화 안내), 작성일이 없으면 원장 줄을 보지 않음
+  const bare = buildOutcomePart({ cards: [card("8-1", { kpi })], report2025: rpt, today: "2026-11-02" });
+  assert.deepEqual(bare.warnings, ["계량 표: 실적 미입력 2행(8-1 부채비율 · 8-1 자산 운용 수익률) — 카드 정량 성과 칸에 이 지표의 올해 실적이 없음(원장 현행화 뒤 다시 채우기)"]);
+  assert.deepEqual(buildOutcomePart({ cards: [card("8-1", { kpi, outcome })], report2025: rpt, today: "" }).part.kpi.map((k) => k.code.actual), ["", "", ""]);
+  // 시점 미기재 줄(경영관리 wide)은 값이 하나여도 빈 칸 + 줄(표지 포함)
+  const undated = buildOutcomePart({ cards: [card("8-1", { kpi, outcome: { quantitative: ["∙ 부채비율 30.5%로 감소"] } })], report2025: rpt, today: "2026-11-02" });
+  assert.deepEqual([undated.part.kpi[0].code.actual, undated.part.kpi[0].code.ledger], ["", "부채비율 30.5%로 감소 (시점 미기재 — 부서 확인)"]);
   assert.equal(evalShort("효율적인 예산편성 및 투명한 집행을 위한 기관의 노력과 성과"), "효율적인 예산편성 및 투명한 집행");
 });
 
@@ -236,31 +241,29 @@ function materials(over: Partial<MgUnitMaterials> = {}): MgUnitMaterials {
   return {
     unit: "MG-8",
     year: 2026,
-    cards: [card("8-1", { kpi: { rows: [{ name: "부채비율", prev: "31.7%", target: "31%" }] }, ...findingRows(["<script>alert(1)</script> 자금 | 운용"]) }), card("8-2")],
+    cards: [card("8-1", { kpi: { rows: [{ name: "부채비율", prev: "31.7%", target: "31%" }] }, outcome: { quantitative: ["∙ ’26년 부채비율 실적 30% 달성"] }, ...findingRows(["<script>alert(1)</script> 자금 | 운용"]) }), card("8-2")],
     drafts: [{ cardId: "경영관리8/8-1", updatedAt: "2026-10-16T01:00:00Z", spec: mgSpec() }],
     report2025: skeleton([[1, "재무구조"], [2, "예산편성"]], { 1: "머리\n\n∙ 지난 실적 | ∙ ’25 실적 | ∙ 효과" }),
     evaluator: [],
     handbook: [],
-    kpiInputs: [{ "경영관리8/8-1#부채비율": "30%" }],
+    today: "2026-11-02",
     ...over,
   };
 }
 
-test("재료 판: 카드 원장 판·초안 저장 시각·실적 입력이 바뀌거나 카드·초안이 생기고 빠지면 「재료가 바뀜」 사유", () => {
+test("재료 판: 카드 원장 판·초안 저장 시각이 바뀌거나 카드·초안이 생기고 빠지면 「재료가 바뀜」 사유(’26 계량 실적은 원장에서 오므로 원장 판이 잡음)", () => {
   const m = materials();
   const saved = unitPartsSource(m);
-  assert.deepEqual(saved.cards, { "경영관리8/8-1": 0, "경영관리8/8-2": 0 });
-  assert.deepEqual(saved.drafts, { "경영관리8/8-1": "2026-10-16T01:00:00Z" });
-  assert.match(saved.inputs, /^[0-9a-f]{8}$/);
+  assert.deepEqual(saved, { cards: { "경영관리8/8-1": 0, "경영관리8/8-2": 0 }, drafts: { "경영관리8/8-1": "2026-10-16T01:00:00Z" } });
   assert.deepEqual(sourceChanges(saved, unitPartsSource(m)), [], "같은 재료면 바뀐 것 없음");
-  assert.deepEqual(unitPartsSource({ ...m, kpiInputs: [{ "경영관리8/8-1#부채비율": "30%", "다른카드#0": "1" }] }).inputs, saved.inputs, "이 지표 카드 계량 행 밖의 입력은 판에 안 셈");
+  // 예전에 저장된 행(source에 실적 입력 해시 inputs가 있음 — 2026-11-02 전)도 거짓 「바뀜」이 없음
+  assert.deepEqual(sourceChanges({ ...saved, inputs: "0123abcd" } as typeof saved, unitPartsSource(m)), []);
   const now = unitPartsSource({
     ...m,
     cards: [{ ...m.cards[0], dataRev: 2 }, card("8-3")],
     drafts: [{ cardId: "경영관리8/8-1", updatedAt: "2026-10-17T00:00:00Z", spec: mgSpec() }, { cardId: "경영관리8/8-3", updatedAt: "x", spec: mgSpec() }],
-    kpiInputs: [{ "경영관리8/8-1#0": "29%" }],
   });
-  assert.deepEqual(sourceChanges(saved, now), ["카드 8-1 원장이 바뀜", "카드 8-3가 새로 들어옴", "카드 8-2가 빠짐(보관 등)", "8-1 과제별 초안이 바뀜", "8-3 과제별 초안이 새로 생김", "계량 실적 입력이 바뀜"]);
+  assert.deepEqual(sourceChanges(saved, now), ["카드 8-1 원장이 바뀜", "카드 8-3가 새로 들어옴", "카드 8-2가 빠짐(보관 등)", "8-1 과제별 초안이 바뀜", "8-3 과제별 초안이 새로 생김"]);
 });
 
 test("한꺼번에 만들기: 지표 1~11은 네 부분 + 초안 없는 카드 경고, 혁신가점은 표지만", () => {
@@ -360,8 +363,7 @@ test("2025 틀 재현(지표 1~11): 평가내용 행 = 2025 전년 대비 표 �
       kpi: { rows: k25.map((k) => ({ name: k.name, prev: k.prev, target: k.target })) },
     });
     c.id = `경영관리${n}/${n}-1`;
-    const inputs = Object.fromEntries(k25.map((k) => [`${c.id}#${k.name.trim().replace(/\s+/g, " ")}`, k.actual]));
-    const { parts } = buildUnitPartsMg({ unit, year: 2025, cards: [c], drafts: [], report2025: rpt, evaluator: [evaluator(f25.map((f, i) => ({ no: i + 1, text: f.join(" ") })))], handbook: [], kpiInputs: [inputs] });
+    const { parts } = buildUnitPartsMg({ unit, year: 2025, cards: [c], drafts: [], report2025: rpt, evaluator: [evaluator(f25.map((f, i) => ({ no: i + 1, text: f.join(" ") })))], handbook: [], today: "" });
     const priorCount = rpt.filter((x) => x.meta?.chapter === "prior").length;
     assert.equal(parts.prior!.rows.length, priorCount, `${unit} 평가내용 행`);
     assert.ok(parts.prior!.rows.every((r) => r.human.upTo.length > 0), `${unit} ’24까지·’25 출발값`);
@@ -371,7 +373,8 @@ test("2025 틀 재현(지표 1~11): 평가내용 행 = 2025 전년 대비 표 �
     assert.deepEqual(parts.findings!.code.unmatched, [], `${unit} 미반영 없음`);
     assert.equal(parts.outcome!.kpi.length, KPI_2025[n], `${unit} 계량 행`);
     assert.ok(parts.outcome!.kpi.every((k) => k.human.checked), `${unit} 2025와 같은 이름 → 모두 체크`);
-    const miss = parts.outcome!.kpi.filter((k, i) => kpiRate(k).text !== k25[i].rate).map((k) => k.code.name);
+    // 달성률 셈 재현: 2025 표의 실적 값을 ’26 실적 칸에 넣고 셈(실적 칸의 출처 — 원장 줄 — 은 위 계량 표 시험이 봄)
+    const miss = parts.outcome!.kpi.filter((k, i) => kpiRate({ ...k, code: { ...k.code, actual: k25[i].actual } }).text !== k25[i].rate).map((k) => k.code.name);
     assert.deepEqual(miss, RATE_DIFF[n] ?? [], `${unit} 2025 달성률을 다시 못 내는 행`);
     assert.equal(parts.outcome!.qual.length, priorCount, `${unit} 비계량 행 = 평가내용 수`);
     assert.equal(table2025Rows(chapter("outcome", "나")!.text).length, QUAL_2025[n], `${unit} 2025 비계량 행`);

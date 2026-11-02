@@ -24,7 +24,7 @@ type Json = LooseJson;
 export const WRITER_MODES = {
   improve: { label: "개선 제안", short: "개선 제안", hint: "지적사항 환류·전략연계·점검 기준으로 보완할 칸과 문장을 제안" },
   discover: { label: "실적 발굴(모드 B)", short: "실적 발굴", hint: "이번 달 넣을 활동을 제안(제안 수치는 표시)" },
-  reflect: { label: "실적 반영(모드 A)", short: "실적 반영", hint: "첨부한 실적 자료의 수치만으로 이번 달 실적 초안" },
+  reflect: { label: "실적 반영(모드 A)", short: "실적 반영", hint: "첨부한 실적 증빙의 수치로 이번 달 실적과 계량지표 올해 실적 줄(정량 성과 칸) 초안" },
   followup: { label: "보완 점검(모드 C)", short: "보완 점검", hint: "최근 점검표의 보완 요구가 카드에 반영됐는지 스스로 점검(공식 판정 아님)" },
 } as const;
 
@@ -308,7 +308,9 @@ export function verifyResult(result: WriterResult, card: Json, refs: KnowledgeRe
       }
       const path = (s.target_path ?? "").trim();
       const current = path ? getAt(card, path) : undefined;
-      const lineOk = path === "@person" || (PATH_RE.test(path) && typeof current === "string");
+      // 빈 글줄 목록(예: 줄 없는 정량 성과 칸)은 첫 줄(….0)에 넣을 수 있음 — applySuggestion이 목록에 새 줄로 넣음
+      const emptyList = /\.0$/.test(path) && Array.isArray(getAt(card, path.slice(0, -2))) && getAt(card, path.slice(0, -2)).length === 0;
+      const lineOk = path === "@person" || (PATH_RE.test(path) && (typeof current === "string" || emptyList));
       return { kind: s.kind, targetPath: path || null, period: null, current: typeof current === "string" ? current : null, proposed, reason: s.reason, sourceKeys, applicable: lineOk };
     });
   return {

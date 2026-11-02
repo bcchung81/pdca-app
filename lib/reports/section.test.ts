@@ -684,19 +684,20 @@ test("markRoots: 맨 위 요소마다 속성(여러 요소로 된 블록 모두)
 const ACTUALS_SAMPLE = {
   today: "2026-09-27",
   kpi: [
-    { name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "", input: "15건" },
-    { name: "지표B", unit: "%", prev: "80%", target: "90%", expected: "85%", input: "" },
-    { name: "지표C", unit: "명", prev: "5명", target: "10명", expected: "", input: "" },
+    { name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "", outcome: "’26년 지표A 실적 15건" },
+    { name: "지표B", unit: "%", prev: "80%", target: "90%", expected: "85%" },
+    { name: "지표C", unit: "명", prev: "5명", target: "10명", expected: "" },
   ],
   monthly: [{ period: "1월~8월", line: "659건 응답" }],
 };
 
-test("sectionPrompt: 「올해 실적 재료」— 계량지표 세 갈래(부서 입력·카드 예상 칸·없음 자리표시)와 월별 실적 줄, 자리표시 없음", { skip: NO_SEED_CARDS }, () => {
+test("sectionPrompt: 「올해 실적 재료」— 계량지표 세 갈래(카드 정량 성과 칸 줄·카드 예상 칸·없음 자리표시)와 월별 실적 줄, 자리표시 없음", { skip: NO_SEED_CARDS }, () => {
   const ctx = sectionContext(card, group("주요사업1"));
   const p = sectionPrompt(P, card, ctx, 2026, [], [], [], [], ACTUALS_SAMPLE);
   assert.doesNotMatch(p, /\{\{\w+\}\}/);
   assert.ok(p.includes("「올해(2026년) 실적 재료」"));
-  assert.ok(p.includes("- 계량지표 지표A(건): ’25년 실적 10건 · ’26년 목표 20건 · ’26년 실적 15건(부서 입력)"), "부서 입력");
+  assert.match(p, /- 계량지표 지표A\(건\): ’25년 실적 10건 · ’26년 목표 20건 · ’26년 실적 ’26년 지표A 실적 15건\(카드 정량 성과 칸/, "카드 정량 성과 칸 줄");
+  assert.doesNotMatch(p, /부서 입력/, "부서 입력 갈래는 없음(2026-11-02)");
   assert.ok(p.includes("- 계량지표 지표B(%): ’25년 실적 80% · ’26년 목표 90% · ’26년 실적 85%(카드 예상 칸 — 실적이 아니라 예상)"), "카드 예상 칸");
   assert.ok(p.includes("- 계량지표 지표C(명): ’25년 실적 5명 · ’26년 목표 10명 · ’26년 실적 없음 — 쓰려면 【확인: ’26년 지표C】"), "없음 — 자리표시 안내");
   assert.ok(p.includes("- 월별 실적 중 수치가 든 줄(카드 do.monthly — 모두 올해 실적이므로 쓸 때 ’26.월 시점을 붙임):"));
@@ -762,20 +763,22 @@ test("HTML: 【확인: …】은 노란 칸(k-need)으로 바뀌고, 안쪽 글�
 // ---------------------------------------------------------------------------
 // 도식 수렴 해소(③, 2026-09-27, lib/reports/diagram-hints.ts) — sectionHints·composeIssues·verifySection·fitPrompt
 
-test("sectionHints: 올해 실적 계량지표(부서 입력·목표)로 series(chart), lens의 '25 평가위원 지적으로 critiques(quotes)", { skip: NO_SEED_CARDS }, () => {
+test("sectionHints: 올해 실적 계량지표(원장 정량 성과 칸 줄의 값 하나·목표)로 series(chart), lens의 '25 평가위원 지적으로 critiques(quotes)", { skip: NO_SEED_CARDS }, () => {
   const lens: LensRef[] = [{ group: "critiques", key: "e1", title: "'25 지적", where: "", text: "실질적 투입 시간을 통합적으로 고려하여 성과를 재산정할 필요가 있다" }];
-  const withInput: YearActuals = { today: "", kpi: [{ name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "", input: "15건" }], monthly: [] };
+  const withInput: YearActuals = { today: "", kpi: [{ name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "", outcome: "’26년 지표A 실적 15건(목표 20건)" }], monthly: [] };
   const hintsInput = sectionHints(card, [], [], lens, withInput, 2026);
-  assert.ok(hintsInput.some((h) => h.kind === "chart" && h.why.includes("지표A: ’25년 10건 → ’26년 15건")), "부서 입력값은 그대로 시점과 함께");
+  assert.ok(hintsInput.some((h) => h.kind === "chart" && h.why.includes("지표A: ’25년 10건 → ’26년 15건")), "원장 줄의 실적 값 하나(ledgerFigure)를 시점과 함께");
+  const twoValues: YearActuals = { today: "", kpi: [{ name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "", outcome: "’26년 지표A 실적 15건, 누적 40건" }], monthly: [] };
+  assert.ok(!sectionHints(card, [], [], lens, twoValues, 2026).some((h) => h.kind === "chart" && h.why.includes("지표A")), "원장 줄에 값이 여럿이면 막대 후보 없음");
   assert.ok(hintsInput.some((h) => h.kind === "quotes" && h.why.includes("'25 평가위원 지적 1건")));
 
-  // 2026-10-14: 부서 입력(’26 실적)이 없고 목표만 있으면 실적 없는 목표 막대가 되므로 후보에서 뺌
-  const withoutInput: YearActuals = { today: "", kpi: [{ name: "지표B", unit: "%", prev: "80%", target: "90%", expected: "", input: "" }], monthly: [] };
+  // 2026-10-14: ’26 실적이 없고 목표만 있으면 실적 없는 목표 막대가 되므로 후보에서 뺌
+  const withoutInput: YearActuals = { today: "", kpi: [{ name: "지표B", unit: "%", prev: "80%", target: "90%", expected: "" }], monthly: [] };
   const hintsTarget = sectionHints(card, [], [], [], withoutInput, 2026);
   assert.ok(!hintsTarget.some((h) => h.kind === "chart" && h.why.includes("지표B")), "목표만 있으면 막대 후보 없음");
 
-  // prev나 target(입력)에 수치가 없는 계량지표는 series에 안 들어가 chart 후보가 안 생김
-  const noFigure: YearActuals = { today: "", kpi: [{ name: "지표C", unit: "명", prev: "", target: "", expected: "", input: "" }], monthly: [] };
+  // prev나 ’26 실적에 수치가 없는 계량지표는 series에 안 들어가 chart 후보가 안 생김
+  const noFigure: YearActuals = { today: "", kpi: [{ name: "지표C", unit: "명", prev: "", target: "", expected: "" }], monthly: [] };
   assert.ok(!sectionHints(card, [], [], [], noFigure, 2026).some((h) => h.kind === "chart" && h.why.includes("지표C")));
 });
 
@@ -1407,7 +1410,7 @@ test("recheckSection(year): 사람이 고친 주요사업 수치 띠에 올해 �
 
 test("sectionHints: 주요사업은 핵심 수치 띠(stats) 후보를 내지 않음 — 올해 실적 재료 수치가 2개 이상이어도(2026-10-28)", () => {
   const bare = { id: "x", taskNo: "1-1", title: "판독 1,240건 처리, 24종 분류, 63종 확인, 97% 신뢰도" };
-  const two: YearActuals = { today: "", kpi: [{ name: "판독 정확도", unit: "%", prev: "90%", target: "95%", expected: "", input: "93.9" }], monthly: [{ period: "1월~8월", line: "∙ AI 판독 1,416건 수행(목표 2,000건)" }] };
+  const two: YearActuals = { today: "", kpi: [{ name: "판독 정확도", unit: "%", prev: "90%", target: "95%", expected: "", outcome: "’26년 판독 정확도 실적 93.9%" }], monthly: [{ period: "1월~8월", line: "∙ AI 판독 1,416건 수행(목표 2,000건)" }] };
   assert.ok(!sectionHints(bare, [], [], [], two, 2026).some((h) => h.kind === "stats"));
 });
 

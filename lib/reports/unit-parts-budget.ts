@@ -260,7 +260,7 @@ export function outsidePages(parts: Partial<Record<string, UnitPart>>, year: num
     findings: parts.findings?.part === "findings" ? parts.findings : null,
     prior: parts.prior?.part === "prior" ? parts.prior : null,
     outcome: parts.outcome?.part === "outcome" ? parts.outcome : null,
-    source: { cards: {}, drafts: {}, inputs: "" },
+    source: { cards: {}, drafts: {} },
   };
   const outside = unitPartsOutside(view);
   const f = stackOutside(outside.front, 1);

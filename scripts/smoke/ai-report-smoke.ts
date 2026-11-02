@@ -113,10 +113,9 @@ if (selectDir) console.log(fellBack ? `경고: 선별 방식(--select-dir ${sele
 const kbp = reportDraftPrompts().prompts;
 const requestSize = (system: string, ask: string) => ({ systemChars: system.length, sharedChars: kb ? sharedTexts(kbp, kb).map((t) => t.length) : [], listChars: kb ? listText(kbp, kb).length : 0, promptChars: kb ? listText(kbp, kb).length + 2 + ask.length : ask.length });
 console.log("평가 근거:", lens.map((x) => `${LENS_LABEL[x.group]} · ${x.title}`).join(" ‖ ") || "없음");
-// 올해 실적 재료(앱과 같게 — 이 카드가 속한 보고서의 부서 계량 실적 입력 포함)
-const { data: report } = await db.from("reports").select("inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", 2026).maybeSingle();
-const actuals = yearActuals(card.data, (report?.inputs?.kpi ?? {}) as Record<string, string>, isoDay());
-console.log("올해 실적 재료:", `계량 ${actuals.kpi.length}(부서 입력 ${actuals.kpi.filter((k) => k.input).length}) · 월별 수치 줄 ${actuals.monthly.length}`);
+// 올해 실적 재료(앱과 같게 — 카드 원장)
+const actuals = yearActuals(card.data, isoDay());
+console.log("올해 실적 재료:", `계량 ${actuals.kpi.length}(원장 실적 줄 ${actuals.kpi.filter((k) => k.outcome).length}) · 월별 수치 줄 ${actuals.monthly.length}`);
 // --outline: 구성안(재료표·짜임) → 자동 승인 → 집필(구현 계획 2단계 — 화면에서는 사람이 고친 뒤 승인)
 const { known: extraText, quoteOnly, past, current } = draftEvidence(files, prior, lens, actuals, kb ? relevantRefs(kb) : []);
 let plan: Composition | undefined;

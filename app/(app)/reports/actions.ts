@@ -12,7 +12,7 @@ import { buildOutline, isPageStep } from "../../../lib/reports/outline.ts";
 import { buildMgOutline } from "../../../lib/reports/mg-page-plan.ts";
 import { loadMgPageRefs } from "../../../lib/reports/mg-queries.ts";
 import { getReport, loadSubmitCards, submitKey } from "../../../lib/reports/queries.ts";
-import { COMMENT_BODY_MAX, KPI_VALUE_MAX } from "../../../lib/reports/input-limits.ts";
+import { COMMENT_BODY_MAX } from "../../../lib/reports/input-limits.ts";
 import { REVIEW_NOTE_MAX, submitBlockedReason, submitReadiness } from "../../../lib/reports/submission.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
@@ -126,29 +126,6 @@ export async function setReportStatus(id: number, to: ReportStatus, note?: strin
   if (!data?.length) return { ok: false, message: "다른 사람이 먼저 상태를 바꿨습니다 — 화면을 새로 고친 뒤 다시 해 주세요." };
   refresh(id);
   return { ok: true };
-}
-
-/** 계량 실적 잠정치 등 부서 입력값 저장(작성 부서·성과관리팀) */
-export async function saveReportInputs(id: number, kpi: Record<string, string>): Promise<Result> {
-  const me = await requireUser("/my/report");
-  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
-  const supabase = await createClient();
-  const report = await getReport(supabase, id);
-  if (!report) return { ok: false, message: "보고서를 찾을 수 없습니다." };
-  if (report.status === "approved" || contentLocked(me.role, report.status)) return { ok: false, message: LOCKED_MSG };
-  const clean = Object.fromEntries(
-    Object.entries(kpi)
-      .slice(0, 200)
-      .map(([k, v]) => [k.slice(0, 200), String(v).trim().slice(0, KPI_VALUE_MAX)]),
-  );
-  const { data, error } = await supabase
-    .from("reports")
-    .update({ inputs: { ...(report.inputs ?? {}), kpi: clean } })
-    .eq("id", id)
-    .select("id");
-  if (error || !data?.length) return { ok: false, message: "저장하지 못했습니다(자기 부서 보고서만)." };
-  refresh(id);
-  return { ok: true, message: "저장했습니다." };
 }
 
 const MAX_BYTES = 50 * 1024 * 1024;

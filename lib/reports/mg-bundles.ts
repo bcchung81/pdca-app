@@ -56,14 +56,14 @@ const withUnit = (v: string, unit: string) => (/^[\d,]+(?:\.\d+)?$/.test(v) ? `$
 const linesWith = (lines: string[], unit: string) => lines.filter((l) => [...figureKeys(l).keys()].some((k) => unitOf(k) === unit));
 
 /**
- * 카드 원장의 수치 묶음 후보(결정론): ① 계량지표 표(kpi.rows — 행마다 ’25 실적·’26 목표·예상·부서 입력 값, 지표 이름은 셈하지 않음) 전체에서 같은 단위 값 BUNDLE_MIN개 이상
+ * 카드 원장의 수치 묶음 후보(결정론): ① 계량지표 표(kpi.rows — 행마다 ’25 실적·’26 목표·예상 값, 지표 이름은 셈하지 않음) 전체에서 같은 단위 값 BUNDLE_MIN개 이상
  * ② 월별 실적의 수치 줄(표 칸 포함 — actuals.ts yearActuals wide, 추진성과 보강 mg-close.ts ledgerOutcomeItems와 같은 줄) 전체에서 같은 단위 값 BUNDLE_MIN개 이상.
- * actuals = 요청에 준 올해 실적 재료(부서 계량 실적 입력 포함, 없으면 카드만으로 셈)
+ * actuals = 요청에 준 올해 실적 재료(없으면 카드로 셈)
  */
 export function cardBundles(card: Json, actuals?: YearActuals): MgBundle[] {
-  const a = actuals ?? yearActuals(card, {}, "", { wide: true });
+  const a = actuals ?? yearActuals(card, "", { wide: true });
   const out: MgBundle[] = [];
-  const rows = a.kpi.map((k) => ({ name: k.name, values: [k.prev, k.target, k.expected, k.input].filter(Boolean).map((v) => withUnit(v, k.unit)).join(" · ") })).filter((r) => r.values);
+  const rows = a.kpi.map((k) => ({ name: k.name, values: [k.prev, k.target, k.expected].filter(Boolean).map((v) => withUnit(v, k.unit)).join(" · ") })).filter((r) => r.values);
   const kpi = figureBundle(rows.map((r) => r.values));
   if (kpi) out.push({ from: "kpi", ...kpi, lines: rows.filter((r) => linesWith([r.values], kpi.unit).length).map((r) => `${r.name}: ${r.values}`) });
   const monthly = a.monthly.map((m) => m.line);

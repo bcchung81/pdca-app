@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { KpiInputs, MaterialUploader, ReportStatusButtons } from "../../../../components/reports/report-controls";
+import { MaterialUploader, ReportStatusButtons } from "../../../../components/reports/report-controls";
 import { MaterialRequestsPanel } from "../../../../components/reports/material-requests";
 import { ClickableRow } from "../../../../components/reports/row-link";
 import { FIT_TAG, REPORT_STATUS_TONE } from "../../../../components/ui/status-tone.ts";
@@ -11,17 +11,19 @@ import { TeamPicker } from "../../../../components/ui/team-picker";
 import { requireUser } from "../../../../lib/auth/dal.ts";
 import { deptScope } from "../../../../lib/auth/scope.ts";
 import { currentPeriod } from "../../../../lib/cards/view.ts";
-import { fmtDateTime } from "../../../../lib/format.ts";
+import { fmtDateTime, isoDay } from "../../../../lib/format.ts";
 import { withReturn } from "../../../../lib/nav/return-to.ts";
 import { FIT_RANGE_TEXT, fitVerdict } from "../../../../lib/reports/fit.ts";
 import { buildMaterialRequests } from "../../../../lib/reports/material-requests.ts";
 import { type HubSteps, hubSteps } from "../../../../lib/reports/hub-steps.ts";
-import { REPORT_STATUS_LABEL, kpiKeyedRows } from "../../../../lib/reports/model.ts";
+import { kpiGaps, yearActuals } from "../../../../lib/reports/actuals.ts";
+import { REPORT_STATUS_LABEL } from "../../../../lib/reports/model.ts";
 import { listMaterials, listReports, loadSubmitCards, openCommentCounts, submitKey } from "../../../../lib/reports/queries.ts";
 import { DRAFT_STATE_LABEL, SUBMIT_OVER, type CardSubmitRow, type DraftState, type SubmitCard, submitBlockedReason, submitReadiness } from "../../../../lib/reports/submission.ts";
 import { buildTodoBoard } from "../../../../lib/reports/todo-board.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
+import { trackOfUnit } from "../../../../lib/tracks/index.ts";
 
 export const metadata: Metadata = { title: "경평 초안 · 경평AI비서" };
 
@@ -162,13 +164,14 @@ interface OutlineCtxRow {
   mine: boolean;
 }
 
-/** 이 화면이 읽는 활성 카드(select 열 그대로 — kpi는 data->kpi->rows 원자료) */
+/** 이 화면이 읽는 활성 카드(select 열 그대로 — data는 카드 원장 JSON, 올해 실적을 읽음) */
 interface HubCardRow {
   id: string;
+  uid: string;
   eval_unit_id: string;
   task_no: string;
   title: string;
-  kpi: unknown;
+  data: unknown;
 }
 
 /** 사업(경영관리는 지표) 목차에서 내 자리(rpc report_outline_context — 같은 평가단위 목차 줄만, 다른 부서 과제는 과제번호·과제명·부서·쪽만) */
@@ -246,7 +249,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
       supabase,
       reports.map((r) => r.id),
     ),
-    scope.team ? supabase.from("cards").select("id, eval_unit_id, task_no, title, kpi:data->kpi->rows").eq("team_id", scope.team.id).eq("status", "active").order("task_no") : Promise.resolve({ data: [] as HubCardRow[] }),
+    scope.team ? supabase.from("cards").select("id, eval_unit_id, task_no, title, uid, data").eq("team_id", scope.team.id).eq("status", "active").order("task_no") : Promise.resolve({ data: [] as HubCardRow[] }),
   ]);
   const teamQs = scope.preview && scope.team ? `team=${scope.team.id}&` : "";
   // 이 화면 주소(부서 화면 보기면 team 쿼리 포함) — 과제별 초안·카드로 가는 링크가 돌아올 곳
@@ -266,7 +269,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
     .map((u) => ({ unit: u, cs: cardMap.get(submitKey(u.id, scope.team?.id ?? -1)) ?? [] }))
     .filter((g) => g.cs.length && !reports.some((r) => r.evalUnitId === g.unit.id));
 
-  // 입력할 것 모음 — 이 부서 것만(계량 실적 미입력·【확인】·초안 없음·근거에 없는 숫자). 부서 화면 보기에서도 같은 내용 읽기 전용
+  // 입력할 것 모음 — 이 부서 것만(원장에 올해 실적 없음·【확인】·초안 없음·근거에 없는 숫자). 부서 화면 보기에서도 같은 내용 읽기 전용
   const submitById = new Map([...cardMap.values()].flat().map((c) => [c.id, c]));
   const todo = buildTodoBoard({
     units: (units ?? []).map((u) => ({ id: u.id as string, name: u.name as string, cardGroup: (u.card_group as string | null) ?? null })),
@@ -274,10 +277,11 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
     cards: scope.team
       ? ((cards ?? []) as HubCardRow[]).flatMap((c) => {
           const submit = submitById.get(c.id);
-          return submit ? [{ unitId: c.eval_unit_id, teamId: scope.team!.id, kpi: c.kpi, submit }] : [];
+          return submit ? [{ unitId: c.eval_unit_id, teamId: scope.team!.id, data: c.data, submit }] : [];
         })
       : [],
-    reports: reports.map((r) => ({ id: r.id, unitId: r.evalUnitId, teamId: r.teamId, inputs: r.inputs })),
+    today: isoDay(),
+    reports: reports.map((r) => ({ id: r.id, unitId: r.evalUnitId, teamId: r.teamId })),
   });
 
   // 자료 요청 — 구성안 재료표의 「자료 필요」(이 부서 과제만, 목차에서 뺀 과제 제외)
@@ -313,7 +317,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
         const readiness = submitReadiness(cs);
         const rows = readiness.rows;
         const label = track === "경영관리" ? unit.name : `${unit.card_group ?? unit.id} · ${unit.name}`;
-        // 보고서 준비 전: 근거(계량 실적·추가자료)·확정은 보고서에 붙어 준비 뒤 — 띠는 과제별 초안만 지금 단계가 될 수 있음
+        // 보고서 준비 전: 근거(추가자료)·확정은 보고서에 붙어 준비 뒤 — 띠는 과제별 초안만 지금 단계가 될 수 있음
         const hub = hubSteps({ status: null, returned: false, readiness, kpiTotal: 0, kpiMissing: 0, materials: 0, preview: scope.preview });
         return (
           <Panel key={unit.id} title={label} aside={<Tag>보고서 준비 전</Tag>}>
@@ -329,20 +333,24 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
       {reports.map((r) => {
         const cs = (cardMap.get(submitKey(r.evalUnitId, r.teamId)) ?? []);
         const readiness = submitReadiness(cs);
-        const kpiRows = ((cards ?? []) as HubCardRow[])
+        // 올해 실적은 카드 원장에서 읽음 — 원장에 없는 지표(지표 이름 · 과제번호·카드 링크)만 보여 줌
+        const wide = trackOfUnit(r.evalUnitId) === "경영관리";
+        const kpiGapRows = ((cards ?? []) as HubCardRow[])
           .filter((c) => c.eval_unit_id === r.evalUnitId)
-          .flatMap((c) => kpiKeyedRows(c.id, c.kpi).map((k) => ({ key: k.key, card: c.task_no, name: k.name, unit: k.unit, target: k.target, prev: k.prev })));
+          .map((c) => ({ c, a: yearActuals(c.data, isoDay(), { wide }) }));
+        const kpiTotal = kpiGapRows.reduce((n, x) => n + x.a.kpi.length, 0);
+        const kpiGapList = kpiGapRows.flatMap(({ c, a }) => kpiGaps(a).map((k) => ({ name: k.name, taskNo: c.task_no, uid: c.uid })));
         const lead = r.leadTeamId === r.teamId;
         const canEdit = !scope.preview && r.status !== "approved" && r.status !== "submitted";
         const openN = openComments.get(r.id) ?? 0;
         const ctxRows = outlineCtx.get(r.id) ?? [];
         const matCount = materials.filter((m) => m.reportId === r.id).length;
-        const kpiMissing = kpiRows.filter((k) => !((r.inputs?.kpi as Record<string, string> | undefined)?.[k.key] ?? "").trim()).length;
+        const kpiMissing = kpiGapList.length;
         // 경영관리는 지표명만(묶음 id 경영관리N은 식별자라 화면 글자로 쓰지 않음)
         const label = track === "경영관리" ? r.unitName : `${r.cardGroup ?? r.evalUnitId} · ${r.unitName}`;
         // 돌려받음: 승인이 아니고 검토 메모가 마지막으로 낸(확정·제출) 뒤에 남았을 때 — 부서가 스스로 확정을 취소한 것은 돌려받음이 아님(lib/nav-badges.ts와 같은 판정)
         const returned = r.status !== "approved" && !!r.reviewNote && (!r.submittedAt || (r.reviewedAt ?? "") >= r.submittedAt);
-        const hub = hubSteps({ status: r.status, returned, readiness, kpiTotal: kpiRows.length, kpiMissing, materials: matCount, preview: scope.preview });
+        const hub = hubSteps({ status: r.status, returned, readiness, kpiTotal, kpiMissing, materials: matCount, preview: scope.preview });
         const anchor = `report-${r.id}`;
         const closed = r.status === "submitted" || r.status === "approved";
         // 확정할 수 없는 까닭(확정 단추 옆 글) — 서버 확정 검사와 같은 문구(submitBlockedReason). 「자료 준비」는 확정 전이가 없음(canMove)
@@ -394,8 +402,8 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
               <summary className="flex min-w-0 cursor-pointer flex-wrap items-center gap-2 py-3 text-sm font-bold text-navy">
                 <StepNo n={1} />
                 근거 넣기 <span className="text-xs font-normal text-muted-2">· 추가자료 {matCount}건</span>
-                {/* 계량 실적 미입력은 제출을 막지 않음 — 경고색 대신 우리 차례 톤(10-18 「경고색은 막힘에만」) */}
-                {kpiMissing > 0 && <Tag tone="link">계량 실적 입력 필요 {kpiMissing}건</Tag>}
+                {/* 원장 올해 실적 없음은 제출을 막지 않음 — 경고색 대신 우리 차례 톤(10-18 「경고색은 막힘에만」) */}
+                {kpiMissing > 0 && <Tag tone="link">원장 올해 실적 없음 {kpiMissing}건</Tag>}
               </summary>
               <div className="flex min-w-0 flex-col gap-5 pb-5">
                 <div className="flex min-w-0 flex-col gap-2">
@@ -403,11 +411,22 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
                   <MaterialUploader reportId={r.id} items={materials.filter((m) => m.reportId === r.id)} cards={(cardMap.get(submitKey(r.evalUnitId, r.teamId)) ?? []).map((c) => ({ id: c.id, taskNo: c.taskNo, title: c.title }))} canEdit={canEdit} />
                 </div>
                 <div className="flex min-w-0 flex-col gap-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-xs font-semibold text-muted">계량 실적 입력</h4>
-                    <span className="text-xs text-muted-2">AI는 수치를 만들지 않음 — 입력값 그대로</span>
-                  </div>
-                  {kpiRows.length ? <KpiInputs reportId={r.id} rows={kpiRows} initial={(r.inputs?.kpi ?? {}) as Record<string, string>} canEdit={canEdit} /> : <p className="text-ui text-muted">연결된 카드에 계량 성과지표가 없습니다.</p>}
+                  <h4 className="text-xs font-semibold text-muted">원장에 올해 실적이 없는 지표</h4>
+                  <p className="text-ui text-muted-2">올해 계량 실적은 따로 넣지 않고 카드 원장(정량 성과 칸)에서 읽습니다. 실적 증빙을 카드 AI 작성지원 「실적 반영」으로 작성본에 넣어 확정하거나, 위 추가자료로 올리십시오.</p>
+                  {kpiGapList.length ? (
+                    <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                      {kpiGapList.map((k) => (
+                        <li key={`${k.uid}#${k.name}`} className="flex min-w-0 items-center gap-2 text-ui">
+                          <span className="min-w-0 truncate">{k.name}</span>
+                          <Link href={withReturn(`/my?${teamQs}peek=${k.uid}`, selfHref)} className="shrink-0 font-mono text-navy no-underline hover:underline" title={`${k.taskNo} 과제관리카드 보기`}>
+                            {k.taskNo}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-ui text-muted">{kpiTotal ? "원장에 올해 실적이 없는 지표가 없습니다." : "연결된 카드에 계량 성과지표가 없습니다."}</p>
+                  )}
                 </div>
               </div>
             </details>

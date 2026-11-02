@@ -237,8 +237,7 @@ async function loadCardSources(id: string): Promise<CardSources | null> {
   const sections: PriorSection[] = (rows ?? []).map(toPriorSection);
   const prior = pickPrior(card.data, sections);
   const lens = await loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data });
-  const { data: report } = await db.from("reports").select("inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", YEAR).maybeSingle();
-  const actuals = yearActuals(card.data, (report?.inputs?.kpi ?? {}) as Record<string, string>);
+  const actuals = yearActuals(card.data);
   const candidates = sectionHints(card.data, prior, [], lens, actuals, YEAR)
     .filter((h) => h.own)
     .map((h) => h.kind);

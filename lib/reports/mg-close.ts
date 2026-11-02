@@ -49,7 +49,7 @@ export function ledgerOutcomeItems(card: Json, clean: (s: unknown, max?: number)
   const tag = (from: MgOutcome["from"]) => (text: string) => ({ text, from, figure: hasFigure(text) });
   const quant = itemsOf(card?.outcome?.quantitative).filter(usable).map(tag("quantitative"));
   const qual = itemsOf(card?.outcome?.qualitative).filter(usable).map(tag("qualitative"));
-  const monthly = yearActuals(card, {}, "", { wide: true }).monthly.map((m) => m.line.replace(BULLET, "").trim()).filter(usable).map(tag("monthly"));
+  const monthly = yearActuals(card, "", { wide: true }).monthly.map((m) => m.line.replace(BULLET, "").trim()).filter(usable).map(tag("monthly"));
   const figured = [...quant, ...monthly, ...qual].filter((x) => x.figure);
   const rest = [...quant, ...qual].filter((x) => !x.figure);
   const seen = new Set<string>();

@@ -280,7 +280,7 @@ export function UnitPartsWorkspace(props: {
             {!aiAsk.overwrite ? (
               <>
                 <span className="min-w-0 break-keep">
-                  AI가 카드 원장·과제별 초안·계량 실적으로 표의 문장 칸을 채웁니다(지표당 1회 호출, 보통 {rangeText(UNIT_AI_EXPECT)}). 행·숫자·지적 글은 그대로이고, 채운 글은 저장되며 확정은 사람이 합니다.
+                  AI가 카드 원장(계량 실적 줄 포함)·과제별 초안으로 표의 문장 칸을 채웁니다(지표당 1회 호출, 보통 {rangeText(UNIT_AI_EXPECT)}). 행·숫자·지적 글은 그대로이고, 채운 글은 저장되며 확정은 사람이 합니다.
                 </span>
                 <span className="flex flex-wrap items-center gap-3" role="radiogroup" aria-label="채울 범위">
                   <label className="flex items-center gap-1">

@@ -3,8 +3,6 @@
 
 /** 보고서 코멘트 본문(addComment) */
 export const COMMENT_BODY_MAX = 4000;
-/** 계량 실적 잠정치 값 하나(saveReportInputs) */
-export const KPI_VALUE_MAX = 200;
 /** 경평 글 직접 고침 한 칸(saveDraftTexts)과 한 번에 보내는 건수 */
 export const DRAFT_TEXT_MAX = 600;
 export const DRAFT_TEXT_EDITS_MAX = 60;

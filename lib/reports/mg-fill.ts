@@ -668,7 +668,7 @@ export interface MgFillDeps {
 
 export interface MgFillInput {
   card: Json;
-  /** 숫자 대조 근거 글(집필 검증과 같은 known — 첨부·실사 답변·계량 실적 입력·그 지표 2025 보고서·핵심공통항목) */
+  /** 숫자 대조 근거 글(집필 검증과 같은 known — 첨부·실사 답변·그 지표 2025 보고서·핵심공통항목) */
   known: string;
   /** 인용 대조에만 쓰는 글(평가 기준·지적) */
   quoteOnly: string;

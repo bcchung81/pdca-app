@@ -17,6 +17,9 @@ const findings = (...rows: string[]) => ({ findings: { rows: rows.map((f) => ({ 
 const kpi = (...names: string[]) => ({ kpi: { rows: names.map((name) => ({ name, prev: "10", target: "12" })) } });
 const skeleton = (n: number): UnitChunk[] => Array.from({ length: n }, (_, i) => ({ chunk_key: `rpt25-mg-08/${i + 1}`, text: "", meta: { chapter: "detail", eval_no: i + 1, eval_title: `평가내용 제목 ${i + 1}을 위한 노력과 성과` } }));
 
+/** 8-1 카드 원장 정량 성과 칸에 ’26 실적 줄을 둔 재료(’26 실적 칸 = 원장 줄의 값 — actuals.ts ledgerFigure) */
+const withOutcome = (...lines: string[]) => materials({ cards: [card("8-1", { ...findings("첫 지적", "둘째 지적"), ...kpi("부채비율", "영업이익률"), outcome: { quantitative: lines } }), card("8-2", findings("8-2 지적"))] });
+
 function materials(over: Partial<MgUnitMaterials> = {}): MgUnitMaterials {
   return {
     unit: "MG-8",
@@ -26,7 +29,7 @@ function materials(over: Partial<MgUnitMaterials> = {}): MgUnitMaterials {
     report2025: skeleton(2),
     evaluator: [],
     handbook: [],
-    kpiInputs: [],
+    today: "2026-11-02",
     ...over,
   };
 }
@@ -147,12 +150,12 @@ test("다시 채우기(전년 대비·성과분석): human 칸(’25까지 글·
   o0.kpi[1].ai.analysis = ["성과 분석 문장"];
   o0.qual[0].human.label = "재무구조";
   o0.plan[1].ai.plan = ["’27 개선방안"];
-  const fresh = freshUnitPart(materials({ kpiInputs: [{ "경영관리8/8-1#영업이익률": "1.1%" }] }), "outcome")!;
+  const fresh = freshUnitPart(withOutcome("∙ ’26년 영업이익률 실적 1.1% 달성"), "outcome")!;
   assert.ok(fresh.warnings.includes("계량 표: 고른 행이 없음 — 2025 표와 이름이 같은 카드 계량 행이 없어 미리 체크하지 못함(행을 골라 주세요)"));
   const { part, warnings } = mergeUnitPart(o0, fresh);
   const o = part as OutcomePart;
   assert.deepEqual(o.kpi[1].human, { checked: true, polarity: "down" });
-  assert.equal(o.kpi[1].code.actual, "1.1%", "실적 입력(code)은 새 값");
+  assert.equal(o.kpi[1].code.actual, "1.1%", "원장 실적(code)은 새 값");
   assert.deepEqual(o.kpi[1].ai.analysis, ["성과 분석 문장"]);
   assert.equal(o.qual[0].human.label, "재무구조");
   assert.deepEqual(o.plan[1].ai.plan, ["’27 개선방안"]);
@@ -200,7 +203,7 @@ test("칸 고치기: ai·human 칸만(허용 경로), code 칸은 거절, 값 �
   assert.deepEqual([op.kpi[0].human, op.qual[1].human.label, op.plan[0].ai.self], [{ checked: true, polarity: "down" }, "예산 편성", ["자체평가"]]);
   assert.equal(applyUnitPartEdits(o, [{ path: "kpi.0.human.polarity", value: "sideways" }]).ok, false);
   assert.equal(applyUnitPartEdits(o, [{ path: "kpi.0.human.checked", value: "true" }]).ok, false);
-  assert.equal(applyUnitPartEdits(o, [{ path: "kpi.0.code.actual", value: "99" }]).ok, false, "실적은 부서 입력(code)");
+  assert.equal(applyUnitPartEdits(o, [{ path: "kpi.0.code.actual", value: "99" }]).ok, false, "실적은 원장에서(code)");
   assert.equal(applyUnitPartEdits(o, [{ path: "qual.0.ai.self", value: [] }]).ok, false, "비계량에는 self 칸이 없음");
 
   const c = freshUnitPart(materials(), "cover")!.part;
@@ -211,12 +214,12 @@ test("칸 고치기: ai·human 칸만(허용 경로), code 칸은 거절, 값 �
 });
 
 test("계량 표 경고 갈아 끼우기: 사람이 행을 고르거나 극성을 바꾸면 계량 표 경고만 다시 셈", () => {
-  const o = freshUnitPart(materials({ kpiInputs: [{ "경영관리8/8-1#부채비율": "9" }] }), "outcome")!;
+  const o = freshUnitPart(withOutcome("∙ ’26년 부채비율 실적 9% 달성"), "outcome")!;
   const before = o.part as OutcomePart;
   const r = applyUnitPartEdits(before, [{ path: "kpi.0.human.checked", value: true }, { path: "kpi.1.human.checked", value: true }]);
   assert.ok(r.ok);
   const w = refreshOutcomeWarnings(["다른 경고", ...o.warnings], before, r.part as OutcomePart);
-  assert.deepEqual(w, ["다른 경고", "계량 표: 실적 미입력 1행(8-1 영업이익률) — 부서 경평 초안 「계량 실적」 입력이 필요"]);
+  assert.deepEqual(w, ["다른 경고", "계량 표: 실적 미입력 1행(8-1 영업이익률) — 카드 정량 성과 칸에 이 지표의 올해 실적이 없음(원장 현행화 뒤 다시 채우기)"]);
 });
 
 test("트리거 문구 = 서버 문구(마이그레이션 글에 같은 문장)", () => {

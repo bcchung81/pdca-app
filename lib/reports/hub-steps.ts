@@ -1,7 +1,7 @@
 // 경평 초안 부서 허브(/my/report) 사업(경영관리는 지표)마다의 단계 띠(순수): ① 근거 넣기 → ② 과제별 초안 → ③ 확정 + 주 행동 하나.
 // ③은 2026-10-27부터 「제출」이 아니라 부서 「확정」(바로 승인 상태 — 성과관리팀은 필요하면 메모와 함께 승인을 풂). 단계 열쇠 이름 submit은 그대로.
 // 숫자는 제출 조건(lib/reports/submission.ts submitReadiness)을 그대로 씀 — 목차에서 뺀 과제는 셈에서 빠지고, 구성안만 있는 과제는 「초안 없는 과제」.
-// 톤(components/ui/status-tone.ts 다섯): 계량 실적 미입력은 제출을 막지 않으므로 경고색(alert)이 아니라 우리 차례(doing)·시작 전(idle)
+// 톤(components/ui/status-tone.ts 다섯): 원장에 올해 실적이 없는 지표(kpiMissing)는 제출을 막지 않으므로 경고색(alert)이 아니라 우리 차례(doing)·시작 전(idle)
 // (2026-10-18 결정 「경고색은 막힘에만」). 지금 단계만 doing, 끝나지 않은 나머지는 idle(돌려받음은 우리 차례라 늘 doing).
 // UI-UX 핸드오프 2026-10-21 6.4·7.2·7.3(UX-D).
 
@@ -35,7 +35,7 @@ export interface HubStepsInput {
   /** 돌려받음(화면 판정과 같음: 승인이 아니고 마지막으로 낸 뒤 남긴 검토 메모가 있음) — 제출·승인 상태면 무시 */
   returned: boolean;
   readiness: SubmitReadiness;
-  /** 이 보고서 카드들의 계량 지표 행 수 · 그중 입력하지 않은 수 */
+  /** 이 보고서 카드들의 계량 지표 행 수 · 그중 원장에 올해 실적이 없는 수(kpiGaps) */
   kpiTotal: number;
   kpiMissing: number;
   /** 보고서 추가자료 수 */
@@ -51,9 +51,9 @@ export function hubSteps(input: HubStepsInput): HubSteps {
   const returned = input.returned && !closed && !waiting;
   const missing = r.missing.length;
 
-  // ① 근거 넣기 — 계량 실적·추가자료는 보고서에 붙으므로 보고서 준비 전에는 할 수 없음
+  // ① 근거 넣기 — 올해 계량 실적은 원장(카드)에서 읽고 결손(kpiMissing)은 실적 증빙을 카드 「실적 반영」·보고서 추가자료로 채움. 추가자료는 보고서에 붙으므로 보고서 준비 전에는 할 수 없음
   const evidenceDone = !waiting && (kpiTotal === 0 || kpiMissing === 0);
-  const evidenceState = waiting ? "보고서 준비 뒤 입력" : kpiTotal === 0 ? `추가자료 ${materials}건` : kpiMissing > 0 ? `계량 실적 ${kpiMissing}건 입력 필요` : `계량 실적 모두 입력 · 추가자료 ${materials}건`;
+  const evidenceState = waiting ? "보고서 준비 뒤 입력" : kpiTotal === 0 ? `추가자료 ${materials}건` : kpiMissing > 0 ? `원장 올해 실적 없음 ${kpiMissing}건` : `원장 올해 실적 모두 있음 · 추가자료 ${materials}건`;
 
   // ② 과제별 초안 — 목차에 든 과제(total) 기준
   const draftDone = r.total > 0 && missing === 0;
@@ -94,7 +94,7 @@ export function hubSteps(input: HubStepsInput): HubSteps {
   ];
 
   let action: HubAction | null = null;
-  if (now === "evidence") action = { step: "evidence", label: preview ? "계량 실적 보기" : "계량 실적 넣기" };
+  if (now === "evidence") action = { step: "evidence", label: preview ? "근거 보기" : "실적 증빙 올리기" };
   else if (now === "draft") {
     // missing은 rows 중 목차에 든 것을 같은 순서로 거른 것 — 첫 과제의 uid는 rows에서 찾음
     const first = r.missing[0];

@@ -2,7 +2,7 @@
 // 구성안 요청 크기를 보이거나(--dry, 비용 없음) callReportOutlineMg → cleanMgComposition 결과를 보여 줍니다(저장하지 않음 — 화면 시험은 과제별 초안 화면에서).
 // 실행: node --conditions=react-server --env-file=.env.local scripts/smoke/ai-report-mg-smoke.ts [카드 id(기본 경영관리8/8-1)] [HTML 경로] [--dry] [--draft] [--files] [--json <경로>]
 //  --files: 운영 초안과 같은 조건으로 첨부를 넣음 — 이 카드의 카드 전용 자료·같은 지표·부서·연도 보고서의 추가자료 중 저장된 전체 글이 준비된(materialState ready) 것만
-//    (화면 기본 선택과 같게 읽기 실패 자료는 빼고, 준비 안 된 자료는 읽거나 DB에 쓰지 않고 이름만 「건너뜀」으로 출력). 확정 연결(report_material_cards confirmed)로 숫자 근거 인정, 보고서 inputs.kpi도 실적에 반영. 없으면 첨부 없음(기본)
+//    (화면 기본 선택과 같게 읽기 실패 자료는 빼고, 준비 안 된 자료는 읽거나 DB에 쓰지 않고 이름만 「건너뜀」으로 출력). 확정 연결(report_material_cards confirmed)로 숫자 근거 인정. 없으면 첨부 없음(기본)
 //  --json <경로>: --draft일 때 구성안(composition)과 초안 spec·unknownNumbers·warnings를 JSON으로 저장(비교용)
 //  서버(draft-prepare.ts prepareMgDraft)와 같은 입력: 분량 목표 쪽수(loadMgCardPages — 목차·쪽 배정)·닫기 관례(2025 절 글 — mgCloseRule)를 구성안·집필 요청에 넣음(2026-10-12)
 //  --dry: 구성안 요청 크기 + 분량 목표·닫기 관례 줄 · PDCA 뼈대 단계별 줄 수(2026-10-30), 저장된 구성안이 있으면 집필 요청의 「승인된 구성안」 글 크기·새 줄도 보임(AI 호출 없음)
@@ -88,13 +88,11 @@ if (!indicator) throw new Error(`경영관리 카드가 아님: ${card.eval_unit
 // --files: 서버(prepareDraft)와 같은 첨부 — 읽은 글이 준비된 행만, 준비 안 된 행은 이름만 출력(파싱·DB 쓰기 없음)
 type SmokeFile = { id: string; kind: "card" | "report"; name: string; text: string; relation: "card" | "matched" | "same-report"; numberEvidence: boolean };
 const files: SmokeFile[] = [];
-let reportKpi: Record<string, string> = {};
 // 읽기 실패한 저장본 — 서버 prepareDraft의 skipped와 같은 표기(초안 경고 「첨부: AI가 읽지 못해 빼고 썼습니다」)
 const skipped: string[] = [];
 if (withFiles) {
   const { data: cardMats } = await db.from("card_materials").select(MATERIAL_COLS).eq("card_id", card.id).order("created_at");
-  const { data: rep } = await db.from("reports").select("id, inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", year).maybeSingle();
-  reportKpi = (rep?.inputs?.kpi ?? {}) as Record<string, string>;
+  const { data: rep } = await db.from("reports").select("id").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", year).maybeSingle();
   const { data: repMats } = rep ? await db.from("report_materials").select(MATERIAL_COLS).eq("report_id", rep.id).order("created_at") : { data: [] };
   const { data: links } = repMats?.length ? await db.from("report_material_cards").select("material_id").eq("card_id", card.id).eq("status", "confirmed").in("material_id", repMats.map((m: { id: string }) => m.id)) : { data: [] };
   const confirmed = new Set((links ?? []).map((l: { material_id: string }) => String(l.material_id)));
@@ -117,7 +115,7 @@ for (const path of addPaths) {
 const [prior, lens, kb, pages] = await Promise.all([loadMgPrior(db, card.eval_unit_id), loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }), loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "report"), loadMgCardPages(db, card, year)]);
 const taskNo = String(card.data?.taskNo ?? "");
 const ctx: MgDraftContext = { unit: card.eval_unit_id, indicator: indicator.name, taskNo, markers: mgMarkers(card.data), prior, evals: defaultEvals(taskNo, prior), pages, cardAsOf: mgCardAsOf(card) };
-const actuals = yearActuals(card.data, reportKpi, isoDay(), { wide: true });
+const actuals = yearActuals(card.data, isoDay(), { wide: true });
 const numbers = await loadMgNumberEvidence(db, card.eval_unit_id);
 const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
 const draft = reportDraftPromptsMg().prompts;
@@ -303,7 +301,7 @@ if (addPaths.length) {
   const t1 = Date.now();
   const dcall = await callReportDraftMg({ card: card.data, ctx, year, files, lens, actuals, kb, plan, revise });
   const draftMs = Date.now() - t1;
-  // 서버 writeMgDraft와 같은 검증 인자(숫자 근거 = 첨부(추가 자료 포함)·실사 답변·계량 실적 입력 + 그 지표 2025 보고서·핵심공통항목)
+  // 서버 writeMgDraft와 같은 검증 인자(숫자 근거 = 카드·첨부(추가 자료 포함)·실사 답변 + 그 지표 2025 보고서·핵심공통항목)
   const v = verifyMgDraft(dcall.output, card.data, plan, ctx, [ev.known, numbers].join("\n"), ev.quoteOnly, year, actuals.today);
   const out = args[1] ?? `/tmp/mg-revise-${id.replace(/\//g, "_")}.html`;
   // 서버 writeMgDraft와 같은 셈(앱이 뺀 블록 droppedShapes를 덜어냄)·같은 글
@@ -366,7 +364,7 @@ const composition = data.composition;
 const outlineWarnings = [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))];
 console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}`), materials: composition.materials.length, warnings: outlineWarnings }, null, 1));
 if (withDraft) {
-  // 집필(서버 writeMgDraft와 같은 숫자 근거: 첨부·실사 답변·계량 실적 입력 + 그 지표 2025 보고서 전 장·핵심공통항목)
+  // 집필(서버 writeMgDraft와 같은 숫자 근거: 카드·첨부·실사 답변 + 그 지표 2025 보고서 전 장·핵심공통항목)
   const t1 = Date.now();
   const plan = { ...composition, memo: "", module: 1, head: "all" as const };
   const dcall = await callReportDraftMg({ card: card.data, ctx, year, files, lens, actuals, kb, plan });

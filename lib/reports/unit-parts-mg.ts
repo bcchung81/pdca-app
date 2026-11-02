@@ -1,7 +1,7 @@
 // 경영관리 지표 단위 보고서의 카드 밖 부분(R5a 결정론 코어, 순수 — 입출력 없음, 재료는 인자로). 설계 docs/plan/경영관리-R5-지표단위-설계.md §3.1·§3.2(2026-10-16 승인).
 // 부분: 표지(cover) · 지적사항 조치실적(findings) · 전년 대비 주요 추진실적(prior) · 성과분석 및 환류(outcome). 지표관리 방향(MG-1)은 Q1 결정으로 넣지 않음.
 // 칸마다 채우는 쪽을 타입에서 갈라 둠(행·부분마다 code · ai · human 묶음):
-//  - code  = 재료(카드 원장·초안·2025 보고서 조각·편람·부서 실적 입력)에서 매번 같게 채우는 칸 — 「재료로 다시 채우기」가 덮음
+//  - code  = 재료(카드 원장·초안·2025 보고서 조각·편람)에서 매번 같게 채우는 칸 — 「재료로 다시 채우기」가 덮음
 //  - ai    = R5c가 채우는 문장 칸 — 이 코어는 늘 빈 값
 //  - human = 사람이 정하는 칸 — 코어는 출발값·기본값만 넣고 다시 채우기에서 덮지 않음(’25까지 출발값·계량 행 고르기·극성·구분 줄임·담당자 표)
 // 달성률·비고 쪽은 저장하지 않고 그릴 때 계산(kpiRate·findingRemark — 사람이 극성을 바꾸거나 조판이 바뀌면 다시 셈).
@@ -13,7 +13,7 @@ import { revisionNote } from "../knowledge/revision-note.ts";
 import { containment, round } from "../knowledge/similarity.ts";
 import { MGMT_TRACK, type UnitPartKey } from "../tracks/index.ts";
 import { MGMT_INDICATORS } from "../tracks/mgmt-units.ts";
-import { needsIn } from "./actuals.ts";
+import { ledgerFigure, needsIn, yearActuals } from "./actuals.ts";
 import { realFindingLines } from "./findings.ts";
 import { mgFindingParts } from "./mg-draft.ts";
 import { evalsFor } from "./mg-outline.ts";
@@ -152,7 +152,7 @@ export interface PriorPart {
 }
 
 export interface KpiRow {
-  /** kpiKeyedRows 열쇠(카드 id#지표 이름) — 부서 실적 입력과 같은 키 */
+  /** kpiKeyedRows 열쇠(카드 id#지표 이름) — 다시 채우기·고침의 행 정체 */
   id: string;
   code: {
     cardId: string;
@@ -164,8 +164,10 @@ export interface KpiRow {
     prev: string;
     /** ’26 목표(카드 target) */
     target: string;
-    /** ’26 실적(그 지표 부서 보고서 inputs.kpi). 없으면 빈 글 */
+    /** ’26 실적 — 카드 정량 성과 칸에서 이 지표에 붙은 줄의 값 하나(actuals.ts ledgerFigure, 2026-11-02). 못 정하면 빈 글 */
     actual: string;
+    /** actual을 못 정했는데 원장 줄은 있을 때(값 여럿·단위 불일치·시점 미기재) 그 줄 — 계량 표 경고로 사람이 봄. 예전 행에는 없음 */
+    ledger?: string;
     /** 이름이 같은 2025 계량 표 행 이름. 없으면 null */
     match2025: string | null;
     /** 그 2025 행의 셈 방향(inferPolarity). 못 정하면 null */
@@ -200,11 +202,10 @@ export interface OutcomePart {
 
 export type UnitPart = CoverPart | FindingsPart | PriorPart | OutcomePart;
 
-/** 재료 판(design §3.2 「다시 만들기 권장」) — 카드 원장 판·과제별 초안 저장 시각·실적 입력 해시 */
+/** 재료 판(design §3.2 「다시 만들기 권장」) — 카드 원장 판·과제별 초안 저장 시각(’26 계량 실적은 원장에서 오므로 원장 판이 잡음. 예전 행의 inputs 해시는 보지 않음 — 2026-11-02) */
 export interface UnitPartsSource {
   cards: Record<string, number>;
   drafts: Record<string, string>;
-  inputs: string;
 }
 
 export interface UnitPartsMg {
@@ -257,8 +258,8 @@ export interface MgUnitMaterials {
   handbook: UnitChunk[];
   /** 목차·쪽 배정(report_outline)의 그 지표 행. 없으면 MG_CARD_EVALS 대응 */
   outline?: Array<{ card_id: string; section: string; subsection: string | null; included?: boolean | null; /** 목차 순서(R5c AI 요청의 과제별 초안 순서) */ sort?: number | null }>;
-  /** 그 지표 모든 부서 보고서의 계량 실적 입력(reports.inputs.kpi — 보고서마다 하나) */
-  kpiInputs: Array<Record<string, string>>;
+  /** 작성일(YYYY-MM-DD) — 원장 정량 성과 칸의 올해 실적 줄을 고르는 해(actuals.ts yearActuals). 빈 글이면 ’26 실적 칸을 채우지 않음 */
+  today: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -599,54 +600,50 @@ export function buildPriorPart(m: Pick<MgUnitMaterials, "cards" | "report2025" |
 // ---------------------------------------------------------------------------
 // 성과분석 및 환류
 
-/** 부서 보고서 실적 입력 합치기: 같은 키는 처음 빈 값이 아닌 것. 부서마다 값이 다르면 경고 */
-export function mergeKpiInputs(list: Array<Record<string, string>>): { inputs: Record<string, string>; conflicts: string[] } {
-  const inputs: Record<string, string> = {};
-  const conflicts = new Set<string>();
-  for (const one of list) {
-    for (const [k, raw] of Object.entries(one ?? {})) {
-      const v = oneLine(raw);
-      if (!v) continue;
-      if (inputs[k] === undefined) inputs[k] = v;
-      else if (inputs[k] !== v) conflicts.add(k);
-    }
-  }
-  return { inputs, conflicts: [...conflicts] };
+/** ’26 실적 칸: 카드마다 원장 올해 실적(yearActuals wide — 경영관리 카드 초안과 같은 규칙)의 지표 행 → 값 하나(ledgerFigure). kpiKeyedRows와 같은 거르기 규칙이라 차례가 같음(이름이 다르면 붙이지 않음) */
+function ledgerActuals(c: UnitCard, today: string): Array<{ actual: string; ledger?: string }> {
+  const ledger = yearActuals(c.data, today, { wide: true }).kpi;
+  return kpiKeyedRows(c.id, c.data?.kpi?.rows).map((k, j) => {
+    const a = ledger[j]?.name === k.name ? ledger[j] : undefined;
+    const actual = a ? ledgerFigure(a) : "";
+    return !actual && a?.outcome ? { actual, ledger: a.outcome } : { actual };
+  });
 }
 
-export function buildOutcomePart(m: Pick<MgUnitMaterials, "cards" | "report2025" | "kpiInputs">): { part: OutcomePart; warnings: string[] } {
-  const { inputs, conflicts } = mergeKpiInputs(m.kpiInputs);
+export function buildOutcomePart(m: Pick<MgUnitMaterials, "cards" | "report2025" | "today">): { part: OutcomePart; warnings: string[] } {
   const table2025 = m.report2025.find((c) => c.meta?.chapter === "outcome" && c.meta?.mark === "가");
   const rows2025 = table2025 ? kpi2025Rows(table2025.text) : [];
   const by2025 = new Map(rows2025.map((r) => [kpiNameKey(r.name), r]));
-  const kpi: KpiRow[] = activeCards(m.cards).flatMap((c) =>
-    kpiKeyedRows(c.id, c.data?.kpi?.rows).map((k) => {
+  const kpi: KpiRow[] = activeCards(m.cards).flatMap((c) => {
+    const actuals = ledgerActuals(c, m.today);
+    return kpiKeyedRows(c.id, c.data?.kpi?.rows).map((k, j) => {
       const hit = by2025.get(kpiNameKey(k.name)) ?? null;
       const polarity2025 = hit ? inferPolarity(hit) : null;
       return {
         id: k.key,
-        code: { cardId: c.id, taskNo: c.taskNo, index: k.i, name: k.name, unit: k.unit, prev: k.prev, target: k.target, actual: inputs[k.key] ?? "", match2025: hit?.name ?? null, polarity2025 },
+        code: { cardId: c.id, taskNo: c.taskNo, index: k.i, name: k.name, unit: k.unit, prev: k.prev, target: k.target, ...actuals[j], match2025: hit?.name ?? null, polarity2025 },
         human: { checked: !!hit, polarity: polarity2025 ?? "up" },
         ai: { analysis: [] },
       };
-    }),
-  );
+    });
+  });
   const evals = skeletonEvals(m.report2025);
   const qual: QualRow[] = evals.map((e) => ({ id: `qual/${e.no}`, code: { evalNo: e.no, title: e.title }, human: { label: evalShort(e.title) }, ai: { result: [], analysis: [] } }));
   const plan: PlanRow[] = evals.map((e) => ({ id: `plan/${e.no}`, code: { evalNo: e.no, title: e.title }, human: { label: evalShort(e.title) }, ai: { self: [], plan: [] } }));
   const part: OutcomePart = { part: "outcome", kpi, qual, plan };
-  const byKey = new Map(kpi.map((k) => [k.id, k]));
-  return { part, warnings: [...conflicts.map((k) => `계량 실적: ${byKey.get(k)?.code.taskNo ?? k} 「${byKey.get(k)?.code.name ?? k}」 — 부서 보고서마다 입력값이 다름(처음 값을 씀)`), ...outcomeWarnings(part)] };
+  return { part, warnings: outcomeWarnings(part) };
 }
 
-/** 계량 표 경고(체크한 행만 — 사람이 행·극성을 바꾸면 다시 셈): 실적 미입력·【확인】 달성률 */
+/** 계량 표 경고(체크한 행만 — 사람이 행·극성을 바꾸면 다시 셈): 원장에 실적 없음·원장 줄에서 값을 못 정함·【확인】 달성률 */
 export function outcomeWarnings(p: OutcomePart): string[] {
   const on = p.kpi.filter((k) => k.human.checked);
-  const missing = on.filter((k) => !k.code.actual.trim());
+  const missing = on.filter((k) => !k.code.actual.trim() && !k.code.ledger);
+  const unsure = on.filter((k) => !k.code.actual.trim() && k.code.ledger);
   const checks = on.filter((k) => k.code.actual.trim() && kpiRate(k).value === null);
   return [
     ...(p.kpi.length && !on.length ? ["계량 표: 고른 행이 없음 — 2025 표와 이름이 같은 카드 계량 행이 없어 미리 체크하지 못함(행을 골라 주세요)"] : []),
-    ...(missing.length ? [`계량 표: 실적 미입력 ${missing.length}행(${missing.map((k) => `${k.code.taskNo} ${k.code.name}`).join(" · ")}) — 부서 경평 초안 「계량 실적」 입력이 필요`] : []),
+    ...(missing.length ? [`계량 표: 실적 미입력 ${missing.length}행(${missing.map((k) => `${k.code.taskNo} ${k.code.name}`).join(" · ")}) — 카드 정량 성과 칸에 이 지표의 올해 실적이 없음(원장 현행화 뒤 다시 채우기)`] : []),
+    ...unsure.map((k) => `계량 표: ${k.code.taskNo} 「${k.code.name}」 — 원장 줄에서 실적 값을 하나로 못 정함(값이 여럿이거나 단위가 다르거나 시점 미기재): 「${k.code.ledger}」`),
     ...checks.map((k) => `계량 표: ${k.code.taskNo} 「${k.code.name}」 달성률 ${kpiRate(k).text}`),
   ];
 }
@@ -654,7 +651,7 @@ export function outcomeWarnings(p: OutcomePart): string[] {
 // ---------------------------------------------------------------------------
 // 재료 판·한꺼번에 만들기
 
-/** 짧은 해시(FNV-1a 32비트, 16진 8자) — 실적 입력 판 비교용(보안 용도 아님, 브라우저에서도 같은 값) */
+/** 짧은 해시(FNV-1a 32비트, 16진 8자) — 지적 행 열쇠용(보안 용도 아님, 브라우저에서도 같은 값) */
 function fnv8(s: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
@@ -664,16 +661,13 @@ function fnv8(s: string): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** 재료 판: 활성 카드의 원장 판(data_rev)·과제별 초안 저장 시각·그 카드들 계량 행의 실적 입력 해시 */
-export function unitPartsSource(m: Pick<MgUnitMaterials, "cards" | "drafts" | "kpiInputs">): UnitPartsSource {
+/** 재료 판: 활성 카드의 원장 판(data_rev)·과제별 초안 저장 시각 */
+export function unitPartsSource(m: Pick<MgUnitMaterials, "cards" | "drafts">): UnitPartsSource {
   const cards = activeCards(m.cards);
-  const { inputs } = mergeKpiInputs(m.kpiInputs);
-  const keys = cards.flatMap((c) => kpiKeyedRows(c.id, c.data?.kpi?.rows).map((k) => k.key)).sort();
   const ids = new Set(cards.map((c) => c.id));
   return {
     cards: Object.fromEntries(cards.map((c) => [c.id, Number(c.dataRev ?? 0)])),
     drafts: Object.fromEntries(m.drafts.filter((d) => d.spec && ids.has(d.cardId)).map((d) => [d.cardId, d.updatedAt])),
-    inputs: fnv8(JSON.stringify(keys.map((k) => [k, inputs[k] ?? ""]))),
   };
 }
 
@@ -691,7 +685,6 @@ export function sourceChanges(saved: UnitPartsSource, now: UnitPartsSource): str
     else if (saved.drafts[id] !== now.drafts[id]) out.push(`${task(id)} 과제별 초안이 바뀜`);
   }
   for (const id of Object.keys(saved.drafts)) if (!(id in now.drafts)) out.push(`${task(id)} 과제별 초안이 없어짐`);
-  if (saved.inputs !== now.inputs) out.push("계량 실적 입력이 바뀜");
   return out;
 }
 

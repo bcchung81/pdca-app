@@ -6,7 +6,7 @@ import type { TodoBoard, TodoRow } from "../../lib/reports/todo-board.ts";
 /** 처음 보여 주는 줄 수(나머지는 접어 둠) */
 const SHOWN = 12;
 
-const HEADS = ["평가단위", "부서", "계량 실적 미입력", "【확인】", "초안 없음", "없는 숫자", "자료 필요", "채울 것 견본", ""];
+const HEADS = ["평가단위", "부서", "원장에 올해 실적 없음", "【확인】", "초안 없음", "없는 숫자", "자료 필요", "채울 것 견본", ""];
 
 // 남은 일 숫자는 0보다 크면 진한 글자 — 갈색(warn)은 막힘(근거에 없는 숫자, lib/reports/warning-levels.ts의 block)만
 const cell = (n: number, block = false) => (n ? <span className={`font-bold ${block ? "text-warn" : "text-ink"}`}>{n}</span> : <span className="text-muted">—</span>);
@@ -51,7 +51,7 @@ function Table({ rows, mg, linkFor, from }: { rows: TodoRow[]; mg: boolean; link
                 <td className={`${T.td} truncate ${r.teamId === null ? "text-muted-2" : ""}`} title={r.teamName}>
                   {r.teamName}
                 </td>
-                <td className={`${T.td} font-mono text-ui`} title={r.kpiTotal ? `계량 성과지표 ${r.kpiTotal}행 중 올해 실적을 안 넣은 ${r.kpiMissing}행` : "카드에 계량 성과지표가 없음"}>
+                <td className={`${T.td} font-mono text-ui`} title={r.kpiTotal ? `계량 성과지표 ${r.kpiTotal}행 중 원장에 올해 실적이 없는 ${r.kpiMissing}행` : "카드에 계량 성과지표가 없음"}>
                   {r.kpiTotal ? (
                     <>
                       {cell(r.kpiMissing)}
@@ -104,13 +104,13 @@ export function TodoBoardPanel({ board, title, mg, staff, from }: { board: TodoB
     <Panel
       title={title}
       aside={
-        <span className="truncate" title="계량 실적 미입력 행 · 【확인】 자리표시 · 초안 없는 과제 · 근거에 없는 숫자의 합(자료 필요는 별도 — 합에 안 넣음)">
-          계량 실적 {t.kpiMissing} · 확인 {t.needs} · 초안 없음 {t.noDraft} · 없는 숫자 {t.unknown} · 자료 필요 {t.requests}
+        <span className="truncate" title="원장에 올해 실적 없는 지표 행 · 【확인】 자리표시 · 초안 없는 과제 · 근거에 없는 숫자의 합(자료 필요는 별도 — 합에 안 넣음)">
+          원장 실적 없음 {t.kpiMissing} · 확인 {t.needs} · 초안 없음 {t.noDraft} · 없는 숫자 {t.unknown} · 자료 필요 {t.requests}
         </span>
       }
     >
       {todo.length === 0 ? (
-        <Empty title="채울 것이 없습니다.">계량 실적·【확인】 자리표시·초안 없는 과제·근거에 없는 숫자가 모두 없습니다.</Empty>
+        <Empty title="채울 것이 없습니다.">원장 올해 실적 결손·【확인】 자리표시·초안 없는 과제·근거에 없는 숫자가 모두 없습니다.</Empty>
       ) : (
         <>
           <Table rows={todo.slice(0, SHOWN)} mg={mg} linkFor={staff} from={from} />

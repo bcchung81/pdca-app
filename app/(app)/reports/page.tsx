@@ -6,9 +6,10 @@ import { TodoBoardPanel } from "../../../components/reports/todo-board";
 import { Empty, NoAccess, PageHeader, Panel, Screen, StatPanel, T, Tag } from "../../../components/ui/kit";
 import { requireAtLeast } from "../../../lib/auth/dal.ts";
 import { currentPeriod } from "../../../lib/cards/view.ts";
-import { fmtDate } from "../../../lib/format.ts";
+import { fmtDate, isoDay } from "../../../lib/format.ts";
 import { withReturn } from "../../../lib/nav/return-to.ts";
-import { REPORT_STATUS_LABEL, type ReportStatus, kpiRowsOf } from "../../../lib/reports/model.ts";
+import { kpiGaps, yearActuals } from "../../../lib/reports/actuals.ts";
+import { REPORT_STATUS_LABEL, type ReportStatus } from "../../../lib/reports/model.ts";
 import { listReports, loadSubmitCards, materialCounts, openCommentCounts, submitKey } from "../../../lib/reports/queries.ts";
 import { submitReadiness } from "../../../lib/reports/submission.ts";
 import { buildTodoBoard } from "../../../lib/reports/todo-board.ts";
@@ -22,7 +23,7 @@ const STATUSES: ReportStatus[] = ["preparing", "drafting", "submitted", "approve
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
-/** 성과관리팀 · 경평 초안 관리판: 사업×부서 보고서마다 과제별 초안 진행·확인할 것·계량 실적·상태(부서 확정 = 승인)를 보고 검토 화면으로 들어갑니다 */
+/** 성과관리팀 · 경평 초안 관리판: 사업×부서 보고서마다 과제별 초안 진행·확인할 것·원장 실적·상태(부서 확정 = 승인)를 보고 검토 화면으로 들어갑니다 */
 export default async function ReportsPage({ searchParams }: PageProps<"/reports">) {
   const me = await requireAtLeast("pmo", "/reports");
   if (!me) return <NoAccess title="경평 초안" need="성과관리팀" />;
@@ -36,7 +37,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const [allReports, { data: units }, { data: cards }, { data: teams }, submitCards, unitParts] = await Promise.all([
     listReports(supabase, year),
     supabase.from("eval_units").select("id, name, card_group, lead_team_id").eq("track", track).order("sort").order("id"),
-    supabase.from("cards").select("id, eval_unit_id, team_id, kpi:data->kpi->rows, unit:eval_units!inner(track)").eq("status", "active").eq("unit.track", track),
+    supabase.from("cards").select("id, eval_unit_id, team_id, data, unit:eval_units!inner(track)").eq("status", "active").eq("unit.track", track),
     supabase.from("teams").select("id, name").order("name"),
     loadSubmitCards(supabase, year, { track }),
     // 카드 밖 부분은 경영관리 지표에만 있음(주요사업은 부분 키 허용 목록이 비어 있어 빈 목록)
@@ -53,16 +54,17 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const missingReports = [...pairs].filter((p) => !reports.some((r) => `${r.evalUnitId}|${r.teamId}` === p)).length;
   const filtered = status ? reports.filter((r) => r.status === status) : reports;
   const visibleUnits = (units ?? []).filter((u) => filtered.some((r) => r.evalUnitId === u.id));
-  // 채울 것 모음(재료 결손: 계량 실적·【확인】·초안 없음·근거에 없는 숫자) — 상태 필터와 무관하게 이 트랙 전체
+  // 채울 것 모음(재료 결손: 원장 올해 실적 없음·【확인】·초안 없음·근거에 없는 숫자) — 상태 필터와 무관하게 이 트랙 전체
   const submitById = new Map([...submitCards.values()].flat().map((c) => [c.id, c]));
   const todo = buildTodoBoard({
     units: (units ?? []).map((u) => ({ id: u.id as string, name: u.name as string, cardGroup: (u.card_group as string | null) ?? null })),
     teams: (teams ?? []).map((t) => ({ id: t.id as number, name: t.name as string })),
     cards: (cards ?? []).flatMap((c) => {
       const submit = submitById.get(c.id as string);
-      return submit && c.team_id ? [{ unitId: c.eval_unit_id as string, teamId: c.team_id as number, kpi: c.kpi, submit }] : [];
+      return submit && c.team_id ? [{ unitId: c.eval_unit_id as string, teamId: c.team_id as number, data: c.data, submit }] : [];
     }),
-    reports: reports.map((r) => ({ id: r.id, unitId: r.evalUnitId, teamId: r.teamId, inputs: r.inputs })),
+    today: isoDay(),
+    reports: reports.map((r) => ({ id: r.id, unitId: r.evalUnitId, teamId: r.teamId })),
     parts: unitParts,
   });
   // 검토 화면으로 가는 링크가 돌아올 이 목록 주소(상태 필터 포함)
@@ -95,7 +97,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
               { label: "승인", n: count("approved"), tone: REPORT_STATUS_TONE.approved.seg, href: status === "approved" ? "/reports" : "/reports?status=approved", on: status === "approved", title: "부서가 확정(바로 승인 상태) — 필요하면 검토 화면에서 메모와 함께 승인을 풂" },
               { label: "제출 · 검토 중", n: count("submitted"), tone: REPORT_STATUS_TONE.submitted.seg, href: status === "submitted" ? "/reports" : "/reports?status=submitted", on: status === "submitted", title: "2026-10-27 전에 제출된 보고서 — 승인하거나 돌려보냄(부서는 이제 제출 대신 확정)" },
               { label: "초안 작성", n: count("drafting"), tone: REPORT_STATUS_TONE.drafting.seg, href: status === "drafting" ? "/reports" : "/reports?status=drafting", on: status === "drafting", title: "부서가 과제별 초안을 쓰는 중" },
-              { label: "자료 준비", n: count("preparing"), tone: REPORT_STATUS_TONE.preparing.seg, href: status === "preparing" ? "/reports" : "/reports?status=preparing", on: status === "preparing", title: "추가자료·계량 실적 입력" },
+              { label: "자료 준비", n: count("preparing"), tone: REPORT_STATUS_TONE.preparing.seg, href: status === "preparing" ? "/reports" : "/reports?status=preparing", on: status === "preparing", title: "추가자료" },
             ]}
           />
 
@@ -132,7 +134,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                       </colgroup>
                       <thead>
                         <tr className={T.headRow}>
-                          {["부서", "과제", "과제별 초안", "확인할 것", "계량 실적", "추가자료", "상태", "확정일", "미해결 코멘트", "검토 메모", ""].map((h, i) => (
+                          {["부서", "과제", "과제별 초안", "확인할 것", "원장 실적", "추가자료", "상태", "확정일", "미해결 코멘트", "검토 메모", ""].map((h, i) => (
                             <th key={h} scope="col" className={`${T.th} ${i === 0 ? T.stickTh : ""}`}>
                               {h}
                             </th>
@@ -142,8 +144,10 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
                       <tbody>
                         {list.map((r) => {
                           const cs = cardsOf(r.evalUnitId, r.teamId);
-                          const kpiTotal = cs.reduce((n, c) => n + kpiRowsOf(c.kpi).length, 0);
-                          const kpiDone = Object.values((r.inputs?.kpi ?? {}) as Record<string, string>).filter((v) => String(v).trim()).length;
+                          // 원장 기준: 지표 수 − 원장에 올해 실적(정량 성과 칸·예상 칸)이 없는 수
+                          const actuals = cs.map((c) => yearActuals(c.data, isoDay(), { wide: mg }));
+                          const kpiTotal = actuals.reduce((n, a) => n + a.kpi.length, 0);
+                          const kpiDone = kpiTotal - actuals.reduce((n, a) => n + kpiGaps(a).length, 0);
                           const ready = submitReadiness(submitCards.get(submitKey(r.evalUnitId, r.teamId)) ?? []);
                           return (
                             <tr key={r.id} className={T.row}>

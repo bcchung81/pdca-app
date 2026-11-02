@@ -3,7 +3,7 @@
 // ① 쓸 칸 고르기(unitAiTargets — 빈 칸만이 기본, 덮어쓰기는 옵션) ② 요청 글(unitAiPrompt — 문구는 resources/prompts/report-unit-mg/request.md, 조건·반복만 코드)
 // ③ 답 정리(applyUnitAiAnswer — 모르는 행·칸 버림, code·human 칸 쓰기 거절, 줄 수 상한, 숫자 대조(knownNumbers 하나로), 【확인】 셈 — 저장할 부분 spec과 경고).
 // 칸 글자 예산(2026-10-16 — unit-parts-budget.ts): 요청 글에 칸마다 「약 N자 안팎(최대 M줄)」, 답 칸이 예산의 1.3배를 넘으면 자르지 않고 경고.
-// 자료 범위(설계 §3.7 「자료 범위는 기능마다 고정」 줄): 그 지표 활성 카드 원장 + 과제별 초안 글(목차 순) + 부서 계량 실적 입력 + '25 평가위원 지적(원문) + 시정조치 계획(약속 표지) +
+// 자료 범위(설계 §3.7 「자료 범위는 기능마다 고정」 줄): 그 지표 활성 카드 원장(’26 계량 실적 줄 포함 — 2026-11-02) + 과제별 초안 글(목차 순) + '25 평가위원 지적(원문) + 시정조치 계획(약속 표지) +
 // 2025 그 지표 보고서 카드 밖 장 + 핵심공통항목('25) + 편람 지표. 카드 전용 자료·보고서 추가자료 원문은 넣지 않음(금기 4 — 사용자 확인 2026-10-16), 공통 지식 「규칙 범위 전부」도 안 씀.
 
 import { z } from "zod";
@@ -12,14 +12,13 @@ import { inspectionCardText } from "../ai/inspect.ts";
 import { revisionNote } from "../knowledge/revision-note.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import type { UnitPartKey } from "../tracks/index.ts";
-import { needsIn, stripNeeds } from "./actuals.ts";
+import { needsIn, stripNeeds, yearActuals } from "./actuals.ts";
 import { mgPartLabel } from "./mg-outline.ts";
-import { kpiKeyedRows } from "./model.ts";
 import { knownNumbers, numberTokens } from "./section.ts";
 import { sectionMarkdown } from "./section-md.ts";
 import { type UnitAiBudgets, UNIT_BUDGET_ROOM_MM, UNIT_BUDGET_WARN, linesLen, unitAiBudgets } from "./unit-parts-budget.ts";
 import { applyUnitPartEdits } from "./unit-parts-edit.ts";
-import { type MgUnitMaterials, type UnitChunk, type UnitPart, findingRowParts, kpiRate, mergeKpiInputs, unitPartsLabels } from "./unit-parts-mg.ts";
+import { type MgUnitMaterials, type UnitChunk, type UnitPart, findingRowParts, kpiRate, unitPartsLabels } from "./unit-parts-mg.ts";
 
 /** AI 칸이 있는 부분(표지는 사람 칸·코드 칸뿐) */
 export const UNIT_AI_PARTS = ["findings", "prior", "outcome"] as const satisfies readonly UnitPartKey[];
@@ -203,9 +202,6 @@ function draftTexts(m: Pick<MgUnitMaterials, "drafts">): Map<string, string> {
   return new Map(m.drafts.filter((d) => d.spec).map((d) => [d.cardId, sectionMarkdown(d.spec!).md.trim()]));
 }
 
-/** 합친 계량 실적 입력(카드 계량 행 키 → 값) */
-const kpiInputs = (m: Pick<MgUnitMaterials, "kpiInputs">) => mergeKpiInputs(m.kpiInputs).inputs;
-
 /** 평가내용 → 대응 카드 과제번호(전년 대비 부분 행 — 없으면 빈 목록) */
 function evalCards(parts: UnitAiInput["parts"]): Map<number, string[]> {
   const p = parts.prior;
@@ -213,7 +209,7 @@ function evalCards(parts: UnitAiInput["parts"]): Map<number, string[]> {
 }
 
 /**
- * AI 요청 글: 머리(지표·부분·채우는 방식) → 카드 원장 → 과제별 초안(목차 순) → 올해 계량 실적 입력 → '25 평가위원 지적 → 시정조치 계획(약속 표지) →
+ * AI 요청 글: 머리(지표·부분·채우는 방식) → 카드 원장 → 과제별 초안(목차 순) → 올해 계량 실적(원장 줄) → '25 평가위원 지적 → 시정조치 계획(약속 표지) →
  * 2025 같은 장 → 핵심공통항목 → 편람 → 쓸 칸(행마다 앱이 정한 칸 글·쓸 칸·이미 쓴 칸) → 끝맺음. 문구는 request.md, 여기는 고르기·되풀이뿐
  */
 export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
@@ -240,14 +236,8 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
   const drafts = draftTexts(m);
   out.push("", r("drafts.head"));
   for (const c of cards) out.push(drafts.has(c.id) ? r("drafts.item", { taskNo: c.taskNo, text: drafts.get(c.id)! }) : r("drafts.missing", { taskNo: c.taskNo }));
-  // 계량 실적 입력(그 지표 모든 부서 보고서 — 카드 계량 행 키)
-  const inputs = kpiInputs(m);
-  const kpiLines = cards.flatMap((c) =>
-    kpiKeyedRows(c.id, c.data?.kpi?.rows).flatMap((k) => {
-      const v = inputs[k.key];
-      return v ? [r("actuals.item", { taskNo: c.taskNo, name: k.name, actual: v })] : [];
-    }),
-  );
+  // 올해 계량 실적(카드 정량 성과 칸에서 계량 행에 붙은 줄 — actuals.ts yearActuals wide, 경영관리 카드 초안과 같은 규칙)
+  const kpiLines = cards.flatMap((c) => yearActuals(c.data, m.today, { wide: true }).kpi.flatMap((k) => (k.outcome ? [r("actuals.item", { taskNo: c.taskNo, name: k.name, actual: k.outcome })] : [])));
   out.push("", r("actuals.head", { yy: yy(year) }), ...(kpiLines.length ? kpiLines : [r("actuals.none")]));
   // '25 평가위원 지적(원문 — 인용 대조용, 숫자 근거 아님)
   out.push("", r("evaluator.head", { prevYY: yy(year - 1) }), ...(m.evaluator.length ? m.evaluator.map((c) => r("evaluator.item", { title: oneLine(c.title ?? c.chunk_key), text: c.text })) : [r("evaluator.none")]));
@@ -350,7 +340,7 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
 // 숫자 근거
 
 /**
- * 숫자 근거 글(설계 §3.7 — 기존 경영관리 규칙과 같게): 카드 원장(활성 카드 전부) · 과제별 초안 글 · 부서 계량 실적 입력 · 앱이 셈한 달성률 · 2025 그 지표 보고서 전 장 · 핵심공통항목('25).
+ * 숫자 근거 글(설계 §3.7 — 기존 경영관리 규칙과 같게): 카드 원장(활성 카드 전부 — ’26 계량 실적 칸 값도 원장 줄에서 옴) · 과제별 초안 글 · 앱이 셈한 달성률 · 2025 그 지표 보고서 전 장 · 핵심공통항목('25).
  * '25 평가위원 지적 원문·시정조치 계획·편람의 수치는 넣지 않음(인용 대조에만 — 지적 내용·약속·기준이지 KCA 실적이 아님)
  */
 export function unitAiKnownNumbers(input: Pick<UnitAiInput, "materials" | "core" | "parts">): Set<string> {
@@ -361,7 +351,6 @@ export function unitAiKnownNumbers(input: Pick<UnitAiInput, "materials" | "core"
   const extra = [
     ...cards.slice(1).map((c) => inspectionCardText(c.data)),
     ...draftTexts(m).values(),
-    ...Object.values(kpiInputs(m)),
     ...rates,
     ...m.report2025.map((c) => c.text),
     ...input.core.map((c) => c.text),

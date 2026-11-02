@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { NEED_RE, NEEDS_MAX, TIMING_LABEL, dedupeNeedYear, hasFigure, kpiGaps, needsIn, outcomeActualItems, outcomeActuals, periodLabel, periodOf, planOnly, stripNeeds, timingOf, UNDATED_NOTE, undatedOutcomeLines, yearActuals, yearIssues } from "./actuals.ts";
+import { type KpiActual, NEED_RE, NEEDS_MAX, TIMING_LABEL, dedupeNeedYear, hasFigure, kpiGaps, ledgerFigure, needsIn, outcomeActualItems, outcomeActuals, periodLabel, periodOf, planOnly, stripNeeds, timingOf, UNDATED_NOTE, undatedOutcomeLines, yearActuals, yearIssues } from "./actuals.ts";
 import { reportDraftPrompts, reportDraftPromptsMg } from "../prompts/sets.ts";
 import { cleanLine, sectionContext, sectionPrompt } from "./section.ts";
 import { mgMaterialsPrompt } from "./mg-draft.ts";
@@ -74,30 +74,27 @@ test("planOnly: 목표·예상 낱말 + 올해 실제 언급 없음일 때만 �
 // ---------------------------------------------------------------------------
 // yearActuals·kpiGaps: 실제 시드 카드로
 
-test("yearActuals: 카드 계량지표(부서 입력 우선) + 올해 수치 든 월별 실적만 — 주요사업1/1-가(월별 수치 없음)", { skip: NO_SEED_CARDS }, () => {
-  const a = yearActuals(card1, {}, "2026-09-27");
+test("yearActuals: 카드 계량지표 + 올해 수치 든 월별 실적만 — 주요사업1/1-가(월별 수치 없음)", { skip: NO_SEED_CARDS }, () => {
+  const a = yearActuals(card1, "2026-09-27");
   assert.equal(a.today, "2026-09-27");
-  assert.deepEqual(a.kpi, [{ name: "AI 활용 고위험 작업 대체 건수", unit: "건", prev: "30,706건", target: "45,000건", expected: "", input: "" }]);
+  assert.deepEqual(a.kpi, [{ name: "AI 활용 고위험 작업 대체 건수", unit: "건", prev: "30,706건", target: "45,000건", expected: "" }]);
   assert.deepEqual(a.monthly, [], "1월~8월 월별 실적은 날짜·건수 이하 단위뿐이라 수치 든 줄 없음");
-  assert.deepEqual(kpiGaps(a), a.kpi, "부서 입력도 카드 예상 칸도 없으면 채울 자료");
+  assert.deepEqual(kpiGaps(a), a.kpi, "원장 정량 성과 줄도 카드 예상 칸도 없으면 채울 자료");
 });
 
-test("yearActuals: 주요사업3/7-나(계량지표 2행·월별 수치 659건) — 부서 입력이 있는 지표는 채울 자료에서 빠짐", { skip: NO_SEED_CARDS }, () => {
-  const a = yearActuals(card2, { "주요사업3/7-나#전담기관 만족도": "91점" }, "2026-09-27");
+test("yearActuals: 주요사업3/7-나(계량지표 2행·월별 수치 659건)", { skip: NO_SEED_CARDS }, () => {
+  const a = yearActuals(card2, "2026-09-27");
   assert.equal(a.kpi.length, 2);
   assert.equal(a.kpi[0].name, "전담기관 만족도");
-  assert.equal(a.kpi[0].input, "91점", "inputs 키는 카드id#지표이름(lib/reports/model.ts kpiKeyedRows)");
-  assert.equal(a.kpi[1].input, "", "이름이 다른 지표는 입력 없음");
   assert.equal(a.monthly.length, 2, "수치가 든 줄만(테이블·날짜만 있는 줄 제외)");
   assert.ok(a.monthly.every((m) => m.period === "1월~9월"));
   assert.ok(a.monthly.some((m) => m.line.includes("659건")));
-  assert.deepEqual(kpiGaps(a), [a.kpi[1]], "입력이 있는 첫 지표는 빠지고, 둘째만 채울 자료");
 });
 
 test("yearActuals: kpi.rows의 예상 칸(expected)도 담고, 빈 자리표시(-) 행은 model.ts kpiRowsOf와 같이 뺌", () => {
   const synthetic = { id: "X", kpi: { rows: [{ name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "15건" }, { name: "-", unit: "", prev: "-", target: "-" }] }, do: { monthly: [] } };
-  const a = yearActuals(synthetic, {}, "");
-  assert.deepEqual(a.kpi, [{ name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "15건", input: "" }]);
+  const a = yearActuals(synthetic, "");
+  assert.deepEqual(a.kpi, [{ name: "지표A", unit: "건", prev: "10건", target: "20건", expected: "15건" }]);
 });
 
 // ---------------------------------------------------------------------------
@@ -173,17 +170,17 @@ test("outcomeActuals: 글머리 없는 줄은 앞 항목에 붙이고, 올해 �
 });
 
 test("yearActuals: 정량 성과 줄은 이름 낱말이 맞는 계량지표에 붙고(kpi.outcome), 남은 줄은 outcome — today가 없으면 보지 않음", () => {
-  const a = yearActuals(OUTCOME_CARD, {}, "2026-10-27");
+  const a = yearActuals(OUTCOME_CARD, "2026-10-27");
   assert.equal(a.kpi[0].outcome, "공공용 주파수 신속 공급 성과 달성(’26.8) (’26년 목표 2.267일 → ’26년 성과 2.000일)");
   assert.equal(a.kpi[1].outcome, undefined);
   assert.deepEqual(a.outcome, ["’26년 상반기 현장 점검 실적 120건"]);
   assert.equal(yearActuals(OUTCOME_CARD).outcome, undefined);
   assert.equal(yearActuals(OUTCOME_CARD).kpi[0].outcome, undefined);
-  assert.deepEqual(kpiGaps(a).map((k) => k.name), ["공공용 주파수 신속 공급 성과", "이용기관 만족도"], "채울 자료 목록은 그대로(부서 입력·예상 칸만 봄)");
+  assert.deepEqual(kpiGaps(a).map((k) => k.name), ["이용기관 만족도"], "원장 정량 성과 줄이 붙은 지표는 채울 자료가 아님");
 });
 
 test("요청 글: 정량 성과 칸 실적이 붙은 계량지표는 「없음 → 【확인】」 대신 그 줄로, 남은 줄은 따로 — 두 트랙", () => {
-  const a = yearActuals(OUTCOME_CARD, {}, "2026-10-27");
+  const a = yearActuals(OUTCOME_CARD, "2026-10-27");
   const biz = sectionPrompt(reportDraftPrompts().prompts, OUTCOME_CARD, sectionContext(OUTCOME_CARD, []), 2026, [], [], [], [], a);
   assert.match(biz, /계량지표 공공용 주파수 신속 공급 성과\(—\): .*’26년 실적 공공용 주파수 신속 공급 성과 달성\(’26\.8\) \(’26년 목표 2\.267일 → ’26년 성과 2\.000일\)\(카드 정량 성과 칸/);
   assert.doesNotMatch(biz, /【확인: ’26년 공공용 주파수 신속 공급 성과】/);
@@ -194,7 +191,7 @@ test("요청 글: 정량 성과 칸 실적이 붙은 계량지표는 「없음 �
   assert.match(mg, /’26년 실적 공공용 주파수 신속 공급 성과 달성.*\(카드 정량 성과 칸/);
   assert.match(mg, /- ’26년 상반기 현장 점검 실적 120건/);
   // 정량 성과 실적이 없으면 예전 글 그대로(새 절이 안 나옴)
-  assert.doesNotMatch(sectionPrompt(reportDraftPrompts().prompts, { id: "x" }, sectionContext({ id: "x" }, []), 2026, [], [], [], [], yearActuals({ id: "x" }, {}, "2026-10-27")), /카드 정량 성과 칸/);
+  assert.doesNotMatch(sectionPrompt(reportDraftPrompts().prompts, { id: "x" }, sectionContext({ id: "x" }, []), 2026, [], [], [], [], yearActuals({ id: "x" }, "2026-10-27")), /카드 정량 성과 칸/);
 });
 
 // ---------------------------------------------------------------------------
@@ -210,13 +207,34 @@ test("dedupeNeedYear·cleanLine: ^{’26년}【확인: ’26년 …】의 안쪽
   assert.equal(cleanLine("- 인식도 ^{’25년}89% → ^{‘26년}【확인: ‘26년 위험성평가 인식도(%)】"), "인식도 ^{’25년}89% → ^{’26년}【확인: 위험성평가 인식도(%)】", "AI 답 정리 단계에서(두 트랙 공용)");
 });
 
-test("yearActuals: 열쇠는 지표 이름 — 행을 끼우거나 순서를 바꿔도 같은 지표에 값이 붙고, 이름이 바뀐 지표는 비어 보임", () => {
-  const inputs = { "c1#B 지표": "7건" };
-  const rows = (names: string[]) => ({ id: "c1", kpi: { rows: names.map((name) => ({ name })) } });
-  assert.equal(yearActuals(rows(["A 지표", "B 지표"]), inputs).kpi[1].input, "7건");
-  const moved = yearActuals(rows(["새 지표", "B 지표", "A 지표"]), inputs).kpi;
-  assert.deepEqual(moved.map((k) => k.input), ["", "7건", ""]);
-  assert.deepEqual(yearActuals(rows(["B 지표 (수정)"]), inputs).kpi.map((k) => k.input), [""]);
+// 원장 줄의 올해 값 하나(ledgerFigure — 2026-11-02, 카드 밖 성과분석 표 ’26 실적 칸·전후 비교 막대): 가상 지표
+const kpiOf = (unit: string, outcome?: string, expected = ""): KpiActual => ({ name: "가상 처리 지표", unit, prev: "", target: "", expected, ...(outcome === undefined ? {} : { outcome }) });
+
+test("ledgerFigure: 목표·날짜·시점을 뺀 실적 수치가 단위가 맞는 것 하나면 그 값(원문 표기·단위 포함)", () => {
+  assert.equal(ledgerFigure(kpiOf("일", "가상 처리 성과 달성(’26.8) (’26년 목표 2.267일 → ’26년 성과 2.000일)")), "2.000일");
+  assert.equal(ledgerFigure(kpiOf("", "가상 처리 성과 달성(’26.8) (’26년 목표 2.267일 → ’26년 성과 2.000일)")), "2.000일", "단위가 비면 실적 수치 전부를 봄");
+  assert.equal(ledgerFigure(kpiOf("억원", "’26년 가상 사업 수주 실적 30억원 달성")), "30억원", "「30억원」 — FIGURE_RE는 「30억」까지 잡지만 숫자 뒤 원문이 지표 단위로 시작하는지로 맞춤");
+  assert.equal(ledgerFigure(kpiOf("건", "’26년 가상 처리 실적 1,240 건(목표 1,000건)")), "1,240건", "숫자와 단위 사이 빈칸은 붙임");
+  assert.equal(ledgerFigure(kpiOf("건/편", "’26년 가상 게재 실적 12건 달성")), "12건", "지표 단위는 「/」 앞까지");
+  assert.equal(ledgerFigure(kpiOf("점", "’26년 가상 만족도 실적 91점, 전년 91점 유지")), "91점", "같은 값은 하나로 셈");
+});
+
+test("ledgerFigure: 값이 둘 이상·없음·단위가 다름·시점 미기재·줄 없음이면 빈 글(사람이 원장 줄을 봄) — 예상 칸은 보지 않음", () => {
+  assert.equal(ledgerFigure(kpiOf("건", "’26년 가상 점검 실적 120건, 누적 340건")), "", "값 둘");
+  assert.equal(ledgerFigure(kpiOf("%", "’26년 가상 정확도 실적 3.2%p 향상")), "", "「%」 지표에 「%p」 값은 맞지 않음");
+  assert.equal(ledgerFigure(kpiOf("%p", "’26년 가상 정확도 실적 3.2%p 향상")), "3.2%p");
+  assert.equal(ledgerFigure(kpiOf("명", "’26년 가상 교육 실적 40회 달성")), "", "단위 다른 수치만");
+  assert.equal(ledgerFigure(kpiOf("건", `가상 민원 접수 건수 증가 120건 ${UNDATED_NOTE}`)), "", "시점 미기재 줄");
+  assert.equal(ledgerFigure(kpiOf("건", undefined, "150건")), "", "원장 줄이 없으면 예상 칸 값이 있어도 빈 글");
+  assert.equal(ledgerFigure(kpiOf("일", "(’26년 목표 2.267일)")), "", "목표 값뿐");
+});
+
+test("ledgerFigure·kpiGaps: yearActuals가 붙인 원장 줄에서 바로 — 붙은 지표는 채울 자료가 아님", () => {
+  const card = { id: "가상/1-가", kpi: { rows: [{ name: "가상 처리 소요일", unit: "일", prev: "2.5일", target: "2.267일" }, { name: "가상 이용 만족도", unit: "점" }] }, outcome: { quantitative: ["∙ 가상 처리 소요일 단축(’26.8) (’26년 목표 2.267일 → ’26년 성과 2.000일)"] } };
+  const a = yearActuals(card, "2026-11-02");
+  assert.equal(ledgerFigure(a.kpi[0]), "2.000일");
+  assert.equal(ledgerFigure(a.kpi[1]), "");
+  assert.deepEqual(kpiGaps(a).map((k) => k.name), ["가상 이용 만족도"]);
 });
 
 // ---------------------------------------------------------------------------
@@ -248,9 +266,9 @@ test("outcomeActualItems(wide): 연도 없는 증감·「A → B」 성과 줄�
 });
 
 test("yearActuals(wide): 시점 미기재 줄에는 표지가 붙고, wide가 아니면 들어오지 않음", () => {
-  const a = yearActuals(UNDATED_CARD, {}, "2026-10-29", { wide: true });
+  const a = yearActuals(UNDATED_CARD, "2026-10-29", { wide: true });
   assert.deepEqual(a.outcome, [`처리 속도 3배 상승(20분 → 6분) ${UNDATED_NOTE}`, `민원 접수 건수 증가 120건 ${UNDATED_NOTE}`]);
-  assert.deepEqual(yearActuals(UNDATED_CARD, {}, "2026-10-29").outcome, []);
+  assert.deepEqual(yearActuals(UNDATED_CARD, "2026-10-29").outcome, []);
 });
 
 // 월별 실적 표 항목(경영관리 wide) — 가짜 글
@@ -260,31 +278,31 @@ const tableCard = (rows: unknown[][]) => ({ id: "경영관리9/9-9", kpi: { rows
 
 test("yearActuals: wide이면 월별 표 항목에서 「예정」 열을 빼고 수치 칸만 「머리 + 칸」 줄로 냄", () => {
   const card = tableCard([[th("~’26.7월"), th("’26.8월(진행중)"), th("’26.9월(예정)")], [td("가짜 처리 30건"), td("설명만 있는 칸"), td("가짜 계획 50건")]]);
-  const a = yearActuals(card, {}, "2026-09-27", { wide: true });
+  const a = yearActuals(card, "2026-09-27", { wide: true });
   assert.deepEqual(a.monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 처리 30건(~’26.7 기준)"]);
 });
 
 test("yearActuals: wide가 꺼지면 문자열 항목만 읽음", () => {
   const card = tableCard([[th("’26.8월")], [td("가짜 처리 30건")]]);
-  assert.deepEqual(yearActuals(card, {}, "2026-09-27").monthly.map((m) => m.line), ["가짜 문자열 120건 처리"]);
-  assert.deepEqual(yearActuals(card, {}, "2026-09-27", { wide: false }).monthly.map((m) => m.line), ["가짜 문자열 120건 처리"]);
+  assert.deepEqual(yearActuals(card, "2026-09-27").monthly.map((m) => m.line), ["가짜 문자열 120건 처리"]);
+  assert.deepEqual(yearActuals(card, "2026-09-27", { wide: false }).monthly.map((m) => m.line), ["가짜 문자열 120건 처리"]);
 });
 
 test("yearActuals: wide 표는 colspan을 따라 열을 맞춤(머리 colspan 2가 아래 두 칸의 머리)", () => {
   const card = tableCard([[th("’26.6월", 2), th("’26.7월(예정)")], [td("가짜 10건"), td("가짜 20건"), td("가짜 30건")]]);
-  const a = yearActuals(card, {}, "", { wide: true });
+  const a = yearActuals(card, "", { wide: true });
   assert.deepEqual(a.monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 10건(’26.6 기준)", "가짜 20건(’26.6 기준)"]);
 });
 
 test("yearActuals(wide): 데이터 칸 줄 앞에 그 행의 이름(수치 없는 첫 칸 글 또는 행 머리 th)을 붙임", () => {
   const card = tableCard([[th("구분"), th("’26.8월"), th("’26.9월")], [td("가짜 유형"), td("대상 9건"), td("대상 1건")], [th("가짜 행 머리"), td("대상 4건"), td("설명만")]]);
-  const lines = yearActuals(card, {}, "", { wide: true }).monthly.map((m) => m.line);
+  const lines = yearActuals(card, "", { wide: true }).monthly.map((m) => m.line);
   assert.deepEqual(lines.slice(1), ["가짜 유형 · 대상 9건(’26.8 기준)", "가짜 유형 · 대상 1건(’26.9 기준)", "가짜 행 머리 · 대상 4건(’26.8 기준)"]);
 });
 
 test("yearActuals(wide): 행 이름이 없는 표(첫 칸부터 수치)는 예전 줄 그대로", () => {
   const card = tableCard([[th("’26.8월"), th("’26.9월")], [td("대상 9건"), td("대상 1건")]]);
-  assert.deepEqual(yearActuals(card, {}, "", { wide: true }).monthly.map((m) => m.line).slice(1), ["대상 9건(’26.8 기준)", "대상 1건(’26.9 기준)"]);
+  assert.deepEqual(yearActuals(card, "", { wide: true }).monthly.map((m) => m.line).slice(1), ["대상 9건(’26.8 기준)", "대상 1건(’26.9 기준)"]);
 });
 
 // periodLabel(머리 칸 시점 정리 — 2026-10-29): 「’YY.M」로 줄이고 대괄호·백틱·「월」 꼬리·진행 표지를 뺌
@@ -310,5 +328,5 @@ test("periodLabel: 시점이 없으면 대괄호·백틱만 걷은 머리 글 �
 
 test("yearActuals(wide): 칸 글 끝에 괄호 시점이 있으면 머리 시점을 겹쳐 붙이지 않음", () => {
   const card = tableCard([[th("’26.8월")], [td("가짜 처리 30건(’26.8 기준)")]]);
-  assert.deepEqual(yearActuals(card, {}, "", { wide: true }).monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 처리 30건(’26.8 기준)"]);
+  assert.deepEqual(yearActuals(card, "", { wide: true }).monthly.map((m) => m.line), ["가짜 문자열 120건 처리", "가짜 처리 30건(’26.8 기준)"]);
 });

@@ -45,15 +45,15 @@ function input(cards: SubmitCard[], over: Partial<HubStepsInput> = {}): HubSteps
 
 const view = (h: ReturnType<typeof hubSteps>) => h.steps.map((s) => `${s.tone}:${s.state}${s.now ? "*" : ""}`);
 
-test("계량 실적 미입력: 1단계가 지금(doing — 경고색 아님) · 주 행동 「계량 실적 넣기」, 2·3단계는 남은 대로", () => {
+test("원장 올해 실적 결손: 1단계가 지금(doing — 경고색 아님) · 주 행동 「실적 증빙 올리기」, 2·3단계는 남은 대로", () => {
   const h = hubSteps(input(ALL_DRAFTED, { kpiMissing: 2 }));
-  assert.deepEqual(view(h), ["doing:계량 실적 2건 입력 필요*", "done:2개 모두 있음", "idle:확정할 수 있음"]);
-  assert.deepEqual(h.action, { step: "evidence", label: "계량 실적 넣기" });
+  assert.deepEqual(view(h), ["doing:원장 올해 실적 없음 2건*", "done:2개 모두 있음", "idle:확정할 수 있음"]);
+  assert.deepEqual(h.action, { step: "evidence", label: "실적 증빙 올리기" });
   assert.ok(h.steps.every((s) => s.tone !== "alert"));
 });
 
-test("근거 끝: 계량 실적 모두 입력이면 추가자료 수와 done, 계량 지표가 없으면 추가자료 수만 done", () => {
-  assert.equal(hubSteps(input(ALL_DRAFTED, { materials: 3 })).steps[0].state, "계량 실적 모두 입력 · 추가자료 3건");
+test("근거 끝: 원장 올해 실적이 모두 있으면 추가자료 수와 done, 계량 지표가 없으면 추가자료 수만 done", () => {
+  assert.equal(hubSteps(input(ALL_DRAFTED, { materials: 3 })).steps[0].state, "원장 올해 실적 모두 있음 · 추가자료 3건");
   const none = hubSteps(input(ALL_DRAFTED, { kpiTotal: 0, materials: 1 }));
   assert.equal(none.steps[0].state, "추가자료 1건");
   assert.equal(none.steps[0].tone, "done");
@@ -61,7 +61,7 @@ test("근거 끝: 계량 실적 모두 입력이면 추가자료 수와 done, �
 
 test("초안 없는 과제(구성안만 포함): 2단계가 지금 · 주 행동은 첫 과제 「초안 쓰기」(uid로 과제별 초안)", () => {
   const h = hubSteps(input([card("1-가", "draft"), card("1-나", "outline"), card("1-다", "none")]));
-  assert.deepEqual(view(h), ["done:계량 실적 모두 입력 · 추가자료 0건", "doing:초안 없는 과제 2건*", "idle:초안이 모두 있어야 확정"]);
+  assert.deepEqual(view(h), ["done:원장 올해 실적 모두 있음 · 추가자료 0건", "doing:초안 없는 과제 2건*", "idle:초안이 모두 있어야 확정"]);
   assert.deepEqual(h.action, { step: "draft", label: "1-나 초안 쓰기", uid: "u-1-나", taskNo: "1-나" });
 });
 
@@ -69,7 +69,7 @@ test("모두 있음 + 확인할 것: 2단계 글에 가짓수, 3단계가 지금
   const cards = [card("1-가", "draft", {}, ["12"]), card("1-나", "draft")];
   const h = hubSteps(input(cards));
   assert.equal(submitReadiness(cards).checks.length, 1);
-  assert.deepEqual(view(h), ["done:계량 실적 모두 입력 · 추가자료 0건", "done:2개 모두 있음 · 확인할 것 1가지", "doing:확정할 수 있음*"]);
+  assert.deepEqual(view(h), ["done:원장 올해 실적 모두 있음 · 추가자료 0건", "done:2개 모두 있음 · 확인할 것 1가지", "doing:확정할 수 있음*"]);
   assert.deepEqual(h.action, { step: "submit", label: "확정하러 가기" });
 });
 
@@ -86,9 +86,9 @@ test("목차에 든 과제가 없으면 2·3단계는 시작 전이고 주 행�
   assert.equal(h.action, null);
 });
 
-test("남은 제출 행(2026-10-27 전): handoff · 지금 단계·주 행동 없음(계량 미입력이 남아도)", () => {
+test("남은 제출 행(2026-10-27 전): handoff · 지금 단계·주 행동 없음(원장 실적 결손이 남아도)", () => {
   const h = hubSteps(input(ALL_DRAFTED, { status: "submitted", kpiMissing: 1 }));
-  assert.deepEqual(view(h), ["idle:계량 실적 1건 입력 필요", "done:2개 모두 있음", "handoff:제출함 · 성과관리팀 검토 중"]);
+  assert.deepEqual(view(h), ["idle:원장 올해 실적 없음 1건", "done:2개 모두 있음", "handoff:제출함 · 성과관리팀 검토 중"]);
   assert.equal(h.action, null);
 });
 
@@ -123,7 +123,7 @@ test("보고서 준비 전: 1·3단계는 준비 뒤, 초안 없는 과제가 �
 });
 
 test("부서 화면 보기: 주 행동 이름이 「보기」", () => {
-  assert.equal(hubSteps(input(ALL_DRAFTED, { kpiMissing: 1, preview: true })).action?.label, "계량 실적 보기");
+  assert.equal(hubSteps(input(ALL_DRAFTED, { kpiMissing: 1, preview: true })).action?.label, "근거 보기");
   assert.equal(hubSteps(input([card("1-가", "none")], { preview: true })).action?.label, "1-가 초안 보기");
   assert.equal(hubSteps(input(ALL_DRAFTED, { preview: true })).action?.label, "확정 절 보기");
 });

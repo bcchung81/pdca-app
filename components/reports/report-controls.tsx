@@ -7,7 +7,6 @@ import {
   deleteMaterial,
   finishMaterialUpload,
   prepareReports,
-  saveReportInputs,
   setCommentStatus,
   setLeadTeam,
   setMaterialCards,
@@ -17,7 +16,6 @@ import {
 import { fmtDateTime } from "../../lib/format.ts";
 import { type MaterialMatch, initialSelection, materialSummary, suggestCards } from "../../lib/reports/material-match.ts";
 import { COMMENT_KINDS, type ReportStatus, UNAPPROVE_TO, canMove } from "../../lib/reports/model.ts";
-import { KPI_VALUE_MAX } from "../../lib/reports/input-limits.ts";
 import { REVIEW_NOTE_MAX } from "../../lib/reports/submission.ts";
 import { ConfirmDialog, plain, primary } from "../ui/confirm-dialog";
 import { FileDrop, type FileItem } from "../ui/file-drop";
@@ -366,70 +364,6 @@ export function MaterialUploader({ reportId, items, cards, canEdit }: { reportId
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-/** 계량 실적(12월 잠정치) 입력 — AI는 수치를 만들지 않음 */
-export function KpiInputs({ reportId, rows, initial, canEdit }: { reportId: number; rows: Array<{ key: string; card: string; name: string; unit: string; target: string; prev: string }>; initial: Record<string, string>; canEdit: boolean }) {
-  const [vals, setVals] = useState<Record<string, string>>(initial);
-  const { pending, run, note } = useAction();
-  const missing = rows.filter((r) => !(vals[r.key] ?? "").trim()).length;
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="overflow-x-auto rounded-md border border-line">
-        <table className="w-full min-w-[640px] table-fixed border-collapse text-ui">
-          <colgroup>
-            <col className="w-[72px]" />
-            <col />
-            <col className="w-[110px]" />
-            <col className="w-[110px]" />
-            <col className="w-[150px]" />
-          </colgroup>
-          <thead>
-            <tr className="h-9 bg-thead text-left text-xs font-semibold text-muted">
-              {["과제", "지표", "’25 실적", "’26 목표", "12월 잠정 실적"].map((h) => (
-                <th key={h} scope="col" className="border-b border-line px-2.5 whitespace-nowrap">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.key} className="h-11">
-                <td className="border-b border-row-line px-2.5 font-mono text-navy">{r.card}</td>
-                <td className="truncate border-b border-row-line px-2.5" title={`${r.name}${r.unit ? ` (${r.unit})` : ""}`}>
-                  {r.name}
-                  {r.unit ? <span className="text-muted"> ({r.unit})</span> : null}
-                </td>
-                <td className="truncate border-b border-row-line px-2.5 text-muted-2">{r.prev || "—"}</td>
-                <td className="truncate border-b border-row-line px-2.5 text-muted-2">{r.target || "—"}</td>
-                <td className="border-b border-row-line px-2.5">
-                  <input
-                    value={vals[r.key] ?? ""}
-                    disabled={!canEdit}
-                    maxLength={KPI_VALUE_MAX}
-                    onChange={(e) => setVals((v) => ({ ...v, [r.key]: e.target.value }))}
-                    placeholder="예: 46,210건"
-                    aria-label={`${r.name} 12월 잠정 실적`}
-                    className="h-8 w-full rounded-md border border-field-line bg-paper px-2 text-ui disabled:bg-field"
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className={`text-xs ${missing ? "text-warn" : "text-muted"}`}>{missing ? `${missing}건 입력 필요` : "모두 입력함"}</span>
-        {note}
-        {canEdit && (
-          <button type="button" disabled={pending} onClick={() => run(() => saveReportInputs(reportId, vals))} className={`${primary} ml-auto`}>
-            실적 저장
-          </button>
-        )}
-      </div>
     </div>
   );
 }

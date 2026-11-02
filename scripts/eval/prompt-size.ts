@@ -71,12 +71,8 @@ for (const card of cards ?? []) {
     const { data: sib } = await db.from("cards").select("id, task_no, data").eq("eval_unit_id", card.eval_unit_id).eq("status", "active");
     const siblings: SiblingCard[] = (sib ?? []).map((c) => ({ id: c.id, taskNo: c.task_no, targetBusiness: c.data?.targetBusiness ?? "", executionTaskNo: c.data?.executionTaskNo ?? "", executionTask: c.data?.executionTask ?? "" }));
     const ctx = sectionContext(card.data, siblings);
-    const [lens, sections, { data: rep }] = await Promise.all([
-      loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }),
-      loadPriorSections(db as never, card.eval_unit_id),
-      db.from("reports").select("inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", 2026).maybeSingle(),
-    ]);
-    const actuals = yearActuals(card.data, (rep?.inputs?.kpi ?? {}) as Record<string, string>, isoDay());
+    const [lens, sections] = await Promise.all([loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }), loadPriorSections(db as never, card.eval_unit_id)]);
+    const actuals = yearActuals(card.data, isoDay());
     const sharedR = sharedTexts(rp, kb).join("\n\n").length;
     const section = `${listText(rp, kb)}\n\n${sectionPrompt(rp, card.data, ctx, 2026, files, pickPrior(card.data, sections), [], lens, actuals)}`;
     const task = fillFrom(op, "request", "task", { module: ctx.module, moduleGuide: moduleGuide(rp, ctx.module), area: blockAreaMm(ctx.module, ctx.head), maxBlocks: planBlockCap(ctx.module) });

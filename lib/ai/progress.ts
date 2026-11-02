@@ -141,7 +141,7 @@ function reportKnowledge(selected: number | undefined, tail = ""): ProgressSourc
 
 /**
  * 경평 초안 과제별 초안 한 요청의 진행 줄.
- * 근거(서버 prepareDraft): 원장 카드·올해 계량 실적(늘) + 첨부(카드 전용 자료·보고서 추가자료 이름) + 전년 보고서 같은 과제 절(이름) + 평가 기준·평가위원 관점 수(공통 지식에서 자동).
+ * 근거(서버 prepareDraft): 원장 카드·올해 실적(원장 정량 성과 칸·예상 칸 — 늘) + 첨부(카드 전용 자료·보고서 추가자료 이름) + 전년 보고서 같은 과제 절(이름) + 평가 기준·평가위원 관점 수(공통 지식에서 자동).
  * story·again은 구성안에 저장된 근거로, plan·revise는 구성안에 저장된 근거 ∪ 지금 고른 첨부로 씁니다(부르는 쪽이 그 근거를 넘김 — 근거 기록이 없는 옛 구성안이면 전년 절은 자동).
  * added = 그중 구성안에 없던 첨부 이름(요청 글 「구성안 뒤 추가된 자료」), request = 담당자 요청이 있음(요청 글 「담당자 요청」 — 근거 아님)
  */
@@ -167,7 +167,7 @@ export function draftProgress(
 ): ProgressSpec {
   const sources: ProgressSource[] = [
     { label: "카드", detail: "확정 과제관리카드(원장)" },
-    { label: "올해 실적", detail: "부서가 넣은 올해 계량 실적(없으면 카드의 예상 칸)" },
+    { label: "올해 실적", detail: "원장 정량 성과 칸·예상 칸의 올해 실적" },
   ];
   if (o.files.length) sources.push({ label: `첨부 ${o.files.length}건`, detail: o.files.join(" · ") });
   if (o.added?.length) sources.push({ label: `새 자료 ${o.added.length}건`, detail: `구성안 뒤 추가된 자료(첨부 중) — ${o.added.join(" · ")} · 짜임은 그대로 두고 같은 블록의 사실·빈 칸·추진성과를 채우는 데 먼저 씀` });
@@ -201,7 +201,7 @@ export function blockShapesProgress(o: { blockNo: number; want: string | null; /
     sources: [
       { label: "이 블록", detail: "지금 블록(JSON)·앞뒤 블록 이름·판면 어림·바꿀 수 있는 모양과 모양마다 한 줄 글자 수(코드가 셈)" },
       { label: "카드", detail: "확정 과제관리카드(원장)" },
-      { label: "초안 근거", detail: "초안을 만들 때 고른 첨부·전년 보고서 절·실사 답변·올해 계량 실적 입력(그 뒤 지우거나 뺀 첨부는 빠짐)" },
+      { label: "초안 근거", detail: "초안을 만들 때 고른 첨부·전년 보고서 절·실사 답변·원장의 올해 실적(그 뒤 지우거나 뺀 첨부는 빠짐)" },
       ...(o.added?.length ? [{ label: `새 자료 ${o.added.length}건`, detail: `초안 뒤 고른 첨부 — ${o.added.join(" · ")}` }] : []),
       reportKnowledge(o.selected),
     ],
@@ -215,7 +215,7 @@ export function blockShapesProgress(o: { blockNo: number; want: string | null; /
 export const UNIT_AI_EXPECT: ProgressExpect = { min: 60, max: 240 };
 
 /**
- * 「AI로 문장 채우기」 진행 줄 — 근거는 서버가 실제로 넣는 것(lib/reports/unit-parts-ai.ts unitAiPrompt): 카드 원장·과제별 초안·계량 실적 입력·'25 평가위원 지적·
+ * 「AI로 문장 채우기」 진행 줄 — 근거는 서버가 실제로 넣는 것(lib/reports/unit-parts-ai.ts unitAiPrompt): 카드 원장·과제별 초안·원장 올해 실적·'25 평가위원 지적·
  * 시정조치 계획·2025 같은 장·핵심공통항목·편람. 카드 전용 자료·보고서 추가자료 원문은 넣지 않음(금기 4)
  */
 export function unitAiProgress(o: { parts: string[]; overwrite: boolean; cards: number }): ProgressSpec {
@@ -225,7 +225,7 @@ export function unitAiProgress(o: { parts: string[]; overwrite: boolean; cards: 
     sources: [
       { label: `카드 ${o.cards}장`, detail: "이 지표 활성 과제관리카드 원장(작성본 아님)" },
       { label: "과제별 초안", detail: "이 지표 카드들의 경평 과제별 초안 본문(목차 순 — 카드 전용 자료·보고서 추가자료 원문은 넣지 않음)" },
-      { label: "계량 실적", detail: "이 지표 모든 부서 보고서에 넣은 올해 계량 실적" },
+      { label: "원장 올해 실적", detail: "이 지표 카드들 원장(정량 성과 칸)의 올해 실적" },
       { label: "평가 근거", detail: "'25 평가위원 지적 원문·지적 시정조치 계획(약속 — 실적 아님)·’26 편람 이 지표" },
       { label: "2025 보고서", detail: "이 지표 2025 보고서의 같은 장(표지·지적·전년 대비·성과분석)과 핵심공통항목('25)" },
     ],

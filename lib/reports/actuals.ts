@@ -3,7 +3,6 @@
 // 평가 세트 기준선(2026-09-27): 핵심 수치 띠 4개 중 올해 실적이 든 것 2개, 추진성과가 모두 예상·목표인 초안 2/8 — AI가 카드의 올해 월별 실적보다 전년·목표 수치를 앞세움.
 
 import type { LooseJson } from "../loose-json.ts";
-import { kpiKeyedRows } from "./model.ts";
 import { KPI_COVER_MIN, kpiKeyWords, wordCover } from "./kpi-cover.ts";
 
 type Json = LooseJson;
@@ -42,8 +41,6 @@ export interface KpiActual {
   target: string;
   /** ’26년 실적(예상) — 일부 카드 양식의 칸 */
   expected: string;
-  /** ’26년 실적 — 부서가 경평 초안 「계량 실적」에 넣은 값(reports.inputs.kpi) */
-  input: string;
   /** 카드 정량 성과 칸(outcome.quantitative)에서 이 지표에 붙인 올해 실적 줄(지표 이름 낱말이 절반 넘게 든 줄 — outcomeActuals). 없으면 빈 글·없음 */
   outcome?: string;
 }
@@ -61,14 +58,14 @@ export interface YearActuals {
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 /**
- * 카드 + 부서 계량 실적 입력 → 올해 실적 재료. opts.wide(경영관리): 연도 언급이 없는 증감·「A → B」 성과 줄도 받아 「시점 미기재」 표지를 붙임(outcomeActualItems). inputs 키는 lib/reports/model.ts kpiKeyedRows(카드 id#지표 이름).
+ * 카드(과제 원장) → 올해 실적 재료. 올해 계량 실적의 출처는 원장(정량 성과 칸 줄·예상 칸)과 경평 작성 때의 보고서 추가자료뿐(2026-11-02 — 별도 입력 reports.inputs는 앱이 읽지 않음).
+ * opts.wide(경영관리): 연도 언급이 없는 증감·「A → B」 성과 줄도 받아 「시점 미기재」 표지를 붙임(outcomeActualItems).
  * 계량지표는 원본 양식의 빈 자리표시("-") 행을 뺌(model.ts kpiRowsOf와 같은 규칙).
  */
-export function yearActuals(card: Json, inputs: Record<string, string> = {}, today = "", opts: { wide?: boolean } = {}): YearActuals {
+export function yearActuals(card: Json, today = "", opts: { wide?: boolean } = {}): YearActuals {
   const rows: Json[] = Array.isArray(card?.kpi?.rows) ? card.kpi.rows : [];
-  const keyOf = new Map(kpiKeyedRows(String(card?.id), rows).map((k) => [k.i, k.key]));
   const kpi: KpiActual[] = rows
-    .map((k, i) => ({ name: str(k?.name), unit: str(k?.unit), prev: str(k?.prev), target: str(k?.target), expected: str(k?.expected), input: str(inputs[keyOf.get(i) ?? ""]) }))
+    .map((k) => ({ name: str(k?.name), unit: str(k?.unit), prev: str(k?.prev), target: str(k?.target), expected: str(k?.expected) }))
     .filter((k) => k.name && !/^[-–—·]+$/.test(k.name));
   const monthly: YearActuals["monthly"] = [];
   for (const m of Array.isArray(card?.do?.monthly) ? card.do.monthly : []) {
@@ -196,9 +193,29 @@ export function undatedOutcomeLines(card: Json, year: number): string[] {
   return outcomeActualItems(card, year, true).filter((x) => x.undated).map((x) => x.line);
 }
 
-/** 계량지표 중 올해 실적이 아직 없는 것(부서 입력도 카드 예상 칸도 비었음) — 「채울 자료」 목록용 */
+/** 계량지표 중 원장에 올해 실적이 없는 것(정량 성과 칸에 붙은 줄도 카드 예상 칸도 비었음) — 「채울 자료」 목록용 */
 export function kpiGaps(a: YearActuals): KpiActual[] {
-  return a.kpi.filter((k) => !k.input && !k.expected);
+  return a.kpi.filter((k) => !k.outcome && !k.expected);
+}
+
+/**
+ * 원장 줄(KpiActual.outcome)에서 그 지표의 올해 값 하나(원문 표기, 단위 포함) — 카드 밖 성과분석 표의 ’26 실적 칸·전후 비교·숫자 근거용.
+ * 줄의 실적 수치(actualFigures — 목표·계획·예상·전망 바로 뒤가 아니고 날짜·시점이 아닌 것) 중 지표 단위가 맞는 것만 보고(단위가 비면 전부), 같은 값은 하나로 셉니다.
+ * 정확히 하나일 때만 그 값, 시점 미기재 줄(UNDATED_NOTE)·값 여럿·없음이면 빈 글(사람이 원장 줄을 보고 고름). 예상 칸(expected)은 실적이 아니라서 보지 않음.
+ * 단위 비교는 숫자 바로 뒤 원문이 지표 단위로 시작하는가로 함(FIGURE_RE는 「30억원」을 「30억」까지만 잡음) — 「%」 지표에 「%p」 값은 맞지 않음.
+ * 지표 단위는 빈칸을 걷고 「/」·「(」 앞까지만 봄(「건/편」 → 「건」)
+ */
+export function ledgerFigure(k: KpiActual): string {
+  if (!k.outcome || k.outcome.includes(UNDATED_NOTE)) return "";
+  const unit = k.unit.replace(/\s+/g, "").split(/[/(]/)[0];
+  const values = new Set<string>();
+  for (const h of actualFigureHits(k.outcome)) {
+    const tail = h.rest.replace(/^\d[\d,.]*\s*/, "");
+    if (unit && !(tail.startsWith(unit) && !(unit.endsWith("%") && /^p/i.test(tail.slice(unit.length))))) continue;
+    const num = /^\d[\d,.]*/.exec(h.rest)![0];
+    values.add(unit ? num + unit : h.figure);
+  }
+  return values.size === 1 ? [...values][0] : "";
 }
 
 export type Timing = "need" | "target" | "now" | "past" | "none";
@@ -255,9 +272,14 @@ export const STATS_ACTUAL_MIN = 2;
 
 /** 줄의 단위 수치 중 날짜·시점을 빼고 바로 앞(8자 안)에 목표·계획·예상·전망이 붙지 않은 것(빈칸 걷은 모양) */
 export function actualFigures(text: string): string[] {
+  return actualFigureHits(text).map((h) => h.figure);
+}
+
+/** actualFigures의 본체 — 수치(빈칸 걷은 모양)와 그 수치부터 줄 끝까지의 원문(날짜·시점을 걷은 줄 기준, ledgerFigure의 단위 비교용) */
+function actualFigureHits(text: string): Array<{ figure: string; rest: string }> {
   const line = text.replace(DATE_RE, " ");
-  const out: string[] = [];
-  for (const x of line.matchAll(new RegExp(FIGURE_RE.source, "g"))) if (!PLAN_BAR.test(line.slice(Math.max(0, x.index - 8), x.index))) out.push(x[0].replace(/\s+/g, ""));
+  const out: Array<{ figure: string; rest: string }> = [];
+  for (const x of line.matchAll(new RegExp(FIGURE_RE.source, "g"))) if (!PLAN_BAR.test(line.slice(Math.max(0, x.index - 8), x.index))) out.push({ figure: x[0].replace(/\s+/g, ""), rest: line.slice(x.index) });
   return out;
 }
 

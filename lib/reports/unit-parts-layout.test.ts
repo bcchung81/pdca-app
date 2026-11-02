@@ -50,7 +50,7 @@ const parts = (over: Partial<UnitPartsMg> = {}): UnitPartsMg => ({
     qual: [{ id: "qual/1", code: { evalNo: 1, title: "재무구조" }, human: { label: "재무구조" }, ai: { result: [], analysis: [] } }],
     plan: [{ id: "plan/1", code: { evalNo: 1, title: "재무구조" }, human: { label: "재무구조" }, ai: { self: [], plan: [] } }],
   },
-  source: { cards: {}, drafts: {}, inputs: "" },
+  source: { cards: {}, drafts: {} },
   ...over,
 });
 

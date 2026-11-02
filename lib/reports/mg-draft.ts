@@ -141,7 +141,6 @@ export const MG_REQUEST_SECTIONS = [
   "skeleton.none",
   "actuals.head",
   "actuals.kpi",
-  "actuals.kpiInput",
   "actuals.kpiExpected",
   "actuals.kpiNone",
   "actuals.kpiOutcome",
@@ -219,7 +218,7 @@ export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext,
   if (actuals) {
     lines.push("", r("actuals.head", { year, today: actuals.today || "—" }));
     for (const k of actuals.kpi) {
-      const actual = k.input ? r("actuals.kpiInput", { value: k.input }) : k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy: yy(year), name: k.name });
+      const actual = k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy: yy(year), name: k.name });
       lines.push(r("actuals.kpi", { name: k.name, unit: k.unit || "—", prevYY: yy(year - 1), prev: k.prev || "—", yy: yy(year), target: k.target || "—", actual }));
     }
     if (actuals.monthly.length) {
@@ -451,7 +450,7 @@ export interface MgDraftCheck {
 
 /**
  * AI 답 정리 + 점검(경영관리): 절마다 블록 정리(cleanBlocks — 원문 없는 인용·사례·정의는 뺌)를 하고 승인된 구성안의 절 순서로 펼침(spec.mg.at).
- * 숫자 대조 근거 = 카드 + extraText(첨부·전년 보고서 절·실사 답변·계량 실적 입력), quoteOnly = 인용 대조에만(평가 기준·지적).
+ * 숫자 대조 근거 = 카드 + extraText(첨부·전년 보고서 절·실사 답변), quoteOnly = 인용 대조에만(평가 기준·지적).
  * 경고: 구성안에 있는데 안 쓴 절·모르는 절·추진성과로 닫지 않은 절(이 지표 닫기 관례대로)·뺀 블록·빈 칸·그림 자리 0·절 안 같은 도식 반복·분량(배정 ±25%)·근거에 없는 숫자·값 충돌·제목 완료형·문체·올해 실적·문장·근거 약함.
  * 판면을 맞추지는 않음(자동 고치기 없음 — 경고만). 배정 쪽수·닫기 관례·지적개선 표지 자리는 spec.mg(pages·strictClose·finding)에 남겨 다시 점검·블록 고치기·렌더러가 씀
  */

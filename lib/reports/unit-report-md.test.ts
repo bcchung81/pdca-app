@@ -39,7 +39,7 @@ const parts: UnitPartsMg = {
     qual: [{ id: "qual/1", code: { evalNo: 1, title: "재무구조" }, human: { label: "재무구조" }, ai: { result: ["비계량 실적"], analysis: ["분석"] } }],
     plan: [{ id: "plan/1", code: { evalNo: 1, title: "재무구조" }, human: { label: "재무구조" }, ai: { self: ["자체평가"], plan: ["내년 개선"] } }],
   },
-  source: { cards: {}, drafts: {}, inputs: "" },
+  source: { cards: {}, drafts: {} },
 };
 
 const items = [

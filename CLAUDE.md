@@ -171,7 +171,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - **카드 개선**(요청 종류 넷·리뷰어 코멘트): 현재 카드(부서는 작성본) + 그 카드의 카드 전용 자료 전부 + 공통 지식 규칙 범위 전부(① 기관 공통 ② 공통지표(BZ-4)·사업 미지정 ③ 이 사업 공통, `buildBundle`) + 과제 기준 목록표(알리는 용도, 거르지 않음)
 - **질문**: 위 + 최종 점검표(보낸·확인한 것 중 점검월이 가장 늦은 1건, 초안 제외) + 앞 요청·답. **보완 점검**: 카드 개선 + 최종 점검표의 미흡·기준 미확인·해당 없음 행
 - **월간 점검**: **확정 카드(원장)** + 관리계획 발췌(지침 14 붙임1) + 붙임2 사례만. 경영관리는 그 지표 발췌·핵심공통항목 + 붙임4 자리에 원장 주요사업 카드 발췌. 카드 전용 자료·검색 결과는 주지 않음
-- **경평 초안**: 카드 + 카드 전용 자료 + 보고서 추가자료(같은 사업·부서·연도) + 공통 지식 규칙 범위 전부(+ 작성 방법론 — 사실 근거 아님) + 2025 같은 과제 절(`rpt25-biz`) + 평가 관점(`lib/reports/lens.ts`) + 올해 계량 실적. **숫자 근거**는 사람이 고른 추가자료·실사 답변·연결된 2025 절뿐(`draftEvidence` linked — `relevantRefs(kb)`). **구성안만** 최종 점검표 미흡 행을 논점 참고로 받음(근거 아님)
+- **경평 초안**: 카드 + 카드 전용 자료 + 보고서 추가자료(같은 사업·부서·연도) + 공통 지식 규칙 범위 전부(+ 작성 방법론 — 사실 근거 아님) + 2025 같은 과제 절(`rpt25-biz`) + 평가 관점(`lib/reports/lens.ts`) + 올해 실적(원장·입력창 없음). **숫자 근거**는 사람이 고른 추가자료·실사 답변·연결된 2025 절뿐(`draftEvidence` linked — `relevantRefs(kb)`). **구성안만** 최종 점검표 미흡 행을 논점 참고로 받음(근거 아님)
 
 카드 전용 자료는 그 카드 밖에서 쓰지 않습니다(DB 권한과 저장 경로 `card-materials/{cards.uid}/…`가 막음).
 
@@ -200,12 +200,12 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 블록 고치기는 고른 글이 든 블록 하나만 다시 씀(이력 `report_draft_edits`; 추진성과 상자 `block_index` -1). 모양 바꾸기는 `previewBlockShapes`(저장 안 함) → 고른 안만 `applyBlockShape`(`lib/reports/block-shape.ts`). 직접 고침은 `data-t`·`data-raw`와 `saveDraftTexts`(`lib/reports/draft-text.ts`)
 - 배치 필드는 구성안이 정하고 `applyPlanLayout`이 옮기며 폭·판면 어림은 `layoutGroups`(`lib/reports/layout.ts`) 하나만 씀. **배치 필드·제목 앞 칩이 없으면 출력·높이는 예전과 바이트까지 같아야 함**
 - **경고 등급(2026-10-17)**: 경고는 글을 바꾸지 않고 `lib/reports/warning-levels.ts`가 막힘/참고로 갈라 점검 결과·사업 조판 검사 레일(`WarningList`)에 막힘 전부 + 참고 합쳐 3개까지만 보임. 경고 앞머리를 새로 만들면 `WARNING_HEADS`에 등급을 더해야 시험이 통과
-- **재료 결손 모음(2026-10-17)**: 「채울 것 모아 보기」(성과관리팀)와 「입력할 것」(부서)은 `lib/reports/todo-board.ts buildTodoBoard` 하나가 계량 미입력·【확인】·초안 없는 과제·없는 숫자를 평가단위 × 부서로 모음. 부서 쪽은 자기 팀 줄만, `?team=`에서도 읽기 전용
+- **재료 결손 모음(2026-10-17)**: 「채울 것 모아 보기」(성과관리팀)와 「입력할 것」(부서)은 `lib/reports/todo-board.ts buildTodoBoard` 하나가 원장 실적 없음·【확인】·초안 없는 과제·없는 숫자를 평가단위 × 부서로 모음. 부서 쪽은 자기 팀 줄만, `?team=`에서도 읽기 전용
 
 **경영관리 경평 초안**(`docs/plan/경영관리-경평초안-설계.md` §10): 지표 하나가 보고서 한 건, 「평가내용 → 대주제 → 절」 3단 — 카드 위치는 구성안이 정함(`MG_CARD_EVALS`는 추천 기본값).
 - 구성안 블록 목록은 한 줄 그대로 두고 블록마다 절 열쇠(`PlanBlock.at`)·골격(`Composition.mg`), 초안은 `spec.mg`. 블록은 늘 절 순서(`sortByParts`). 이야기 틀은 절마다 주 틀 + 보조 틀(`MgPart.subStory`), `regenerateMgPart` → `replaceMgPart`는 그 절 블록만 바꿈
 - **판면 맞추기(줄이기)는 없고** 모자라면 블록만 보강(`mg-fill.ts`). 쪽 수는 작성분량 `lib/reports/mg-volume.ts MG_VOLUME`, 카드 쪽수(`loadMgCardPages`)가 「분량 목표」이고 `mgSpecHeight`가 ±25% 밖이면 경고. 바로 만들기 없음(구성안부터, 서버도 막음), 집필은 카드당 1회, 절은 성과로 닫음(`mgCloseRule`)
-- 숫자 근거 = 카드·첨부·실사 답변·계량 실적 입력 + 연결된 공통 지식 조각(`relevantRefs(kb)`) + 그 지표 2025 보고서(`loadMgNumberEvidence`; 평가위원 지적 수치는 인용 대조에만)
+- 숫자 근거 = 카드·첨부·실사 답변 + 연결된 공통 지식 조각(`relevantRefs(kb)`) + 그 지표 2025 보고서(`loadMgNumberEvidence`; 평가위원 지적 수치는 인용 대조에만)
 - **지표 단위 카드 밖 부분(R5)**: 표지·지적사항 조치실적·전년 대비·성과분석 및 환류는 지표 × 연도 × 부분 한 행(`eval_unit_report_parts`) — 표 틀·숫자는 코드(`lib/reports/unit-parts-mg.ts`, 칸마다 code·ai·human, 「재료로 다시 채우기」는 code 칸만 바꿈), 칸 문장은 AI(`report_unit_mg`, 로컬 CLI로만). **카드 전용 자료·보고서 추가자료 원문은 AI에 주지 않고**(금기 4 해석) 숫자 근거는 `unitAiKnownNumbers`뿐(평가위원 지적·시정조치 계획·편람 수치는 근거 아님). 화면 `/reports/business/<지표>/parts`, 한글 내려받기는 `sectionMarkdown`(과제별)·`unit-report-md.ts`(지표 한 파일)
 
 상세: `docs/design/report-draft.md`

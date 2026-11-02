@@ -40,7 +40,7 @@ const system = reportSystem(prompts);
 const rows = (k: string) => new Set(targets.filter((t) => t.row.startsWith(k)).map((t) => t.row)).size;
 const drafts = materials.drafts.filter((d) => d.spec).length;
 console.log(
-  `provider ${aiProvider()} · ${unit} ${indicator.name} · 부분 ${keys.join("·")}(저장 ${keys.filter((k) => stored.has(k)).length}) · 카드 ${materials.cards.length}장 · 과제별 초안 ${drafts}건 · 실적 입력 보고서 ${materials.kpiInputs.length}건 · 시정조치 계획 ${extras.corrective.length} · 핵심공통항목 ${extras.core.length} · ${prompts.version}`,
+  `provider ${aiProvider()} · ${unit} ${indicator.name} · 부분 ${keys.join("·")}(저장 ${keys.filter((k) => stored.has(k)).length}) · 카드 ${materials.cards.length}장 · 과제별 초안 ${drafts}건 · 시정조치 계획 ${extras.corrective.length} · 핵심공통항목 ${extras.core.length} · ${prompts.version}`,
 );
 console.log(`쓸 칸 ${targets.length}개(ai 칸 ${cells.length}개, ${overwrite ? "덮어쓰기" : "빈 칸만"}) — 행: 지적 F ${rows("F")} · 전년 대비 P ${rows("P")} · 계량 K ${rows("K")} · 비계량 Q ${rows("Q")} · 개선계획 L ${rows("L")}`);
 console.log(`글자 수 — 시스템 ${system.length} · 요청 ${prompt.length} · 합계 약 ${system.length + prompt.length}자`);

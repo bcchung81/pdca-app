@@ -79,10 +79,11 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
   const menu = menuOf({ uid, teamQs, selfHref: `/reports/cards/${uid}${teamQs}`, reportId: report?.id ?? null, staffView, mg, evalUnitId: card.eval_unit_id, hasSpec: Boolean(spec), version: draft?.updated_at ? String(draft.updated_at) : null, module: spec?.module ?? 1 });
 
   // 「점검 결과」 탭의 채울 자료 건수가 작업 공간 탭 표지에도 쓰임
-  const needs = checkNeedsOf(spec, card.data, report);
+  const needs = checkNeedsOf(spec, card.data);
   const needCount = needs.draftNeeds.length + needs.kpiNeeds.length + needs.figureNeeds.length;
   const checkCount = needCount + warnings.length;
-  const kpiHref = own ? "/my/report" : report && staff ? `/reports/${report.id}${teamQs}` : null;
+  // 올해 계량 실적은 카드 원장에서 읽음 — 결손 지표는 카드 화면(AI 작성지원 「실적 반영」)으로 보냄(2026-11-02)
+  const cardHref = withReturn(`/cards/${uid}${teamQs}`, `/reports/cards/${uid}${teamQs}`);
 
   // 과제원장 전체 페이지처럼 늘 전체 보기(좌측 메뉴·화면 탭 없음 — lib/full-view.ts). 화면 상태(탭·근거 선택·요청)는 작업 공간 부품이 들고 있음
   return (
@@ -114,7 +115,7 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
       match={composition ? planMatch(composition, spec?.blocks ?? []) : []}
       // 처음 볼 판(2026-09-28 사용자 요구): 초안이 있으면 늘 초안, 초안 없이 구성안만 있으면 구성안 판면
       defaultView={spec ? "draft" : composition ? "outline" : "draft"}
-      check={<ReportCheck spec={spec} needs={needs} cardComments={cardCommentsOf(comments, uid)} warnings={warnings} year={year} own={own} kpiHref={kpiHref} />}
+      check={<ReportCheck spec={spec} needs={needs} cardComments={cardCommentsOf(comments, uid)} warnings={warnings} year={year} cardHref={cardHref} />}
       checkCount={checkCount}
       version={spec && spec.version === 3 && spec.blocks?.length && draft?.updated_at ? String(draft.updated_at) : null}
       humanEdits={spec?.humanEdits ?? []}

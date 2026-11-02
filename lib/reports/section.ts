@@ -15,7 +15,7 @@ import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PA
 import { isStory, storyLabel } from "./frameworks.ts";
 import { cardFindings } from "./findings.ts";
 import { type DiagramHint, type HintOptions, bizVarietyIssue, diagramHints, kindUsage, ownKindsIn, repeatedKinds } from "./diagram-hints.ts";
-import { NEEDS_MAX, NEED_RE, type YearActuals, dedupeNeedYear, stripNeeds, yearActuals, yearIssues } from "./actuals.ts";
+import { NEEDS_MAX, NEED_RE, type YearActuals, dedupeNeedYear, ledgerFigure, stripNeeds, yearActuals, yearIssues } from "./actuals.ts";
 import { GROUND_WEAK, groundScores } from "./ground.ts";
 import { proseIssues } from "./prose.ts";
 import { kpiMissingWarning } from "./kpi-cover.ts";
@@ -252,7 +252,6 @@ export const REQUEST_SECTIONS = [
   "moduleGuide.half",
   "actuals.head",
   "actuals.kpi",
-  "actuals.kpiInput",
   "actuals.kpiExpected",
   "actuals.kpiNone",
   "actuals.kpiOutcome",
@@ -396,11 +395,11 @@ export function sectionPrompt(
       card: inspectionCardText(card),
     }),
   ];
-  // 올해 실적 재료: 계량지표(’25 실적·’26 목표·’26 실적 = 부서 입력 → 카드 정량 성과 칸 → 카드 예상 칸) + 월별 실적 중 수치가 든 줄 + 정량 성과 칸의 남은 올해 실적 줄(lib/reports/actuals.ts)
+  // 올해 실적 재료: 계량지표(’25 실적·’26 목표·’26 실적 = 카드 정량 성과 칸 → 카드 예상 칸) + 월별 실적 중 수치가 든 줄 + 정량 성과 칸의 남은 올해 실적 줄(lib/reports/actuals.ts)
   const yy = String(year % 100).padStart(2, "0");
   lines.push("", r("actuals.head", { year, today: actuals.today || "—" }));
   for (const k of actuals.kpi) {
-    const actual = k.input ? r("actuals.kpiInput", { value: k.input }) : k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy, name: k.name });
+    const actual = k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy, name: k.name });
     lines.push(r("actuals.kpi", { name: k.name, unit: k.unit || "—", prevYY: String((year - 1) % 100).padStart(2, "0"), prev: k.prev || "—", yy, target: k.target || "—", actual }));
   }
   if (actuals.monthly.length) {
@@ -478,14 +477,17 @@ export const hintSource = (card: Json, prior: PriorPick[], files: ReportFile[]) 
 
 /**
  * 도식 후보(요청 글과 검증이 같은 값을 씀): 카드·전년 절·첨부 글의 신호 + '25 평가위원 지적 원문(인용 상자) + 같은 지표의 시점별 값(막대 —
- * 계량지표 ’25 실적과 ’26 실적(부서 입력)이 둘 다 숫자일 때만 — 목표만 있는 값은 실적 없는 목표 막대가 돼 후보에서 뺌, 2026-10-14).
+ * 계량지표 ’25 실적과 ’26 실적(원장 정량 성과 칸 줄의 그 지표 값 하나 — actuals.ts ledgerFigure)이 둘 다 숫자일 때만 — 목표만 있는 값은 실적 없는 목표 막대가 돼 후보에서 뺌, 2026-10-14).
  * 이 과제만의 요소(인용·말풍선·우수사례·정의·협업 구조)는 전년 절을 뺀 카드·첨부 글로만 셈 — 전년 절의 인용·현장 말·수상 낱말이 후보를 켜면
  * 짜임 검증(composeIssues)이 쓰라고 요구해 2025 보고서 글을 올해 초안에 다시 쓰게 됨(2026-10-14 블라인드 심사 「전년복제」 22건 중 10~11건). 기본 도식은 전년 절까지 봄.
  * 핵심 수치 띠는 주요사업 후보에 없음(2026-10-28 — diagram-hints.ts)
  */
 export function sectionHints(card: Json, prior: PriorPick[], files: ReportFile[], lens: LensRef[], actuals: YearActuals, year: number, opts?: HintOptions): DiagramHint[] {
   const yy = (n: number) => String(n % 100).padStart(2, "0");
-  const series = actuals.kpi.filter((k) => /\d/.test(k.prev) && /\d/.test(k.input)).map((k) => `${k.name}: ’${yy(year - 1)}년 ${k.prev} → ’${yy(year)}년 ${k.input}`);
+  const series = actuals.kpi.flatMap((k) => {
+    const now = ledgerFigure(k);
+    return /\d/.test(k.prev) && now ? [`${k.name}: ’${yy(year - 1)}년 ${k.prev} → ’${yy(year)}년 ${now}`] : [];
+  });
   const extras = {
     critiques: lens.filter((x) => x.group === "critiques").map((x) => x.text),
     series,
@@ -680,7 +682,7 @@ export function knownNumbers(card: Json, extraText = ""): Set<string> {
 
 /** 근거 원문 열쇠(인용 대조)와 아는 숫자(숫자 대조) — verifySection·구성안 정리가 같은 근거를 씀 */
 /**
- * 초안 근거 글 두 벌(서버 액션·연기 시험 공용): known = 숫자 대조에도 쓰는 글(첨부 전체 글·전년 절·실사 답변·부서 계량 실적 입력),
+ * 초안 근거 글 두 벌(서버 액션·연기 시험 공용): known = 숫자 대조에도 쓰는 글(첨부 전체 글·전년 절·실사 답변 — 원장 계량 실적 줄은 카드 글이라 knownNumbers가 이미 셈),
  * quoteOnly = 인용 대조에만 쓰는 글(평가 기준·평가위원 지적·유관기관 사례, 숫자 근거로 인정하지 않는 첨부). 첨부는 AI에 넣은 글과 같은 전체 글이라 뒤쪽 숫자도 근거로 인정(참고자료 설계 P5) —
  * 단 보고서 추가자료는 사람이 이 과제에 연결(확정)한 것만(ReportFile.numberEvidence)
  */
@@ -694,11 +696,11 @@ export const LINKED_NUMBER_TYPES: readonly string[] = ["report_section", ...SURV
 export function draftEvidence(files: ReportFile[], prior: PriorPick[], lens: LensRef[], actuals: YearActuals, linked: Array<{ unitType: string; text: string }> = []): { known: string; quoteOnly: string; past: string; current: string } {
   // 숫자 근거로 인정하지 않는 자료(이 과제에 연결하지 않은 보고서 추가자료)의 글은 인용 대조에만 — 다른 과제 수치가 이 과제 초안에 섞여도 「없는 숫자」로 잡히게(참고자료 3단계 P3)
   const counted = files.filter((f) => f.numberEvidence !== false);
-  const known = [...counted.map((f) => f.text), ...prior.map((p) => p.section.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text), ...linked.filter((x) => LINKED_NUMBER_TYPES.includes(x.unitType)).map((x) => x.text), ...actuals.kpi.map((k) => k.input)].join("\n");
+  const known = [...counted.map((f) => f.text), ...prior.map((p) => p.section.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text), ...linked.filter((x) => LINKED_NUMBER_TYPES.includes(x.unitType)).map((x) => x.text)].join("\n");
   const quoteOnly = [...files.filter((f) => f.numberEvidence === false).map((f) => f.text), ...lens.filter((x) => x.group !== "survey").map((x) => x.text)].join("\n");
-  // known을 두 갈래로(전년 인용 점검 priorQuoteIssues — 2026-10-14 후속 2): past = 2025 보고서 글(전년 절·이 과제에 연결된 2025 절), current = 올해 근거(첨부·실사 답변·계량 실적 입력, 카드 제외)
+  // known을 두 갈래로(전년 인용 점검 priorQuoteIssues — 2026-10-14 후속 2): past = 2025 보고서 글(전년 절·이 과제에 연결된 2025 절), current = 올해 근거(첨부·실사 답변, 카드 제외)
   const past = [...prior.map((p) => p.section.text), ...linked.filter((x) => x.unitType === "report_section").map((x) => x.text)].join("\n");
-  const current = [...counted.map((f) => f.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text), ...linked.filter((x) => (SURVEY_TYPES as readonly string[]).includes(x.unitType)).map((x) => x.text), ...actuals.kpi.map((k) => k.input)].join("\n");
+  const current = [...counted.map((f) => f.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text), ...linked.filter((x) => (SURVEY_TYPES as readonly string[]).includes(x.unitType)).map((x) => x.text)].join("\n");
   return { known, quoteOnly, past, current };
 }
 
@@ -887,7 +889,7 @@ export function signalWarnings(spec: ReportSectionSpec, card: Json): string[] {
 
 /**
  * 전년 인용(결정론, 2026-10-14 후속 2): 인용 상자·말풍선 칸 글과 우수사례 원문(evidence)이 2025 보고서 글(pastText)에서만 찾아지고
- * 올해 근거(currentKey — 카드·첨부·실사 답변·계량 실적 입력·평가 근거 원문의 sourceKey)에서는 못 찾으면 한 줄로 알림.
+ * 올해 근거(currentKey — 카드·첨부·실사 답변·평가 근거 원문의 sourceKey)에서는 못 찾으면 한 줄로 알림.
  * 블라인드 심사(카드 11장 × 2판): 전년 절의 정책·CEO 인용·현장 말·’25 수상 사례를 올해 첫 블록에 다시 써 「전년복제」 22건 중 10~11건
  */
 export function priorQuoteIssues(blocks: Block[], caseEvidence: string[], pastText: string, currentKey: string): string[] {

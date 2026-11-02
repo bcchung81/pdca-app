@@ -76,7 +76,7 @@ export interface Prepared {
   siblingsLayout: SiblingLayout[];
   lens: LensRef[];
   actuals: YearActuals;
-  /** 숫자 대조 근거 글(첨부·전년 절·실사 답변·계량 실적 입력) */
+  /** 숫자 대조 근거 글(첨부·전년 절·실사 답변 — 원장 계량 실적 줄은 카드 글이라 따로 셈) */
   known: string;
   /** 인용 대조에만 쓰는 글(평가 기준·평가위원 지적·유관기관 사례) */
   quoteOnly: string;
@@ -154,8 +154,8 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
     const { data } = await supabase.from("card_materials").select(MATERIAL_COLS).eq("card_id", card.id).in("id", cardIds);
     cardRows.push(...((data ?? []) as MaterialRow[]));
   }
-  // 이 카드가 속한 보고서(같은 사업·부서·연도) — 추가자료와 부서가 넣은 올해 계량 실적(inputs.kpi)
-  const { data: report } = await supabase.from("reports").select("id, inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", year).maybeSingle();
+  // 이 카드가 속한 보고서(같은 사업·부서·연도) — 추가자료
+  const { data: report } = await supabase.from("reports").select("id").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", year).maybeSingle();
   const reportRows: MaterialRow[] = [];
   if (reportIds.length && report) {
     const { data } = await supabase.from("report_materials").select(MATERIAL_COLS).eq("report_id", report.id).in("id", reportIds);
@@ -176,7 +176,7 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
   const skipped = [...cardText.failed, ...reportText.failed].map((f) => `「${f.name}」(${f.error})`);
 
   // 경영관리 카드: 대상사업·실행과제·목차·형제 짜임·주요사업 전년 절(rpt25-biz) 대신 지표의 전년 보고서 골격(rpt25-mg)으로 — 평가 근거·공통 지식 묶음은 같은 함수가 트랙으로 가름
-  if (isMgmtCard(card.data)) return prepareMgDraft({ me, supabase, card, year, picked, files, skipped, report, base });
+  if (isMgmtCard(card.data)) return prepareMgDraft({ me, supabase, card, year, picked, files, skipped, base });
   const { data: sib } = await supabase.from("cards").select("id, task_no, tb:data->>targetBusiness, etn:data->>executionTaskNo, et:data->>executionTask").eq("eval_unit_id", card.eval_unit_id).eq("status", "active");
   const siblings: SiblingCard[] = (sib ?? []).map((c: { id: string; task_no: string; tb: string | null; etn: string | null; et: string | null }) => ({
     id: c.id,
@@ -214,9 +214,9 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
   const splitSiblings = splitSiblingsOf(card.data, card.id, siblings, (sibDrafts ?? []) as SplitDraftRow[]);
   // 평가 기준·평가위원 관점 — 공통 지식에서 결정론으로 고름
   const [lens, kb] = await Promise.all([loadLens(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }), loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "report")]);
-  // 올해 실적 재료 — 없으면 초안이 【확인: …】 자리표시로 남김
-  const actuals = yearActuals(card.data, (report?.inputs?.kpi ?? {}) as Record<string, string>, isoDay());
-  // 숫자 대조 근거 = 카드 + 첨부 글 + 전년 절 글 + 실사 답변 + 계량 실적 입력. 평가 기준·지적·유관기관 사례는 인용 대조에만
+  // 올해 실적 재료(원장 — 정량 성과 칸 줄·예상 칸) — 없으면 초안이 【확인: …】 자리표시로 남김
+  const actuals = yearActuals(card.data, isoDay());
+  // 숫자 대조 근거 = 카드 + 첨부 글 + 전년 절 글 + 실사 답변. 평가 기준·지적·유관기관 사례는 인용 대조에만
   // 숫자 근거 — 이 과제에 연결된 2025 보고서 절·실사 답변의 수치도(lib/reports/section.ts draftEvidence linked)
   const { known, quoteOnly, past, current } = draftEvidence(files, prior, lens, actuals, relevantRefs(kb));
   // 도식 후보 중 이 과제만의 요소 — 초안이 하나도 안 쓰면 짜임 문제로 고치기
@@ -227,10 +227,10 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
 
 /**
  * 경영관리 카드의 근거 모으기(prepareDraft 뒤쪽): 지표 이름·마커(지적개선·신규)·2025 보고서 골격(평가내용 → 대주제 → 절, 글 포함)·추천 평가내용(분석 §5 첫 대응).
- * 숫자 근거 = 첨부·실사 답변·계량 실적 입력 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치 — loadMgNumberEvidence). 판면은 맞추지 않고 분량 목표(목차·쪽 배정 쪽수 — loadMgCardPages, 2026-10-12 D1)만 요청·경고에 쓰며,
+ * 숫자 근거 = 카드·첨부·실사 답변 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치 — loadMgNumberEvidence). 판면은 맞추지 않고 분량 목표(목차·쪽 배정 쪽수 — loadMgCardPages, 2026-10-12 D1)만 요청·경고에 쓰며,
  * 형제 짜임은 같은 지표 다른 카드의 구성안 절(loadMgSiblings — 주요사업의 형제 초안 짜임과 다름)
  */
-async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "year" | "picked" | "files" | "skipped" | "base"> & { report: { id: string; inputs: { kpi?: Record<string, string> } | null } | null }): Promise<{ ok: true } & Prepared> {
+async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "year" | "picked" | "files" | "skipped" | "base">): Promise<{ ok: true } & Prepared> {
   const { supabase, card, files } = x;
   const data = card.data as { taskNo?: string };
   const [prior, numbers, lens, kb, mgSiblings, pages] = await Promise.all([
@@ -252,9 +252,9 @@ async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "ye
     pages,
     cardAsOf: mgCardAsOf(card),
   };
-  const actuals = yearActuals(card.data, (x.report?.inputs?.kpi ?? {}) as Record<string, string>, isoDay(), { wide: true });
+  const actuals = yearActuals(card.data, isoDay(), { wide: true });
   const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
-  // 숫자 근거 = 첨부·실사 답변·계량 실적 입력 + 이 과제에 연결된 공통 지식 조각 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치)
+  // 숫자 근거 = 카드·첨부·실사 답변 + 이 과제에 연결된 공통 지식 조각 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치)
   const known = [ev.known, numbers].join("\n");
   const ctx = sectionContext(card.data, [], null);
   const mode = `mg${files.length ? `+${files.length}f` : ""}+${prior.length}prior${lens.length ? `+${lens.length}lens` : ""}`;

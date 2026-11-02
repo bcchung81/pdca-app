@@ -9,14 +9,12 @@ import { cardOutline } from "../../lib/ai/writer.ts";
 import { reportBlockPrompts, reportDraftPrompts } from "../../lib/prompts/sets.ts";
 import { fillFrom } from "../../lib/prompts/template.ts";
 import { listText, sharedTexts } from "../../lib/knowledge/bundle.ts";
-import { yearActuals } from "../../lib/reports/actuals.ts";
 import { RESULT_INDEX, applyBlockEdit, applyResultEdit, blockEditPrompt, readBlockEditRequest, resultBoxOf, resultEditPrompt, verifyBlockEdit, verifyResultEdit } from "../../lib/reports/block-edit.ts";
 import { blockTexts } from "../../lib/reports/blocks.ts";
 import { loadCardBundle } from "../../lib/ai/context.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { pickPrior, scorePrior, toPriorSection } from "../../lib/reports/prior.ts";
 import { cleanLine, evidenceKey, quoteFoundIn, readSection, recheckSection } from "../../lib/reports/section.ts";
-import { isoDay } from "../../lib/format.ts";
 
 const dry = process.argv.includes("--dry");
 const [id = "주요사업1/1-가", no = "1", kind = "edit", request = "", quote = ""] = process.argv.slice(2).filter((x) => x !== "--dry");
@@ -30,16 +28,14 @@ if (!spec?.blocks?.length) throw new Error("블록 목록 초안이 없음");
 const req = readBlockEditRequest({ blockIndex: isResult ? RESULT_INDEX : Number(no) - 1, kind, request, quote }, spec);
 if (typeof req === "string") throw new Error(req);
 
-// 근거: 초안을 만들 때와 같게(첨부는 이 시험에서 뺌 — 전년 절은 초안에 남은 키 또는 자동, 실사 답변, 계량 실적 입력)
+// 근거: 초안을 만들 때와 같게(첨부는 이 시험에서 뺌 — 전년 절은 초안에 남은 키 또는 자동, 실사 답변)
 const { data: rows } = await db.from("knowledge_chunks").select("chunk_key, business, title, text, report_page_2025, meta").eq("doc_id", "rpt25-biz").eq("business", card.eval_unit_id);
 const sections = (rows ?? []).map(toPriorSection);
 const scored = scorePrior(card.data, sections);
 const prior = spec.priorKeys ? spec.priorKeys.map((k) => scored.find((p) => p.section.key === k)).filter((p) => p !== undefined) : pickPrior(card.data, sections);
 const lens = await loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data });
 const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data });
-const { data: report } = await db.from("reports").select("inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", 2026).maybeSingle();
-const actuals = yearActuals(card.data, (report?.inputs?.kpi ?? {}) as Record<string, string>, isoDay());
-const known = [...prior.map((p) => p.section.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text), ...actuals.kpi.map((k) => k.input)].join("\n");
+const known = [...prior.map((p) => p.section.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text)].join("\n");
 const quoteOnly = lens.filter((x) => x.group !== "survey").map((x) => x.text).join("\n");
 const cardText = `${cardOutline(card.data)}\n${inspectionCardText(card.data)}`;
 

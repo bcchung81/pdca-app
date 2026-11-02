@@ -1,7 +1,7 @@
 // 수동 연기 시험: 경평 초안 블록 「다른 모양으로」(서버 액션 previewBlockShapes와 같은 규칙·검증 — 저장하지 않음, 2026-10-12).
 // node --conditions=react-server --env-file=.env.local scripts/smoke/ai-block-shapes-smoke.ts [카드 id(기본 주요사업1/1-가)] [블록 번호(1부터, 기본 1)] [--dry] [--want <모양 코드>] [--request "<덧붙일 요청>"]
 //  --dry: AI 없이 요청 글 크기(시스템·공통 지식·목록표·요청)와 바꿀 수 있는·쓸 수 없는 모양 줄만 보임(비용 없음)
-// 근거는 ai-block-smoke.ts와 같은 근사(첨부 없이 — 전년 절·실사 답변·계량 실적 입력). 경영관리 초안은 근거 숫자(2025 보고서 전 장·핵심공통항목)를 더하지 않음 — 크기·검증 흐름 확인용
+// 근거는 ai-block-smoke.ts와 같은 근사(첨부 없이 — 전년 절·실사 답변). 경영관리 초안은 근거 숫자(2025 보고서 전 장·핵심공통항목)를 더하지 않음 — 크기·검증 흐름 확인용
 import { createClient } from "@supabase/supabase-js";
 import { inspectionCardText } from "../../lib/ai/inspect.ts";
 import { aiProvider, callReportBlock, modelLabel } from "../../lib/ai/run.ts";
@@ -44,9 +44,8 @@ const scored = scorePrior(card.data, sections);
 const prior = mg ? [] : spec.priorKeys ? spec.priorKeys.map((k) => scored.find((p) => p.section.key === k)).filter((p) => p !== undefined) : pickPrior(card.data, sections);
 const lens = await loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data });
 const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "report");
-const { data: report } = await db.from("reports").select("inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", year).maybeSingle();
-const actuals = yearActuals(card.data, (report?.inputs?.kpi ?? {}) as Record<string, string>, isoDay());
-const known = [...prior.map((p) => p.section.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text), ...actuals.kpi.map((k) => k.input)].join("\n");
+const actuals = yearActuals(card.data, isoDay());
+const known = [...prior.map((p) => p.section.text), ...lens.filter((x) => x.group === "survey").map((x) => x.text)].join("\n");
 const quoteOnly = lens.filter((x) => x.group !== "survey").map((x) => x.text).join("\n");
 const cardText = `${cardOutline(card.data)}\n${inspectionCardText(card.data)}`;
 
