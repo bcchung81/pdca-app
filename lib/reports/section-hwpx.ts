@@ -450,6 +450,9 @@ const STEP_LEAD = /^(Step\s?\d+|\d단계)\s*/;
 const JOIN_LABELS = new Set(["현황 및 문제점", "추진배경"]);
 
 class SectionWriter extends Writer {
+  /** 경영관리 초안(spec.mg) — 블록 위 제목을 「□ 제목」 문단으로(화면 .k-dg-title--mg, sectionHwpxInput이 정함) */
+  mg = false;
+
   /** 라벨 칸 글: 「Step 1 …」「’24년 …」「1단계 …」는 앞을 칩으로 + 줄바꿈(section-html.ts labelHtml) */
   labelParas(label: string): Para[] {
     const m = /^(Step\s?\d+|’\d\d년~?|\d{4}년~?|\d단계)\s*(.*)$/.exec(label);
@@ -460,10 +463,18 @@ class SectionWriter extends Writer {
 
   /**
    * 블록 제목 띠(화면 .k-dg-title — REPORT_STYLE.titleBand, 2026-10-29): 놓인 폭 w 전체의 1×1 칸(연회색 g2 바탕·테두리 없음, 안 여백 = 띠 안 여백) 안에
-   * 돋움 굵게 왼쪽 정렬, 위 여백 0(화면과 같음). 예전은 바탕 없는 굵은 글 문단 + 위 여백 4px(화면은 0이었음)
+   * 돋움 굵게 왼쪽 정렬, 위 여백 0(화면과 같음). 예전은 바탕 없는 굵은 글 문단 + 위 여백 4px(화면은 0이었음).
+   * 경영관리 블록 위 제목(화면 .k-dg-title--mg — REPORT_STYLE.titleMark, 2026-11-03): 바탕 없는 문단 「□ 」 + 제목(소제목 글꼴·줄간격, 둘째 줄은 표지 뒤 — 내어쓰기,
+   * 위아래 여백 = 화면 바깥 여백). inBox = 수치 띠 상자 안 제목 — 경영관리여도 띠 그대로
    */
-  title(b: Pick<Block, "title">, w: number): Para[] {
+  title(b: Pick<Block, "title">, w: number, inBox = false): Para[] {
     if (!b.title) return [];
+    if (this.mg && !inBox) {
+      const tm = ST.titleMark;
+      const c: CS = { face: "dotumB", pt: F.subhead };
+      const hang = Math.round(tm.hangEm * F.subhead * 100);
+      return [this.para({ align: "LEFT", left: 0, indent: -hang, before: px(tm.beforePx), after: px(tm.afterPx), line: pct(LH.subhead) }, [this.run(`${tm.mark} `, c), ...this.rich(b.title, c)], c)];
+    }
     const tb = ST.titleBand;
     const cell: TCell = { r: 0, c: 0, paras: [this.p(b.title, HEAD, { align: "LEFT", line: pct(LH.title) })], box: { fill: G.g2 }, m: [px(tb.padX), px(tb.padX), px(tb.padY), px(tb.padY)] };
     return [this.host(this.table([w], [lineH(F.body, px(2 * tb.padY))], [cell]))];
@@ -1219,7 +1230,7 @@ class SectionWriter extends Writer {
     // 수치 띠 상자(화면 statsBox — 소항목 추진성과 상자와 같은 틀, 굵은 불릿 + 오른쪽 막대). 사다리 밖 수치 띠도 상자(own이면 불릿 그대로)
     const statsBox = (label: string, main: number[], chart: number | undefined, w: number) => {
       const c = chart === undefined ? null : blocks[chart];
-      return this.resultBox(label, (mw) => main.flatMap((j) => [...this.title(blocks[j], mw), ...this.statsUl(blocks[j], BODY_B)]), c && { title: c.title, series: c.series, badge: c.badge }, "", w);
+      return this.resultBox(label, (mw) => main.flatMap((j) => [...this.title(blocks[j], mw, true), ...this.statsUl(blocks[j], BODY_B)]), c && { title: c.title, series: c.series, badge: c.badge }, "", w);
     };
     const outer = (j: number, w: number) => (blocks[j].kind === "stats" && !own ? [statsBox(statsBoxLabel(blocks[j]), [j], undefined, w)] : one(j, w));
     const unit = (us: number[], w: number, outside = false): Para[] => {
@@ -1461,6 +1472,7 @@ class SectionWriter extends Writer {
  */
 export function sectionHwpxInput(spec: ReportSectionSpec, opts: { title?: string } = {}): { input: HwpxInput; warnings: string[] } {
   const w = new SectionWriter();
+  w.mg = Boolean(spec.mg);
   const paras: Para[] = [...w.heads(spec)];
   if (spec.version === 3 && Array.isArray(spec.blocks)) {
     if (spec.mg) w.warnings.push("경영관리 초안은 한글(개조식)으로 내려받습니다 — 이 양식은 절 머리 없이 블록만 차례로 그렸습니다.");

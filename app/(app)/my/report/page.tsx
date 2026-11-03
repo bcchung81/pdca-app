@@ -412,13 +412,13 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
                 </div>
                 <div className="flex min-w-0 flex-col gap-2">
                   <h4 className="text-xs font-semibold text-muted">원장에 올해 실적이 없는 지표</h4>
-                  <p className="text-ui text-muted-2">올해 계량 실적은 따로 넣지 않고 카드 원장(정량 성과 칸)에서 읽습니다. 실적 증빙을 카드 AI 작성지원 「실적 반영」으로 작성본에 넣어 확정하거나, 위 추가자료로 올리십시오.</p>
+                  <p className="text-ui text-muted-2">실적 증빙은 과제를 눌러 과제별 초안(또는 카드 AI 작성지원)에서 올리면 그 과제 근거로 바로 씁니다. 원장의 올해 실적은 카드 「실적 반영」으로 현행화합니다.</p>
                   {kpiGapList.length ? (
                     <ul className="m-0 flex list-none flex-col gap-1 p-0">
                       {kpiGapList.map((k) => (
                         <li key={`${k.uid}#${k.name}`} className="flex min-w-0 items-center gap-2 text-ui">
                           <span className="min-w-0 truncate">{k.name}</span>
-                          <Link href={withReturn(`/my?${teamQs}peek=${k.uid}`, selfHref)} className="shrink-0 font-mono text-navy no-underline hover:underline" title={`${k.taskNo} 과제관리카드 보기`}>
+                          <Link href={draftHref(k.uid, teamQs, selfHref)} className="shrink-0 font-mono text-navy no-underline hover:underline" title={`${k.taskNo} 과제별 초안 열기`}>
                             {k.taskNo}
                           </Link>
                         </li>

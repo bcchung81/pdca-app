@@ -349,7 +349,7 @@ export function MaterialUploader({ reportId, items, cards, canEdit }: { reportId
         items={items}
         list={false}
         canEdit={canEdit}
-        hint="사진·수상·언론·공문 등 · 파일당 50MB · 이 보고서에서만 씀 · 이미지·스캔 PDF는 AI가 그림 설명으로 읽음(API 연결일 때) · 올린 뒤 이 자료를 쓸 과제를 고르세요"
+        hint="여러 과제 공통 자료(사진·수상·언론 등) · 파일당 50MB · 과제에 연결해야 그 과제 수치 근거로 씀 · 이미지·스캔 PDF는 AI가 그림 설명으로 읽음(API 연결일 때)"
         start={(name, size) => startMaterialUpload(reportId, name, size)}
         finish={(path, name, mime, size) => finishMaterialUpload(reportId, path, name, mime, size)}
         remove={(id) => deleteMaterial(id)}

@@ -16,6 +16,7 @@ import { hangCheck } from "../hwpx/hang.ts";
 import type { HwpDoc, Para, Table } from "../hwp/model.ts";
 import { BLOCK_KINDS, type Block, type BlockCell, FIGURE_LABEL, type Figure, VARIANTS, figureMm } from "./blocks.ts";
 import { PAGE_MM, blockWidth, slotOf } from "./fit.ts";
+import type { MgPart } from "./mg-types.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
 import { sectionBodyHtml } from "./section-html.ts";
 import { HWPX_FACES, REPORT_PAGE_MM, sectionHwpxInput, sectionToHwpx } from "./section-hwpx.ts";
@@ -311,8 +312,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // (REPORT_STYLE.lh resHead·resValue → resSeries) — 이 덩어리를 옛 여섯 줄로 되돌린 글이 옛 고정값 a3166f1a…과 같음을 확인
 // 2026-10-29 블록 제목을 2025 경영관리 도식 위 제목 띠 모양으로(a62585f4… → 1bdb720e…): .k-dg-title 앞에 주석 한 줄 + 띠 안 여백(REPORT_STYLE.titleBand 1px 5px)·
 // 연회색 바탕(g2)·왼쪽 정렬을 이어 붙이고 margin 4px 0 0 → 0(뒤 「.k-frame :where(p){margin:0}」에 져 화면은 늘 0이던 값) — 이 두 줄을 옛 한 줄로 되돌린 글이 옛 고정값 a62585f4…과 같음을 확인
+// 2026-11-03 경영관리 블록 위 제목을 프레임워크 「□ 소제목」 줄로(1bdb720e… → fb80a6e5…): .k-dg-title 띠 규칙 바로 뒤에 주석 한 줄 + .k-dg-title--mg 규칙 두 줄
+// (REPORT_STYLE.titleMark — 소제목 글꼴·바깥 여백 6px 0 0·내어쓰기 1.2em·바탕 없음)을 더함. 띠 규칙은 그대로 — 이 세 줄을 뺀 글이 옛 고정값 1bdb720e…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "1bdb720e2c3d7757f52ce7b8765dcad24bf71c5bf363414573918a5959905b92");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "fb80a6e5bf263652da12a9cfcd42841e7e4352a0264ea304d0b76b9846990ec0");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {
@@ -638,4 +641,30 @@ test("블록 제목 띠(2026-10-29 — 화면 .k-dg-title): 놓인 폭 전체 1�
   const bare = await convert(makeSpec([block({ kind: "bullets", label: "추진내용", items: ["본문"] })]));
   const bareFill = (c: { borderFill: number }) => bare.doc.borderFills[c.borderFill]!.fill?.color?.toLowerCase() ?? null;
   assert.ok(!allTables(bare.doc.sections[0].paras).some((x) => x.rows === 1 && x.cols === 1 && bareFill(x.cells[0]) === REPORT_STYLE.gray.g2));
+});
+
+test("경영관리 블록 위 제목(2026-11-03 — 화면 .k-dg-title--mg): 띠 칸 없이 바탕 없는 문단 「□ 」 + 제목(소제목 크기·내어쓰기·위 여백) · 수치 띠 상자 안 제목은 띠 그대로", async () => {
+  const tm = REPORT_STYLE.titleMark;
+  const part: MgPart = { key: "1.1.가", evalNo: 1, evalTitle: "평가", themeNo: 1, themeTitle: "대주제", mark: "가", title: "절", story: "", why: "" };
+  const blocks = [block({ kind: "bullets", title: "블록 위 제목", items: ["본문"] }), block({ kind: "table", label: "추진내용", title: "사다리 칸 제목", items: ["구분", "값"], cells: [cell("가", ["1건"])] }), block({ kind: "stats", title: "상자 띠 제목", cells: [cell("1건", ["성과"])] })];
+  const spec = makeSpec(blocks, { card: { id: "경영관리13/13-4", taskNo: "13-4", title: "과제명" }, mg: { indicator: "지표", parts: [part], at: blocks.map(() => "1.1.가") } });
+  const { doc } = await convert(spec);
+  const fill = (c: { borderFill: number }) => doc.borderFills[c.borderFill]!.fill?.color?.toLowerCase() ?? null;
+  const paras: Para[] = [];
+  const walk = (ps: Para[]) => ps.forEach((p) => (paras.push(p), tablesOf([p]).forEach((t) => t.cells.forEach((c) => walk(c.paras)))));
+  walk(doc.sections[0].paras);
+  const text = (p: Para) => p.items.map((it) => (it.kind === "text" ? it.text : "")).join("");
+  for (const title of ["블록 위 제목", "사다리 칸 제목"]) {
+    const p = paras.find((x) => text(x) === `${tm.mark} ${title}`);
+    assert.ok(p, `${title}: 「□ 」 + 제목 한 문단`);
+    const pp = doc.paraPrs[p.paraPr];
+    assert.equal(doc.borderFills[pp.borderFill]?.fill?.color ?? null, null, `${title}: 문단 바탕 없음`);
+    assert.equal(pp.indent, -Math.round(tm.hangEm * REPORT_STYLE.pt.subhead * 100), `${title}: 둘째 줄은 표지 뒤(내어쓰기)`);
+    assert.equal(pp.before, tm.beforePx * 75);
+    assert.equal(doc.charPrs[(p.items[0] as { charPr: number }).charPr].height, REPORT_STYLE.pt.subhead * 100, `${title}: 소제목 크기`);
+    assert.ok(!allTables(doc.sections[0].paras).some((t) => t.rows === 1 && t.cols === 1 && textOf(t.cells[0].paras).join("").includes(title)), `${title}: 띠 칸 없음`);
+  }
+  const band = allTables(doc.sections[0].paras).find((x) => x.rows === 1 && x.cols === 1 && textOf(x.cells[0].paras).join("") === "상자 띠 제목");
+  assert.ok(band && fill(band.cells[0]) === REPORT_STYLE.gray.g2, "상자 안 제목은 띠");
+  assert.ok(!paras.some((x) => text(x).startsWith(`${tm.mark} 상자`)));
 });

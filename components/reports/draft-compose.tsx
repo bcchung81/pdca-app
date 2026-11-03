@@ -379,7 +379,7 @@ export function DraftCompose(props: {
     >
       {over && (
         <div className="pointer-events-none absolute inset-2 z-pop flex items-center justify-center rounded-xl border-2 border-dashed border-navy bg-paper/90 text-sm font-semibold text-navy">
-          놓으면 카드 전용 자료로 올려 고른 근거에 넣습니다 — 다음 집필·자료 반영 고치기·블록 고치기가 씁니다 · {ATTACH_LABEL}
+          놓으면 이 과제의 카드 전용 자료로 올려 수치 포함 근거로 바로 씁니다 — 다음 집필·자료 반영 고치기·블록 고치기가 씁니다 · {ATTACH_LABEL}
         </div>
       )}
 

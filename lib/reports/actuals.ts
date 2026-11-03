@@ -58,7 +58,7 @@ export interface YearActuals {
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 /**
- * 카드(과제 원장) → 올해 실적 재료. 올해 계량 실적의 출처는 원장(정량 성과 칸 줄·예상 칸)과 경평 작성 때의 보고서 추가자료뿐(2026-11-02 — 별도 입력 reports.inputs는 앱이 읽지 않음).
+ * 카드(과제 원장) → 올해 실적 재료. 올해 계량 실적의 출처는 원장뿐 — 그 과제 첨부의 올해 값은 경평 요청의 첨부 블록에서 모델이 씀(2026-11-02 — 별도 입력 reports.inputs는 앱이 읽지 않음).
  * opts.wide(경영관리): 연도 언급이 없는 증감·「A → B」 성과 줄도 받아 「시점 미기재」 표지를 붙임(outcomeActualItems).
  * 계량지표는 원본 양식의 빈 자리표시("-") 행을 뺌(model.ts kpiRowsOf와 같은 규칙).
  */
@@ -302,7 +302,7 @@ export function yearIssues(blocks: Array<{ kind: string; cells: Array<{ head: st
     if (opts.biz) {
       const actual = actualStatCells(b.cells, year).length;
       if (actual < STATS_ACTUAL_MIN) out.push(`핵심 수치 띠에 올해(’${yy}년) 실적 칸이 ${actual}개뿐입니다(${cells.map((c) => `${c.head} ${TIMING_LABEL[c.timing]}`).join("·")}) — 올해 실적 값이 ${STATS_ACTUAL_MIN}개 이상 없으면 수치 띠를 빼고 다른 도식으로 바꿉니다(목표·예상·전년 값·자리표시로 칸을 채우지 않음).`);
-    } else if (!cells.some((c) => c.timing === "now" || c.timing === "need")) out.push(`핵심 수치 띠에 올해(’${yy}년) 실적 칸이 없습니다(${cells.map((c) => `${c.head} ${TIMING_LABEL[c.timing]}`).join("·")}) — 한 칸 이상을 「올해 실적 재료」의 값으로, 없으면 【확인: …】 자리표시로 바꿉니다.`);
+    } else if (!cells.some((c) => c.timing === "now" || c.timing === "need")) out.push(`핵심 수치 띠에 올해(’${yy}년) 실적 칸이 없습니다(${cells.map((c) => `${c.head} ${TIMING_LABEL[c.timing]}`).join("·")}) — 한 칸 이상을 「올해 실적 재료」나 수치를 근거로 쓰는 첨부(이 과제 카드 전용 자료·연결 확정한 보고서 추가자료)의 올해 값으로, 둘 다 없으면 【확인: …】 자리표시로 바꿉니다.`);
   }
   if (results.length && !results.some((r) => mentionsNow(r, year) || needsIn(r).length) && results.some((r) => planOnly(r, year) || pastFigure(r, year)))
     out.push(`추진성과에 올해(’${yy}년) 실적이 없습니다(예상·목표·전년 값뿐이거나 시점이 없음) — 올해 실적은 시점(’${yy}.8 등)과 함께 쓰고, 값이 없으면 【확인: …】 자리표시에 목표를 괄호로 함께 씁니다(예: …【확인: ’${yy}년 누적 건수】 달성(목표 N건)).`);

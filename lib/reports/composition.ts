@@ -14,7 +14,7 @@ import { BIZ_TRACK } from "../tracks/index.ts";
 import { type BlockLayout, type BlockSpan, LAYOUT_LABEL, dropLoneSpans, layoutFields, layoutGroups } from "./layout.ts";
 import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeCode, shapeName, storyLabel } from "./frameworks.ts";
 import { bizVarietyIssue, isOwnKind } from "./diagram-hints.ts";
-import { type SiblingCard, type SiblingLayout, cleanLine, numberTokens, quoteFoundIn, readSection } from "./section.ts";
+import { type ReportFile, type SiblingCard, type SiblingLayout, cleanLine, numberTokens, quoteFoundIn, readSection, sourceKey } from "./section.ts";
 import type { MgOutlineMeta } from "./mg-types.ts";
 import type { OutlineFrame } from "./framework-pick.ts";
 import type { PlanRevise } from "./draft-sources.ts";
@@ -250,10 +250,11 @@ const num = (tok: string) => tok.replace(/,/g, "").replace(/\s+/g, "");
 
 /**
  * AI 구성안 → 저장할 구성안 + 경고. hayKey = 근거 원문(sourceKey로 걷은 글 — 카드·첨부·전년 절·평가 근거), known = 아는 숫자(numKey 모양).
- * 재료: 번호 겹침·빈 글 버림, 원문 구절을 찾았는지(found), 수치 재료의 숫자가 근거에 없으면 경고. 블록: 모르는 종류 버림, 모양·칸 수·그림 정리, 없는 재료 번호는 뗌.
+ * 재료: 번호 겹침·빈 글 버림, 원문 구절을 찾았는지(found), 수치 재료의 숫자가 근거에 없으면 경고, 숫자 근거가 아닌 첨부를 출처로 든 수치 재료는 「자료 필요」로(files — unlinkedToNeed).
+ * 블록: 모르는 종류 버림, 모양·칸 수·그림 정리, 없는 재료 번호는 뗌.
  */
-export function cleanComposition(out: CompositionOutput, hayKey: string, known: Set<string>): { composition: Composition; warnings: string[] } {
-  const { materials, warnings } = cleanMaterials(out.materials, hayKey, known);
+export function cleanComposition(out: CompositionOutput, hayKey: string, known: Set<string>, files: readonly OutlineFile[] = []): { composition: Composition; warnings: string[] } {
+  const { materials, warnings } = cleanMaterials(out.materials, hayKey, known, COMPOSITION_LIMITS.materials, files);
   const ids = new Set(materials.map((m) => m.id));
   const blocks: PlanBlock[] = [];
   let retired = 0;
@@ -314,23 +315,92 @@ export function cleanAxes(raw: unknown, ids: Set<string>): PerfAxis[] {
 }
 
 /**
- * 재료표 정리(구성안 공용 — 주요사업·경영관리): 번호 겹침·빈 글 버림, 원문 구절 대조(found), 근거에 없는 숫자가 든 수치 재료 경고.
- * max = 재료 상한(주요사업은 COMPOSITION_LIMITS.materials 그대로, 경영관리는 절 수에 비례 — mg-outline.ts mgMaterialCap)
+ * 구성안 정리에 주는 첨부 — 요청 글 「[첨부 N]」 순서 그대로(app/(app)/reports/cards/draft-prepare.ts DraftFile). relation·numberEvidence는 material-match.ts fileRelation 결과
+ * (same-report = 이 과제에 연결하지 않은 같은 보고서 자료, 숫자 근거 아님). 비우면 카드 전용 자료로 봄
  */
-export function cleanMaterials(raw: CompositionOutput["materials"] | undefined, hayKey: string, known: Set<string>, max: number = COMPOSITION_LIMITS.materials): { materials: Material[]; warnings: string[] } {
+export type OutlineFile = Pick<ReportFile, "name" | "text" | "relation" | "numberEvidence">;
+
+/** 숫자 근거가 아닌 첨부인지(연결하지 않은 같은 보고서 자료) */
+export const notNumberEvidence = (f: OutlineFile) => f.numberEvidence === false || f.relation === "same-report";
+
+/** 자료 이름(확장자 뺌 — 재료 출처·경고에 적는 이름) */
+const fileStem = (name: string) => name.normalize("NFC").trim().replace(/\.[A-Za-z0-9]{2,5}$/, "");
+
+/**
+ * 출처 글이 가리키는 첨부(files 안 번호, 0부터): 「첨부 N」(요청 글의 [첨부 N] — 「첨부 1·2」 나열 포함)과 자료 이름(띄어쓰기·문장부호를 걷고 견줌 — 4자 이상 이름만).
+ * 수치 값은 보지 않음(같은 값이 다른 근거에 우연히 있어도 출처로 정함)
+ */
+export function citedFiles(source: string, files: readonly OutlineFile[]): number[] {
+  const s = String(source ?? "").normalize("NFC");
+  const hit = new Set<number>();
+  for (const m of s.matchAll(/첨부\s*(\d+(?:\s*[·･ㆍ,]\s*\d+)*)/g))
+    for (const n of m[1].split(/\D+/)) {
+      const i = Number(n) - 1;
+      if (i >= 0 && i < files.length) hit.add(i);
+    }
+  const key = sourceKey(s);
+  files.forEach((f, i) => {
+    const k = sourceKey(fileStem(f.name));
+    if (k.length >= 4 && key.includes(k)) hit.add(i);
+  });
+  return [...hit].sort((a, b) => a - b);
+}
+
+/** 수치를 담은 재료인지 — 수치 재료(figure)거나 사실·사례 글에 대조할 숫자가 있음(인용·자료 필요는 아님: 같은 보고서 자료도 인용 참고는 됨) */
+const carriesFigure = (kind: MaterialKind, text: string) => kind === "figure" || ((kind === "fact" || kind === "case") && numberTokens(text).length > 0);
+
+/** 「자료 필요」로 바꾼 재료 글의 값 가리기(그 값이 집필 요청으로 새지 않게) — 시점(’26.9·2026년·10월)과 첨부 번호(첨부 2)는 둠 */
+const maskValues = (s: string) => s.replace(/(?<![’'\d.,]|첨부\s*)\d[\d,]*(?:\.\d+)?(?!\d|\s*(?:년|월|일|분기|반기))/g, "□");
+
+/**
+ * 출처가 숫자 근거가 아닌 첨부(연결하지 않은 같은 보고서 자료 — fileRelation same-report)를 가리키는 수치 재료 → 「자료 필요」(need).
+ * 판정은 출처(source — 「첨부 N」·자료 이름)와 첨부 관계로만 함: 같은 값이 카드·공통 지식에 있어도 출처가 그 첨부면 바꿈(다른 출처를 함께 들어도 바꿈 — 값이 어디서 왔는지 코드가 가를 수 없음).
+ * 출처가 카드·공통 지식·숫자 근거 첨부(card·matched)뿐이면 그대로. 바꾼 재료의 글은 값을 □로 가리고 「연결하면 근거로 씀」을 앞에 붙임(번호는 그대로 — 블록 배정 유지).
+ * AI가 처음부터 need로 낸 재료도 출처나 글이 그 첨부를 가리키면 글의 값만 가림(need 글도 집필 요청 「승인된 구성안」에 그대로 들어감 — 실호출에서 「첨부 2에 … 값이 있으나 연결되지 않음」처럼 적혀 나옴)
+ */
+export function unlinkedToNeed(materials: Material[], sources: ReadonlyMap<string, string>, files: readonly OutlineFile[]): { materials: Material[]; warning: string | null } {
+  if (!files.some(notNumberEvidence)) return { materials, warning: null };
+  const changed: string[] = [];
+  const names = new Set<string>();
+  const out = materials.map((m) => {
+    if (m.kind !== "need" && !carriesFigure(m.kind, m.text)) return m;
+    const source = sources.get(m.id) ?? m.source;
+    const bad = citedFiles(m.kind === "need" ? `${source} ${m.text}` : source, files).filter((i) => notNumberEvidence(files[i]));
+    if (!bad.length) return m;
+    if (m.kind === "need") return { ...m, text: maskValues(m.text) };
+    const label = bad.map((i) => `「${fileStem(files[i].name)}」`).join("·");
+    bad.forEach((i) => names.add(fileStem(files[i].name)));
+    changed.push(m.id);
+    return { ...m, kind: "need" as const, text: cleanLine(`${label} — 이 과제에 연결하면 근거로 씀(연결 전에는 이 값을 이 과제 실적으로 쓰지 않음): ${maskValues(m.text)}`, 200), when: "", quote: "", found: false };
+  });
+  if (!changed.length) return { materials: out, warning: null };
+  return { materials: out, warning: `재료: 이 과제에 연결하지 않은 같은 보고서 자료(${[...names].map((n) => `「${n}」`).join("·")})를 출처로 든 수치 재료 ${changed.length}개(${changed.join("·")})를 「자료 필요」로 바꿨습니다 — 그 자료를 이 과제에 연결하면 근거로 씁니다.` };
+}
+
+/**
+ * 재료표 정리(구성안 공용 — 주요사업·경영관리): 번호 겹침·빈 글 버림, 원문 구절 대조(found), 숫자 근거가 아닌 첨부 출처 수치 재료는 「자료 필요」로(unlinkedToNeed), 근거에 없는 숫자가 든 수치 재료 경고.
+ * max = 재료 상한(주요사업은 COMPOSITION_LIMITS.materials 그대로, 경영관리는 절 수에 비례 — mg-outline.ts mgMaterialCap), files = 요청 글 첨부(순서 그대로)
+ */
+export function cleanMaterials(raw: CompositionOutput["materials"] | undefined, hayKey: string, known: Set<string>, max: number = COMPOSITION_LIMITS.materials, files: readonly OutlineFile[] = []): { materials: Material[]; warnings: string[] } {
   const warnings: string[] = [];
   const seen = new Set<string>();
-  const materials: Material[] = [];
+  const kept: Material[] = [];
+  // 출처 판정은 자르기 전 글로(60자 자르기에 자료 이름이 잘릴 수 있음)
+  const sources = new Map<string, string>();
   for (const m of (raw ?? []).slice(0, max * 2)) {
-    const id = String(m?.id ?? "").trim() || `m${materials.length + 1}`;
+    const id = String(m?.id ?? "").trim() || `m${kept.length + 1}`;
     const text = cleanLine(m?.text, 200);
     if (!text || seen.has(id) || !MATERIAL_KINDS.includes(m?.kind)) continue;
     seen.add(id);
     const quote = cleanLine(m?.quote, 300);
     const found = m.kind !== "need" && Boolean(quote) && quoteFoundIn(hayKey, quote);
-    materials.push({ id, kind: m.kind, text, when: cleanLine(m?.when, 30), source: cleanLine(m?.source, 60), quote, found });
-    if (materials.length >= max) break;
+    kept.push({ id, kind: m.kind, text, when: cleanLine(m?.when, 30), source: cleanLine(m?.source, 60), quote, found });
+    sources.set(id, String(m?.source ?? ""));
+    if (kept.length >= max) break;
   }
+  const unlinked = unlinkedToNeed(kept, sources, files);
+  const materials = unlinked.materials;
+  if (unlinked.warning) warnings.push(unlinked.warning);
   const unfound = materials.filter((m) => m.kind !== "need" && !m.found);
   if (unfound.length) warnings.push(`재료: 근거 원문에서 구절을 찾지 못한 재료 ${unfound.length}개(${unfound.map((m) => m.id).join("·")}) — 집필 때 쓰지 않거나 원자료로 확인합니다.`);
   const strange = materials.filter((m) => m.kind === "figure" && numberTokens(m.text).some((t) => !known.has(num(t)) && !known.has(num(t).replace(/(%|배)$/, ""))));

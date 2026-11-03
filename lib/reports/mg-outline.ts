@@ -7,7 +7,7 @@ import { z } from "zod";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { BLOCK_KINDS, FIGURE_KINDS, FIGURE_POS, FIGURE_SIZES, type BlockKind, VARIANTS } from "./blocks.ts";
 import { type DiagramHint, type HintOptions, mgVarietyIssues } from "./diagram-hints.ts";
-import { COMPOSITION_LIMITS, type Composition, type CompositionEdit, FRAME_INPUT_SECTIONS, INSPECTION_INPUT_SECTIONS, MATERIAL_KINDS, PLAN_LAYOUTS, PLAN_SPANS, type PlanBlock, SPLIT_INPUT_SECTIONS, applyCompositionEdit, cleanMaterials, cleanPlanBlock } from "./composition.ts";
+import { COMPOSITION_LIMITS, type Composition, type CompositionEdit, FRAME_INPUT_SECTIONS, INSPECTION_INPUT_SECTIONS, MATERIAL_KINDS, type OutlineFile, PLAN_LAYOUTS, PLAN_SPANS, type PlanBlock, SPLIT_INPUT_SECTIONS, applyCompositionEdit, cleanMaterials, cleanPlanBlock, notNumberEvidence } from "./composition.ts";
 import { dropLoneSpans } from "./layout.ts";
 import { MG_MAIN_STORIES, MG_STORIES, type MgMainStory, type MgStory } from "./frameworks-mg.ts";
 import { matchName, shapeName, storyLabel } from "./frameworks.ts";
@@ -18,7 +18,7 @@ import { type FigureBundle, type MgBundle, materialBundle } from "./mg-bundles.t
 import { type MgOutcome, type MgPart, mgPartKey } from "./mg-types.ts";
 import { type PdcaSkeleton, cleanStage, pdcaIssues } from "./mg-pdca.ts";
 import { cleanConflicts, sameConflict } from "./mg-consistency.ts";
-import { cleanLine, clipLine } from "./section.ts";
+import { cleanLine, clipLine, quoteFoundIn, sourceKey } from "./section.ts";
 import { cleanChip, matchAxis } from "./split-axes.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -317,11 +317,14 @@ export function sortByParts(blocks: PlanBlock[], parts: MgPart[]): PlanBlock[] {
  * ctx.outcomes(요청에 준 절 성과 재료 — mg-close.ts ledgerOutcomeItems)는 mg.outcomes에 남겨 구성안 점검 「성과 배정」이 씀.
  * 값 충돌(out.conflicts — 2026-10-30)은 두 값의 수치가 근거(known)에 있는 것만 mg.conflicts로(mg-consistency.ts cleanConflicts — 근거로 확인되지 않은 충돌은 지어낸 것으로 보고 경고 없이 버림).
  * 절마다 첫 블록의 재료가 지적 재료로 시작하면 지적 재료를 첫 비지적 재료 뒤로 옮김(findingAfterFirst).
+ * ctx.files(요청 글 첨부 — 순서 그대로)가 있으면 숫자 근거가 아닌 첨부(연결하지 않은 같은 보고서 자료)를 출처로 든 수치 재료는 「자료 필요」로(composition.ts unlinkedToNeed),
+ * 그 첨부의 값을 쓸 값으로 고른 값 충돌은 뺌(unlinkedConflicts).
  */
-export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: Set<string>, ctx: { indicator: string; prior: MgPriorSection[]; axis?: string; outcomes?: MgOutcome[] }): { composition: Composition; warnings: string[] } {
+export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: Set<string>, ctx: { indicator: string; prior: MgPriorSection[]; axis?: string; outcomes?: MgOutcome[]; files?: readonly OutlineFile[] }): { composition: Composition; warnings: string[] } {
   // 재료 상한의 절 수 = AI가 낸 절 중 번호가 맞는 서로 다른 절(절 상한까지)
   const partCount = Math.min(MG_LIMITS.parts, new Set((out.parts ?? []).filter((x) => Math.round(Number(x?.evalNo)) >= 1 && Math.round(Number(x?.themeNo)) >= 1).map((x) => mgPartKey(Math.round(Number(x.evalNo)), Math.round(Number(x.themeNo)), cleanMark(x.mark)))).size);
-  const { materials, warnings } = cleanMaterials(out.materials, hayKey, known, mgMaterialCap(partCount));
+  const files = ctx.files ?? [];
+  const { materials, warnings } = cleanMaterials(out.materials, hayKey, known, mgMaterialCap(partCount), files);
   const ids = new Set(materials.map((m) => m.id));
   const axis = ctx.axis !== undefined ? ctx.axis : matchAxis(out.splitAxis, "mg");
   if (ctx.axis === undefined && !axis && String(out.splitAxis ?? "").trim()) warnings.push(`갈래: 「${String(out.splitAxis).trim()}」은(는) 경영관리 갈래 축 사전에 없어 뺐습니다.`);
@@ -391,7 +394,9 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     const knownEvals = new Set(ctx.prior.map((s) => s.evalNo));
     for (const n of [...new Set(kept.map((p) => p.evalNo))].filter((n) => !knownEvals.has(n))) warnings.push(`평가내용: ${n}번은 2025 보고서에 없는 번호입니다(2025: ${[...knownEvals].sort((a, b) => a - b).join("·")}) — 평가내용 상자가 제목 없이 나옵니다. 새 평가내용이면 확인하고, 아니면 맞는 번호로 다시 만들어 주세요.`);
   }
-  const conflicts = cleanConflicts(out.conflicts, hayKey, known);
+  const cut = unlinkedConflicts(cleanConflicts(out.conflicts, hayKey, known), files);
+  const conflicts = cut.conflicts;
+  if (cut.dropped) warnings.push(`재료: 이 과제에 연결하지 않은 같은 보고서 자료의 값을 쓸 값으로 고른 값 충돌 ${cut.dropped}건을 뺐습니다 — 그 자료를 이 과제에 연결하면 근거로 씁니다.`);
   const composition: Composition = {
     version: 1,
     message: cleanLine(out.message, 120),
@@ -407,6 +412,20 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}), ...(ctx.outcomes?.length ? { outcomes: ctx.outcomes } : {}), ...(conflicts.length ? { conflicts } : {}) },
   };
   return { composition, warnings };
+}
+
+/**
+ * 값 충돌 중 쓸 값(keep — 근거 원문 구절)이 숫자 근거가 아닌 첨부에서 온 것을 뺌: 그 구절이 숫자 근거가 아닌 첨부 글에만 있고 숫자 근거 첨부(card·matched)에는 없을 때.
+ * 충돌에는 출처 칸이 없어 구절이 놓인 자료로 가림(값 대조 아님). 어느 첨부에도 없는 구절(카드·공통 지식)은 그대로
+ */
+export function unlinkedConflicts<T extends { keep: string }>(conflicts: T[], files: readonly OutlineFile[]): { conflicts: T[]; dropped: number } {
+  if (!files.some(notNumberEvidence)) return { conflicts, dropped: 0 };
+  const keys = files.map((f) => sourceKey(f.text ?? ""));
+  const kept = conflicts.filter((c) => {
+    const at = files.map((_, i) => i).filter((i) => quoteFoundIn(keys[i], c.keep));
+    return !at.length || at.some((i) => !notNumberEvidence(files[i]));
+  });
+  return { conflicts: kept, dropped: conflicts.length - kept.length };
 }
 
 /** 지적 재료인지(재료 글·원문 구절에 지적 어휘 — mgFindingOpenIssue의 재료 기준과 같음) */

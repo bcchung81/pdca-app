@@ -2,13 +2,13 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { editOf } from "./composition.ts";
+import { type OutlineFile, editOf } from "./composition.ts";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { MgOutlineOut, type MgOutlineOutput, type MgPriorSection, applyMgCompositionEdit, cleanMgComposition, defaultEvals, isMgMainStory, isMgStory, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, isDataBlock, mgBundleIssues, mgBundlePrompt, mgFindingOpenIssue, mgOutcomeIssues, mgOutcomePrompt, mgOverlapIssues, mgPartPrompt, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart, skeletonLines, toMgPriorSection, unclosedPartKeys } from "./mg-outline.ts";
 import { reportDraftPromptsMg, reportOutlinePromptsMg } from "../prompts/sets.ts";
 import { patternOf } from "./framework-patterns.ts";
-import { sourceKey } from "./section.ts";
+import { evidenceOf, sourceKey } from "./section.ts";
 import { mgPlanPrompt } from "./mg-draft.ts";
 import { warningLevel } from "./warning-levels.ts";
 import { linkedBundles } from "./mg-bundles.ts";
@@ -700,4 +700,42 @@ test("AI 답 정리: 절을 둔 이유(why)는 400자까지 그대로, 넘으면
   const cut = at(over)!;
   assert.ok(cut.length <= 400 && cut.startsWith(long), `문장 끝까지: ${cut.length}자`);
   assert.ok(cut.endsWith("."), "문장 끝에서 자름");
+});
+
+test("cleanMgComposition: 연결하지 않은 같은 보고서 자료를 출처로 든 수치 재료는 「자료 필요」, 그 자료 구절을 쓸 값으로 고른 값 충돌은 뺌 — 카드 전용 자료·카드·공통 지식 출처는 그대로(2026-11-03)", () => {
+  // 가상 첨부: 1 = 카드 전용 자료(지표 X), 2 = 연결하지 않은 같은 보고서 자료(지표 Y)
+  const files: OutlineFile[] = [
+    { name: "가상 점검표(10월 말 기준).hwpx", text: "- 가상 지표 X 절감률: ’26.10 기준 실적 15.37%", relation: "card", numberEvidence: true },
+    { name: "가상 참여예산 참고자료.hwpx", text: "- 가상 지표 Y 편성규모: ’26.9 기준 4.17억원(반영분)", relation: "same-report", numberEvidence: false },
+  ];
+  // 같은 값(4.17)이 연결된 공통 지식 조각에도 있어 숫자 대조(known)로는 못 잡는 경우
+  const { hayKey, known } = evidenceOf({}, `${files.map((f) => f.text).join("\n")}\n가상 조각 4.17억원 2.0억원 14.8%`);
+  const o: MgOutlineOutput = {
+    ...out(),
+    materials: [
+      { id: "m1", kind: "fact", text: "사실", when: "", source: "카드", quote: "원문 구절 하나 둘 셋" },
+      { id: "m2", kind: "figure", text: "가상 지표 Y 편성규모 ’26.9 기준 4.17억원(반영분)", when: "’26.9", source: "첨부 2 가상 참여예산 참고자료", quote: "가상 지표 Y 편성규모: ’26.9 기준 4.17억원(반영분)" },
+      { id: "m3", kind: "figure", text: "가상 지표 X 절감률 ’26.10 기준 15.37%", when: "’26.10", source: "첨부 1 가상 점검표(10월 말 기준)", quote: "가상 지표 X 절감률: ’26.10 기준 실적 15.37%" },
+      { id: "m4", kind: "figure", text: "가상 지표 X ’25 실적 14.8%", when: "’25년", source: "카드 kpi.rows.2", quote: "" },
+      { id: "m5", kind: "figure", text: "가상 조각 4.17억원", when: "", source: "공통 지식 가상 조각", quote: "" },
+    ],
+    conflicts: [
+      { item: "가상 지표 Y 편성규모", drop: "’27년 목표 2.0억원", keep: "가상 지표 Y 편성규모: ’26.9 기준 4.17억원(반영분)", why: "첨부2가 더 최근" },
+      { item: "가상 지표 X 절감률", drop: "’25 실적 14.8%", keep: "가상 지표 X 절감률: ’26.10 기준 실적 15.37%", why: "첨부1이 더 최근" },
+    ],
+  };
+  const r = cleanMgComposition(o, hayKey, known, { indicator: "지표", prior: PRIOR, files });
+  const kind = (id: string) => r.composition.materials.find((m) => m.id === id)?.kind;
+  assert.equal(kind("m2"), "need", "같은 보고서 자료 출처 → 자료 필요");
+  const m2 = r.composition.materials.find((m) => m.id === "m2")!;
+  assert.ok(m2.text.startsWith("「가상 참여예산 참고자료」 — 이 과제에 연결하면 근거로 씀") && !m2.text.includes("4.17"), m2.text);
+  assert.deepEqual(["m3", "m4", "m5"].map(kind), ["figure", "figure", "figure"], "카드 전용 자료·카드 칸·공통 지식 출처는 그대로");
+  assert.deepEqual(r.composition.mg?.conflicts?.map((c) => c.item), ["가상 지표 X 절감률"], "그 자료 구절을 쓸 값으로 고른 충돌만 뺌");
+  const w = r.warnings.filter((x) => x.includes("연결하지 않은 같은 보고서 자료"));
+  assert.equal(w.length, 2, w.join("\n"));
+  assert.ok(w.every((x) => x.startsWith("재료: ") && warningLevel(x) === "info"), "참고 등급 「재료:」");
+  // 첨부 관계를 안 주면(옛 호출) 예전 그대로
+  const old = cleanMgComposition(o, hayKey, known, { indicator: "지표", prior: PRIOR });
+  assert.equal(old.composition.materials.find((m) => m.id === "m2")?.kind, "figure");
+  assert.equal(old.composition.mg?.conflicts?.length, 2);
 });

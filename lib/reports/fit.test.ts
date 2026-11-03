@@ -824,3 +824,27 @@ test("블록 제목 띠 높이: 없으면 0 · 한 줄 = 줄 높이 + 위아래 
     assert.ok(Math.abs(blockHeight({ ...b, title: "제목" }, w) - blockHeight(b, w) - blockTitleMm("제목", w)) < 1e-9, b.kind);
   }
 });
+
+// 2026-11-03 경영관리 블록 위 제목(.k-dg-title--mg — REPORT_STYLE.titleMark): 「□ 」 + 제목 줄 = 줄 수 × 돋움 굵게 12pt/1.4 + 바깥 여백, 줄 폭 = 놓인 폭 − 내어쓰기
+test("경영관리 블록 위 제목 높이: 줄 높이 + 바깥 여백(화면 22.4px + 6px 실측과 같음) · 접히면 줄 수만큼(표지 자리를 뺀 폭) · fitReport는 경영관리만 · 상자 안 제목은 띠", () => {
+  const PX = 25.4 / 96;
+  const PT = 25.4 / 72;
+  const tm = REPORT_STYLE.titleMark;
+  const one = 12 * 1.4 * PT + (tm.beforePx + tm.afterPx) * PX;
+  assert.equal(blockTitleMm("", 100, true), 0);
+  assert.ok(Math.abs(blockTitleMm("짧은 제목", 150, true) - one) < 1e-9);
+  assert.ok(Math.abs(one - (22.4 + 6) * PX) < 0.01, "화면(1줄 22.4px + 위 여백 6px)과 같음");
+  const long = "가나다라마 바사아자차 카타파하 가나다라마 바사아자차 카타파하 가나다라마 바사아자차";
+  const lines = lineCount(long, 60 - tm.hangEm * 12 * PT, 12, true);
+  assert.ok(lines >= 2);
+  assert.ok(Math.abs(blockTitleMm(long, 60, true) - (lines * 12 * 1.4 * PT + (tm.beforePx + tm.afterPx) * PX)) < 1e-9);
+  const b = blk("bullets", { title: "블록 위 제목", items: ["글"] });
+  const w = blockWidth(b);
+  assert.ok(Math.abs(blockHeight(b, w, 0, true) - blockHeight({ ...b, title: "" }, w) - blockTitleMm("블록 위 제목", w, true)) < 1e-9);
+  // fitReport: 같은 블록이라도 경영관리(spec.mg)일 때만 새 높이, 수치 띠 상자 안 제목은 두 트랙 모두 띠(statsBoxMm)
+  const st = blk("stats", { title: "상자 안 제목", cells: [cell("1건", ["성과"])] });
+  const report = (mg: boolean, blocks: Block[]) => fitReport({ sub: { title: "" }, blocks, results: [], module: 1, ...(mg ? { mg: { at: blocks.map(() => "1.1.가") } } : {}) }).rows.map((r) => r.mm);
+  const diff = report(true, [b])[0] - report(false, [b])[0];
+  assert.ok(Math.abs(diff - (blockTitleMm(b.title, w, true) - blockTitleMm(b.title, w))) < 0.11, "행 높이 차이 = 제목 모양 차이(행 mm는 소수 한 자리)");
+  assert.deepEqual(report(true, [st]), report(false, [st]), "상자 안 제목은 그대로");
+});

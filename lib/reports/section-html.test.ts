@@ -1,6 +1,7 @@
 // section-html.ts 직접 시험(바이트 동일 시험은 section.test.ts·split-axes.test.ts가 봄 — 여기는 겹치지 않는 분기):
 // 옛 v1·v2 모양(사다리·인용 상자·메시지 띠·우수사례·3칸 성과)·막대(miniChartHtml)·markRoots·머리 생략·경영관리 평가내용/대주제 이어쓰기와 지적개선 표지·내려받기 문서.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import type { Block } from "./blocks.ts";
 import type { MgPart } from "./mg-types.ts";
@@ -339,6 +340,42 @@ test("블록 제목 띠: 제목은 p.k-dg-title 한 줄(칸 폭 전체 연회색
     assert.equal(titled.replace('<p class="k-dg-title">성과 주장 &lt;한 줄&gt;</p>', ""), blockHtml(b, new Set()), `${b.kind}: 제목 없는 출력 불변`);
     assert.doesNotMatch(blockHtml(b, new Set()), /k-dg-title/);
   }
+});
+
+// 2026-11-03 경영관리 블록 위 제목 = 프레임워크 「□ 소제목」 줄(REPORT_STYLE.titleMark): 띠 대신 표지 글 + 제목, 표지는 편집 칸 밖. 상자 안 제목·주요사업은 띠 그대로
+test("경영관리 블록 위 제목: 「□ 」 표지(편집 칸 밖 실제 글) + 제목 — CSS는 띠 없음·소제목 글꼴·내어쓰기, 블록 고르기·직접 고침 경로는 제목 글만", () => {
+  assert.match(REPORT_CSS, /\.kca-dg-doc \.k-frame \.k-dg-title--mg\{font:700 12pt\/1\.4 var\(--k-f-dotum\);[^}]*margin:6px 0 0px;\n  padding:0 0 0 1\.2em;text-indent:-1\.2em;background:none\}/);
+  const titled = (b: Block) => mgSpec([part(1, 1, "가")], { blocks: [b] });
+  for (const b of [B("bullets", "", { title: "성과 주장 <한 줄>", items: ["글"] }), B("table", "추진내용", { title: "성과 주장 <한 줄>", items: ["구분", "값"], cells: [{ head: "가", tag: "", bullets: ["1"], note: "" }] }), B("steps", "", { title: "성과 주장 <한 줄>", cells: [{ head: "칸", tag: "", bullets: ["글"], note: "" }] })]) {
+    const html = sectionBodyHtml(titled(b), [], { editMarks: true, blockMarks: true });
+    assert.match(html, /<p data-block="0" class="k-dg-title k-dg-title--mg">□ <span class="k-t" data-t="blocks\.0\.title" data-raw="성과 주장 &lt;한 줄&gt;">성과 주장 &lt;한 줄&gt;<\/span><\/p>/, b.kind);
+    const plain = sectionBodyHtml(titled(b));
+    assert.doesNotMatch(plain.replace(/<p class="k-dg-title k-dg-title--mg">□ [^<]*<\/p>/, ""), /k-dg-title|□/, `${b.kind}: 제목 하나뿐`);
+  }
+  // 제목 없는 블록은 표지도 없음
+  assert.doesNotMatch(sectionBodyHtml(titled(B("bullets", "", { items: ["글"] }))), /k-dg-title|□/);
+});
+
+test("경영관리 상자 안 제목은 띠 그대로: 수치 띠 상자(추진성과) 안 블록 제목은 □ 없이 p.k-dg-title — 같은 초안의 상자 밖 제목만 「□」", () => {
+  const spec = mgSpec([part(1, 1, "가")], { blocks: [statsB("", { title: "올해 실적" }), B("bullets", "", { title: "상자 밖 제목", items: ["글"] })] });
+  spec.mg!.at = ["1.1.가", "1.1.가"];
+  const html = sectionBodyHtml(spec);
+  assert.match(html, /k-result__body k-result__body--cards"><p class="k-dg-title">올해 실적<\/p><ul>/);
+  assert.match(html, /<p class="k-dg-title k-dg-title--mg">□ 상자 밖 제목<\/p><ul>/);
+  assert.equal((html.match(/□/g) ?? []).length, 1);
+});
+
+test("주요사업 블록 위 제목은 예전 띠 그대로: 같은 블록 목록을 주요사업 초안으로 그리면 □·--mg가 없음(경영관리 초안을 그린 뒤에도 켜진 채 남지 않음)", () => {
+  const blocks = [B("bullets", "추진내용", { title: "띠 제목", items: ["글"] }), B("cards", "", { title: "띠 제목 2", cells: [{ head: "칸", tag: "", bullets: ["글"], note: "" }] })];
+  const before = sectionBodyHtml(v3(blocks), [], { editMarks: true, blockMarks: true });
+  sectionBodyHtml(mgSpec([part(1, 1, "가")], { blocks: blocks.slice(0, 1) }));
+  const after = sectionBodyHtml(v3(blocks), [], { editMarks: true, blockMarks: true });
+  assert.equal(after, before);
+  // 바꾸기 전(HEAD e8a2750) 렌더러로 그린 같은 출력의 sha256 — 주요사업 블록 위 제목 출력이 바이트까지 그대로
+  assert.equal(createHash("sha256").update(after).digest("hex"), "14357ef1f9b5ef12756fcac782cf4497de4fc530329cbad2abdd06b5414d575b");
+  assert.doesNotMatch(after, /k-dg-title--mg|□/);
+  assert.match(after, /<p data-block="0" class="k-dg-title"><span class="k-t" data-t="blocks\.0\.title"/);
+  assert.doesNotMatch(blocksSampleHtml(blocks), /k-dg-title--mg/, "견본 그림도 띠");
 });
 
 test("값 + 단위 묶음: 「340건」·「18.4초」·「1,922곳」은 .k-nb 한 덩어리(강조·없는 숫자 표시째) — 날짜·단위 없는 숫자·태그 속성 글은 그대로", () => {

@@ -64,6 +64,13 @@ export const REPORT_STYLE = {
    * 높이 어림 fit.ts blockTitleMm, 한글 A안 section-hwpx.ts title(1×1 칸 바탕)
    */
   titleBand: { padY: 1, padX: 5 },
+  /**
+   * 경영관리 블록 위 제목(.k-dg-title--mg — 2026-11-03 사용자 지적 「제목표시 줄 스타일」): 경영관리 프레임워크의 「□ 00000 (소제목)」 줄 — 띠·바탕 없이
+   * 표지 글 「□」 + 빈칸 + 제목(표지는 편집 칸 밖 실제 글 — 한글 변환이 글을 읽음). 글꼴·크기·줄 높이는 소제목(.k-subh)과 같은 돋움 굵게 pt.subhead/lh.subhead.
+   * 둘째 줄부터는 표지 뒤에 맞춤(내어쓰기 hangEm — 「□ 」 폭, KoPub돋움 굵게 실측 1.19em). 바깥 여백(px) 위 beforePx(앞 블록과 띄움)·아래 afterPx(아래 도식에 붙임 —
+   * 도식은 제 위 여백 3px가 있음). 수치 띠 상자 안 제목과 주요사업은 위 titleBand 띠 그대로. 높이 어림 fit.ts blockTitleMm(mg), 한글 A안 section-hwpx.ts title(mg)
+   */
+  titleMark: { mark: "□", hangEm: 1.2, beforePx: 6, afterPx: 0 },
 } as const;
 const G = REPORT_STYLE.gray;
 const L = REPORT_STYLE.line;
@@ -74,6 +81,7 @@ const BX = REPORT_STYLE.boxPadX;
 const LH = REPORT_STYLE.lh;
 const SC = REPORT_STYLE.sideChart;
 const TB = REPORT_STYLE.titleBand;
+const TM = REPORT_STYLE.titleMark;
 const SP = FONT_SPACING.base;
 const A = { body: REPORT_FONTS.body.alias, dotum: REPORT_FONTS.dotum.alias, label: REPORT_FONTS.label.alias, head: REPORT_FONTS.head.alias, num: REPORT_FONTS.num.alias };
 
@@ -269,6 +277,9 @@ ${fontSpacingCss()}
 /* 블록 제목 띠(REPORT_STYLE.titleBand — 2025 경영관리 도식 위 제목 줄): 칸 폭 전체 연회색 바탕 + 굵게 왼쪽 정렬. 바깥 여백 0(화면에서 늘 0이던 값 그대로 적음) */
 .kca-dg-doc .k-dg-title{font:700 10.6pt/${LH.title} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);margin:0;
   padding:${TB.padY}px ${TB.padX}px;background:var(--k-g2);text-align:left}
+/* 경영관리 블록 위 제목(REPORT_STYLE.titleMark — 프레임워크 「□ 소제목」 줄): 띠 없이 소제목 글꼴, 둘째 줄은 표지 뒤. .k-frame 안 p 여백 초기화보다 구체적으로(여백이 실제로 듦) */
+.kca-dg-doc .k-frame .k-dg-title--mg{font:700 ${F.subhead}pt/${LH.subhead} var(--k-f-dotum);letter-spacing:var(--k-ls-dotum);margin:${TM.beforePx}px 0 ${TM.afterPx}px;
+  padding:0 0 0 ${TM.hangEm}em;text-indent:-${TM.hangEm}em;background:none}
 /* v2: 기존·개선 열 균형, ✚ 잇기, 행 옆 막대, 인용 상자 1개, 사진 없는 우수사례, 3칸 추진성과 */
 /* 단계 결과 줄을 단계끼리 같은 높이에(subgrid) */
 .kca-dg-doc ol.k-proc{grid-template-rows:auto 1fr auto}

@@ -136,6 +136,16 @@ const ul = (items: string[], u: Marks, path?: string) => (items.length ? `<ul>${
  * 배열을 이어 그린 칸(협업 역할·전후 비교 패널)은 data-j에 이음 기호. 꺼져 있으면 출력이 예전과 같음(내려받기·사업 조판·테스트)
  */
 let EDIT = false;
+
+/**
+ * 블록 위 제목 모양(2026-11-03): 경영관리 초안 본문(mgBody)을 그리는 동안만 켬 — 프레임워크 「□ 소제목」 줄(.k-dg-title--mg, REPORT_STYLE.titleMark).
+ * 표지 「□」는 편집 칸(k-t) 밖 실제 글(한글 변환이 글을 읽음 — CSS ::before 아님). 수치 띠 상자 안(blocksBody statsBox)은 끔 — 상자 안 제목은 띠 그대로.
+ * 꺼져 있으면(주요사업·견본·v1·v2) 예전 띠 출력 그대로
+ */
+let MG_TITLE = false;
+const titleHtml = (title: string, u: Marks, path?: string) =>
+  MG_TITLE ? `<p class="k-dg-title k-dg-title--mg">${REPORT_STYLE.titleMark.mark} ${tx(title, u, path)}</p>` : `<p class="k-dg-title">${tx(title, u, path)}</p>`;
+
 function tx(s: string, u: Marks, path?: string, join?: string, raw = s): string {
   const h = txt(s, u);
   return EDIT && path ? `<span class="k-t" data-t="${path}"${join ? ` data-j="${esc(join)}"` : ""} data-raw="${esc(raw)}">${h}</span>` : h;
@@ -196,7 +206,7 @@ interface DiagramPaths {
 
 function diagramHtml(d: Diagram, u: Marks, label = "", pp?: DiagramPaths): string {
   const at = (rest: string) => (pp ? `${pp.block}.${rest}` : undefined);
-  const title = d.title ? `<p class="k-dg-title">${tx(d.title, u, at("title"))}</p>` : "";
+  const title = d.title ? titleHtml(d.title, u, at("title")) : "";
   switch (d.type) {
     case "before_after":
       return `${title}<table class="k-ba"><colgroup><col style="width:15%"><col style="width:39%"><col style="width:6%"><col style="width:40%"></colgroup><thead><tr><th scope="col">구 분</th><th scope="col">기 존</th><th class="k-ba__arrow" aria-hidden="true"></th><th scope="col" class="k-ba__after">개 선</th></tr></thead><tbody>${d.rows
@@ -354,7 +364,7 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
   const at = (rest: string) => (bp ? `${bp}.${rest}` : undefined);
   // 표 열 폭을 셀 놓인 폭(fit.ts slotOf와 같은 값)
   const w = width ?? blockWidth(b);
-  const title = b.title && !["define", "case"].includes(b.kind) ? `<p class="k-dg-title">${tx(b.title, u, at("title"))}</p>` : "";
+  const title = b.title && !["define", "case"].includes(b.kind) ? titleHtml(b.title, u, at("title")) : "";
   switch (b.kind) {
     case "bullets":
       return `${title}${ul(b.items, u, at("items"))}`;
@@ -565,7 +575,12 @@ function blocksBody(blocks: Block[], u: Marks, caption: string, marks = false, b
       const body = chart === undefined ? lists : `<div class="k-row2"><div>${lists}</div>${side(chart)}</div>`;
       return `<div class="k-result"><div class="k-result__label">${esc(label)}</div><div class="k-result__body${col}${chart === undefined ? "" : " k-result__body--chart"}">${body}</div></div>`;
     };
-    return chart === undefined && main.length === 1 ? bmark(main[0], box(raw(main[0], width))) : box(main.map((j) => one(j, width)).join(""));
+    // 상자 안 블록 제목은 띠 그대로(경영관리 블록 위 제목 모양을 끔)
+    const mgTitle = MG_TITLE;
+    MG_TITLE = false;
+    const lists = chart === undefined && main.length === 1 ? raw(main[0], width) : main.map((j) => one(j, width)).join("");
+    MG_TITLE = mgTitle;
+    return chart === undefined && main.length === 1 ? bmark(main[0], box(lists)) : box(lists);
   };
   // 사다리 밖 블록: 수치 띠는 상자(소항목 추진성과 상자가 따로 있으면 불릿 목록 그대로)
   const outer = (j: number, width?: number) => (blocks[j].kind === "stats" && !own ? statsBox(statsBoxLabel(blocks[j]), [j], undefined, width) : one(j, width));
@@ -669,6 +684,7 @@ export function sectionBodyHtml(spec: ReportSectionSpec, unknownNumbers: string[
     return sectionBodyInner(spec, unknownNumbers, opts);
   } finally {
     EDIT = false;
+    MG_TITLE = false;
     UNIT = -1;
   }
 }
@@ -730,7 +746,7 @@ const chipHtml = (chip?: string) => (chip ? `${esc(`[${chip}]`)} ` : "");
 
 /**
  * 경영관리 초안 본문(lib/reports/mg-draft.ts — 설계 2026-10-09): 평가내용 상자(주요사업 대상사업 상자 모양) → 대주제 띠(실행과제 띠 모양) → 절 제목(가.) →
- * 그 절의 블록(같은 렌더러 — 경로·data-block은 spec.blocks 전체 순번). 마커(지적개선·신규·BP)는 첫 대주제 띠에. 새 CSS 없음(주요사업 출력 그대로).
+ * 그 절의 블록(같은 렌더러 — 경로·data-block은 spec.blocks 전체 순번). 마커(지적개선·신규·BP)는 첫 대주제 띠에. 블록 위 제목만 경영관리 모양(「□ 제목」 — MG_TITLE, 2026-11-03), 그 밖은 주요사업과 같은 CSS.
  * 지적개선은 spec.mg.finding(카드 지적 행과 가장 겹치는 절 — mg-draft.ts mgFindingParts, 2026-10-15)이 있으면 그 절의 대주제 띠에(대주제마다 한 번) — 없으면 예전처럼 첫 자리
  */
 function mgBody(spec: ReportSectionSpec, blocks: Block[], mg: NonNullable<ReportSectionSpec["mg"]>, u: Marks, opts: SectionHtmlOptions): string {
@@ -778,7 +794,9 @@ function mgBody(spec: ReportSectionSpec, blocks: Block[], mg: NonNullable<Report
     if (!idx.length) continue;
     const from = idx[0];
     const to = idx.at(-1)! + 1;
+    MG_TITLE = true;
     out.push(blocksBody(blocks.slice(from, to), u, p.title || p.themeTitle || spec.caption, opts.marks, opts.blockMarks, from));
+    MG_TITLE = false;
   }
   return out.join("\n");
 }

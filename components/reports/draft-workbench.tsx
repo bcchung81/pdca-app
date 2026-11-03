@@ -278,7 +278,7 @@ export function DraftSources(props: SourceProps & { uid: string; canWrite: boole
               compact
               accept={ATTACH_ACCEPT}
               checkName={(name) => (isAttachableName(name) ? null : `「${name}」 — ${ATTACH_LABEL} 파일만 올릴 수 있습니다.`)}
-              hint={`${ATTACH_LABEL}(파일당 50MB) · 이 카드에서만 씀`}
+              hint={`${ATTACH_LABEL}(파일당 50MB) · 이 과제 근거(수치 포함)로 바로 씀`}
               start={(name, size) => startCardMaterialUpload(props.uid, name, size)}
               finish={(path, name, mime, size) => finishCardMaterialUpload(props.uid, path, name, mime, size)}
               remove={(id) => deleteCardMaterial(id)}

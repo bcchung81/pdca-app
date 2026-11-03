@@ -65,7 +65,7 @@ const callBizOutline = (p: Prepared, inspection: FollowupBasis | null, o: { memo
 /** AI 구성안(주요사업) → 저장할 구성안·경고(재료 원문 대조는 p의 근거 — 예시 절 글은 근거에 없음) */
 function bizComposition(p: Prepared, out: CompositionOutput, memo: string, frame?: OutlineFrame): { composition: Composition; warnings: string[]; materialWarnings: string[] } {
   const { hayKey, known } = evidenceOf(p.card.data, p.known, p.quoteOnly);
-  const cleaned = cleanComposition(out, hayKey, known);
+  const cleaned = cleanComposition(out, hayKey, known, p.files);
   const composition: Composition = { ...cleaned.composition, memo, module: p.ctx.module, head: p.ctx.head, sources: sourcesOf(p), ...(frame ? { frame } : {}) };
   return { composition, warnings: outlineWarnings(composition, p.ctx.module, cleaned.warnings, p.ctx.head, p.splitSiblings), materialWarnings: cleaned.warnings };
 }
@@ -129,7 +129,7 @@ async function runReportOutlineMg(p: Prepared & { mg: MgDraftContext }, uid: str
     await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
     const { hayKey, known: numbers } = evidenceOf(card.data, known, quoteOnly);
     // 요청에 준 절 성과 재료를 구성안에 남김(구성안 점검 「성과 배정」 — mg-outline.ts mgOutcomeIssues)
-    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
+    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity), files });
     // 수치 묶음 재료를 맡은 절에 데이터 블록이 없으면 하나 넣음(S2 — lib/reports/mg-data-blocks.ts, 연기 시험과 같음)
     const data = addMgDataBlocks(cleaned.composition, p.mg.pages);
     const composition: Composition = {
@@ -165,7 +165,7 @@ function callMgPart(p: MgPrepared, inspection: FollowupBasis | null, redo: MgPar
 function mgPartMerge(p: MgPrepared, o: LoadedOutline, out: MgOutlineOutput, key: string, story: MgMainStory | undefined, frame: OutlineFrame | undefined) {
   const { hayKey, known } = evidenceOf(p.card.data, p.known, p.quoteOnly);
   // 갈래 축은 카드 것(절 다시 짜기에서 안 바뀜) — 새 절 칩은 그 축으로 검증
-  const cleaned = cleanMgComposition(out, hayKey, known, { indicator: p.mg.indicator, prior: p.mg.prior, axis: o.outline.mg?.axis ?? "" });
+  const cleaned = cleanMgComposition(out, hayKey, known, { indicator: p.mg.indicator, prior: p.mg.prior, axis: o.outline.mg?.axis ?? "", files: p.files });
   const merged = replaceMgPart(o.outline, cleaned.composition, key, { story, frame });
   // 다시 짠 절에 데이터 블록이 없으면 그 절에만 넣음(S2 — 다른 절의 사람 편집은 건드리지 않음)
   const data = merged.changed ? addMgDataBlocks(merged.composition, p.mg.pages, key) : { composition: merged.composition, notes: [] };

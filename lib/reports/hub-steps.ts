@@ -51,7 +51,7 @@ export function hubSteps(input: HubStepsInput): HubSteps {
   const returned = input.returned && !closed && !waiting;
   const missing = r.missing.length;
 
-  // ① 근거 넣기 — 올해 계량 실적은 원장(카드)에서 읽고 결손(kpiMissing)은 실적 증빙을 카드 「실적 반영」·보고서 추가자료로 채움. 추가자료는 보고서에 붙으므로 보고서 준비 전에는 할 수 없음
+  // ① 근거 넣기 — 올해 계량 실적은 원장(카드)에서 읽고 결손(kpiMissing)은 과제 안(과제별 초안·카드)에서 올리는 실적 증빙(카드 전용 자료)과 카드 「실적 반영」으로 채움. 보고서 추가자료는 여러 과제 공통 자료용. 추가자료는 보고서에 붙으므로 보고서 준비 전에는 할 수 없음
   const evidenceDone = !waiting && (kpiTotal === 0 || kpiMissing === 0);
   const evidenceState = waiting ? "보고서 준비 뒤 입력" : kpiTotal === 0 ? `추가자료 ${materials}건` : kpiMissing > 0 ? `원장 올해 실적 없음 ${kpiMissing}건` : `원장 올해 실적 모두 있음 · 추가자료 ${materials}건`;
 
@@ -94,7 +94,7 @@ export function hubSteps(input: HubStepsInput): HubSteps {
   ];
 
   let action: HubAction | null = null;
-  if (now === "evidence") action = { step: "evidence", label: preview ? "근거 보기" : "실적 증빙 올리기" };
+  if (now === "evidence") action = { step: "evidence", label: preview ? "근거 보기" : "과제별 증빙 올리기" };
   else if (now === "draft") {
     // missing은 rows 중 목차에 든 것을 같은 순서로 거른 것 — 첫 과제의 uid는 rows에서 찾음
     const first = r.missing[0];

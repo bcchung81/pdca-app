@@ -45,10 +45,10 @@ function input(cards: SubmitCard[], over: Partial<HubStepsInput> = {}): HubSteps
 
 const view = (h: ReturnType<typeof hubSteps>) => h.steps.map((s) => `${s.tone}:${s.state}${s.now ? "*" : ""}`);
 
-test("원장 올해 실적 결손: 1단계가 지금(doing — 경고색 아님) · 주 행동 「실적 증빙 올리기」, 2·3단계는 남은 대로", () => {
+test("원장 올해 실적 결손: 1단계가 지금(doing — 경고색 아님) · 주 행동 「과제별 증빙 올리기」, 2·3단계는 남은 대로", () => {
   const h = hubSteps(input(ALL_DRAFTED, { kpiMissing: 2 }));
   assert.deepEqual(view(h), ["doing:원장 올해 실적 없음 2건*", "done:2개 모두 있음", "idle:확정할 수 있음"]);
-  assert.deepEqual(h.action, { step: "evidence", label: "실적 증빙 올리기" });
+  assert.deepEqual(h.action, { step: "evidence", label: "과제별 증빙 올리기" });
   assert.ok(h.steps.every((s) => s.tone !== "alert"));
 });
 

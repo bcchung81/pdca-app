@@ -230,6 +230,12 @@ type WriterInput = { card: LooseJson; kb: KnowledgeBundle; req: Omit<WriterReque
 
 /** 첨부 → 프롬프트 글(전체 글 — PDF도 원본 문서가 아니라 글, 참고자료 설계 D2). 작성지원·질문·코멘트·경평 공용 */
 const promptFiles = (docs: MaterialDoc[]): PromptFile[] => docs.map((d) => ({ name: d.name, text: d.text }));
+/**
+ * 경평 초안 첨부 → 요청 글 첨부: 이 과제와의 관계·숫자 근거 여부(draft-prepare.ts DraftFile — material-match.ts fileRelation)를 그대로 넘김.
+ * 예전에는 promptFiles가 이름·글만 남겨 연결하지 않은 같은 보고서 자료도 요청 글에 「이 과제 카드 전용 자료(수치를 근거로 씀)」로 적혔음(2026-11-03)
+ */
+const reportFiles = (docs: ReadonlyArray<MaterialDoc & Pick<ReportFile, "relation" | "numberEvidence">>): ReportFile[] =>
+  docs.map((d) => ({ name: d.name, text: d.text, ...(d.relation ? { relation: d.relation } : {}), ...(d.numberEvidence !== undefined ? { numberEvidence: d.numberEvidence } : {}) }));
 
 /**
  * AI 한 번(API·CLI 공용) — shared = 요청 앞에 붙이는 공통 지식 덩이. 보내기 전에 입력 크기를 확인(넘치면 자르지 않고 BudgetError).
@@ -446,7 +452,7 @@ async function reportStructured<T extends z.ZodType>(
   // 공통 지식 절(kb.*)을 꺼낼 묶음 — 경영관리는 report-draft-mg(_shared/knowledge-mg.md), CLI 제한 시간 — 경영관리 집필은 절이 여럿이라 길게
   opts: { kbp?: PromptSet; timeoutMs?: number; tail?: string; cachePrompt?: boolean } = {},
 ): Promise<{ output: z.infer<T>; model: string; provider: AiProvider; usage: Usage }> {
-  const files: ReportFile[] = promptFiles(docs);
+  const files = reportFiles(docs);
   const kbp = opts.kbp ?? reportDraftPrompts().prompts;
   const prompt = kb ? `${listText(kbp, kb)}\n\n${ask(files)}` : ask(files);
   // 캐시 수명: 블록 고치기·질문(report_block)만 1시간 — 구성안·집필·자동 고치기는 한 번 부르고 끝나거나 1~3분 안에 이어져 5분으로 충분(2026-10-12)

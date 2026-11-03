@@ -20,6 +20,8 @@ import {
   compositionIssues,
   compositionOutSchema,
   withFixedStory,
+  type OutlineFile,
+  citedFiles,
   editOf,
   fitComposition,
   planAdherence,
@@ -38,6 +40,7 @@ import {
 import { canonicalBlock } from "./fit.ts";
 import { cellRange, storyLabel } from "./frameworks.ts";
 import { evidenceOf } from "./section.ts";
+import { warningLevel } from "./warning-levels.ts";
 import { BIZ_TRACK } from "../tracks/index.ts";
 import { reportDraftPrompts } from "../prompts/sets.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
@@ -864,4 +867,74 @@ test("applyCompositionEdit·shapeChoices(주요사업): 핵심 수치 띠로 새
   const mg = baseComposition({ blocks: [planBlock({ kind: "steps", variant: "row", cells: 3 })], mg: { parts: [] } as any });
   const me = editOf(mg);
   assert.deepEqual(applyCompositionEdit(mg, { ...me, blocks: me.blocks.map((b) => ({ ...b, kind: "stats", variant: "" })) }).composition.blocks.map((b) => b.kind), ["stats"], "경영관리는 고를 수 있음");
+});
+
+// ---------------------------------------------------------------------------
+// 숫자 근거가 아닌 첨부(연결하지 않은 같은 보고서 자료)를 출처로 든 수치 재료 → 자료 필요(2026-11-03 — 프롬프트만으로는 실호출에서 안 지켜짐)
+
+/** 가상 첨부 셋(요청 글 「[첨부 N]」 순서): 1 = 카드 전용 자료, 2 = 연결하지 않은 같은 보고서 자료, 3 = 연결 확정한 보고서 추가자료 */
+const UNLINKED_FILES: OutlineFile[] = [
+  { name: "가상 실적 현황.hwpx", text: "가상 지표 X 실적 7건(’26.10 기준)", relation: "card", numberEvidence: true },
+  { name: "가상 참고자료.hwpx", text: "가상 지표 Y 단축률: ’26.9 기준 81.3%(시범 평균)\n- 접수 창구 운영 중", relation: "same-report", numberEvidence: false },
+  { name: "가상 연결자료.pdf", text: "가상 지표 Z 참여 1,240명", relation: "matched", numberEvidence: true },
+];
+const mat = (id: string, kind: Material["kind"], source: string, text: string, quote = "") => ({ id, kind, text, when: "’26.9", source, quote });
+
+test("citedFiles: 「첨부 N」(나열 포함)과 자료 이름(띄어쓰기·확장자 무시)으로 첨부를 찾고, 없는 번호·출처 없는 글은 빈 목록", () => {
+  assert.deepEqual(citedFiles("첨부 2 가상 참고자료", UNLINKED_FILES), [1]);
+  assert.deepEqual(citedFiles("첨부 1·2", UNLINKED_FILES), [0, 1]);
+  assert.deepEqual(citedFiles("[첨부 3]", UNLINKED_FILES), [2]);
+  assert.deepEqual(citedFiles("첨부 9", UNLINKED_FILES), [], "없는 번호는 버림");
+  assert.deepEqual(citedFiles("첨부 가상참고 자료 / 카드 kpi.rows.2", UNLINKED_FILES), [1], "이름은 띄어쓰기를 걷고 견줌");
+  assert.deepEqual(citedFiles("카드 kpi.rows.0", UNLINKED_FILES), []);
+});
+
+test("cleanComposition: 연결하지 않은 같은 보고서 자료를 출처로 든 수치 재료는 「자료 필요」(값은 □)로 바꾸고 「재료:」 참고 경고 — 카드·연결 확정 첨부·카드 칸·공통 지식 출처는 그대로", () => {
+  const out = outBase({
+    materials: [
+      mat("m1", "figure", "첨부 2 가상 참고자료", "가상 지표 Y 단축률 81.3%(’26.9 기준, 시범 평균)", "가상 지표 Y 단축률: ’26.9 기준 81.3%(시범 평균)"),
+      mat("m2", "figure", "첨부 1", "가상 지표 X 실적 7건(’26.10 기준)"),
+      mat("m3", "figure", "가상 연결자료", "가상 지표 Z 참여 1,240명"),
+      mat("m4", "figure", "카드 kpi.rows.0", "가상 지표 Y ’25년 실적 75.0%"),
+      mat("m5", "figure", "공통 지식 가상 조각", "가상 지표 W 12.5%"),
+      mat("m6", "fact", "첨부 2", "접수 창구 운영 중"),
+      mat("m7", "fact", "첨부 2･카드 kpi.rows.1", "가상 지표 Y ’26.9 기준 81.3%로 목표 초과"),
+      mat("m8", "quote", "첨부 2", "「가상 지표 Y 단축률: ’26.9 기준 81.3%」", "가상 지표 Y 단축률: ’26.9 기준 81.3%"),
+      mat("m9", "need", "첨부 2 가상 참고자료", "【확인: ’26년 가상 지표 Y】 — 첨부 2(’26.9 기준 81.3%)는 이 과제에 연결되지 않음"),
+      mat("m10", "need", "카드 kpi.rows.0", "가상 지표 X ’25년 75.0% 대비 ’26년 값"),
+      mat("m11", "need", "", "’26년 가상 지표 Y 실적. 첨부 2에 ’26.9 기준 81.3%가 있으나 이 과제에 연결되지 않아 연결 확정 필요"),
+    ],
+    blocks: [{ kind: "bullets", variant: "", label: "추진성과", purpose: "결과", cells: 2, materials: ["m1", "m2"], figures: [], alts: [] }] as any,
+  });
+  // 같은 값(81.3)이 이 과제에 연결된 공통 지식 조각 등 다른 근거에도 있어 숫자 대조로는 못 잡는 경우 — 출처로 막음
+  const { hayKey, known } = evidenceOf({}, `${UNLINKED_FILES.map((f) => f.text).join("\n")}\n가상 조각 81.3% 75.0% 12.5%`);
+  assert.ok(known.has("81.3"), "시험 전제: 값이 아는 숫자에 있음");
+  const { composition: c, warnings } = cleanComposition(out, hayKey, known, UNLINKED_FILES);
+  const by = new Map(c.materials.map((m) => [m.id, m]));
+  for (const id of ["m1", "m7"]) {
+    const m = by.get(id)!;
+    assert.equal(m.kind, "need", `${id}는 자료 필요로`);
+    assert.ok(m.text.startsWith("「가상 참고자료」 — 이 과제에 연결하면 근거로 씀"), m.text);
+    assert.ok(!m.text.includes("81.3"), `${id}: 값은 가림 — ${m.text}`);
+    assert.ok(m.text.includes("’26.9"), "시점은 둠");
+    assert.deepEqual([m.when, m.quote, m.found], ["", "", false], "need 모양(시점·구절 없음)");
+  }
+  for (const id of ["m2", "m3", "m4", "m5", "m6", "m8"]) assert.equal(by.get(id)!.kind, out.materials.find((m) => m.id === id)!.kind, `${id}는 그대로`);
+  assert.equal(by.get("m9")!.text, "【확인: ’26년 가상 지표 Y】 — 첨부 2(’26.9 기준 □%)는 이 과제에 연결되지 않음", "AI가 낸 need도 그 첨부 출처면 값만 가림(경고 수에는 안 셈)");
+  assert.equal(by.get("m10")!.text, "가상 지표 X ’25년 75.0% 대비 ’26년 값", "카드 출처 need는 그대로");
+  assert.equal(by.get("m11")!.text, "’26년 가상 지표 Y 실적. 첨부 2에 ’26.9 기준 □%가 있으나 이 과제에 연결되지 않아 연결 확정 필요", "need는 글이 그 첨부를 가리켜도 값을 가림");
+  assert.deepEqual(c.blocks[0].materials, ["m1", "m2"], "블록 배정은 그대로(자료 필요 재료로)");
+  const w = warnings.filter((x) => x.includes("연결하지 않은 같은 보고서 자료"));
+  assert.equal(w.length, 1);
+  assert.ok(w[0].startsWith("재료: ") && w[0].includes("「가상 참고자료」") && w[0].includes("2개(m1·m7)"), w[0]);
+  assert.equal(warningLevel(w[0]), "info", "참고 등급");
+  // need만 있어도(바꿀 수치 재료 없음) 값은 가리고 경고는 없음
+  const onlyNeed = cleanComposition(outBase({ materials: [out.materials.find((m) => m.id === "m11")!] }), hayKey, known, UNLINKED_FILES);
+  assert.ok(!onlyNeed.composition.materials[0].text.includes("81.3"), onlyNeed.composition.materials[0].text);
+  assert.ok(!onlyNeed.warnings.some((x) => x.includes("연결하지 않은 같은 보고서 자료")));
+  // 첨부 관계를 안 주면(옛 호출) 예전 그대로
+  assert.equal(cleanComposition(out, hayKey, known).composition.materials.find((m) => m.id === "m1")!.kind, "figure");
+  // 같은 보고서 자료가 없으면 아무것도 안 바꿈
+  const linked = UNLINKED_FILES.map((f) => ({ ...f, relation: "matched" as const, numberEvidence: true }));
+  assert.deepEqual(cleanComposition(out, hayKey, known, linked).composition.materials.map((m) => m.kind), out.materials.map((m) => m.kind));
 });
