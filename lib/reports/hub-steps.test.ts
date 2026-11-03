@@ -65,6 +65,15 @@ test("초안 없는 과제(구성안만 포함): 2단계가 지금 · 주 행동
   assert.deepEqual(h.action, { step: "draft", label: "1-나 초안 쓰기", uid: "u-1-나", taskNo: "1-나" });
 });
 
+test("동료 담당 과제(peer — 열 수 없음)는 주 행동에서 건너뛰고 내 첫 초안 없는 과제로, 동료 과제만 남으면 주 행동 없음(2026-11-03 §5-1)", () => {
+  const h = hubSteps(input([card("1-가", "none", { peer: true, uid: "" }), card("1-나", "none")]));
+  assert.equal(h.steps[1].state, "초안 없는 과제 2건");
+  assert.deepEqual(h.action, { step: "draft", label: "1-나 초안 쓰기", uid: "u-1-나", taskNo: "1-나" });
+  const onlyPeer = hubSteps(input([card("1-가", "none", { peer: true, uid: "" }), card("1-나", "draft")]));
+  assert.equal(onlyPeer.action, null);
+  assert.equal(onlyPeer.steps[2].state, "초안이 모두 있어야 확정");
+});
+
 test("모두 있음 + 확인할 것: 2단계 글에 가짓수, 3단계가 지금 · 「확정하러 가기」", () => {
   const cards = [card("1-가", "draft", {}, ["12"]), card("1-나", "draft")];
   const h = hubSteps(input(cards));

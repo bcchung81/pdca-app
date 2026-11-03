@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Block } from "./blocks.ts";
 import type { ReportSectionSpec } from "./section.ts";
-import { type SubmitCard, REVIEW_NOTE_MAX, SUBMIT_OVER, cardSubmitRow, submitBlockedReason, submitReadiness } from "./submission.ts";
+import { type SubmitCard, REVIEW_NOTE_MAX, SUBMIT_OVER, cardSubmitRow, submitBlockedReason, submitReadiness, withTeamCards } from "./submission.ts";
 
 /** 시험용 최소 v3 spec(다른 필드는 셈에 쓰지 않아 기본값만) */
 function spec(overrides: Partial<ReportSectionSpec> = {}): ReportSectionSpec {
@@ -218,6 +218,53 @@ test("submitBlockedReason: 초안이 없는 과제 목록(구성안만은 표시
   const outline = card({ id: "1-나", uid: "1-나", taskNo: "1-나", draft: { spec: null, sourceRev: null, unknownNumbers: [], outlineOnly: true } });
   const r = submitReadiness([none, outline]);
   assert.equal(submitBlockedReason(r), "과제별 초안이 없는 과제 2건이 있어 확정할 수 없습니다: 1-가·1-나(구성안만)");
+});
+
+// ---------------------------------------------------------------------------
+// 팀 전체 과제(report_submit_cards — 동료 담당 과제는 판정 재료만, 2026-11-03 §5-1)
+
+/** rpc가 주는 모양: 제목·uid·spec 본문 없이 초안 있음(hasSpec)만 */
+function teamCard(id: string, draft: "none" | "outline" | "draft", peer: boolean): SubmitCard {
+  return {
+    id,
+    uid: "",
+    taskNo: id,
+    title: "",
+    included: true,
+    pages: null,
+    dataRev: 1,
+    ...(peer ? { peer: true } : {}),
+    draft: draft === "none" ? null : { spec: null, hasSpec: draft === "draft", sourceRev: 1, unknownNumbers: [], outlineOnly: draft === "outline" },
+  };
+}
+
+test("cardSubmitRow: spec 본문 없이 hasSpec만 있어도 초안 있음, 원장 개정 번호가 다르면 다시 만들기 권장, 셈은 0", () => {
+  const row = cardSubmitRow(teamCard("1-가", "draft", true));
+  assert.equal(row.state, "draft");
+  assert.deepEqual([row.needs, row.figures, row.unknown, row.fitPct, row.peer], [0, 0, 0, null, true]);
+  assert.equal(cardSubmitRow({ ...teamCard("1-가", "draft", true), dataRev: 2 }).state, "stale");
+  assert.equal(cardSubmitRow(teamCard("1-가", "outline", true)).state, "outline");
+});
+
+test("withTeamCards: 팀 전체 순서·과제 수에 내 과제는 본문 쪽 값으로 겹침 — 동료 과제 초안이 없으면 확정이 막히고 까닭에 「동료 담당」", () => {
+  const mine = drafted("1-가");
+  const team = [teamCard(mine.id, "draft", false), teamCard("1-나", "none", true), teamCard("1-다", "outline", true)];
+  const merged = withTeamCards(team, [mine]);
+  assert.equal(merged[0], mine, "내 과제는 loadSubmitCards 값");
+  const r = submitReadiness(merged);
+  assert.equal(r.ready, false);
+  assert.deepEqual([r.total, r.drafted], [3, 1]);
+  assert.equal(submitBlockedReason(r), "과제별 초안이 없는 과제 2건이 있어 확정할 수 없습니다: 1-나(동료 담당)·1-다(구성안만·동료 담당)");
+  // 내 과제만 보던 예전 셈은 확정할 수 있다고 봤음(§5-1의 착시)
+  assert.equal(submitReadiness([mine]).ready, true);
+  // 동료 과제 초안이 모두 있으면 확정할 수 있음
+  assert.equal(submitReadiness(withTeamCards([team[0], teamCard("1-나", "draft", true)], [mine])).ready, true);
+});
+
+test("withTeamCards: 내 과제가 팀 전체와 같으면(성과관리팀·관리자) 결과가 내 과제만 셀 때와 같음", () => {
+  const own = [drafted("1-가"), card({ id: "1-나", uid: "1-나", taskNo: "1-나", draft: null })];
+  const team = own.map((c) => teamCard(c.id, c.draft ? "draft" : "none", false));
+  assert.deepEqual(submitReadiness(withTeamCards(team, own)), submitReadiness(own));
 });
 
 // ---------------------------------------------------------------------------

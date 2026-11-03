@@ -473,13 +473,17 @@ test("자동 저장 이력 병합·AI 사용 기록 권한", { skip: NO_SEED_CAR
   assert.equal(await as("pmo", () => count("select 1 from public.ai_requests")), 1);
 });
 
-test("공통 지식: 모두 읽고, 성과관리팀만 쓴다. anon은 아무것도 못 읽음", { skip: NO_SEED_CARDS }, async () => {
+test("공통 지식: 모두 읽고, 관리자만 쓴다(2026-11-03 — 성과관리팀도 거절). anon은 아무것도 못 읽음", { skip: NO_SEED_CARDS }, async () => {
   assert.equal(await as("inspector", () => count("select 1 from public.eval_units")), rows.evalUnits.length); // 주요사업 4 + 시드 조각이 가리키는 경영관리 지표
   await rejects(
     () => as("inspector", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('x', 'x', 'x')")),
     /row-level security/,
   );
-  await as("pmo", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('x', 'x', 'x')"));
+  await rejects(
+    () => as("pmo", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('x', 'x', 'x')")),
+    /row-level security/,
+  );
+  await as("admin", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('x', 'x', 'x')"));
   if (seed.knowledgeAvailable) {
     assert.equal(await as("license", () => count("select 1 from public.knowledge_chunks")), rows.chunks.length);
     const visibleLinks = await as("inspector", () => count("select 1 from public.card_knowledge_scope"));
@@ -1050,11 +1054,11 @@ test("공통 지식 선별 결과(card_knowledge_select): 부서 담당자는 �
   assert.equal(await count("select 1 from public.card_knowledge_select where chunk_key like 'prep-test/%'"), 0, "문서를 지우면 조각과 함께 지워짐");
 });
 
-test("일반 문서(5단계 범용 조각기): generic_section 유형·검색 전용 표지가 제약 없이 들어가고, 성과관리팀만 문서를 지우며, 지우면 조각과 과제 대응표 행(사람이 확정한 행 포함)이 함께 지워진다", { skip: NO_SEED_CARDS }, async () => {
+test("일반 문서(5단계 범용 조각기): generic_section 유형·검색 전용 표지가 제약 없이 들어가고, 관리자만 문서를 지우며, 지우면 조각과 과제 대응표 행(사람이 확정한 행 포함)이 함께 지워진다", { skip: NO_SEED_CARDS }, async () => {
   const own = (await firstCard("검사기획팀")).id;
-  await as("pmo", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name, status) values ('up-gen', 't', 't.pdf', 'ingest')"));
+  await as("admin", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name, status) values ('up-gen', 't', 't.pdf', 'ingest')"));
   try {
-    await as("pmo", () =>
+    await as("admin", () =>
       db.query(
         "insert into public.knowledge_chunks (chunk_key, doc_id, seq, unit_type, track, title, context_prefix, blocks, text, search_text, meta) values ('up-gen/g0000', 'up-gen', 0, 'generic_section', '주요사업', 't', 'p', '[]'::jsonb, 'x', 'x', '{\"generic\": true, \"search_only\": true}'::jsonb)",
       ),
@@ -1062,7 +1066,8 @@ test("일반 문서(5단계 범용 조각기): generic_section 유형·검색 �
     await db.query("insert into public.card_knowledge_scope (card_id, chunk_key, method, status) values ($1, 'up-gen/g0000', 'ai', 'confirmed')", [own]);
     assert.equal(await count("select 1 from public.knowledge_chunks where unit_type = 'generic_section' and meta->>'search_only' = 'true'"), 1, "새 유형·표지는 마이그레이션 없이 들어감");
     assert.equal((await as("inspector", () => db.query("delete from public.knowledge_documents where doc_id = 'up-gen'"))).affectedRows, 0, "부서 담당자는 못 지움");
-    assert.equal((await as("pmo", () => db.query("delete from public.knowledge_documents where doc_id = 'up-gen'"))).affectedRows, 1);
+    assert.equal((await as("pmo", () => db.query("delete from public.knowledge_documents where doc_id = 'up-gen'"))).affectedRows, 0, "성과관리팀도 못 지움(2026-11-03)");
+    assert.equal((await as("admin", () => db.query("delete from public.knowledge_documents where doc_id = 'up-gen'"))).affectedRows, 1);
     assert.equal(await count("select 1 from public.knowledge_chunks where doc_id = 'up-gen'"), 0, "조각도 지워짐");
     assert.equal(await count("select 1 from public.card_knowledge_scope where chunk_key = 'up-gen/g0000'"), 0, "대응표 행도 지워짐");
   } finally {
@@ -1403,5 +1408,162 @@ test("부서 확정 · 보고서: 작성 중 → 승인(부서 확정, 승인자
   } finally {
     await db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [own.id, year]);
     await db.query("delete from public.reports where id in ($1, $2)", [mine, theirs]);
+  }
+});
+
+test("점검표 지우기(2026-11-03 §5-3): 성과관리팀·관리자도 보낸·확인한 점검표는 못 지우고 초안만 지움, 보관 카드 영구 삭제(관리자)는 보낸·확인한 점검표까지 연쇄 삭제", { skip: NO_SEED_CARDS }, async () => {
+  const own = (await firstCard("검사기획팀")).id;
+  const ins = "insert into public.inspections (card_id, period, result) values ($1, $2, '{\"summary\":\"점검\"}') returning id";
+  const del = (user: keyof typeof users, id: number) => as(user, () => db.query("delete from public.inspections where id = $1", [id])).then((r) => r.affectedRows ?? 0);
+  const sent = (await as("pmo", () => db.query<{ id: number }>(ins, [own, "2040-01"]))).rows[0].id;
+  const acked = (await as("pmo", () => db.query<{ id: number }>(ins, [own, "2040-02"]))).rows[0].id;
+  const draft = (await as("pmo", () => db.query<{ id: number }>(ins, [own, "2040-03"]))).rows[0].id;
+  try {
+    await as("pmo", () => db.query("update public.inspections set status = 'sent' where id in ($1, $2)", [sent, acked]));
+    await db.query("update public.inspections set status = 'acknowledged' where id = $1", [acked]); // 부서 확인(소유자 권한으로 줄임 — 확인 흐름은 「월간 점검」 시험)
+    for (const user of ["pmo", "admin"] as const) {
+      assert.equal(await del(user, sent), 0, `${user}: 보낸 점검표는 못 지움`);
+      assert.equal(await del(user, acked), 0, `${user}: 확인한 점검표는 못 지움`);
+    }
+    assert.equal(await count("select 1 from public.inspections where id in ($1, $2)", [sent, acked]), 2, "두 점검표 그대로");
+    assert.equal(await as("pmo", () => count("select 1 from public.inspections where id in ($1, $2, $3)", [sent, acked, draft])), 3, "성과관리팀 읽기는 그대로");
+    assert.equal(await del("inspector", draft), 0, "부서 담당자는 초안을 못 지움");
+    assert.equal(await del("pmo", draft), 1, "초안은 성과관리팀이 지움");
+  } finally {
+    await db.query("delete from public.inspections where id in ($1, $2, $3)", [sent, acked, draft]);
+  }
+
+  // 관리자 영구 삭제(purgeCard): 보관 카드를 지우면 보낸·확인한 점검표(작성본을 가리키는 것 포함)가 on delete cascade로 함께 지워짐 — RLS는 연쇄 삭제에 적용되지 않음
+  const purge = "시험/영구삭제";
+  await db.query(
+    "insert into public.cards (id, eval_unit_id, task_no, title, team_id, edition, data, status) select $2, eval_unit_id, '영구삭제-1', title, team_id, edition, data, 'retired' from public.cards where id = $1",
+    [own, purge],
+  );
+  try {
+    const version = (await db.query<{ id: number }>("insert into public.card_versions (card_id, period, version, status, data) values ($1, '2040-01', 1, 'confirmed', '{}') returning id", [purge])).rows[0].id;
+    await db.query("insert into public.inspections (card_id, period, card_version_id, status) values ($1, '2040-01', $2, 'sent'), ($1, '2040-02', $2, 'acknowledged')", [purge, version]);
+    assert.equal(await del("admin", (await db.query<{ id: number }>("select id from public.inspections where card_id = $1 and status = 'sent'", [purge])).rows[0].id), 0, "직접 지우기는 막힘");
+    const gone = await as("admin", () => db.query("delete from public.cards where id = $1 and status = 'retired'", [purge]));
+    assert.equal(gone.affectedRows, 1, "보관 카드 영구 삭제는 됨");
+    assert.equal(await count("select 1 from public.inspections where card_id = $1", [purge]), 0, "점검표도 연쇄 삭제");
+    assert.equal(await count("select 1 from public.card_versions where card_id = $1", [purge]), 0);
+  } finally {
+    await db.query("delete from public.cards where id = $1", [purge]);
+  }
+});
+
+test("공통 지식 쓰기는 관리자만(2026-11-03 §5-2): 성과관리팀은 문서·조각·버킷(knowledge) 넣기·지우기 거절, 관리자는 됨, 읽기는 그대로", { skip: NO_SEED_CARDS }, async () => {
+  const doc = "insert into public.knowledge_documents (doc_id, title, file_name) values ('rig-doc', 't', 't.md')";
+  const chunk =
+    "insert into public.knowledge_chunks (chunk_key, doc_id, seq, unit_type, track, title, context_prefix, blocks, text, search_text, meta) values ('rig-doc/g0000', 'rig-doc', 0, 'generic_section', '주요사업', 't', 'p', '[]'::jsonb, 'x', 'x', '{}'::jsonb)";
+  const obj = "insert into storage.objects (bucket_id, name) values ('knowledge', 'rig-doc/images/a.png')";
+  try {
+    await rejects(() => as("pmo", () => db.query(doc)), /row-level security/);
+    await as("admin", () => db.query(doc));
+    await rejects(() => as("pmo", () => db.query(chunk)), /row-level security/);
+    await as("admin", () => db.query(chunk));
+    await rejects(() => as("pmo", () => db.query(obj)), /row-level security/);
+    await as("admin", () => db.query(obj));
+    // 읽기는 모두(버킷 그림 포함)
+    assert.equal(await as("pmo", () => count("select 1 from public.knowledge_chunks where doc_id = 'rig-doc'")), 1);
+    assert.equal(await as("inspector", () => count("select 1 from storage.objects where bucket_id = 'knowledge' and name like 'rig-doc/%'")), 1);
+    // 고치기·지우기: 성과관리팀은 0행, 관리자는 됨
+    assert.equal((await as("pmo", () => db.query("update public.knowledge_chunks set text = 'y' where chunk_key = 'rig-doc/g0000'"))).affectedRows, 0);
+    assert.equal((await as("pmo", () => db.query("delete from public.knowledge_chunks where chunk_key = 'rig-doc/g0000'"))).affectedRows, 0);
+    assert.equal((await as("pmo", () => db.query("delete from storage.objects where bucket_id = 'knowledge' and name like 'rig-doc/%'"))).affectedRows, 0);
+    assert.equal((await as("pmo", () => db.query("delete from public.knowledge_documents where doc_id = 'rig-doc'"))).affectedRows, 0);
+    assert.equal((await as("admin", () => db.query("delete from storage.objects where bucket_id = 'knowledge' and name like 'rig-doc/%'"))).affectedRows, 1);
+    assert.equal((await as("admin", () => db.query("delete from public.knowledge_chunks where chunk_key = 'rig-doc/g0000'"))).affectedRows, 1);
+    assert.equal((await as("admin", () => db.query("delete from public.knowledge_documents where doc_id = 'rig-doc'"))).affectedRows, 1);
+  } finally {
+    await db.query("delete from storage.objects where bucket_id = 'knowledge' and name like 'rig-doc/%'");
+    await db.query("delete from public.knowledge_documents where doc_id = 'rig-doc'");
+  }
+});
+
+test("부서 확정 조건 재료(report_submit_cards rpc, 2026-11-03 §5-1): 같은 팀 두 담당자가 과제를 나눠 맡아도 팀 전체 과제가 나오고(동료 과제는 mine=false·초안 없음), 내용 열은 없음, 다른 팀은 0행, 성과관리팀은 전부 mine, anon 거절", { skip: NO_SEED_CARDS }, async () => {
+  // 활성 과제가 둘 이상인 평가단위 × 팀
+  const g = (
+    await db.query<{ eval_unit_id: string; team_id: number; ids: string[] }>(
+      "select eval_unit_id, team_id, array_agg(id order by id) as ids from public.cards where status = 'active' and team_id is not null group by eval_unit_id, team_id having count(*) >= 2 order by eval_unit_id, team_id limit 1",
+    )
+  ).rows[0];
+  assert.ok(g, "과제가 둘 이상인 평가단위 × 팀이 있음");
+  const otherTeam = (await db.query<{ id: number }>("select id from public.teams where id <> $1 order by id limit 1", [g.team_id])).rows[0].id;
+  const [cardA, cardB] = g.ids;
+  // 시험 계정: 같은 팀 담당자 A·B, 다른 팀 담당자 C(가입 트리거가 부서 담당자로 만듦)
+  const temp = { a: "00000000-0000-0000-0000-0000000000a1", b: "00000000-0000-0000-0000-0000000000b1", c: "00000000-0000-0000-0000-0000000000c1" };
+  const asId = async <T,>(id: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [id]);
+    await db.exec("set role authenticated");
+    try {
+      return await fn();
+    } finally {
+      await db.exec("reset role");
+      await db.query(`select set_config('request.jwt.claim.sub', '', false)`);
+    }
+  };
+  type Row = { card_id: string; task_no: string; included: boolean; sort: number | null; data_rev: number; has_draft: boolean; has_outline: boolean; spec_head: unknown; source_rev: number | null; mine: boolean };
+  const year = 2041;
+  let reportId = 0;
+  try {
+    for (const [k, id] of Object.entries(temp)) await db.query("insert into auth.users (id, email) values ($1, $2)", [id, `rig-${k}@kca.test`]);
+    await db.query("update public.profiles set team_id = $1 where id in ($2, $3)", [g.team_id, temp.a, temp.b]);
+    await db.query("update public.profiles set team_id = $1 where id = $2", [otherTeam, temp.c]);
+    await db.query("insert into public.card_assignees (card_id, user_id) values ($1, $2), ($3, $4)", [cardA, temp.a, cardB, temp.b]);
+    reportId = (await db.query<{ id: number }>("insert into public.reports (eval_unit_id, year, team_id, status) values ($1, $2, $3, 'drafting') returning id", [g.eval_unit_id, year, g.team_id])).rows[0].id;
+    // A 과제만 초안 있음(B 과제는 초안 없음)
+    await db.query("insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, $3::jsonb, 'm', 7)", [cardA, year, JSON.stringify({ version: 1, rows: [{ label: "본문" }] })]);
+
+    const rpc = (id: string) => asId(id, () => db.query<Row>("select * from public.report_submit_cards($1)", [reportId]));
+    const a = (await rpc(temp.a)).rows;
+    assert.deepEqual(a.map((r) => r.card_id).sort(), [...g.ids].sort(), "A가 불러도 팀 전체 과제");
+    assert.equal(await asId(temp.a, () => count("select 1 from public.cards where eval_unit_id = $1", [g.eval_unit_id])), 1, "A가 직접 읽는 카드는 자기 과제뿐");
+    const rowA = a.find((r) => r.card_id === cardA)!;
+    const rowB = a.find((r) => r.card_id === cardB)!;
+    assert.equal(rowA.mine, true);
+    assert.equal(rowA.has_draft, true);
+    assert.equal(rowA.source_rev, 7);
+    assert.deepEqual(rowA.spec_head, { version: 1, rows: [], blocks: null }, "spec 본문은 안 주고 형식 머리만");
+    assert.equal(rowB.mine, false, "동료 과제");
+    assert.equal(rowB.has_draft, false, "B 과제는 「초안 없음」 재료");
+    assert.equal(rowB.spec_head, null);
+    assert.equal(rowB.included, true, "목차 줄이 없으면 든 것");
+    assert.deepEqual(Object.keys(rowB).sort(), ["card_id", "data_rev", "has_draft", "has_outline", "included", "mine", "sort", "source_rev", "spec_head", "task_no"], "제목·uid·본문 열 없음");
+    // B 쪽에서 보면 반대로 A 과제가 동료 과제
+    const b = (await rpc(temp.b)).rows;
+    assert.equal(b.length, g.ids.length);
+    assert.equal(b.find((r) => r.card_id === cardA)!.mine, false);
+
+    // 구성안만·목차에서 뺌도 재료로 나옴
+    await db.query("insert into public.card_report_drafts (card_id, year, outline, outline_status) values ($1, $2, '{\"version\":1}'::jsonb, 'draft')", [cardB, year]);
+    await db.query("insert into public.report_outline (card_id, year, eval_unit_id, section, sort, included) values ($1, $2, $3, '대상사업', 3, false)", [cardB, year, g.eval_unit_id]);
+    const b2 = (await rpc(temp.a)).rows.find((r) => r.card_id === cardB)!;
+    assert.deepEqual([b2.has_draft, b2.has_outline, b2.spec_head, b2.included, b2.sort], [true, true, null, false, 3]);
+
+    // 다른 팀 담당자는 0행, 성과관리팀·관리자는 전부(모두 mine)
+    assert.equal((await rpc(temp.c)).rows.length, 0, "다른 팀은 빈 결과");
+    for (const user of ["pmo", "admin"] as const) {
+      const s = (await as(user, () => db.query<Row>("select * from public.report_submit_cards($1)", [reportId]))).rows;
+      assert.equal(s.length, g.ids.length);
+      assert.ok(s.every((r) => r.mine));
+    }
+    // 보관한 과제는 빠짐
+    await db.query("update public.cards set status = 'retired' where id = $1", [cardB]);
+    assert.equal((await rpc(temp.a)).rows.length, g.ids.length - 1, "보관 과제는 셈에서 빠짐");
+    await db.query("update public.cards set status = 'active' where id = $1", [cardB]);
+
+    await db.exec("set role anon");
+    try {
+      await rejects(() => db.query("select 1 from public.report_submit_cards($1)", [reportId]), /permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
+  } finally {
+    await db.query("update public.cards set status = 'active' where id = $1", [cardB]);
+    await db.query("delete from public.report_outline where card_id = $1 and year = $2", [cardB, year]);
+    await db.query("delete from public.card_report_drafts where year = $1 and card_id = any($2)", [year, g.ids]);
+    if (reportId) await db.query("delete from public.reports where id = $1", [reportId]);
+    await db.query("delete from auth.users where id = any($1)", [Object.values(temp)]);
   }
 });

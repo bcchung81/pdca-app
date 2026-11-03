@@ -208,7 +208,7 @@ interface DraftDbRow {
 export const submitKey = (evalUnitId: string, teamId: number) => `${evalUnitId}|${teamId}`;
 
 /**
- * 제출 조건 재료(로그인 사용자 권한 — 부서는 자기 부서 카드만 읽힘): 그 해 활성 카드 · 목차 포함 여부 · 과제별 초안(spec·원장 개정 번호·없는 숫자).
+ * 제출 조건 재료(로그인 사용자 권한 — 부서 담당자는 자기에게 지정된 과제만 읽힘, 팀 전체 판정은 loadTeamSubmitCards): 그 해 활성 카드 · 목차 포함 여부 · 과제별 초안(spec·원장 개정 번호·없는 숫자).
  * 사업 · 부서마다 과제번호 순. filter로 사업·부서를 좁힘(제출 검사는 둘 다)
  */
 export async function loadSubmitCards(supabase: SupabaseClient, year: number, filter: { evalUnitId?: string; teamId?: number; track?: TrackId } = {}): Promise<Map<string, SubmitCard[]>> {
@@ -247,6 +247,45 @@ export async function loadSubmitCards(supabase: SupabaseClient, year: number, fi
     out.set(k, [...(out.get(k) ?? []), row]);
   }
   return out;
+}
+
+/** report_submit_cards rpc 한 행 */
+interface TeamSubmitDbRow {
+  card_id: string;
+  task_no: string;
+  included: boolean;
+  sort: number | null;
+  data_rev: number | null;
+  has_draft: boolean;
+  has_outline: boolean;
+  spec_head: unknown;
+  source_rev: number | null;
+  mine: boolean;
+}
+
+/**
+ * 확정 조건 재료 — 그 보고서의 평가단위 × 팀 × 연도 활성 과제 전부(rpc report_submit_cards, 2026-11-03 §5-1):
+ * 확정은 팀 단위로 모든 과제 초안을 잠그므로 지정 안 된 동료 과제까지 셈. 동료 과제(peer)는 과제번호·목차 포함·개정 번호·초안 있음만(제목·uid·본문 없음).
+ * 순서는 loadSubmitCards와 같음(목차 순 → 과제번호). rpc가 실패하면 null(호출부가 막거나 자기 과제로 돌아감)
+ */
+export async function loadTeamSubmitCards(supabase: SupabaseClient, reportId: number): Promise<SubmitCard[] | null> {
+  const { data, error } = await supabase.rpc("report_submit_cards", { p_report_id: reportId });
+  if (error) return null;
+  const rows = ((data ?? []) as TeamSubmitDbRow[]).sort((a, b) => (a.sort ?? 1e9) - (b.sort ?? 1e9) || String(a.task_no).localeCompare(String(b.task_no), "ko", { numeric: true }));
+  return rows.map((r) => {
+    const hasSpec = readSection(r.spec_head) !== null;
+    return {
+      id: r.card_id,
+      uid: "",
+      taskNo: r.task_no,
+      title: "",
+      included: r.included !== false,
+      pages: null,
+      dataRev: r.data_rev ?? null,
+      ...(r.mine ? {} : { peer: true }),
+      draft: r.has_draft ? { spec: null, hasSpec, sourceRev: r.source_rev ?? null, unknownNumbers: [], outlineOnly: r.spec_head == null && r.has_outline } : null,
+    };
+  });
 }
 
 /** 이 카드의 부서 보고서가 제출·승인 중인가(부서 잠금 안내 — 최종 판정은 DB 트리거 guard_card_report_draft) */

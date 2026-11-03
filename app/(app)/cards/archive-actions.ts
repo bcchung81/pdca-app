@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/dal.ts";
+import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { prepCardAdded } from "../../../lib/prep/triggers.ts";
 import { ARCHIVE_REASON_MAX } from "../../../lib/cards/limits.ts";
@@ -14,6 +15,7 @@ type Result = { ok: boolean; message: string };
 export async function archiveCard(uid: string, reason: string): Promise<Result> {
   const me = await requireRole(["pmo", "admin"], "/cards");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 과제를 삭제(보관)할 수 있습니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const why = String(reason ?? "").trim().slice(0, ARCHIVE_REASON_MAX);
   if (!why) return { ok: false, message: "삭제(보관)하는 까닭을 적어 주세요." };
   const supabase = await createClient();
@@ -37,6 +39,7 @@ export async function archiveCard(uid: string, reason: string): Promise<Result> 
 export async function restoreCard(uid: string): Promise<Result> {
   const me = await requireRole(["pmo", "admin"], "/cards/archive");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 되살릴 수 있습니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id, data, status").eq("uid", uid).maybeSingle();
   if (!card || card.status !== "retired") return { ok: false, message: "보관한 과제가 아닙니다." };
@@ -68,6 +71,7 @@ async function removeFolder(supabase: Awaited<ReturnType<typeof createClient>>, 
 export async function purgeCard(uid: string, confirmTaskNo: string): Promise<Result> {
   const me = await requireRole(["admin"], "/cards/archive");
   if (!me) return { ok: false, message: "영구 삭제는 관리자만 합니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id, uid, task_no, status").eq("uid", uid).maybeSingle();
   if (!card) return { ok: false, message: "카드를 찾을 수 없습니다." };

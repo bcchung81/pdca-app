@@ -26,10 +26,14 @@ export interface SubmitCard {
   pages: number | null;
   /** 원장 개정 번호(cards.data_rev) */
   dataRev: number | null;
+  /** 동료 담당 과제(같은 팀이지만 부르는 사람이 읽을 수 없는 과제 — report_submit_cards가 판정 재료만 줌, 제목·uid·본문 없음) */
+  peer?: boolean;
   /** 경영관리: 원장 정량 성과 줄 중 연도 언급 없이 올해 실적 재료로 받은 것(undatedOutcomeLines) — 자료 요청이 「기준 시점·출처 확인」으로 올림 */
   undatedOutcome?: string[];
   draft: {
     spec: ReportSectionSpec | null;
+    /** spec 본문 없이 유효한 초안이 있음만 아는 경우(report_submit_cards) — spec이 null이어도 초안 있음으로 셈 */
+    hasSpec?: boolean;
     /** 초안을 만들 때 원장 개정 번호 — 지금과 다르면 다시 만들기 권장 */
     sourceRev: number | null;
     unknownNumbers: string[];
@@ -61,11 +65,14 @@ export interface CardSubmitRow {
   unknown: number;
   /** 사람이 고친 블록 수 */
   humanEdits: number;
+  /** 동료 담당 과제(SubmitCard.peer) */
+  peer?: boolean;
 }
 
 export function cardSubmitRow(c: SubmitCard): CardSubmitRow {
   const spec = c.draft?.spec ?? null;
-  const state: DraftState = !c.draft || (!spec && !c.draft.outlineOnly) ? "none" : !spec ? "outline" : c.draft.sourceRev !== null && c.dataRev !== null && c.draft.sourceRev !== c.dataRev ? "stale" : "draft";
+  const drafted = Boolean(spec) || c.draft?.hasSpec === true;
+  const state: DraftState = !c.draft || (!drafted && !c.draft.outlineOnly) ? "none" : !drafted ? "outline" : c.draft.sourceRev !== null && c.dataRev !== null && c.draft.sourceRev !== c.dataRev ? "stale" : "draft";
   const fit = spec?.fit;
   return {
     id: c.id,
@@ -80,6 +87,7 @@ export function cardSubmitRow(c: SubmitCard): CardSubmitRow {
     figures: spec?.blocks ? figuresOf(spec.blocks).length : 0,
     unknown: spec ? c.draft?.unknownNumbers.length ?? 0 : 0,
     humanEdits: spec?.humanEdits?.length ?? 0,
+    ...(c.peer ? { peer: true } : {}),
   };
 }
 
@@ -90,7 +98,7 @@ export interface SubmitReadiness {
   total: number;
   drafted: number;
   /** 초안이 없는 과제(구성안만 있는 과제 포함) — 제출을 막음 */
-  missing: Array<{ taskNo: string; title: string; state: DraftState }>;
+  missing: Array<{ taskNo: string; title: string; state: DraftState; peer?: boolean }>;
   /** 확인할 것(막지 않음) — 제출 확인 창·제출 관리판 */
   checks: string[];
   rows: CardSubmitRow[];
@@ -102,7 +110,7 @@ const list = (rows: CardSubmitRow[]) => rows.map((r) => r.taskNo).join("·");
 export function submitReadiness(cards: SubmitCard[]): SubmitReadiness {
   const rows = cards.map(cardSubmitRow);
   const inc = rows.filter((r) => r.included);
-  const missing = inc.filter((r) => r.state === "none" || r.state === "outline").map((r) => ({ taskNo: r.taskNo, title: r.title, state: r.state }));
+  const missing = inc.filter((r) => r.state === "none" || r.state === "outline").map((r) => ({ taskNo: r.taskNo, title: r.title, state: r.state, ...(r.peer ? { peer: true } : {}) }));
   const drafted = inc.filter((r) => r.state === "draft" || r.state === "stale");
   const checks: string[] = [];
   const stale = drafted.filter((r) => r.state === "stale");
@@ -118,9 +126,24 @@ export function submitReadiness(cards: SubmitCard[]): SubmitReadiness {
   return { ready: inc.length > 0 && missing.length === 0, total: inc.length, drafted: drafted.length, missing, checks, rows };
 }
 
+/** 초안 없는 과제 한 개의 표기(확정을 막는 까닭·확정 단추 title) — 과제번호 + 구성안만·동료 담당 */
+export function missingLabel(m: SubmitReadiness["missing"][number]): string {
+  const marks = [m.state === "outline" ? "구성안만" : "", m.peer ? "동료 담당" : ""].filter(Boolean);
+  return `${m.taskNo}${marks.length ? `(${marks.join("·")})` : ""}`;
+}
+
+/**
+ * 같은 팀 전체 과제(report_submit_cards — 판정 재료만)에 내가 읽은 과제(loadSubmitCards — 본문까지)를 겹침: 내 과제는 본문 쪽 값을 쓰고 순서·과제 수는 팀 전체.
+ * 확정 판정(ready·missing)은 팀 전체로, 확인할 것(【확인】·그림·없는 숫자·판면)은 본문이 있는 내 과제에서만 나옴
+ */
+export function withTeamCards(team: SubmitCard[], own: SubmitCard[]): SubmitCard[] {
+  const mine = new Map(own.map((c) => [c.id, c]));
+  return team.map((c) => mine.get(c.id) ?? c);
+}
+
 /** 확정(·남은 제출)을 막는 까닭 한 줄(서버 액션·화면 단추 title) — 2026-10-27부터 부서는 제출 대신 확정 */
 export function submitBlockedReason(r: SubmitReadiness): string | null {
   if (r.ready) return null;
   if (!r.total) return "확정할 과제가 없습니다(목차에서 모두 빠짐).";
-  return `과제별 초안이 없는 과제 ${r.missing.length}건이 있어 확정할 수 없습니다: ${r.missing.map((m) => `${m.taskNo}${m.state === "outline" ? "(구성안만)" : ""}`).join("·")}`;
+  return `과제별 초안이 없는 과제 ${r.missing.length}건이 있어 확정할 수 없습니다: ${r.missing.map(missingLabel).join("·")}`;
 }

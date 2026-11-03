@@ -320,6 +320,7 @@ async function applyToLedger(supabase: Supabase, me: { id: string }, item: Loade
 export async function applyImportItems(importId: number, decisions: ImportDecision[]): Promise<{ ok: boolean; message?: string; results: ItemOutcome[] }> {
   const me = await requireRole(["pmo", "admin"], "/cards/import");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 원장에 반영할 수 있습니다.", results: [] };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG, results: [] };
   const supabase = await createClient();
   const results: ItemOutcome[] = [];
   for (const d of (decisions ?? []).slice(0, 100)) {
@@ -342,6 +343,7 @@ export async function applyImportItems(importId: number, decisions: ImportDecisi
 export async function applySafeImportItems(importId: number): Promise<{ ok: boolean; message: string; results: ItemOutcome[] }> {
   const me = await requireRole(["pmo", "admin"], "/cards/import");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 원장에 반영할 수 있습니다.", results: [] };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG, results: [] };
   const supabase = await createClient();
   const { data: list } = await supabase.from("card_import_items").select("id").eq("import_id", importId).eq("status", "pending").eq("match", "exact").order("file_n").order("seq");
   const results: ItemOutcome[] = [];
@@ -390,6 +392,7 @@ export async function skipImportItems(importId: number, itemIds: number[], reaso
 export async function registerImportItem(importId: number, itemId: number, groupId: string): Promise<{ ok: boolean; message: string; uid?: string }> {
   const me = await requireRole(["pmo", "admin"], "/cards/import");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 새 과제를 등록할 수 있습니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const supabase = await createClient();
   const item = await loadItem(supabase, importId, itemId);
   if (!item || item.imp?.scope !== "ledger") return { ok: false, message: "항목을 찾을 수 없습니다." };

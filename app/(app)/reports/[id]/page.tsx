@@ -12,10 +12,10 @@ import { deptScope } from "../../../../lib/auth/scope.ts";
 import { fmtDateTime } from "../../../../lib/format.ts";
 import { returnTarget, withReturn } from "../../../../lib/nav/return-to.ts";
 import { REPORT_STATUS_LABEL, readBlocks } from "../../../../lib/reports/model.ts";
-import { getReport, listComments, loadSubmitCards, submitKey } from "../../../../lib/reports/queries.ts";
+import { getReport, listComments, loadSubmitCards, loadTeamSubmitCards, submitKey } from "../../../../lib/reports/queries.ts";
 import { REPORT_CSS } from "../../../../lib/reports/section-css.ts";
 import { sectionHtml } from "../../../../lib/reports/section-html.ts";
-import { submitReadiness } from "../../../../lib/reports/submission.ts";
+import { missingLabel, submitReadiness, withTeamCards } from "../../../../lib/reports/submission.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 
 export const metadata: Metadata = { title: "경평 초안 검토 · 경평AI비서" };
@@ -43,11 +43,14 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
   const deptView = Boolean(scope);
   const viewTeam = scope?.team ?? null;
   const teamQ = deptView ? `team=${encodeURIComponent(teamParam)}` : "";
-  const [comments, cardsForReport] = await Promise.all([
+  const [comments, cardsForReport, teamCards] = await Promise.all([
     listComments(supabase, id),
     loadSubmitCards(supabase, report.year, { evalUnitId: report.evalUnitId, teamId: report.teamId }).then((m) => m.get(submitKey(report.evalUnitId, report.teamId)) ?? []),
+    loadTeamSubmitCards(supabase, id),
   ]);
   const readiness = submitReadiness(cardsForReport);
+  // 확정 단추 판정은 팀 전체 과제(지정 안 된 동료 과제 포함, 2026-11-03 §5-1) — 실패하면 읽은 과제로(서버 확정 검사가 다시 막음)
+  const teamReadiness = teamCards ? submitReadiness(withTeamCards(teamCards, cardsForReport)) : readiness;
   const rowOf = new Map(readiness.rows.map((r) => [r.id, r]));
   // 카드 보기·과제별 초안은 다른 화면이라 지금 이 검토 화면 주소로 되돌아오게(from)
   const selfHref = `/reports/${id}${teamQ ? `?${teamQ}` : ""}`;
@@ -97,7 +100,7 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
             </span>
           )}
           {deptView && <span className="shrink-0 text-xs text-muted">부서 화면 보기 · 읽기 전용</span>}
-          {!deptView && <ReportStatusButtons id={report.id} status={report.status} staff={staff} readiness={{ ready: readiness.ready, total: readiness.total, drafted: readiness.drafted, missing: readiness.missing.map((m) => m.taskNo), checks: readiness.checks }} />}
+          {!deptView && <ReportStatusButtons id={report.id} status={report.status} staff={staff} readiness={{ ready: teamReadiness.ready, total: teamReadiness.total, drafted: teamReadiness.drafted, missing: teamReadiness.missing.map(missingLabel), checks: teamReadiness.checks }} />}
           <Link href={target.href} aria-label={`목록으로 — ${target.label}`} title={`목록으로 — ${target.label}`} className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}>
             <List size={16} aria-hidden />
           </Link>

@@ -18,8 +18,8 @@ import { buildMaterialRequests } from "../../../../lib/reports/material-requests
 import { type HubSteps, hubSteps } from "../../../../lib/reports/hub-steps.ts";
 import { kpiGaps, yearActuals } from "../../../../lib/reports/actuals.ts";
 import { REPORT_STATUS_LABEL } from "../../../../lib/reports/model.ts";
-import { listMaterials, listReports, loadSubmitCards, openCommentCounts, submitKey } from "../../../../lib/reports/queries.ts";
-import { DRAFT_STATE_LABEL, SUBMIT_OVER, type CardSubmitRow, type DraftState, type SubmitCard, submitBlockedReason, submitReadiness } from "../../../../lib/reports/submission.ts";
+import { listMaterials, listReports, loadSubmitCards, loadTeamSubmitCards, openCommentCounts, submitKey } from "../../../../lib/reports/queries.ts";
+import { DRAFT_STATE_LABEL, SUBMIT_OVER, type CardSubmitRow, type DraftState, type SubmitCard, missingLabel, submitBlockedReason, submitReadiness, withTeamCards } from "../../../../lib/reports/submission.ts";
 import { buildTodoBoard } from "../../../../lib/reports/todo-board.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
@@ -264,6 +264,8 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
       }),
     ),
   );
+  // 확정 판정 재료(rpc) — 보고서마다 그 평가단위 × 팀 과제 전부(지정 안 된 동료 과제 포함, 2026-11-03 §5-1). 실패하면 자기 과제로(서버 확정 검사가 다시 막음)
+  const teamCards = new Map(await Promise.all(reports.map(async (r) => [r.id, await loadTeamSubmitCards(supabase, r.id)] as const)));
   // 보고서가 아직 준비되지 않은 사업(과제는 있지만 reports 행이 없음) — 과제별 초안 표만
   const waiting = (units ?? [])
     .map((u) => ({ unit: u, cs: cardMap.get(submitKey(u.id, scope.team?.id ?? -1)) ?? [] }))
@@ -332,7 +334,10 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
 
       {reports.map((r) => {
         const cs = (cardMap.get(submitKey(r.evalUnitId, r.teamId)) ?? []);
-        const readiness = submitReadiness(cs);
+        // 표·과제 수는 내 과제(cs), 확정 판정(띠·확정 조건·까닭·확정 단추)은 팀 전체 과제
+        const own = submitReadiness(cs);
+        const team = teamCards.get(r.id);
+        const readiness = team ? submitReadiness(withTeamCards(team, cs)) : own;
         // 올해 실적은 카드 원장에서 읽음 — 원장에 없는 지표(지표 이름 · 과제번호·카드 링크)만 보여 줌
         const wide = trackOfUnit(r.evalUnitId) === "경영관리";
         const kpiGapRows = ((cards ?? []) as HubCardRow[])
@@ -369,7 +374,7 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
               ready: readiness.ready,
               total: readiness.total,
               drafted: readiness.drafted,
-              missing: readiness.missing.map((m) => `${m.taskNo}${m.state === "outline" ? "(구성안만)" : ""}`),
+              missing: readiness.missing.map(missingLabel),
               checks: readiness.checks,
             }}
           />
@@ -430,8 +435,8 @@ export default async function MyReportPage({ searchParams }: PageProps<"/my/repo
                 </div>
               </div>
             </details>
-            <Step n={2} title="과제별 초안" aside={`${cs.length}개 · 초안 있음 ${readiness.drafted}/${readiness.total}`}>
-              {readiness.rows.length ? <DraftTable rows={readiness.rows} teamQs={teamQs} from={selfHref} preview={scope.preview} /> : <p className="text-ui text-muted">연결된 과제가 없습니다.</p>}
+            <Step n={2} title="과제별 초안" aside={`${cs.length}개 · 초안 있음 ${own.drafted}/${own.total}`}>
+              {own.rows.length ? <DraftTable rows={own.rows} teamQs={teamQs} from={selfHref} preview={scope.preview} /> : <p className="text-ui text-muted">연결된 과제가 없습니다.</p>}
             </Step>
             <Step n={3} title="확정" id={`${anchor}-submit`}>
               <p className="text-ui text-muted-2">

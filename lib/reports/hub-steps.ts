@@ -96,10 +96,10 @@ export function hubSteps(input: HubStepsInput): HubSteps {
   let action: HubAction | null = null;
   if (now === "evidence") action = { step: "evidence", label: preview ? "근거 보기" : "과제별 증빙 올리기" };
   else if (now === "draft") {
-    // missing은 rows 중 목차에 든 것을 같은 순서로 거른 것 — 첫 과제의 uid는 rows에서 찾음
-    const first = r.missing[0];
-    const row = r.rows.find((x) => x.included && x.taskNo === first.taskNo);
-    if (row) action = { step: "draft", label: `${first.taskNo} 초안 ${preview ? "보기" : "쓰기"}`, uid: row.uid, taskNo: first.taskNo };
+    // missing은 rows 중 목차에 든 것을 같은 순서로 거른 것 — 첫 과제의 uid는 rows에서 찾음(동료 담당 과제는 열 수 없어 건너뜀)
+    const first = r.missing.find((m) => !m.peer);
+    const row = first && r.rows.find((x) => x.included && x.taskNo === first.taskNo);
+    if (first && row) action = { step: "draft", label: `${first.taskNo} 초안 ${preview ? "보기" : "쓰기"}`, uid: row.uid, taskNo: first.taskNo };
   } else if (now === "submit") action = { step: "submit", label: preview ? "확정 절 보기" : "확정하러 가기" };
 
   return { steps, action };

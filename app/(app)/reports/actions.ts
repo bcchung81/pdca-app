@@ -11,7 +11,7 @@ import { COMMENT_KINDS, type ReportStatus, canMove, cleanBlocks, needsReturnMemo
 import { buildOutline, isPageStep } from "../../../lib/reports/outline.ts";
 import { buildMgOutline } from "../../../lib/reports/mg-page-plan.ts";
 import { loadMgPageRefs } from "../../../lib/reports/mg-queries.ts";
-import { getReport, loadSubmitCards, submitKey } from "../../../lib/reports/queries.ts";
+import { getReport, loadTeamSubmitCards } from "../../../lib/reports/queries.ts";
 import { COMMENT_BODY_MAX } from "../../../lib/reports/input-limits.ts";
 import { REVIEW_NOTE_MAX, submitBlockedReason, submitReadiness } from "../../../lib/reports/submission.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
@@ -32,6 +32,7 @@ const refresh = (id?: number) => {
 export async function prepareReports(year: number): Promise<Result> {
   const me = await requireAtLeast("pmo", "/reports");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 준비합니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   if (!Number.isInteger(year) || year < 2020 || year > 2100) return { ok: false, message: "연도가 올바르지 않습니다." };
   const supabase = await createClient();
   const track = await getTrack();
@@ -79,6 +80,7 @@ export async function prepareReports(year: number): Promise<Result> {
 export async function setLeadTeam(unitId: string, teamId: number | null): Promise<Result> {
   const me = await requireAtLeast("pmo", "/reports");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 지정합니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const supabase = await createClient();
   const { data, error } = await supabase.from("eval_units").update({ lead_team_id: teamId }).eq("id", unitId).select("id");
   if (error || !data?.length) return { ok: false, message: "지정하지 못했습니다." };
@@ -104,7 +106,9 @@ export async function setReportStatus(id: number, to: ReportStatus, note?: strin
   // 확정 = 작성 중에서 바로 승인(부서 — 성과관리팀도 표에 있음). 남은 제출 행의 승인(제출 → 승인)은 제출 때 이미 확인함
   const confirming = to === "approved" && report.status === "drafting";
   if (to === "submitted" || confirming) {
-    const cards = (await loadSubmitCards(supabase, report.year, { evalUnitId: report.evalUnitId, teamId: report.teamId })).get(submitKey(report.evalUnitId, report.teamId)) ?? [];
+    // 팀 전체 과제(지정 안 된 동료 과제 포함 — 확정이 그 평가단위 × 팀의 모든 초안을 잠그므로, 2026-11-03 §5-1)
+    const cards = await loadTeamSubmitCards(supabase, report.id);
+    if (!cards) return { ok: false, message: "확정 조건을 확인하지 못했습니다. 잠시 뒤 다시 해 주세요." };
     const why = submitBlockedReason(submitReadiness(cards));
     if (why) return { ok: false, message: why };
   }
@@ -155,6 +159,9 @@ export async function finishMaterialUpload(reportId: number, path: string, fileN
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   if (!path.startsWith(`${reportId}/`)) return { ok: false, message: "경로가 올바르지 않습니다." };
   const supabase = await createClient();
+  const report = await getReport(supabase, reportId); // 잠금·권한 거절이 날 파일을 헛 읽지(kordoc·AI 그림 설명) 않도록 읽기 전에 확인
+  if (!report) return { ok: false, message: "보고서를 찾을 수 없습니다." };
+  if (contentLocked(me.role, report.status)) return { ok: false, message: LOCKED_MSG };
   const name = fileName.slice(0, 300);
   const parsed = await parseStored(supabase, "report-materials", path, name);
   const { data: inserted, error } = await supabase
@@ -173,11 +180,14 @@ export async function finishMaterialUpload(reportId: number, path: string, fileN
 }
 
 export async function deleteMaterial(id: string): Promise<Result> {
-  await requireUser("/my/report");
+  const me = await requireUser("/my/report");
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const supabase = await createClient();
   const { data: row } = await supabase.from("report_materials").select("id, report_id, storage_path").eq("id", id).maybeSingle();
   if (!row) return { ok: false, message: "자료를 찾을 수 없습니다." };
+  const report = await getReport(supabase, row.report_id);
+  if (!report) return { ok: false, message: "보고서를 찾을 수 없습니다." };
+  if (contentLocked(me.role, report.status)) return { ok: false, message: LOCKED_MSG };
   const { data, error } = await supabase.from("report_materials").delete().eq("id", id).select("id"); // 연결(report_material_cards)은 함께 사라짐
   if (error || !data?.length) return { ok: false, message: "지우지 못했습니다(자기 부서 보고서만)." };
   await supabase.storage.from("report-materials").remove([row.storage_path]);
@@ -227,10 +237,11 @@ export async function setMaterialCards(reportId: number, materialId: string, car
   return { ok: true };
 }
 
-/** 리뷰 코멘트 달기(보고서를 볼 수 있는 사람) */
+/** 리뷰 코멘트 달기(성과관리팀·관리자 — 화면의 canComment와 같음. 부서 담당자는 읽기·해결 표시만) */
 export async function addComment(reportId: number, anchor: string, kind: string, body: string): Promise<Result> {
   const me = await requireUser(`/reports/${reportId}`);
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
+  if (me.role === "dept_user") return { ok: false, message: "코멘트는 성과관리팀·관리자만 답니다." };
   const text = body.trim();
   if (!text) return { ok: false, message: "코멘트 내용을 적어 주세요." };
   if (!(COMMENT_KINDS as readonly string[]).includes(kind)) return { ok: false, message: "코멘트 종류를 골라 주세요." };
@@ -264,6 +275,7 @@ export async function setCommentStatus(id: number, reportId: number, status: "op
 export async function buildReportOutline(year: number, refresh: boolean): Promise<Result> {
   const me = await requireAtLeast("pmo", "/reports/outline");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 만듭니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const supabase = await createClient();
   const track = await getTrack();
   const [{ data: cards }, { data: existing }, refs] = await Promise.all([
@@ -302,6 +314,7 @@ export async function buildReportOutline(year: number, refresh: boolean): Promis
 export async function setOutline(cardId: string, year: number, patch: { pages?: number; included?: boolean }): Promise<Result> {
   const me = await requireAtLeast("pmo", "/reports/outline");
   if (!me) return { ok: false, message: "성과관리팀·관리자만 배정합니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   if (patch.pages !== undefined && !isPageStep(patch.pages)) return { ok: false, message: "쪽수는 0.5쪽 단위입니다." };
   const supabase = await createClient();
   const { data, error } = await supabase
