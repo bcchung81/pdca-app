@@ -26,8 +26,6 @@ export const SNAP_LIMITS = { nodes: 20000, depth: 64, frameH: REPORT_BODY_MM.h *
 export const OVERFLOW_HEADER = "x-hwpx-overflow-mm";
 /** 표지 없는 사본 HTML(?for=hwpx)에 라우트가 넣는 초안 판(updated_at) meta 이름 */
 export const DRAFT_VERSION_META = "kca-draft-version";
-/** 여러 쪽 초안에서 맨 위 표를 쪽 경계에서 나눌 수 있게 할 높이(mm) — 쪽 본문의 1/4(이보다 낮은 표는 통째로 다음 쪽으로 넘어감) */
-export const MULTI_PAGE_SPLIT_MM = REPORT_BODY_MM.h / 4;
 
 // ───────────────────────── 스냅숏 검사
 
@@ -193,11 +191,8 @@ export function overflowMm(frameH: number, limitMm: number | null): number {
   if (limitMm === null) return 0;
   return Math.max(0, Math.round((frameH - limitMm) * 10) / 10);
 }
-/** 맨 위 표 나눔 높이: 여러 쪽 초안(경영관리·2쪽 이상 분량)이면 쪽 본문의 1/4, 한 쪽 초안이면 없음(변환기 기본 — 쪽 본문보다 높은 표만) */
-export function splitOverFor(o: { mg: boolean; module: number }): number | undefined {
-  const limit = overflowLimitMm(o);
-  return limit === null || limit > REPORT_BODY_MM.h ? MULTI_PAGE_SPLIT_MM : undefined;
-}
+// 맨 위 표 나눔(2026-11-03): 여러 쪽 초안도 변환기 기본(쪽 본문보다 높은 표만 나눔)을 씀. 예전에는 쪽 본문의 1/4보다 높은 표를 나눴으나
+//   한글이 떠 있는(글자처럼 취급 안 함) 표만 다음 쪽으로 옮겨 뒤 절 표와 겹쳤음(운영 6-2, 한컴 뷰어 확인)
 
 // ───────────────────────── 라우트 판정
 

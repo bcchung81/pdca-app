@@ -5,7 +5,7 @@ import { isMgmtCard } from "../../../../../../lib/cards/mgmt-card.ts";
 import { currentPeriod } from "../../../../../../lib/cards/view.ts";
 import { draftToKcaHwpx } from "../../../../../../lib/hwpx/generate.ts";
 import { snapshotToHwpx } from "../../../../../../lib/reports/dom-hwpx/convert.ts";
-import { OVERFLOW_HEADER, judgeDomHwpx, overflowLimitMm, parseDomHwpxPost, spacingUndoFor, splitOverFor } from "../../../../../../lib/reports/dom-hwpx/policy.ts";
+import { OVERFLOW_HEADER, judgeDomHwpx, overflowLimitMm, parseDomHwpxPost, spacingUndoFor } from "../../../../../../lib/reports/dom-hwpx/policy.ts";
 import { readSnapshotText } from "../../../../../../lib/reports/dom-hwpx/read-body.ts";
 import { REPORT_PAGE_MM, sectionToHwpx } from "../../../../../../lib/reports/section-hwpx.ts";
 import { sectionMarkdown } from "../../../../../../lib/reports/section-md.ts";
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest, { params }: RouteContext<"/repo
   if (!v.ok) return new Response(v.message, { status: v.status });
   try {
     const title = spec?.card.title || card?.title || "";
-    const { bytes } = await snapshotToHwpx(v.snap, { lines: false, title, page: REPORT_PAGE_MM, splitOverMm: splitOverFor(shape), spacingUndo: spacingUndoFor(v.snap.fontMark) });
+    const { bytes } = await snapshotToHwpx(v.snap, { lines: false, title, page: REPORT_PAGE_MM, spacingUndo: spacingUndoFor(v.snap.fontMark) });
     const headers = hwpxHeaders(hwpxFileName(card?.task_no ?? "", title));
     if (v.overflowMm > 0) headers[OVERFLOW_HEADER] = v.overflowMm.toFixed(1);
     return new Response(Buffer.from(bytes), { headers });
