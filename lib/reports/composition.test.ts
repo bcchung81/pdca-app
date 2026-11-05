@@ -27,7 +27,13 @@ import {
   planAdherence,
   planBlockCap,
   blockLimits,
+  bulletChars,
+  cellBullets,
+  cellLineCap,
+  draftPlan,
+  draftPlanLimits,
   limitText,
+  planUnderIssues,
   planBlocks,
   planLimitIssues,
   planMatch,
@@ -811,10 +817,20 @@ test("글 한도(2026-10-15 후속 5): 나란한 칸(상자 도식 2칸 이상·
   assert.ok(planPrompt(reportDraftPrompts().prompts, c, 1).includes(limitText(limits[1])));
 });
 
-test("칸 글 한도 = 2025 주요사업 불릿 기준(2026-10-29): 「칸마다 최대 N줄 · 불릿 하나 약 T자(한 줄 P자 × L줄)」, L = min(N, max(1, round(28 ÷ P))) — 불릿 블록·인용·막대 표는 예전 글", () => {
+test("칸 글 한도 = 칸 하나의 분량(2026-11-04 A2): 「칸마다 N줄(약 N×P자, 한 줄 P자) · 불릿 K개」, K = N ≥ 3이면 2(각 약 ⌊N×P/2⌋자) 아니면 1 — 불릿 블록·인용·막대 표는 예전 글", () => {
   // 2025 주요사업 보고서 과제 소항목 62개 불릿 평균 중앙값 27.89자(scripts/eval/biz-bullet-baseline.ts) → 28
   assert.equal(BIZ_TRACK.reportBulletChars, 28);
-  assert.equal(limitText({ lines: 3, perLine: 8, unit: "cell", side: true, bullet: 3 }), "칸마다 최대 3줄 · 불릿 하나 약 24자(한 줄 8자 × 3줄) · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 2줄 이상)");
+  assert.equal(limitText({ lines: 3, perLine: 8, unit: "cell", side: true, bullet: 3 }), "칸마다 3줄(약 24자, 한 줄 8자) · 불릿 2개(각 약 12자) · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 2줄 이상)");
+  // 1-가 카드·단계(3줄 · 한 줄 12자 · 불릿 2줄): 예전(A)은 불릿 1개·약 36자 — 2025 같은 절은 좁은 칸에 15~17자 불릿 2개(칸당 1.75개)
+  assert.equal(limitText({ lines: 3, perLine: 12, unit: "cell", side: true, bullet: 2 }), "칸마다 3줄(약 36자, 한 줄 12자) · 불릿 2개(각 약 18자) · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 2줄 이상)");
+  assert.equal(limitText({ lines: 5, perLine: 12, unit: "cell", bullet: 2 }), "칸마다 5줄(약 60자, 한 줄 12자) · 불릿 2개(각 약 30자)");
+  assert.equal(limitText({ lines: 2, perLine: 17, unit: "cell", side: true, bullet: 2 }), "칸마다 2줄(약 34자, 한 줄 17자) · 불릿 1개 · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 1줄 이상)", "2줄 이하면 불릿 1개로 N줄까지");
+  assert.equal(limitText({ lines: 1, perLine: 12, unit: "cell", bullet: 1 }), "칸마다 1줄(약 12자) · 불릿 1개", "1줄이면 한 줄 글자 수를 되풀이하지 않음");
+  assert.deepEqual([[1, 1], [2, 1], [2, 2], [3, 2], [4, 2], [6, 2], [8, 3]].map(([lines, bullet]) => cellBullets({ lines, bullet })), [1, 1, 1, 2, 2, 2, 2], "불릿은 2개까지");
+  assert.equal(cellBullets({ lines: 4 }), 1, "bullet이 없는 칸(인용·막대 표)은 불릿 수를 말하지 않음");
+  assert.deepEqual([{ lines: 3, perLine: 12, bullet: 2 }, { lines: 4, perLine: 12, bullet: 2 }, { lines: 5, perLine: 12, bullet: 2 }, { lines: 6, perLine: 8, bullet: 3 }, { lines: 2, perLine: 17, bullet: 2 }].map(bulletChars), [18, 24, 30, 24, 34]);
+  // 줄 수 상한: 불릿 1개면 N, 불릿 2개면 각 불릿을 한 줄 P자로 올림한 줄 수의 합(3줄 칸의 18자 불릿 둘 = 2+2줄)과 N 중 큰 것
+  assert.deepEqual([{ lines: 3, perLine: 12, bullet: 2 }, { lines: 4, perLine: 12, bullet: 2 }, { lines: 5, perLine: 12, bullet: 2 }, { lines: 2, perLine: 17, bullet: 2 }].map(cellLineCap), [4, 4, 6, 2]);
   const c = baseComposition({ blocks: [planBlock({ kind: "bullets", cells: 2 }), planBlock({ kind: "pdca", cells: 4, label: "추진내용" }), planBlock({ kind: "cards", variant: "plain", cells: 3, label: "추진내용" }), planBlock({ kind: "quotes", cells: 2, label: "목소리" }), planBlock({ kind: "table", variant: "bars", cells: 3, label: "실적" })] });
   for (const pages of [1, 2]) {
     const limits = blockLimits(c, pages);
@@ -823,7 +839,7 @@ test("칸 글 한도 = 2025 주요사업 불릿 기준(2026-10-29): 「칸마다
       const l = limits[i]!;
       assert.equal(l.bullet, Math.min(l.lines, Math.max(1, Math.round(28 / l.perLine))), `${c.blocks[i].kind} ${pages}쪽`);
       assert.ok(l.bullet! <= l.lines, "불릿 하나가 칸 최대 줄 수를 넘지 않음");
-      assert.match(limitText(l), /^칸마다 최대 \d+줄 · 불릿 하나 약 \d+자\(한 줄 \d+자 × \d+줄\)/);
+      assert.match(limitText(l), /^칸마다 \d+줄\(약 \d+자(, 한 줄 \d+자)?\) · 불릿 (1개|2개\(각 약 \d+자\))/);
     }
     assert.equal(limits[3]?.bullet, undefined, "인용은 원문 길이");
     assert.equal(limits[4]?.bullet, undefined, "막대 표 값 칸은 수치만");
@@ -832,7 +848,54 @@ test("칸 글 한도 = 2025 주요사업 불릿 기준(2026-10-29): 「칸마다
   // 4칸 PDCA(한 줄 8자): 2쪽(줄 여유 큼)이면 round(28 ÷ 8) = 4줄, 1쪽이면 칸 최대 줄 수까지
   const two = blockLimits(c, 2)[1]!;
   assert.deepEqual([two.perLine, two.bullet], [8, 4]);
-  assert.ok(planPrompt(reportDraftPrompts().prompts, c, 2).includes("불릿 하나 약 32자(한 줄 8자 × 4줄)"));
+  assert.ok(planPrompt(reportDraftPrompts().prompts, c, 2).includes(limitText(two)));
+});
+
+test("planLimitIssues(2026-11-04 A2): 3줄 칸의 불릿 2개(각 18자 = 2+2줄)는 한도 넘침이 아니고, 불릿 3개·긴 불릿으로 늘어난 5줄은 넘침", () => {
+  const c = baseComposition({ blocks: [planBlock({ kind: "cards", variant: "plain", cells: 3, label: "추진내용" })] });
+  const l = blockLimits(c, 1)[0]!;
+  assert.ok(l.lines >= 3 && cellBullets(l) === 2, `시험 전제: 불릿 2개 칸(${JSON.stringify(l)})`);
+  const cards = (bullets: string[]) => ({ ...canonicalBlock("cards", "plain", 3, "추진내용", [], 1), cells: [0, 1, 2].map(() => ({ head: "머리", tag: "", bullets, note: "" })) });
+  const two = ["가".repeat(bulletChars(l)), "나".repeat(bulletChars(l))];
+  assert.deepEqual(planLimitIssues(c, [cards(two)], 1), [], "각 약 T자 불릿 둘은 상한 안");
+  const many = planLimitIssues(c, [cards([...two, ...two, ...two])], 1);
+  assert.equal(many.length, 1);
+  assert.match(many[0], new RegExp(`칸마다 ${cellLineCap(l)}줄 이하`));
+});
+
+test("draftPlan·draftPlanLimits(2026-11-04 A): 그림 때문에 칸 글이 한 줄 14자 아래면 그림을 S로 — 줄인 블록은 원래 높이를 예산으로 받아 줄 수가 늘고, 다른 블록 예산은 그대로", () => {
+  const panel = planBlock({ kind: "compare", variant: "panels", cells: 3, label: "", layout: "full", figures: [{ kind: "photo", desc: "현장", size: "M", pos: "left" }, { kind: "screen", desc: "화면", size: "M", pos: "right" }] });
+  const c = baseComposition({ blocks: [planBlock({ kind: "cards", variant: "arrow", cells: 3, label: "배경" }), panel, planBlock({ kind: "steps", variant: "row", cells: 3, label: "확산" }), planBlock({ kind: "bullets", cells: 3, label: "" })] });
+  const d = draftPlan(c);
+  assert.deepEqual(d.blocks[1].figures.map((f) => f.size), ["S", "S"]);
+  assert.equal(d.blocks[0], c.blocks[0], "그림 없는 블록은 그대로");
+  assert.deepEqual(c.blocks[1].figures.map((f) => f.size), ["M", "M"], "원래 구성안은 바꾸지 않음");
+  const was = blockLimits(c, 1);
+  const { budgets, limits } = draftPlanLimits(c, 1);
+  assert.ok(limits[1]!.perLine > was[1]!.perLine, `한 줄 글자 수가 늘어남(${was[1]!.perLine} → ${limits[1]!.perLine})`);
+  assert.ok(limits[1]!.lines >= was[1]!.lines);
+  assert.deepEqual([0, 2, 3].map((i) => budgets[i]), [0, 2, 3].map((i) => blockBudgets(c, 1)[i]), "다른 블록 예산은 그대로");
+  assert.ok(planPrompt(reportDraftPrompts().prompts, c, 1).includes("사진/S/left"), "요청 글의 그림 자리도 S");
+  // 그림이 넓은 글 폭을 깎지 않으면 그대로(같은 객체)
+  const wide = baseComposition({ blocks: [planBlock({ kind: "bullets", cells: 3, label: "", figures: [{ kind: "photo", desc: "현장", size: "M", pos: "right" }] })] });
+  assert.equal(draftPlan(wide), wide);
+});
+
+test("planUnderIssues(2026-11-04 A): 판면이 판정 띠 아래일 때만, 가장 긴 칸이 글 한도보다 2줄 이상 모자란 블록을 「블록을 더하지 않고 구체화」 고치기 사유로", () => {
+  const c = baseComposition({ blocks: [planBlock({ kind: "cards", variant: "plain", cells: 3, label: "추진내용" }), planBlock({ kind: "bullets", cells: 3, label: "" })] });
+  const limits = blockLimits(c, 1);
+  assert.ok(limits[0]!.lines >= 3, `시험 전제: 칸 한도 3줄 이상(${limits[0]!.lines})`);
+  const cards = { ...canonicalBlock("cards", "plain", 3, "추진내용", [], 1), cells: [0, 1, 2].map(() => ({ head: "머리", tag: "", bullets: ["짧은 글"], note: "" })) };
+  const bullets = { ...canonicalBlock("bullets", "", 1, "", []), items: ["불릿 하나"] };
+  const under = { total: 200, budget: 255 };
+  const out = planUnderIssues(c, [cards, bullets], 1, "all", under);
+  assert.equal(out.length, 2);
+  assert.match(out[0], /^글 한도: \[추진내용\] 가장 긴 칸이 1줄 \/ 한도 \d+줄 — 블록을 더하지 않고/);
+  assert.match(out[1], /불릿 1줄 \/ 한도 3줄/);
+  assert.deepEqual(planUnderIssues(c, [cards, bullets], 1, "all", { total: 250, budget: 255 }), [], "판면이 띠 안이면 사유 아님");
+  // 한도까지 쓴 블록은 사유 아님
+  const full = { ...cards, cells: cards.cells.map(() => ({ head: "머리", tag: "", bullets: ["가".repeat(limits[0]!.perLine * limits[0]!.lines)], note: "" })) };
+  assert.deepEqual(planUnderIssues(c, [full, { ...bullets, items: ["가", "나", "다"] }], 1, "all", under), []);
 });
 
 // ---------------------------------------------------------------------------

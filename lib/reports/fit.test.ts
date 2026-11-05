@@ -30,6 +30,8 @@ import {
   fitScore,
   figuresWidth,
   frameHeight,
+  FIGURE_LINE_MIN,
+  guardFigureText,
   guardFigures,
   hangulPerLine,
   headCut,
@@ -469,6 +471,20 @@ test("guardFigures: 막대가 붙은 좁은 행의 전후 비교 패널 안 M �
   const warnings = guardFigures([compareBlock, chartBlock]);
   assert.deepEqual(compareBlock.figures, [], "패널 안 그림 둘 다 빠짐");
   assert.ok(warnings.some((w) => w.includes("A의 폭이 좁아 그림 2개를 뺐습니다")));
+});
+
+test("guardFigureText(2026-11-04 A): 전폭 전후 패널 안 M 그림 둘이 패널 글을 한 줄 14자 아래로 줄이면 S로, 넓은 불릿 옆 그림·좁은 칸 자체는 그대로", () => {
+  const panel = blk("compare", { variant: "panels", items: ["기존", "개선"], layout: "full", rows: [{ key: "k", before: ["b"], after: ["c"] }], figures: [fig("photo", { pos: "left" }), fig("screen", { pos: "right" })] });
+  const wide = blk("bullets", { items: ["x"], figures: [fig("photo")] });
+  const warnings = guardFigureText([panel, wide]);
+  assert.deepEqual(panel.figures?.map((f) => f.size), ["S", "S"]);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /한 줄 \d+자로 좁아 그림 2개를 작게\(S\) 줄였습니다\(한 줄 (\d+)자\)/);
+  assert.ok(Number(warnings[0].match(/\(한 줄 (\d+)자\)/)![1]) >= FIGURE_LINE_MIN);
+  assert.deepEqual(wide.figures, [fig("photo")], "불릿 옆 M 그림은 글 폭이 넉넉해 그대로");
+  // 협업 가운데 로고는 칸 글 폭을 깎지 않음
+  const hub = blk("hub", { label: "A", cells: [0, 1, 2].map(() => ({ head: "h", tag: "", bullets: ["x"], note: "" })), figures: [fig("logo", { pos: "center", size: "S" })] });
+  assert.deepEqual(guardFigureText([hub]), []);
 });
 
 test("guardFigures: 옆 그림이 너무 크면(W 두 개) 작게(S) 줄이고 경고", () => {

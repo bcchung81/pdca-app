@@ -495,6 +495,12 @@ test("판면 맞추기 요청(fitPrompt): over는 'mm를 줄입니다'·초안 J
   const underReport: FitReport = { ...base, total: 150 };
   const pUnder = fitPrompt(P, ctx, draft, underReport, "under");
   assert.ok(pUnder.includes("mm가 비어 있습니다"));
+  assert.ok(pUnder.includes("블록 하나를 더하고"));
+  // 승인된 구성안으로 쓴 초안(2026-11-04 A): 블록을 더하라고 하지 않고 덜 찬 칸을 글 한도 줄 수까지 구체화
+  const pUnderPlan = fitPrompt(P, ctx, draft, underReport, "under", [], [], [], [], [], true);
+  assert.ok(pUnderPlan.includes("mm가 비어 있습니다"));
+  assert.ok(pUnderPlan.includes("블록을 더하지 않고"));
+  assert.ok(!pUnderPlan.includes("블록 하나를 더하고"));
 
   const raggedLine = { where: "추진배경 · bullets", text: "가".repeat(20), lines: 2, perLine: 8, fill: 0.2 };
   const raggedReport: FitReport = { ...base, ragged: [raggedLine] };

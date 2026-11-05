@@ -22,7 +22,7 @@ import { assistPrompts, assistPromptsMg, chatPrompts, chatPromptsMg, commentProm
 import { type PromptSet, fillFrom } from "../prompts/template.ts";
 import { type YearActuals, yearActuals } from "../reports/actuals.ts";
 import type { BlockAskOutput, BlockEditOutput, BlockShapesOutput, ResultEditOutput } from "../reports/block-edit.ts";
-import { type Composition, type CompositionOutput, planBlockCap, planLimitIssues, planPrompt, withFixedStory } from "../reports/composition.ts";
+import { type Composition, type CompositionOutput, planBlockCap, planLimitIssues, planPrompt, planUnderIssues, withFixedStory } from "../reports/composition.ts";
 import { type FrameInput, framePrompt } from "../reports/framework-pick.ts";
 import type { Story } from "../reports/blocks.ts";
 import { frameworkOf, shapeCode, shapeName } from "../reports/frameworks.ts";
@@ -474,7 +474,7 @@ export async function callReportSection(input: ReportSectionInput): Promise<Sect
   };
   // 자동 고치기의 「고칠 점」은 요청 글 끝에 따로 붙는 블록 — 1차 요청 글(약 4만 토큰)이 바이트까지 같아 캐시 표지(1차는 cachePrompt, 고치기는 tail 앞)가 같은 자리에 오고 고치기는 캐시로 읽음.
   // 1차 요청은 자주 고치기로 이어져(2026-09-27~10-12 주요사업 집필 25건 중 19건, 10-10 이후 4건 중 3건) 웃돈(×0.25)보다 절감(×0.9)이 큼 — 구성안·경영관리·블록 고치기는 이 경로가 아님
-  const tail = input.fit ? fitPrompt(prompts, ctx, input.fit.draft, input.fit.report, input.fit.need, input.fit.year, input.fit.compose, input.fit.prose, input.fit.unknown, input.fit.title) : undefined;
+  const tail = input.fit ? fitPrompt(prompts, ctx, input.fit.draft, input.fit.report, input.fit.need, input.fit.year, input.fit.compose, input.fit.prose, input.fit.unknown, input.fit.title, Boolean(input.plan)) : undefined;
   // CLI 제한 10분: 2026-10-09 연기 시험 1-가 집필 2회 602초(한 번 약 300초 — 예전 7분 제한과 여유가 적음, effort xhigh)
   // 자동 고치기 호출은 기능 키를 따로(report_fix — effort·상한은 집필 report_section과 같음: 고치기만 high로 낮춘 B2c는 문장 품질이 떨어져 미채택, 그 뒤 B4로 구성안·집필·고치기를 함께 high)
   const r = await reportStructured(input.fit ? "report_fix" : "report_section", reportSystem(prompts), schema, input.files ?? [], ask, input.kb, { timeoutMs: 600_000, tail, cachePrompt: !input.fit });
@@ -649,12 +649,15 @@ export async function callReportSectionFitted(
   opts: { onFirst?: (first: { call: SectionCall; check: SectionCheck }) => Promise<boolean>; deadlineMs?: number } = {},
 ): Promise<{ call: SectionCall; check: SectionCheck; passes: number; usage: Usage; trace: FitTrace }> {
   const t0 = Date.now();
-  // 승인된 구성안으로 쓸 때는 글 한도(칸마다 줄 수)를 넘긴 블록도 고치기 문제로(lib/reports/composition.ts planLimitIssues)
+  // 승인된 구성안으로 쓸 때는 글 한도(칸마다 줄 수)를 넘긴 블록도 고치기 문제로(lib/reports/composition.ts planLimitIssues),
+  // 판면이 판정 띠 아래면 글 한도보다 2줄 이상 모자란 블록도(planUnderIssues — 고치기 사유·점수에만, 경고 목록에는 판면 경고가 이미 있어 안 넣음)
   const check = (out: SectionOutput): SectionCheck => {
     const c = verify(out);
     if (!input.plan) return c;
-    const over = planLimitIssues(input.plan, c.spec.blocks ?? [], input.ctx.module, input.ctx.head);
-    return { ...c, composeIssues: [...c.composeIssues, ...over], warnings: [...c.warnings, ...over] };
+    const blocks = c.spec.blocks ?? [];
+    const over = planLimitIssues(input.plan, blocks, input.ctx.module, input.ctx.head);
+    const under = planUnderIssues(input.plan, blocks, input.ctx.module, input.ctx.head ?? "all", fitReport(c.spec));
+    return { ...c, composeIssues: [...c.composeIssues, ...over, ...under], warnings: [...c.warnings, ...over] };
   };
   const first = await callReportSection(input);
   let best = { call: first, check: check(first.output) };

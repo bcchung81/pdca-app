@@ -11,7 +11,7 @@ import { inspectionCardText } from "../ai/inspect.ts";
 import { BLOCK_OUT_FIELDS, type Block, STORIES, actualBars, blockBullets, blockOutSchema, blockNumberTexts, blockSignature, blockTexts, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
-import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PAGE_MM, blockAreaMm, blockCosts, capacityLines, fitReport, guardFigures, hollowWarning, subTitleMax } from "./fit.ts";
+import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PAGE_MM, blockAreaMm, blockCosts, capacityLines, fitReport, guardFigureText, guardFigures, hollowWarning, subTitleMax } from "./fit.ts";
 import { isStory, storyLabel } from "./frameworks.ts";
 import { cardFindings } from "./findings.ts";
 import { type DiagramHint, type HintOptions, bizVarietyIssue, diagramHints, kindUsage, ownKindsIn, repeatedKinds } from "./diagram-hints.ts";
@@ -267,6 +267,7 @@ export const REQUEST_SECTIONS = [
   "fit.yearItem",
   "fit.over",
   "fit.under",
+  "fit.underPlan",
   "fit.ragged",
   "fit.sparse",
   "fit.rows",
@@ -523,7 +524,7 @@ export function composeIssues(blocks: Block[], own: DiagramHint[]): string[] {
  * 판면 맞추기 요청(첫 요청 글 뒤에 붙임): 어림 높이·예산, 넘침/빔, 행별 높이, 두 줄 넘는 칸 글, 앞서 쓴 초안 JSON.
  * need는 fitNeeded(report) — over·under·wrap. title = 소항목 제목 한 줄 폭 문제(title-checks.ts subTitleIssues — 2026-10-28, 제목만 줄이라고 알림)
  */
-export function fitPrompt(p: ReportPrompts, ctx: SectionContext, draft: SectionOutput, report: FitReport, need: FitNeed | null, year: string[] = [], compose: string[] = [], prose: string[] = [], unknown: string[] = [], title: string[] = []): string {
+export function fitPrompt(p: ReportPrompts, ctx: SectionContext, draft: SectionOutput, report: FitReport, need: FitNeed | null, year: string[] = [], compose: string[] = [], prose: string[] = [], unknown: string[] = [], title: string[] = [], planned = false): string {
   const r = (key: (typeof REQUEST_SECTIONS)[number], vars: Record<string, string | number> = {}) => requestText(p, key, vars);
   const item = (x: FitLine) => r("fit.lineItem", { where: x.where, text: x.text, lines: x.lines, fill: Math.round(x.fill * 100), perLine: x.perLine, target: Math.round(x.perLine * (x.lines > 1 ? 2 : 1) * 0.9) });
   // 판면이 맞고 올해 실적 문제만 있으면 「고치기」 머리(판면·짜임 유지)
@@ -531,7 +532,8 @@ export function fitPrompt(p: ReportPrompts, ctx: SectionContext, draft: SectionO
   // 목표 범위(예산의 97~100%) — 평가 라운드 G: 28mm만 줄이면 되는 초안을 77mm 줄여 77%가 됨
   const range = { low: Math.round(report.budget * 0.97), budget: report.budget };
   if (need === "over") lines.push(r("fit.over", { mm: report.total - report.budget, ...range }));
-  else if (need === "under") lines.push(r("fit.under", { mm: report.budget - report.total, ...range }));
+  // 승인된 구성안으로 쓴 초안(planned)은 블록을 더할 수 없음 — 덜 찬 칸을 글 한도 줄 수까지 구체화(2026-11-04 A: 예전 fit.under 「블록 하나를 더하라」와 구성안 「블록을 더하지 않음」이 부딪힘)
+  else if (need === "under") lines.push(r(planned ? "fit.underPlan" : "fit.under", { mm: report.budget - report.total, ...range }));
   else if (need) lines.push(r(need === "ragged" ? "fit.ragged" : "fit.sparse"));
   if (need) {
     lines.push(r("fit.rows", { rows: report.rows.map((x) => `${x.label || x.kinds} ${Math.round(x.mm)}mm`).join(" · ") }));
@@ -815,8 +817,8 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
     kept += keep;
   }
   if (cut) warnings.push(`그림: 자리표시는 ${ctx.module}쪽에 ${cap}개까지라 뒤 ${cut}개를 뺐습니다.`);
-  // 그림 옆에 남는 글 폭이 모자라면 작게 줄이거나 뺌(lib/reports/fit.ts guardFigures)
-  warnings.push(...guardFigures(blocks));
+  // 그림 옆에 남는 글 폭이 모자라면 작게 줄이거나 뺌(lib/reports/fit.ts guardFigures), 그림 때문에 칸 글이 한 줄 14자 아래로 좁으면 S로(guardFigureText — 구성안 draftPlan과 같은 함수)
+  warnings.push(...guardFigures(blocks), ...guardFigureText(blocks));
   if (!spec.results.length && !spec.resultCards?.length) warnings.push("추진성과 상자가 비었습니다.");
   if (clipped && spec.resultCards?.length) warnings.push(`문체: 추진성과 3칸 글 ${clipped}곳이 칸 한도(칩 12자·결과 줄 40자)를 넘어 잘렸습니다 — 잘린 뒤를 확인해 짧게 고쳐 주세요.`);
   warnings.push(...dropped);

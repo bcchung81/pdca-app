@@ -9,7 +9,7 @@
 import { z } from "zod";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { BLOCK_KINDS, type Block, type BlockKind, FIGURE_KINDS, FIGURE_LABEL, FIGURE_POS, FIGURE_SIZES, type Figure, MAIN_STORIES, type MainStory, STORIES, type Story, VARIANTS, cleanFigures, isGridTable, isPanelCompare } from "./blocks.ts";
-import { type HeadMode, PAGE_MM, blockAreaMm, blockWidth, bodyLayout, bulletLines, canonicalBlock, figuresWidth, fitReport, hangulPerLine, isBoxBlock, mgBulletCell, slotOf, stageHeadMm, statsLine } from "./fit.ts";
+import { FIT_BAND, type HeadMode, PAGE_MM, blockAreaMm, blockWidth, bodyLayout, bulletLines, canonicalBlock, figuresWidth, fitReport, guardFigureText, hangulPerLine, isBoxBlock, mgBulletCell, slotOf, stageHeadMm, statsLine } from "./fit.ts";
 import { BIZ_TRACK } from "../tracks/index.ts";
 import { type BlockLayout, type BlockSpan, LAYOUT_LABEL, dropLoneSpans, layoutFields, layoutGroups } from "./layout.ts";
 import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeCode, shapeName, storyLabel } from "./frameworks.ts";
@@ -570,15 +570,24 @@ const CELL_TEXT = new Set<BlockKind>(["cards", "steps", "timeline", "hub", "quot
  * 표준 모양(canonicalBlock에 칸마다 L줄)으로 거꾸로 셈(1줄부터 늘려 예산을 넘기 전까지)하고, 칸 폭의 한 줄 글자 수와 함께 집필 요청에 적음
  */
 export function blockLimits(c: Composition, module: number, head: HeadMode = "all"): Array<BlockLimit | null> {
-  const budgets = blockBudgets(c, module, head);
+  return limitsWithin(c, module, head, blockBudgets(c, module, head));
+}
+
+/** 칸마다 L줄을 채운 구성안 블록 i의 판면 행 높이(mm, 단 띠 머리 되풀이 뺌) — blockLimits의 거꾸로 셈 */
+const planRowMm = (c: Composition, i: number, lines: number, module: number, repeat: number[]) => {
+  const b = c.blocks[i];
+  return soloRowMm(canonicalBlock(b.kind, b.variant, b.cells, b.label, b.figures, lines, layoutFields(b)), module) - repeat[i];
+};
+
+/** blockLimits 본문 — 블록마다 높이 예산(mm) 안에 드는 최대 줄 수 */
+function limitsWithin(c: Composition, module: number, head: HeadMode, budgets: number[]): Array<BlockLimit | null> {
   const repeat = stageRepeats(planBlocks(c));
   return c.blocks.map((b, i) => {
     const w = blockPerLine(b);
     if (w?.unit === "line") return { lines: b.cells, perLine: w.perLine, unit: "line" as const };
     if (!w || !budgets[i]) return null;
-    const rowMm = (lines: number) => soloRowMm(canonicalBlock(b.kind, b.variant, b.cells, b.label, b.figures, lines, layoutFields(b)), module) - repeat[i];
     let lines = 1;
-    while (lines < 8 && rowMm(lines + 1) <= budgets[i]) lines += 1;
+    while (lines < 8 && planRowMm(c, i, lines + 1, module, repeat) <= budgets[i]) lines += 1;
     const bullet = mgBulletCell(b) ? { bullet: Math.min(lines, bulletLines(w.perLine, BIZ_TRACK.reportBulletChars)) } : {};
     return { lines, perLine: w.perLine, unit: "cell" as const, ...(sideBySide(b) ? { side: true } : {}), ...bullet };
   });
@@ -600,18 +609,65 @@ export function blockPerLine(b: Pick<PlanBlock, "kind" | "variant" | "cells" | "
 export const sideBySide = (b: Pick<PlanBlock, "kind" | "variant" | "cells">) => isBoxBlock(b) && (isPanelCompare(b) || b.cells >= 2);
 
 /**
+ * 칸 하나의 불릿 수(주요사업 글 한도 — 2026-11-04 A2): 칸 줄 한도 N이 3줄 이상이면 짧은 불릿 2개, 2줄 이하면 불릿 1개(N줄까지). 3개 이상은 늘리지 않음.
+ * A안(N이 불릿 두 개 L줄씩을 담을 때만 2개)은 좁은 3칸 블록(P=12 → L=2)의 3줄 칸이 불릿 1개(약 36자)가 됨 — 2025 최종본은 좁은 칸에 15~17자 불릿 2개(1-가 칸당 1.75개)
+ */
+export const cellBullets = (l: Pick<BlockLimit, "lines" | "bullet">) => (l.bullet && l.lines >= 3 ? 2 : 1);
+
+/** 불릿 하나의 글자 수(약): 불릿 2개면 칸 분량 N×P의 절반(⌊N×P/2⌋), 1개면 N×P */
+export const bulletChars = (l: Pick<BlockLimit, "lines" | "perLine" | "bullet">) => Math.floor((l.lines * l.perLine) / cellBullets(l));
+
+/**
+ * 칸 글 줄 수 상한(넘침 검사·덜 찬 검사): 불릿 1개면 한도 N줄. 불릿 2개면 각각 bulletChars자를 한 줄 P자로 올림해 둘을 더한 줄 수와 N 중 큰 것 —
+ * 3줄 칸의 불릿 둘(각 18자)은 한 줄 P=12자라 각 2줄씩 4줄이라, N=3 그대로 세면 지시대로 쓴 글이 모두 한도 넘침이 됨
+ */
+export const cellLineCap = (l: Pick<BlockLimit, "lines" | "perLine" | "bullet">) => (cellBullets(l) === 2 ? Math.max(l.lines, 2 * Math.ceil(bulletChars(l) / l.perLine)) : l.lines);
+
+/**
  * 글 한도 글자(주요사업 집필 요청 plan.block). 나란한 칸이고 2줄 이상이면 가장 짧은 칸의 아래 한도(N−1줄)를 붙임.
- * 칸 블록(bullet이 있으면, 2026-10-29): 「칸마다 최대 N줄 · 불릿 하나 약 T자(한 줄 P자 × L줄)」, T = L × P — 「한 줄 약 P자」만 주면 좁은 칸(4칸 격자 P 8~10)에 한 줄 조각 불릿이 나옴(경영관리 mg-draft.ts mgLimitText와 같은 결함)
+ * 칸 블록(bullet이 있으면, 2026-11-04 A2): 칸 하나의 분량 「칸마다 N줄(약 N×P자, 한 줄 P자) · 불릿 K개(K=2면 각 약 ⌊N×P/2⌋자)」(K = cellBullets). 2026-10-29판 「불릿 하나 약 L×P자」는
+ * 좁은 칸의 조각 불릿은 막았지만 칸을 불릿 하나·L줄에서 멈추게 함. bullet이 없는 칸(인용·목소리·막대 표)은 예전 글 그대로
  */
 export const limitText = (l: BlockLimit | null) =>
-  !l ? "—" : l.unit === "line" ? `불릿 ${l.lines}줄 이하 · 한 줄 약 ${l.perLine}자` : `칸마다 최대 ${l.lines}줄 · ${l.bullet ? `불릿 하나 약 ${l.bullet * l.perLine}자(한 줄 ${l.perLine}자 × ${l.bullet}줄)` : `한 줄 약 ${l.perLine}자`}${l.side && l.lines >= 2 ? ` · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 ${l.lines - 1}줄 이상)` : ""}`;
+  !l
+    ? "—"
+    : l.unit === "line"
+      ? `불릿 ${l.lines}줄 이하 · 한 줄 약 ${l.perLine}자`
+      : `${l.bullet ? `칸마다 ${l.lines}줄(약 ${l.lines * l.perLine}자${l.lines > 1 ? `, 한 줄 ${l.perLine}자` : ""}) · 불릿 ${cellBullets(l)}개${cellBullets(l) === 2 ? `(각 약 ${bulletChars(l)}자)` : ""}` : `칸마다 최대 ${l.lines}줄 · 한 줄 약 ${l.perLine}자`}${l.side && l.lines >= 2 ? ` · 나란한 칸은 같은 줄 수로(가장 짧은 칸도 ${l.lines - 1}줄 이상)` : ""}`;
+
+/**
+ * 집필 요청으로 옮기는 구성안(결정론, 주요사업 — 2026-11-04 A): 그림 때문에 칸 글이 한 줄 FIGURE_LINE_MIN자 아래로 좁아지는 블록은 그림을 S로(fit.ts guardFigureText —
+ * 집필 검증도 같은 함수로 초안 그림을 줄임). 글 한도·높이 예산·요청 글의 그림 자리·고치기 사유가 모두 이 구성안으로 셈. 바뀐 것이 없으면 그대로
+ */
+export function draftPlan(c: Composition): Composition {
+  const blocks = planBlocks(c);
+  if (!guardFigureText(blocks).length) return c;
+  const sizeAt = (i: number, k: number, f: Figure) => blocks[i].figures?.[k]?.size ?? f.size;
+  return { ...c, blocks: c.blocks.map((b, i) => (b.figures.every((f, k) => sizeAt(i, k, f) === f.size) ? b : { ...b, figures: b.figures.map((f, k) => ({ ...f, size: sizeAt(i, k, f) })) })) };
+}
+
+/**
+ * 집필 요청·고치기 사유가 쓰는 구성안·높이 예산·글 한도(draftPlan 뒤). 그림을 줄인 블록은 원래 구성안으로 쓴 높이(원래 글 한도를 채운 행 높이와 원래 예산 중 큰 것)를
+ * 예산으로 둠 — 줄인 그림이 남긴 글 폭·높이를 그 블록 글이 쓰고(1-가 전후 패널: 1줄·10자 → 2줄·13자), 다른 블록 예산·판면 어림은 원래 한도 때와 같음.
+ * 다시 나누면 줄인 블록의 보통 높이가 낮아져 예산을 덜 받음(3-4가 패널 2줄 → 1줄)
+ */
+export function draftPlanLimits(c: Composition, module: number, head: HeadMode = "all"): { plan: Composition; budgets: number[]; limits: Array<BlockLimit | null> } {
+  const plan = draftPlan(c);
+  const budgets = blockBudgets(c, module, head);
+  if (plan === c) return { plan, budgets, limits: limitsWithin(c, module, head, budgets) };
+  const was = limitsWithin(c, module, head, budgets);
+  const repeat = stageRepeats(planBlocks(c));
+  const kept = budgets.map((mm, i) => (plan.blocks[i] === c.blocks[i] || !was[i] || !mm ? mm : Math.max(mm, Math.round(planRowMm(c, i, was[i]!.lines, module, repeat)))));
+  return { plan, budgets: kept, limits: limitsWithin(plan, module, head, kept) };
+}
 
 /**
  * 집필 초안이 글 한도를 넘긴 블록(결정론 — 고치기 요청에 넣음). 구성안 블록과 같은 순서·종류로 맞은 블록만 봄.
  * 칸 글 줄 수 = 칸 불릿마다 실제 칸 폭으로 셈(bodyLayout — 글자 단위·자간 맞춤 반영), 불릿 블록은 불릿 수
  */
 export function planLimitIssues(c: Composition, blocks: Block[], module: number, head: HeadMode = "all"): string[] {
-  const limits = blockLimits(c, module, head);
+  const { plan, limits } = draftPlanLimits(c, module, head);
+  c = plan;
   const out: string[] = [];
   // 담당자가 고른 도식이 초안에 없으면 먼저(사람이 정한 짜임 — 2026-09-28)
   const kinds = blocks.map((b) => b.kind);
@@ -634,12 +690,49 @@ export function planLimitIssues(c: Composition, blocks: Block[], module: number,
       if (b.items.length > l.lines) out.push(`글 한도: [${name}] 불릿 ${b.items.length}줄 → ${l.lines}줄 이하로`);
       return;
     }
-    const width = blockWidth(b) - figuresWidth(b);
-    const slot = slotOf(b, width);
-    // 수치 표는 값 칸 하나하나가 한 칸(한 행의 값들은 옆으로 나란함 — 추진실적 열·2단 라벨 표는 행마다 불릿 칸), 수치 띠는 칸마다 이은 한 줄(fit.ts statsLine)
-    const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
-    const most = Math.max(0, ...cellLines.map((xs) => xs.reduce((n, x) => n + bodyLayout(x, slot.body).lines, 0)));
-    if (most > l.lines) out.push(`글 한도: [${name}] 가장 긴 칸이 ${most}줄 → 칸마다 ${l.lines}줄 이하(한 줄 약 ${l.perLine}자)로`);
+    const most = longestCellLines(b);
+    const cap = cellLineCap(l);
+    if (most > cap) out.push(`글 한도: [${name}] 가장 긴 칸이 ${most}줄 → 칸마다 ${cap}줄 이하(한 줄 약 ${l.perLine}자)로`);
+  });
+  return out.slice(0, 4);
+}
+
+/** 초안 블록에서 가장 긴 칸의 줄 수(칸 불릿마다 실제 칸 폭으로 셈 — bodyLayout, 글자 단위·자간 맞춤 반영) */
+function longestCellLines(b: Block): number {
+  const slot = slotOf(b, blockWidth(b) - figuresWidth(b));
+  // 수치 표는 값 칸 하나하나가 한 칸(한 행의 값들은 옆으로 나란함 — 추진실적 열·2단 라벨 표는 행마다 불릿 칸), 수치 띠는 칸마다 이은 한 줄(fit.ts statsLine)
+  const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
+  return Math.max(0, ...cellLines.map((xs) => xs.reduce((n, x) => n + bodyLayout(x, slot.body).lines, 0)));
+}
+
+/** 덜 찬 블록: 가장 긴 칸(불릿 블록은 불릿 수)이 글 한도보다 이만큼 이상 모자라면 */
+export const PLAN_UNDER_LINES = 2;
+
+/**
+ * 판면이 빈 초안의 덜 찬 블록(결정론, 주요사업 — 2026-11-04 A): 판면 어림이 판정 띠(FIT_BAND.under) 아래일 때만, 구성안 블록과 짝지은 초안 블록 중
+ * 가장 긴 칸이 글 한도보다 PLAN_UNDER_LINES줄 이상 모자란 블록을 고치기 사유로(lib/ai/run.ts가 짜임 문제에 넣어 자동 고치기를 부름 — 승인된 구성안은 블록을 더할 수 없어
+ * 예전 fit.under 「블록 하나를 더하라」와 부딪혔음). 칸 채우기(hollow — 형제 칸끼리 비교)와 달리 한도와 견줌. fit = 초안 판면 어림
+ */
+export function planUnderIssues(c: Composition, blocks: Block[], module: number, head: HeadMode, fit: { total: number; budget: number }): string[] {
+  if (fit.total >= fit.budget * FIT_BAND.under) return [];
+  const { plan, limits } = draftPlanLimits(c, module, head);
+  c = plan;
+  const match = planMatch(c, blocks);
+  const out: string[] = [];
+  c.blocks.forEach((p, i) => {
+    const l = limits[i];
+    const j = match[i];
+    if (!l || j === null) return;
+    const b = blocks[j];
+    const name = p.label || p.kind;
+    const used = l.unit === "line" ? b.items.length : longestCellLines(b);
+    const cap = l.unit === "line" ? l.lines : cellLineCap(l);
+    if (cap - used < PLAN_UNDER_LINES) return;
+    out.push(
+      l.unit === "line"
+        ? `글 한도: [${name}] 불릿 ${used}줄 / 한도 ${l.lines}줄 — 블록을 더하지 않고 근거에 있는 이 블록의 사실을 대상·수치·시점·효과로 구체화해 ${l.lines}줄까지(한 줄 약 ${l.perLine}자)`
+        : `글 한도: [${name}] 가장 긴 칸이 ${used}줄 / 한도 ${cap}줄 — 블록을 더하지 않고 칸마다 같은 사실을 대상·수치·시점·효과로 구체화해 ${cap}줄까지(한 줄 약 ${l.perLine}자, 불릿 ${cellBullets(l)}개)`,
+    );
   });
   return out.slice(0, 4);
 }
@@ -881,9 +974,9 @@ export function planReviseText(p: PromptSet, revise?: PlanRevise | null): string
 
 /** 집필 요청 글의 「승인된 구성안」(report-draft/request.md plan.*) — revise = 구성안 뒤 추가된 자료·담당자 요청(자료 반영 고치기·구성안대로 집필, 없으면 예전 글 그대로) */
 export function planPrompt(p: PromptSet, c: Composition, module: number, head: HeadMode = "all", revise?: PlanRevise | null): string {
+  const { plan, budgets, limits } = draftPlanLimits(c, module, head);
+  c = plan;
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
-  const budgets = blockBudgets(c, module, head);
-  const limits = blockLimits(c, module, head);
   // 성과 축은 평가 논점 줄 아래 한 줄씩(축이 없으면 빈 글 — 그 자리 글이 예전 요청 글과 같음)
   const axes = (c.axes ?? []).map((a) => `\n- 성과 축: ${a.axis} ← ${a.materials.join("·") || "—"}`).join("");
   const lines = [r("plan.head", { message: c.message || "—", points: c.points.join(" · ") || "—", axes, story: storyLabel(c.story, c.subStory) || "—" })];

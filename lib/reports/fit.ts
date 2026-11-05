@@ -739,6 +739,45 @@ export function guardFigures(blocks: Block[], at?: string[]): string[] {
   return warnings;
 }
 
+/** 그림 옆 칸 글의 한 줄 한글 글자 수 하한(주요사업 — 2026-11-04 A: 1-가 전후 패널 안 M 그림 둘이 패널 글을 한 줄 10자로 줄여 칸 글이 낱말 조각이 됨) */
+export const FIGURE_LINE_MIN = 14;
+
+/** 블록 칸 글의 한 줄 한글 글자 수(그림 자리를 뺀 실제 글 폭 — 전후 패널은 두 패널 중 좁은 쪽 panelTextMm, 그 밖은 판면 어림과 같은 폭·칸) */
+function textLineChars(b: Block, room: number): number {
+  if (isPanelCompare(b)) {
+    const s = slotOf(b, room);
+    return Math.min(hangulPerLine(panelTextMm(b, s, false)), hangulPerLine(panelTextMm(b, s, true)));
+  }
+  const w = Math.max(40, room - figuresWidth(b));
+  if (b.kind === "bullets" || b.kind === "case") return hangulPerLine(w - (b.kind === "case" ? 12 : 4));
+  return hangulPerLine(slotOf(b, w).body);
+}
+
+/**
+ * 그림이 칸 글 폭을 잠식하지 않게(결정론, 주요사업 — 승인된 구성안을 집필 요청으로 옮길 때(composition.ts draftPlan)와 집필 검증(section.ts verifySection)이 같이 씀):
+ * 그림 때문에 칸 글 한 줄이 FIGURE_LINE_MIN자 아래로 떨어지면 그 블록의 그림(지도·로고 제외)을 큰 것부터 S로 줄임 — 그림이 없을 때도 그만 못 하면(좁은 칸 자체) 그대로.
+ * 그림을 블록 밖으로 옮기지 않는 까닭: 렌더러·판면 어림·한글 변환의 그림 자리는 left·right·center뿐이고 S는 셋 다 이미 그림
+ */
+export function guardFigureText(blocks: Block[], at?: string[]): string[] {
+  const rooms = blockRooms(blocks, at);
+  const out: string[] = [];
+  blocks.forEach((b, i) => {
+    const figs = b.figures ?? [];
+    if (!figs.some((f) => !insideHub(b, f))) return;
+    const chars = (fs: Figure[]) => textLineChars({ ...b, figures: fs }, rooms[i]);
+    const fs = figs.map((f) => ({ ...f }));
+    for (const f of [...fs].sort((a, c) => figureMm(c).w - figureMm(a).w)) {
+      if (chars(fs) >= FIGURE_LINE_MIN) break;
+      if (f.kind !== "logo" && f.kind !== "map" && f.size !== "S" && !insideHub(b, f)) f.size = "S";
+    }
+    const shrunk = fs.filter((f, k) => f.size !== figs[k].size).length;
+    if (!shrunk) return;
+    out.push(`그림: ${b.label || b.kind}의 칸 글이 그림 때문에 한 줄 ${chars(figs)}자로 좁아 그림 ${shrunk}개를 작게(S) 줄였습니다(한 줄 ${chars(fs)}자).`);
+    b.figures = fs;
+  });
+  return out;
+}
+
 /** 사다리 행 끝 막대(42mm 칸) 높이 — svg 150×104 비율 + 제목 줄 */
 export const CHART_MM = 42 * (104 / 150) + 9.5 * 1.45 * PT + 0.6;
 /** 막대 머리(제목·배지 — section-css .k-chart figcaption·.k-chart__badge) */
