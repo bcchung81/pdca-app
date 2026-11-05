@@ -11,6 +11,7 @@ import type { Check } from "../../../../lib/knowledge/types.ts";
 import { UNIT_LABEL } from "../../../../lib/knowledge/labels.ts";
 import { PEER_DOC_ID } from "../../../../lib/knowledge/parsers/peer.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
+import { loadWho } from "../../../../lib/users/who.ts";
 
 export const metadata: Metadata = { title: "공통 자료·틀 · 경평AI비서" };
 /** 일반 문서를 올릴 때 서버에서 읽고 나누는 시간(큰 PDF는 오래 걸릴 수 있어 함수 최대 시간을 명시) */
@@ -20,6 +21,8 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) 
 const DOC_STATUS: Record<string, string> = { deferred: "보류", retired: "대체됨" };
 /** 화면에서 올린 일반 문서(id up-…)와 붙임2만 화면에서 지울 수 있음 */
 const UPLOADED_ID = /^up-[0-9a-f]{8}$/;
+/** 올린 사람 기록이 없는 문서 — 화면 올리기는 늘 올린 사람을 남기므로 명령(pnpm knowledge:*·db:seed, 서비스 키)으로 적재한 것 */
+const BY_COMMAND = "명령 적재";
 
 /** 관리자 · 공통 자료·틀: 올리기 칸 + 공통 지식 문서 표(적재 검산), 기준 문서 고정 사본 */
 export default async function LibraryPage({ searchParams }: PageProps<"/admin/library">) {
@@ -30,9 +33,11 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
   const docId = one(sp.doc);
   const supabase = await createClient();
   const [{ data: docs }, { data: facets }] = await Promise.all([
-    supabase.from("knowledge_documents").select("doc_id, title, file_name, edition, published, issuer, basis_year, tracks, scope, status, supersedes, sha256, parser_version, chunk_count, unit_counts, checks, updated_at").order("published", { ascending: false }),
+    supabase.from("knowledge_documents").select("doc_id, title, file_name, edition, published, issuer, basis_year, tracks, scope, status, supersedes, sha256, parser_version, chunk_count, unit_counts, checks, uploaded_by, created_at, updated_at").order("published", { ascending: false }),
     supabase.from("knowledge_chunks").select("doc_id, searchable"),
   ]);
+  const who = await loadWho(supabase, (docs ?? []).map((d) => d.uploaded_by));
+  const byOf = (d: { uploaded_by: string | null }) => who(d.uploaded_by) ?? BY_COMMAND;
   const sources = harnessSources();
   const sizes = tab === "knowledge" ? sharedSizeReport(await loadBundleChunks(supabase), []) : [];
   const chunks = (facets ?? []).length;
@@ -75,6 +80,12 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
                 </dd>
                 <dt className="text-muted">발행</dt>
                 <dd>{fmtDate(peek.published)}</dd>
+                <dt className="text-muted">올린 사람 · 때</dt>
+                <dd>
+                  {byOf(peek)} · <span className="font-mono text-xs">{fmtDateTime(peek.created_at)}</span>
+                </dd>
+                <dt className="text-muted">갱신</dt>
+                <dd className="font-mono text-xs">{fmtDateTime(peek.updated_at)}</dd>
                 {peek.supersedes && (
                   <>
                     <dt className="text-muted">대체 문서</dt>
@@ -129,17 +140,18 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
       {tab === "knowledge" && (
         <Panel>
           <div className="overflow-x-auto">
-            <table className={`${T.table} min-w-[720px]`}>
+            <table className={`${T.table} min-w-[860px]`}>
               <colgroup>
                 <col />
                 <col className="w-[120px]" />
                 <col className="w-[72px]" />
                 <col className="w-[96px]" />
+                <col className="w-[140px]" />
                 <col className="w-[88px]" />
               </colgroup>
               <thead>
                 <tr className={T.headRow}>
-                  {["문서", "판", "조각", "검산", "적재일"].map((h) => (
+                  {["문서", "판", "조각", "검산", "올린 사람 · 때", "적재일"].map((h) => (
                     <th key={h} scope="col" className={T.th}>
                       {h}
                     </th>
@@ -169,13 +181,16 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
                       <td className={`${T.td} truncate text-muted-2`}>{d.edition ?? "—"}</td>
                       <td className={`${T.td} font-mono text-ui text-muted-2`}>{d.chunk_count}</td>
                       <td className={T.td}>{w.length ? <Tag tone="warn">주의 {w.length}</Tag> : <Tag tone="link">통과</Tag>}</td>
+                      <td className={`${T.td} truncate text-xs text-muted-2`} title={`${byOf(d)} · ${fmtDateTime(d.created_at)}`}>
+                        {byOf(d)} · <span className="font-mono">{fmtDate(d.created_at)}</span>
+                      </td>
                       <td className={`${T.td} font-mono text-xs text-muted`}>{fmtDate(d.updated_at)}</td>
                     </tr>
                   );
                 })}
                 {(docs ?? []).length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-3 py-8 text-center text-sm text-muted">
+                    <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted">
                       아직 올린 문서가 없습니다. 위에 파일을 끌어 놓아 시작하세요.
                     </td>
                   </tr>

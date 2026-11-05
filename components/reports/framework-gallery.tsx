@@ -42,7 +42,7 @@ function Chip({ text, onRemove, disabled }: { text: string; onRemove?: () => voi
 export function FrameworkGallery(props: {
   open: boolean;
   uid: string;
-  /** 경영관리 카드(경영관리 이야기 틀 12종 · 경영관리 2025 절) */
+  /** 경영관리 카드(경영관리 이야기 틀 15종 · 경영관리 2025 절) */
   mg?: boolean;
   /** 머리 아래 한 줄(경영관리 절 이름 등) */
   context?: string;
@@ -58,6 +58,8 @@ export function FrameworkGallery(props: {
   request?: { initial: string } | null;
   /** 여러 안 비교를 켤 수 있음 */
   alts?: boolean;
+  /** 여러 안 비용 어림(「3안 = 구성안 3번 비용(약 $2.7)」)을 보임 — 관리자만(2026-11-04, 그 밖에는 「3안을 만듭니다」만) */
+  showCost?: boolean;
   onPick: (frame: FrameChoice, request: string) => void;
   onAlts?: (alts: FrameChoice[], request: string) => void;
   onClose: () => void;
@@ -324,7 +326,7 @@ export function FrameworkGallery(props: {
                     setCands(e.target.checked && !isEmptyFrame(pick) ? [pick] : []);
                   }}
                 />
-                <span className="truncate">여러 안 비교{multi ? ` · ${altCostText(Math.max(n, ALT_LIMITS.min), catalog?.altCost ?? null)}` : ""}</span>
+                <span className="truncate">여러 안 비교{multi ? ` · ${props.showCost ? altCostText(Math.max(n, ALT_LIMITS.min), catalog?.altCost ?? null) : `${Math.max(n, ALT_LIMITS.min)}안을 만듭니다`}` : ""}</span>
               </label>
             )}
             <div className="ml-auto flex shrink-0 gap-2">

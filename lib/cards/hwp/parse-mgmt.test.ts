@@ -31,6 +31,21 @@ test("부서(팀)·지표명(단위)·구역 이름", () => {
   assert.equal(sectionOfLabel("[Act] 전년도 환류"), null, "주요사업 구역 이름은 경영관리 구역이 아님");
 });
 
+test("카드 머리 칸이 「(과제번호)」 없이 「과제명」만이어도 카드(같은 행의 「(과제번호 : …)」 칸에서 번호를 읽음) — 번호 칸이 없는 「과제명」 표는 카드 아님(합성 표)", () => {
+  const card = (label: string, no: string) =>
+    `<table>\n<tr><th rowspan="2">${label}</th><th rowspan="2">시험 과제 ${no}<br>(과제번호 : 시험지표 ${no})</th><th>부서(팀)</th><th>시험본부(시험팀)</th></tr>\n<tr><td>관리자/작성자</td><td>가나 팀장 / 다라 차장</td></tr>\n</table>`;
+  const other = `<table>\n<tr><th>과제명</th><th>담당 부서</th></tr>\n<tr><td>시험 과제</td><td>시험본부</td></tr>\n</table>`;
+  const md = ["# [혁신노력과 성과]", card("과제명<br>(과제번호)", "13-4"), card("과제명", "13-5"), card("과제<br>(과제번호)", "8-1"), card("과 제", "8-2"), other].join("\n\n");
+  const out = parseMgmtMarkdown(md, { sourceName: "x.hwp" });
+  assert.deepEqual(out.cards.map((c) => [c.id, c.title, c.department, c.team]), [
+    ["경영관리13/13-4", "시험 과제 13-4", "시험본부", "시험팀"],
+    ["경영관리13/13-5", "시험 과제 13-5", "시험본부", "시험팀"],
+    ["경영관리8/8-1", "시험 과제 8-1", "시험본부", "시험팀"],
+    ["경영관리8/8-2", "시험 과제 8-2", "시험본부", "시험팀"],
+  ]);
+  assert.equal(out.skipped, 0, "번호 칸 없는 「과제명」 표는 카드로 세지 않음(못 읽은 카드 아님)");
+});
+
 // 실제 8월 점검 자료(이 컴퓨터 data/ — git 밖)를 진짜 kordoc으로 읽는다
 const REAL = resolve(import.meta.dirname, "../../../data/cards/260904/cards-260904-mg.hwp");
 test("실제 경영관리 카드 파일(8월 점검 자료): 43장을 경고 없이 읽고, 목차(44개)와 대조해 빠진 14-1만 알림(파일이 없으면 건너뜀)", { skip: !existsSync(REAL) && "원본(data/cards/260904/cards-260904-mg.hwp)이 없음" }, async () => {

@@ -2,6 +2,7 @@
 // 쓰인 모양(글자·문단·테두리·글머리·번호·탭·그림)만 번호를 다시 매겨 담습니다. 카드 화면(lib/cards/layout-render.ts)이
 // 이 배치와 카드 JSON으로 원본 그대로 그립니다. 입출력 없는 순수 함수(그림 바이트는 담지 않고 형식만).
 
+import { groupHeadingNo, groupTitleNo } from "./group-mark.ts";
 import type { BorderFill, Bullet, CharPr, HeadFoot, HwpDoc, Inline, LineSeg, Numbering, PageDef, PageNumPos, Para, ParaPr, Shape, TabDef, Table } from "./model.ts";
 import { layoutPages } from "./pages.ts";
 
@@ -40,7 +41,7 @@ export interface CardLayout {
   textWidth: number;
   /** 쪽 크기·여백(원본 구역 정의) */
   page?: PageDef;
-  /** 문서 첫머리의 묶음 제목 표(「(주요사업N) …」) — 한글 파일로 내려받을 때 맨 위에 두어 다시 올리면 묶음을 알 수 있게 */
+  /** 이 카드 묶음의 제목 표(「(주요사업N) …」 — 합본은 카드 앞의 가장 가까운 묶음 표지가 가리키는 것) — 한글 파일로 내려받을 때 맨 위에 두어 다시 올리면 묶음을 알 수 있게 */
   lead?: LayoutBlock;
   /** 꼬리말(쪽 번호 자동 번호는 자리표시) — 쪽 보기 */
   footer?: HeadFoot;
@@ -61,6 +62,14 @@ const plain = (p: Para) =>
 export function isGroupTitleTable(t: Table): boolean {
   const first = t.cells.find((c) => c.row === 0 && c.col === 0) ?? t.cells[0];
   return Boolean(first) && /^\(주요사업\d+\)/.test(first.paras.map(plain).join(""));
+}
+
+/** 묶음 표지(묶음 제목 표·「[주요사업N]」 머리 줄 — group-mark.ts)가 가리키는 묶음 번호, 표지가 아니면 null */
+function groupMarkNo(b: LayoutBlock): number | null {
+  if (b.kind === "para") return groupHeadingNo(plain(b.para));
+  if (!isGroupTitleTable(b.table)) return null;
+  const first = b.table.cells.find((c) => c.row === 0 && c.col === 0) ?? b.table.cells[0];
+  return groupTitleNo(first.paras.map(plain).join(""));
 }
 
 /** 카드 표: 첫 칸 글이 「과제명」으로 시작 */
@@ -109,7 +118,15 @@ export function extractCardLayouts(doc: HwpDoc): CardLayout[] {
   const starts = blocks.map((b, i) => (b.kind === "table" && isCardTable(b.table) ? i : -1)).filter((i) => i >= 0);
   const sec = doc.sections.find((s) => s.page) ?? doc.sections[0];
   const page = sec?.page ?? null;
-  const lead = blocks.find((b) => b.kind === "table" && isGroupTitleTable(b.table));
+  const titles = blocks.filter((b) => b.kind === "table" && isGroupTitleTable(b.table));
+  // 카드마다 자기 앞의 가장 가까운 묶음 표지가 가리키는 묶음의 제목 표(합본은 제목 표를 앞에 모으고 카드 묶음마다 머리 줄을 둠). 표지가 없으면 첫 제목 표
+  const leadOf = (s: number): LayoutBlock | undefined => {
+    for (let i = s - 1; i >= 0; i--) {
+      const n = groupMarkNo(blocks[i]);
+      if (n !== null) return titles.find((t) => groupMarkNo(t) === n) ?? titles[0];
+    }
+    return titles[0];
+  };
   // 쪽 보기: 문서 전체를 같은 쪽 나눔 규칙으로 흘려 카드마다 첫 쪽 번호(원본 PDF의 쪽 번호 = 쪽 순서)
   const pageOf = new Map<number, number>();
   if (page) {
@@ -127,6 +144,7 @@ export function extractCardLayouts(doc: HwpDoc): CardLayout[] {
     if (cut > 0) part.length = cut;
     while (part.length > 1 && part[part.length - 1].kind === "para" && !plain((part[part.length - 1] as { para: Para }).para)) part.pop();
     const deco = { footer: sec?.footer, pageNum: sec?.pageNum && pnBlock >= 0 && pnBlock <= s ? sec.pageNum : undefined, firstPage: pageOf.has(s) ? (pageOf.get(s) as number) + 1 : undefined };
+    const lead = leadOf(s);
     if (!lead) return subset(doc, part, page, deco);
     const l = subset(doc, [lead, ...part], page, deco);
     l.lead = l.blocks.shift();

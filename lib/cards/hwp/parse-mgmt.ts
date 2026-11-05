@@ -26,11 +26,19 @@ export function sectionOfLabel(text: string): string | null {
   return null;
 }
 
-/** 카드 표인가 — 첫 칸이 「과제명(과제번호)」(8-x 카드는 「과제(과제번호)」) */
+/** 카드 머리 칸(띄어쓰기를 뺀 글): 「과제명(과제번호)」·「과제(과제번호)」(8-x), 또는 「(과제번호)」 없이 「과제명」·「과제」만(새 판 13-5) */
+const CARD_HEAD_RE = /^과제명?(?:\(과제번호\)|$)/;
+
+/**
+ * 카드 표인가 — 첫 칸이 카드 머리 칸. 「(과제번호)」 없는 머리(「과제명」만)는 다른 표와 헷갈리지 않게 같은 행에 「(과제번호 : …)」 칸이 있을 때만
+ * (과제번호는 늘 그 칸에서 읽음 — splitTitle)
+ */
 export function isMgmtCardTable(t: Table | undefined): boolean {
   for (const row of t?.rows ?? []) for (const c of row) {
     const x = nospace(plainText(c));
-    if (x) return /^과제(명)?\(과제번호\)/.test(x);
+    if (!x) continue;
+    if (/^과제명?\(과제번호\)/.test(x)) return true;
+    return CARD_HEAD_RE.test(x) && row.some((o) => /\(\s*과제번호\s*[:：]/.test(plainText(o)));
   }
   return false;
 }
@@ -149,7 +157,7 @@ export function parseMgmtCardTable(table: Table, ctx: { file: string; bundle: st
   };
 
   // 식별 칸: 과제명 · 부서(팀) · 관리자/작성자
-  const titleCell = after(rows[0], /^과제(명)?\(과제번호\)/);
+  const titleCell = after(rows[0], CARD_HEAD_RE);
   const parsed = splitTitle(textOf(titleCell));
   if (!parsed) return null;
   const deptCell = after(rows[0], /^부서/) ?? after(rows[1], /^부서/);

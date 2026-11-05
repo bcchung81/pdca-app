@@ -39,6 +39,9 @@ export interface ImportFileMeta {
   group?: string | null;
   error?: string;
   note?: string;
+  /** 원본 파일을 저장소에서 지운 때·지운 사람(deleteImportOriginals — 지우면 path는 빈 글) */
+  removedAt?: string;
+  removedBy?: string;
 }
 
 /** loadItem이 읽는 현행화 항목 한 줄(parsed = 파일에서 읽은 카드 JSON — 칸이 많아 넓은 모양 그대로) */
@@ -167,12 +170,13 @@ export async function parseCardImport(importId: number): Promise<{ ok: boolean; 
         console.error("import layout", e instanceof Error ? e.message : e);
       }
     f.cards = read.cards.length;
-    f.group = /^주요사업\d+$/.test(read.group.id) ? read.group.id : null;
+    // 묶음은 카드마다(card.group): 주요사업은 카드 앞의 가장 가까운 묶음 표지(묶음 여럿을 합친 파일도 — parseCardGroups), 경영관리는 지표 묶음
+    const bizGroups = [...new Set(read.cards.map((c) => String(c.group ?? "")).filter((g) => /^주요사업\d+$/.test(g)))];
+    f.group = bizGroups.length ? bizGroups.join("·") : null;
     let seq = 0;
     let others = 0;
     for (const [ci, card] of read.cards.entries()) {
-      // 묶음: 주요사업 파일은 파일 하나가 한 사업(f.group), 경영관리 파일은 카드마다 지표 묶음(카드의 group)
-      const cardGroup: string | null = isMgmtCard(card) ? card.group : f.group;
+      const cardGroup: string | null = isMgmtCard(card) || /^주요사업\d+$/.test(String(card.group ?? "")) ? card.group : null;
       let m: MatchResult = matchCard({ group: cardGroup, taskNo: card.taskNo, title: card.title }, target ? [ref(target)] : cards.map(ref));
       if (target && m.kind === "none") {
         if (read.cards.length > 1) {
@@ -539,4 +543,51 @@ export async function getDraftImportPlan(importId: number): Promise<{
   }));
   if (!items.length) return { ok: false, message: fileError ?? "파일에서 이 과제의 카드를 찾지 못했습니다.", items: [] };
   return { ok: true, items };
+}
+
+/** 「올리는 중」 묶음은 이 시간 안이면 아직 읽는 중일 수 있어 원본을 못 지움(페이지 최대 실행 800초보다 넉넉히) */
+const READING_GUARD_MS = 15 * 60_000;
+
+/**
+ * 현행화 원본 파일 삭제(성과관리팀·관리자, 원장 현행화 묶음만): 저장소의 원본 한글 파일만 지우고 기록은 남김.
+ * 원본은 읽기(parseCardImport — 묶음이 「올리는 중」일 때 한 번)에서만 쓰고, 검토·반영·등록은 읽어 둔 카드 JSON·배치(card_import_items)와
+ * 이미 card-originals로 옮긴 그림만 씀 — 그래서 반영 대기 항목이 있어도 지울 수 있음. 읽는 중일 수 있는 묶음만 막음.
+ * 지운 파일만 files[n].path를 비우고 removedAt·removedBy를 남김(묶음 행·card_import_items는 그대로). 부서 작성본 묶음(scope draft)은 범위 밖
+ */
+export async function deleteImportOriginals(importId: number): Promise<{ ok: boolean; message: string }> {
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
+  const me = await requireRole(["pmo", "admin"], "/cards/import");
+  if (!me) return { ok: false, message: "원본 파일 삭제는 성과관리팀·관리자가 합니다." };
+  const supabase = await createClient();
+  const { data: imp } = await supabase.from("card_imports").select("id, scope, files, status, created_at").eq("id", importId).maybeSingle();
+  if (!imp) return { ok: false, message: "현행화 묶음을 찾을 수 없습니다." };
+  if (imp.scope !== "ledger") return { ok: false, message: "부서 작성본 묶음의 원본은 여기서 지우지 않습니다." };
+  if (imp.status === "uploading" && Date.now() - Date.parse(imp.created_at) < READING_GUARD_MS) return { ok: false, message: "아직 파일을 읽는 중일 수 있습니다 — 잠시 뒤에 지워 주세요." };
+  const files = ((imp.files ?? []) as ImportFileMeta[]).map((f) => ({ ...f }));
+  const targets = files.filter((f) => f.path);
+  if (!targets.length) return { ok: true, message: "지울 원본 파일이 없습니다." };
+  await supabase.storage.from("card-imports").remove(targets.map((f) => f.path));
+  // 지워졌는지는 폴더에 남은 것으로 봄(remove는 권한이 없어도 오류 없이 빈 결과를 줌). 못 읽으면 아무것도 지운 것으로 적지 않음
+  const { data: left, error: listError } = await supabase.storage.from("card-imports").list(String(imp.id), { limit: 1000 });
+  if (listError) return { ok: false, message: "원본 파일을 지웠는지 확인하지 못했습니다. 다시 눌러 주세요." };
+  const remaining = new Set((left ?? []).map((o) => `${imp.id}/${o.name}`));
+  const at = new Date().toISOString();
+  let removed = 0;
+  for (const f of targets) {
+    if (remaining.has(f.path)) continue;
+    f.path = "";
+    f.removedAt = at;
+    f.removedBy = me.id;
+    removed += 1;
+  }
+  if (!removed) return { ok: false, message: "원본 파일을 지우지 못했습니다." };
+  const { data: saved, error } = await supabase.from("card_imports").update({ files }).eq("id", imp.id).select("id");
+  if (error || !saved?.length) {
+    console.error("deleteImportOriginals", error?.message);
+    return { ok: false, message: "원본은 지웠지만 기록을 남기지 못했습니다. 다시 눌러 주세요." };
+  }
+  revalidatePath("/cards/import");
+  revalidatePath(`/cards/import/${imp.id}`);
+  const failed = targets.length - removed;
+  return { ok: failed === 0, message: failed ? `원본 ${removed}개를 지웠고 ${failed}개는 지우지 못했습니다.` : `원본 파일 ${removed}개를 지웠습니다(반영 기록은 남음).` };
 }

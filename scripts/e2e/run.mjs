@@ -423,11 +423,11 @@ try {
   check("보고서 초안: 담당자는 다른 부서 카드 초안을 못 만듦", r.ok === false && /자기 부서 과제만/.test(r.message ?? ""), JSON.stringify(r).slice(0, 120));
   r = await call(d, RC(own.uid), "runReportSectionDraft", [own.uid, { card: ["00000000-0000-0000-0000-000000000000"], report: [] }]);
   check("보고서 초안: 이 카드 자료가 아닌 첨부는 거절", r.ok === false && /찾을 수 없는 것/.test(r.message ?? ""), JSON.stringify(r).slice(0, 120));
-  // 과제별 초안 화면은 과제원장 전체 페이지와 같은 짜임(늘 전체 보기): 왼쪽 보고서 · 오른쪽 「AI 초안 | 점검 결과」 탭(아래 요청 칸) · 머리 폴더 단추로 여는 「근거 자료」
+  // 과제별 초안 화면은 과제원장 전체 페이지와 같은 짜임(늘 전체 보기): 왼쪽 보고서 · 오른쪽 「AI 초안」 대화(머리 한 줄 상태 · 아래 요청 칸, 2026-11-04 — 점검 결과 탭 없음) · 머리 폴더 단추로 여는 「근거 자료」
   const SEND_RE = /aria-label="(구성안|바로) (다시 )?만들기 요청"/;
   const rp0 = await d.get(RC(own.uid));
   check("과제별 초안 화면(초안 없음 · 초안 근거 요약 · 카드 전용 자료 · 요청 칸 보내기 단추)", rp0.status === 200 && text(rp0.html).includes("아직 초안이 없습니다") && text(rp0.html).includes("초안 근거") && text(rp0.html).includes("카드 전용 자료") && text(rp0.html).includes("바로 만들기") && SEND_RE.test(rp0.html), String(rp0.status));
-  check("과제별 초안: 좌측 메뉴 없음(늘 전체 보기) · 머리 「근거 자료」·「더보기」 단추 · 탭 「AI 초안」·「점검 결과」", !rp0.html.includes('aria-label="주 메뉴"') && rp0.html.includes('aria-label="근거 자료"') && rp0.html.includes('aria-label="더보기"') && text(rp0.html).includes("AI 초안") && text(rp0.html).includes("점검 결과") && !text(rp0.html).includes("전체 보기"));
+  check("과제별 초안: 좌측 메뉴 없음(늘 전체 보기) · 머리 「근거 자료」·「더보기」 단추 · 「AI 초안」 대화(머리 상태 「구성안부터」)", !rp0.html.includes('aria-label="주 메뉴"') && rp0.html.includes('aria-label="근거 자료"') && rp0.html.includes('aria-label="더보기"') && rp0.html.includes('aria-label="AI 초안"') && text(rp0.html).includes("구성안부터") && !text(rp0.html).includes("전체 보기"));
   const rpFull = await d.get(`${RC(own.uid)}?full=1`);
   check("과제별 초안 옛 전체 보기 주소(?full=1)도 같은 화면: 좌측 메뉴 없음 · 초안 근거", rpFull.status === 200 && !rpFull.html.includes('aria-label="주 메뉴"') && !text(rpFull.html).includes("기본 보기") && text(rpFull.html).includes("초안 근거"), String(rpFull.status));
   const cardFull = await d.get(`/cards/${own.uid}`);

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ImportUploader } from "../../../../components/cards/import/import-controls";
+import { DeleteOriginals, ImportUploader } from "../../../../components/cards/import/import-controls";
 import { Empty, NoAccess, PageHeader, Panel, Screen, T, Tag } from "../../../../components/ui/kit";
 import { requireAtLeast } from "../../../../lib/auth/dal.ts";
-import { fmtDateTime } from "../../../../lib/format.ts";
+import { fmtDate, fmtDateTime } from "../../../../lib/format.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import type { ImportFileMeta } from "./actions";
 
@@ -47,17 +47,18 @@ export default async function CardImportPage() {
           <Empty title="아직 현행화한 파일이 없습니다.">위에서 한글 파일을 올리면 여기에 묶음별로 쌓입니다.</Empty>
         ) : (
           <div className="overflow-x-auto">
-            <table className={`${T.table} min-w-[880px]`}>
+            <table className={`${T.table} min-w-[1020px]`}>
               <colgroup>
                 <col className="w-[132px]" />
                 <col className="w-[120px]" />
                 <col />
                 <col className="w-[88px]" />
                 <col className="w-[240px]" />
+                <col className="w-[140px]" />
               </colgroup>
               <thead>
                 <tr className={T.headRow}>
-                  {["올린 때", "올린 사람", "파일", "카드", "처리"].map((h) => (
+                  {["올린 때", "올린 사람", "파일", "카드", "처리", "원본"].map((h) => (
                     <th key={h} scope="col" className={T.th}>
                       {h}
                     </th>
@@ -69,6 +70,9 @@ export default async function CardImportPage() {
                   const files = (imp.files ?? []) as ImportFileMeta[];
                   const t = tally.get(imp.id) ?? { total: 0, applied: 0, skipped: 0, pending: 0, none: 0 };
                   const names = files.map((f) => f.name).join(", ");
+                  // 원본 파일 삭제(원장 현행화 묶음만 — 부서 작성본 묶음은 범위 밖): 남은 원본이 있으면 단추, 지운 것은 「원본 삭제됨 · 날짜」
+                  const kept = files.filter((f) => f.path);
+                  const gone = files.filter((f) => f.removedAt).sort((a, b) => String(b.removedAt).localeCompare(String(a.removedAt)))[0];
                   return (
                     <tr key={imp.id} className={T.row}>
                       <td className={`${T.td} font-mono text-ui text-muted-2`}>{fmtDateTime(imp.created_at)}</td>
@@ -93,6 +97,16 @@ export default async function CardImportPage() {
                               {t.total === 0 && <Tag tone="warn">읽은 카드 없음</Tag>}
                             </>
                           )}
+                        </span>
+                      </td>
+                      <td className={T.td}>
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          {gone && (
+                            <span className="truncate text-xs text-muted-2" title={`원본 삭제 · ${who.get(gone.removedBy ?? "") ?? "—"} · ${fmtDateTime(gone.removedAt)}`}>
+                              원본 삭제됨 · <span className="font-mono">{fmtDate(gone.removedAt)}</span>
+                            </span>
+                          )}
+                          {imp.scope === "ledger" && kept.length > 0 && <DeleteOriginals importId={imp.id} names={kept.map((f) => f.name)} pending={t.pending} />}
                         </span>
                       </td>
                     </tr>

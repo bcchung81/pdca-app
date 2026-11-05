@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { fmtDateTime } from "../../lib/format.ts";
 import { createBrowserSupabase } from "../../lib/supabase/browser.ts";
+import { useAsk } from "./confirm-dialog";
 import { T } from "./kit";
 
 export interface FileItem {
@@ -11,12 +12,19 @@ export interface FileItem {
   fileName: string;
   bytes: number | null;
   createdAt: string;
+  /** 올린 사람 이름(못 읽은 프로필은 「다른 사용자」 — lib/users/who.ts). 없으면 안 보임 */
+  uploadedBy?: string | null;
+  /** 지울 수 없는 까닭(확정된 보고서의 근거 자료 등) — 있으면 삭제 단추를 끄고 까닭을 title로 */
+  locked?: string | null;
   url: string | null;
   /** AI가 못 읽었는지(참고자료 설계 1단계) — 있으면 「AI가 못 읽음」 표지를 보임 */
   parseError?: string | null;
   /** 읽은 글 수(읽었을 때만) */
   chars?: number | null;
 }
+
+/** 「올린 사람 · 11.04 14:20」(올린 사람 기록이 없으면 때만) */
+const uploadedLabel = (m: Pick<FileItem, "uploadedBy" | "createdAt">) => [m.uploadedBy, fmtDateTime(m.createdAt)].filter(Boolean).join(" · ");
 
 /** 읽은 글 수(1만 자 이상은 「1.1만 자」, 미만은 「n자」) */
 const charsLabel = (n: number) => (n >= 10_000 ? `${(n / 10_000).toFixed(1)}만 자` : `${n}자`);
@@ -64,7 +72,16 @@ export function FileDrop(props: {
   const [err, setErr] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [pending, start] = useTransition();
+  const { ask, dialog } = useAsk();
   const changed = () => (props.onChange ? props.onChange() : router.refresh());
+  const remove = (m: FileItem) =>
+    ask([{ title: `「${m.fileName}」을(를) 지울까요?`, body: ["지운 파일은 되돌릴 수 없습니다."], confirmLabel: "삭제" }], () =>
+      start(async () => {
+        const r = await props.remove(m.id);
+        if (!r.ok) setErr(r.message ?? "지우지 못했습니다.");
+        changed();
+      }),
+    );
 
   const upload = async (files: FileList | File[]) => {
     setErr(null);
@@ -89,6 +106,7 @@ export function FileDrop(props: {
 
   return (
     <div className="flex flex-col gap-3">
+      {dialog}
       {props.canEdit && (
         <div
           onDragOver={(e) => {
@@ -133,37 +151,42 @@ export function FileDrop(props: {
           {props.items.map((m) => (
             <li key={m.id} className="flex min-w-0 items-center gap-3 border-b border-row-line px-3 py-2 last:border-b-0">
               <span className="w-10 shrink-0 font-mono text-xs text-muted uppercase">{(m.fileName.split(".").pop() ?? "").slice(0, 5)}</span>
-              {m.url ? (
-                <a href={m.url} className="min-w-0 truncate text-ui text-link" title={m.parseError ? `${m.fileName} — AI가 못 읽음: ${m.parseError}` : m.fileName}>
-                  {m.fileName}
-                </a>
-              ) : (
-                <span className="min-w-0 truncate text-ui" title={m.parseError ? `AI가 못 읽음: ${m.parseError}` : undefined}>
-                  {m.fileName}
+              {/* 좁은 옆 창(compact)은 올린 사람·때를 파일 이름 아래 둘째 줄에, 넓은 화면은 한 줄 끝에 */}
+              <span className="flex min-w-0 grow flex-col">
+                <span className="flex min-w-0 items-center gap-3">
+                  {m.url ? (
+                    <a href={m.url} className="min-w-0 truncate text-ui text-link" title={m.parseError ? `${m.fileName} — AI가 못 읽음: ${m.parseError}` : m.fileName}>
+                      {m.fileName}
+                    </a>
+                  ) : (
+                    <span className="min-w-0 truncate text-ui" title={m.parseError ? `AI가 못 읽음: ${m.parseError}` : undefined}>
+                      {m.fileName}
+                    </span>
+                  )}
+                  {m.parseError ? (
+                    <span className="shrink-0 rounded-chip bg-warn-bg px-1 text-xs text-warn" title={m.parseError}>
+                      AI가 못 읽음
+                    </span>
+                  ) : (
+                    m.chars != null && <span className="shrink-0 font-mono text-xs text-muted-2">{charsLabel(m.chars)}</span>
+                  )}
+                  <span className="ml-auto shrink-0 font-mono text-xs text-muted">{size(m.bytes)}</span>
+                  {!props.compact && <span className="shrink-0 text-xs text-muted">{uploadedLabel(m)}</span>}
                 </span>
-              )}
-              {m.parseError ? (
-                <span className="shrink-0 rounded-chip bg-warn-bg px-1 text-xs text-warn" title={m.parseError}>
-                  AI가 못 읽음
-                </span>
-              ) : (
-                m.chars != null && <span className="shrink-0 font-mono text-xs text-muted-2">{charsLabel(m.chars)}</span>
-              )}
-              <span className="ml-auto shrink-0 font-mono text-xs text-muted">{size(m.bytes)}</span>
-              {!props.compact && <span className="shrink-0 font-mono text-xs text-muted">{fmtDateTime(m.createdAt)}</span>}
+                {props.compact && (
+                  <span className="truncate text-xs text-muted" title={`올린 사람 · 올린 때: ${uploadedLabel(m)}`}>
+                    {uploadedLabel(m)}
+                  </span>
+                )}
+              </span>
               {props.canEdit && (
                 <button
                   type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    start(async () => {
-                      const r = await props.remove(m.id);
-                      if (!r.ok) setErr(r.message ?? "지우지 못했습니다.");
-                      changed();
-                    })
-                  }
-                  className="shrink-0 text-xs text-muted underline hover:text-warn"
+                  disabled={pending || Boolean(m.locked)}
+                  onClick={() => remove(m)}
+                  className="shrink-0 text-xs text-muted underline hover:text-warn disabled:cursor-not-allowed disabled:no-underline disabled:hover:text-muted"
                   aria-label={`${m.fileName} 삭제`}
+                  title={m.locked ?? undefined}
                 >
                   삭제
                 </button>

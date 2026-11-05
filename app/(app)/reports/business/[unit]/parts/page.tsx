@@ -42,8 +42,9 @@ export default async function UnitPartsPage({ params, searchParams }: PageProps<
   const icons = (
     <div className="flex shrink-0 items-center gap-2">
       <ListIconButton href={back.href} label={back.label} />
-      <Link href={layoutHref} aria-label="사업 조판" title="사업 조판 — 이 지표의 과제별 초안을 쪽에 이어 붙여 보기" className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}>
+      <Link href={layoutHref} aria-label="사업 조판" title="사업 조판 — 이 지표의 과제별 초안을 쪽에 이어 붙여 보기" className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}>
         <LayoutPanelTop size={16} aria-hidden />
+        <span className={T.deskOnly}>사업 조판</span>
       </Link>
     </div>
   );

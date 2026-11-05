@@ -11,12 +11,12 @@ import { Toast } from "../cards/review/review-ui";
 import { ListIconButton, PhoneBackButton } from "../workspace/list-icon-button";
 import { NarrowSheet, SheetButton } from "../workspace/narrow-sheet";
 import { PaneResizer, usePaneWidth } from "../workspace/pane-resizer";
-import { type PaneTabItem, PaneTabs } from "../workspace/pane-tabs";
 import { paneClass, paneWidthStyle } from "../workspace/right-pane.ts";
 import { type StepZoomRange, useFitZoom } from "../workspace/use-fit-zoom.ts";
 import { NARROW_QUERY, PHONE_QUERY, mediaMatches, useMedia } from "../workspace/use-narrow.ts";
 import { ZoomControl } from "../workspace/zoom-control";
-import { type DraftBusy, DraftCompose, type DraftMeta, type DraftMsg } from "./draft-compose";
+import { type DraftBusy, DraftCompose } from "./draft-compose";
+import type { DraftThreadData } from "../../lib/reports/draft-thread.ts";
 import { DraftComposer, DraftHistory, DraftReviewNote, DraftSelectionBar, RESULT_AT, flashBlock, hoverBlock, useDraftReview } from "./draft-review";
 import { DraftSources, type SourceProps, useDraftSelection } from "./draft-workbench";
 import { type DraftPick, mergeSources, pickOf } from "../../lib/reports/draft-sources.ts";
@@ -35,11 +35,14 @@ import { type DomHwpxItem, useDomHwpx } from "./dom-hwpx-download";
 import { BlockShapes } from "./block-shapes";
 import type { ShapeMenuItem } from "../../lib/reports/block-shape.ts";
 
-type Tab = "ai" | "check";
+/** 오른쪽 자리에 잠시 바꿔 여는 패널(✕·Esc로 「AI 초안」 대화로 돌아옴) — outline = 답의 「구성안 고치기」로 여는 구성안 편집(2026-11-04) */
+type Other = "sources" | "history" | "shapes" | "outline";
 /** 좁은 폭 시트 머리·떠 있는 단추의 이름(지금 오른쪽 자리에 든 패널) */
-const SIDE_LABEL = { ai: "AI 초안", check: "점검 결과", sources: "근거 자료", history: "수정 이력", shapes: "다른 모양" } as const;
+const SIDE_LABEL = { ai: "AI 초안", sources: "근거 자료", history: "수정 이력", shapes: "다른 모양", outline: "구성안 고치기" } as const;
 /** 휴대폰 폭 떠 있는 단추의 짧은 이름(없으면 SIDE_LABEL) */
-const SIDE_SHORT: Partial<Record<keyof typeof SIDE_LABEL, string>> = { ai: "AI", check: "점검" };
+const SIDE_SHORT: Partial<Record<keyof typeof SIDE_LABEL, string>> = { ai: "AI" };
+/** 구성안 고치기 창 단추 중 AI 요청(시작하면 창을 닫고 대화에서 진행 줄을 봄 — 판면 줄이기·저장은 창에 남음) */
+const OUTLINE_AI = new Set(["story", "again", "approve"]);
 /** 더보기 항목: 링크(download면 내려받기) 또는 화면 그대로 한글 내려받기(dom — 누르면 숨은 사본을 떠 서버로 보냄, dom-hwpx-download.tsx) */
 export type MenuItem = { href: string; label: string; hint?: string; download?: boolean; dom?: DomHwpxItem };
 type Sib = { href: string; taskNo: string; title: string } | null;
@@ -73,9 +76,9 @@ const PAPER_MARK_CSS = `[aria-label="구성안 판면"] [data-block]{cursor:poin
 /**
  * 경평 초안 과제별 초안 작업 공간(과제원장 전체 페이지 — components/cards/card-workspace.tsx와 같은 짜임):
  * 머리 한 줄(돌아가기 · 앞뒤 과제 · 과제번호 · 과제명 | 근거 자료 · 더보기) → 왼쪽은 도구줄 + 종이(초안 또는 구성안 판면) + 여백 메모(구성안 블록마다 — 과제원장 여백 메모 자리),
- * 오른쪽은 「AI 초안 | 점검 결과」 탭 — 근거 자료는 그 자리에 잠시 바꿔 열고 ✕·Esc로 탭에 돌아옴.
+ * 오른쪽은 「AI 초안」 대화(머리 한 줄 상태 — 2026-11-04, 예전 「점검 결과」 탭은 마지막 답의 할 일로 합침) — 근거 자료·수정 이력·구성안 고치기는 그 자리에 잠시 바꿔 열고 ✕·Esc로 대화에 돌아옴.
  * 종이는 남는 폭에 맞춰 CSS zoom으로 확대(기본 맞춤, 도구줄 −·+로 고르면 이 브라우저에 기억). 좁은 창(종이 80% + 여백 메모를 못 담음)은 여백 메모 대신 오른쪽 구성안 목록.
- * 고른 근거(첨부·전년 절)와 구성안 편집 상태는 이 부품이 들고 요청 칸·근거 자료 패널·구성안 패널·여백 메모가 함께 씀. 세 패널은 늘 그려 두고 숨김만(입력·선택이 남음).
+ * 고른 근거(첨부·전년 절)와 구성안 편집 상태는 이 부품이 들고 요청 칸·근거 자료 패널·구성안 고치기 창·여백 메모가 함께 씀. 대화·근거 자료·구성안 창은 늘 그려 두고 숨김만(입력·선택이 남음).
  */
 export function DraftWorkspace(
   props: SourceProps & {
@@ -95,9 +98,12 @@ export function DraftWorkspace(
     /** 제출·승인된 보고서의 과제(부서만 — 성과관리팀·관리자는 늘 false) — 쓰기 도구를 숨기고 머리 아래 띠로 안내 */
     locked: boolean;
     hasSpec: boolean;
-    draftInfo: string | null;
-    /** 「AI 초안」 탭 단계 레일 재료(원장 바뀜·짜임·판면·점검 나눔·구성안 메타·제출 링크 — derive.ts draftMetaOf) */
-    draftMeta: DraftMeta;
+    /** 「AI 초안」 대화 재료(차례·할 일·머리 상태·확정 링크 — derive.ts threadOf) */
+    thread: DraftThreadData;
+    /** 카드 화면(원장 실적 넣기 — 할 일 「카드에서 실적 반영」) */
+    cardHref: string;
+    /** 관리자(짜임 고르기의 여러 안 비용 어림) */
+    admin?: boolean;
     /** 왼쪽 도구줄 칩(서버가 그림: 과제·판면·반영 근거·상태)과 오른쪽 끝(BP·내려받기) */
     toolbar: ReactNode;
     toolbarEnd: ReactNode;
@@ -109,9 +115,6 @@ export function DraftWorkspace(
     match: Array<number | null>;
     /** 처음 볼 판(구성안이 확인 전·초안 없음·짝이 절반 미만이면 구성안) */
     defaultView: "draft" | "outline";
-    /** 점검 결과 탭 내용(서버가 그림 — data-jump 단추를 누르면 미리보기의 그 자리로) */
-    check: ReactNode;
-    checkCount: number;
     /** 초안 행 updated_at(블록 목록 초안일 때만 — 블록 고치기의 동시 편집 확인값, 없으면 블록 고치기 끔) */
     version: string | null;
     /** 사람이 고친 블록 순번(다시 만들기 전 경고) */
@@ -125,8 +128,7 @@ export function DraftWorkspace(
     deptView?: boolean;
   },
 ) {
-  const [tab, setTab] = useState<Tab>("ai");
-  const [other, setOther] = useState<null | "sources" | "history" | "shapes">(null);
+  const [other, setOther] = useState<null | Other>(null);
   // 「다른 모양으로」 대상 블록(끌어 고르기 도구줄 「다른 모양」 — 오른쪽 자리에 잠시 열고, 닫아도 결과는 같은 블록이면 남음)
   const [shapeAt, setShapeAt] = useState<{ blockIndex: number; quote: string; key: number } | null>(null);
   // 오른쪽 창 접기(좁은 화면에서 왼쪽 문서 폭을 확보 — 기억하지 않음). 접어도 언마운트하지 않아 AI 요청 진행·입력 중인 글이 남음
@@ -135,7 +137,9 @@ export function DraftWorkspace(
   const [sheetOpen, setSheetOpen] = useState(false);
   const narrow = useMedia(NARROW_QUERY);
   const phone = useMedia(PHONE_QUERY);
-  const side = other ?? tab;
+  const side = other ?? "ai";
+  // 휴대폰 머리 「할 일」: 대화의 할 일을 펼쳐 그 자리로(누를 때마다 늘림)
+  const [todoFocus, setTodoFocus] = useState(0);
   const sel = useDraftSelection(props);
   // 지금 고른 근거(서버 액션에 보냄 — 구성안대로 집필·자료 반영 고치기·블록 고치기·모양 바꾸기가 저장된 근거에 더함, 뺀 자료는 뺌)
   const pick = pickOf(
@@ -147,7 +151,6 @@ export function DraftWorkspace(
   const sinceDraft = mergeSources(props.used, pick).added;
   const addedSinceDraft = [...props.cardFiles.filter((f) => sinceDraft.card.includes(f.id)).map((f) => f.fileName), ...(props.reportFiles ?? []).filter((f) => sinceDraft.report.includes(f.id)).map((f) => f.fileName)];
   const [busy, setBusy] = useState<DraftBusy>(false);
-  const [msg, setMsg] = useState<DraftMsg>(null);
   // 「다른 짜임 여러 안」 대화 창(짜임 고르기에서 시작 — 요청 칸·구성안 패널·경영관리 절 모두 여기 하나)
   const [alts, setAlts] = useState<AltsRequest | null>(null);
   /** 여러 안 진행 줄 — 실제로 넣는 근거(서버 prepareDraft와 같음: 고른 첨부·전년 절, 구성안에서 시작하면 구성안에 저장된 근거) */
@@ -166,8 +169,8 @@ export function DraftWorkspace(
   /** 여러 안 시작(누른 처리기에서 — 서버 호출은 startAlts가 한 번) */
   const openAlts = (cands: FrameChoice[], request: string, o: { sources?: { card: string[]; report: string[]; prior?: string[] }; part?: string; confirm: string | null }) =>
     setAlts(startAlts(props.uid, { alts: cands, request, sources: o.sources, part: o.part, confirm: o.confirm, progress: altProgress(cands.length, o.sources) }));
-  // 오른쪽 창의 내용을 여는 곳은 모두 이것으로 — 접혀 있으면 먼저 펼침(k가 null이면 탭으로)
-  const openSide = (k: "sources" | "history" | "shapes" | null) => {
+  // 오른쪽 창의 내용을 여는 곳은 모두 이것으로 — 접혀 있으면 먼저 펼침(k가 null이면 대화로)
+  const openSide = (k: Other | null) => {
     setOther(k);
     setPaneOpen(true);
     setSheetOpen(true);
@@ -182,6 +185,12 @@ export function DraftWorkspace(
   const id = useId();
   const outline = props.outline;
   const ed = useOutlineEdit(props.uid, outline);
+  // 구성안 고치기 창에서 AI 요청(짜임 바꾸기·다시 만들기·승인하고 집필·절 다시 짜기)을 시작하면 창을 닫고 대화로 — 진행 줄·결과는 대화 차례로 보임
+  const [seenEdBusy, setSeenEdBusy] = useState(ed.busy);
+  if (seenEdBusy !== ed.busy) {
+    setSeenEdBusy(ed.busy);
+    if (ed.busy && OUTLINE_AI.has(ed.busy) && other === "outline") setOther(null);
+  }
   // 초안 | 구성안 판: 둘 다 있을 때만 바꿔 봄
   const [view, setView] = useState<"draft" | "outline">(props.defaultView);
   const shown = !outline ? "draft" : !props.hasSpec ? "outline" : view;
@@ -219,23 +228,25 @@ export function DraftWorkspace(
     };
   }, [zoom, shown]);
 
-  // Esc: 근거 자료 패널을 닫고 탭으로(더보기 메뉴가 열려 있으면 메뉴가 먼저 받음 — 메뉴는 capture 단계에서 preventDefault)
+  // Esc: 근거 자료·구성안 고치기 패널을 닫고 대화로(더보기 메뉴가 열려 있으면 메뉴가 먼저 받음 — 메뉴는 capture 단계에서 preventDefault,
+  // 그 위에 뜬 대화 창(도식 목록·짜임 고르기·확인 창 — dialog)이 열려 있으면 그 창만 닫힘)
   useEffect(() => {
     if (!other) return;
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented) setOther(null);
+      if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]")) setOther(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [other]);
 
-  const paneTabs: PaneTabItem<Tab>[] = [
-    { key: "ai", label: "AI 초안" },
-    // 배지 = 채울 자료 + 확인할 것 — 대부분 초안이 일부러 남긴 사람 몫이라 경고색이 아니라 받는 쪽 차례(10-13 시안 C)
-    { key: "check", label: "점검 결과", badge: props.checkCount, badgeTone: "handoff", title: props.checkCount ? `채울 자료·확인할 것 ${props.checkCount}건` : undefined },
-  ];
+  const todoCount = props.thread.todo.count;
+  /** 구성안 고치기 창 열기(왼쪽은 구성안 판면 — 여백 메모가 블록 편집 자리) */
+  const openOutline = () => {
+    openSide("outline");
+    setView("outline");
+  };
 
-  // 점검 결과의 항목 → 왼쪽 미리보기의 그 자리로 옮겨 잠시 강조(글로 찾음 — 못 찾으면 아무것도 안 함). 구성안 판이면 초안 판으로 바꾼 뒤
+  // 대화 할 일의 항목 → 왼쪽 미리보기의 그 자리로 옮겨 잠시 강조(글로 찾음 — 못 찾으면 아무것도 안 함). 구성안 판이면 초안 판으로 바꾼 뒤
   const onJump = (e: ReactMouseEvent<HTMLDivElement>) => {
     const b = (e.target as Element).closest<HTMLElement>("[data-jump]");
     if (!b) return;
@@ -285,10 +296,9 @@ export function DraftWorkspace(
     } else find();
   };
 
-  // 여백 메모의 재료 칩 → 오른쪽 AI 초안 탭 구성안의 재료 목록 그 재료(펼쳐 강조 — 구성안 패널이 맡음)
+  // 여백 메모의 재료 칩 → 오른쪽 구성안 고치기 창의 재료 목록 그 재료(펼쳐 강조 — 구성안 패널이 맡음)
   const showMaterial = (mid: string) => {
-    openSide(null);
-    setTab("ai");
+    openSide("outline");
     ed.focusMaterial(mid);
   };
 
@@ -330,19 +340,19 @@ export function DraftWorkspace(
                 </button>
               </span>
             )}
-            {props.checkCount > 0 && (
+            {todoCount > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   openSide(null);
-                  setTab("check");
+                  setTodoFocus((n) => n + 1);
                 }}
-                aria-label={`점검 결과 ${props.checkCount}건 열기`}
-                title={`점검 결과 — 채울 자료·확인할 것 ${props.checkCount}건`}
+                aria-label={`채울 자료 ${todoCount}건 보기`}
+                title={`채울 자료 ${todoCount}건 — AI 초안 대화의 마지막 답`}
                 className="flex h-9 shrink-0 items-center gap-1 rounded-md border border-field-line bg-paper px-2 text-xs font-semibold whitespace-nowrap text-ink hover:border-navy"
               >
-                점검
-                <span className="rounded-full bg-st-handoff px-1.5 font-mono leading-[18px] text-white">{props.checkCount > 99 ? "99+" : props.checkCount}</span>
+                할 일
+                <span className="rounded-full bg-st-handoff px-1.5 font-mono leading-[18px] text-white">{todoCount > 99 ? "99+" : todoCount}</span>
               </button>
             )}
           </div>
@@ -356,9 +366,10 @@ export function DraftWorkspace(
             aria-label="수정 이력"
             title="수정 이력 — 블록 고치기·되돌리기"
             onClick={() => (paneOpen && other === "history" ? openSide(null) : openSide("history"))}
-            className={`${T.iconBtn} ${paneOpen && side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}
+            className={`${T.iconLabelBtn} ${paneOpen && side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}
           >
             <History size={16} aria-hidden />
+            <span className={T.deskOnly}>수정 이력</span>
           </button>
           <button
             type="button"
@@ -366,9 +377,10 @@ export function DraftWorkspace(
             aria-label="근거 자료"
             title="근거 자료 — 전년 보고서 절·평가 기준·카드 전용 자료·보고서 추가자료 고르기"
             onClick={() => (paneOpen && other === "sources" ? openSide(null) : openSide("sources"))}
-            className={`${T.iconBtn} ${paneOpen && side === "sources" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}
+            className={`${T.iconLabelBtn} ${paneOpen && side === "sources" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}
           >
             <FolderOpen size={16} aria-hidden />
+            <span className={T.deskOnly}>근거 자료</span>
           </button>
           <button
             type="button"
@@ -377,14 +389,16 @@ export function DraftWorkspace(
             aria-label={paneOpen ? "오른쪽 창 접기" : "오른쪽 창 펴기"}
             title={paneOpen ? "오른쪽 창 접기 — 문서를 넓게 봅니다" : "오른쪽 창 펴기"}
             onClick={() => setPaneOpen((v) => !v)}
-            className={`${T.iconBtn} border-field-line text-ink hover:border-navy max-lg:hidden`}
+            className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy max-lg:hidden`}
           >
             {paneOpen ? <PanelRightClose size={16} aria-hidden /> : <PanelRightOpen size={16} aria-hidden />}
+            <span className={T.deskOnly}>{paneOpen ? "오른쪽 창 접기" : "오른쪽 창 펴기"}</span>
           </button>
           <MoreMenu items={props.menu} />
           {/* 닫기(2026-09-29 사용자 요구 — 과제원장 옆 창처럼 맨 오른쪽 ✕): 목록 아이콘과 같은 곳(이 화면을 연 곳)으로 — 링크라 고친 글은 먼저 저장(onLinkCapture) */}
-          <Link href={props.back.href} aria-label={`닫기 — ${props.back.label}`} title={`닫기 — ${props.back.label}`} className={`${T.iconBtn} border-field-line text-muted hover:border-navy`}>
+          <Link href={props.back.href} aria-label={`닫기 — ${props.back.label}`} title={`닫기 — ${props.back.label}`} className={`${T.iconLabelBtn} border-field-line text-muted hover:border-navy`}>
             <X size={16} aria-hidden />
+            <span className={T.deskOnly}>닫기</span>
           </Link>
         </div>
       </div>
@@ -424,11 +438,7 @@ export function DraftWorkspace(
     const it = ed.items[pos];
     if (!it) return;
     ed.setOpenKey(it.key);
-    if (!margin) {
-      openSide(null);
-      setTab("ai");
-      ed.setOpen(true);
-    }
+    if (!margin) openSide("outline");
   };
   const outlinePanel = outline ? <OutlinePanel uid={props.uid} canWrite={props.canWrite} ed={ed} margin={margin} humanEdits={props.humanEdits} onShowMaterial={showMaterial} pick={pick} /> : null;
   // 구성안 판면(와이어프레임): 고치는 동안에도 서버 미리보기(previewReportOutline)가 다시 그린 판면 — 블록마다 data-block = 지금 순서
@@ -490,9 +500,10 @@ export function DraftWorkspace(
                     disabled={text.status.kind === "saving"}
                     aria-label="지금 저장"
                     title={text.autosave ? "지금 저장(자동 저장 켜짐 — 고친 뒤 1.5초면 저장)" : "지금 저장(자동 저장 꺼짐)"}
-                    className={`${T.iconBtn} border-field-line bg-paper text-navy hover:border-navy`}
+                    className={`${T.iconLabelBtn} border-field-line bg-paper text-navy hover:border-navy`}
                   >
                     <Save size={15} aria-hidden="true" />
+                    <span className={T.deskOnly}>저장</span>
                   </button>
                 </>
               )}
@@ -580,35 +591,32 @@ export function DraftWorkspace(
         {/* 좁은 폭: 오른쪽 창을 시트로(처음엔 닫힘 — 떠 있는 단추로 엶, 접기 단추는 숨김). 넓은 폭: 감싼 상자가 display:contents라 예전 그대로 */}
         <SheetButton open={sheetOpen} onOpen={() => setSheetOpen(true)} label={SIDE_LABEL[side]} short={SIDE_SHORT[side]} icon={<Sparkles size={16} aria-hidden />} />
         <NarrowSheet open={sheetOpen} onClose={() => setSheetOpen(false)} label={SIDE_LABEL[side]}>
-          {/* 오른쪽: 탭(AI 초안 | 점검 결과) 또는 근거 자료 — 구성안 블록 목록이 여백 메모로 나가 좁게(440px) */}
+          {/* 오른쪽: 「AI 초안」 대화(머리 = 이름 + 한 줄 상태) 또는 근거 자료·수정 이력·다른 모양·구성안 고치기 */}
           <div id={`${id}-pane`} ref={rightRef} className={`${paneOpen ? "flex" : "hidden max-lg:flex"} ${paneClass(paneW)} flex-col border-l border-line bg-paper`} style={paneWidthStyle(paneW)}>
-            <div className={`${other ? "hidden" : "flex"} h-14 shrink-0 items-stretch border-b border-line px-5`}>
-              <PaneTabs id={id} ariaLabel="AI 초안·점검 결과" tabs={paneTabs} active={tab} onChange={setTab} />
+            <div className={`${other ? "hidden" : "flex"} h-14 shrink-0 items-center gap-3 border-b border-line px-5`}>
+              <h2 className="shrink-0 font-serif text-base font-bold text-navy">AI 초안</h2>
+              <span role="status" className="min-w-0 truncate text-xs text-muted-2" title={props.thread.status}>
+                {props.thread.status}
+              </span>
             </div>
-            <div id={`${id}-ai`} role="tabpanel" aria-labelledby={`${id}-ai-tab`} className={pane(side === "ai")}>
+            {/* 할 일 항목 단추(data-jump)를 누르면(키보드로 눌러도 click이 올라옴) 여기서 받아 미리보기의 그 자리로 */}
+            <div onClick={onJump} className={pane(side === "ai")}>
               <DraftCompose
                 uid={props.uid}
                 canWrite={props.canWrite}
                 hasSpec={props.hasSpec}
                 hasOutline={Boolean(outline)}
-                outline={outlinePanel}
-                draftInfo={props.draftInfo}
-                meta={props.draftMeta}
-                outlineApproved={outline?.status === "approved"}
-                checkCount={props.checkCount}
+                draftFromOutline={props.thread.turns.some((t) => t.kind === "draft" && t.plan)}
+                thread={props.thread}
+                cardHref={props.cardHref}
                 locked={props.locked}
-                deptView={Boolean(props.deptView)}
-                onShowCheck={() => {
-                  openSide(null);
-                  setTab("check");
+                onOpenOutline={openOutline}
+                onGotoBlock={(j) => {
+                  revealPaper();
+                  setView("draft");
+                  setTimeout(() => flashBlock(paperRef.current, j), 60);
                 }}
-                onShowOutline={() => {
-                  // 구성안 판(왼쪽 판면)으로 바꾸고 구성안 패널을 펼침 — 패널의 「승인하고 집필」로 이어짐
-                  openSide(null);
-                  setTab("ai");
-                  setView("outline");
-                  ed.setOpen(true);
-                }}
+                todoFocus={todoFocus}
                 cardFiles={props.cardFiles}
                 reportFiles={props.reportFiles}
                 lensCount={props.lens.length}
@@ -616,8 +624,6 @@ export function DraftWorkspace(
                 sel={sel}
                 busy={busy}
                 setBusy={setBusy}
-                msg={msg}
-                setMsg={setMsg}
                 onOpenSources={() => openSide("sources")}
                 humanEdits={props.humanEdits}
                 outlineHuman={outline ? (ed.view ?? outline.view).human : 0}
@@ -626,19 +632,26 @@ export function DraftWorkspace(
                 onPlan={planDraft}
                 alternative={outline?.outline.alternative || null}
                 active={side === "ai" && (sheetOpen || !narrow)}
-                outlineRun={{ busy: ed.busy, at: ed.busyAt, msg: ed.msg, frame: ed.busyFrame }}
+                outlineRun={{ busy: ed.busy, at: ed.busyAt, msg: ed.msg, frame: ed.busyFrame, part: Boolean(ed.redoKey) }}
                 onAlts={(cands, request, sources) => openAlts(cands, request, { sources, confirm: outline && (ed.view ?? outline.view).human > 0 ? `구성안에 담당자가 고르거나 더한 블록 ${(ed.view ?? outline.view).human}개가 있습니다. 고른 안으로 바꾸면 고친 내용은 사라집니다. 계속할까요?` : null })}
                 outlineSources={outline?.outline.sources ?? null}
                 prior={props.prior}
                 mg={props.mg}
+                admin={props.admin}
               />
             </div>
-            <div id={`${id}-check`} role="tabpanel" aria-labelledby={`${id}-check-tab`} className={pane(side === "check")}>
-              {/* 항목 단추(data-jump)는 서버가 그림 — 누르면(키보드로 눌러도 click이 올라옴) 여기서 받아 미리보기의 그 자리로 */}
-              <div onClick={onJump} className="min-h-0 grow overflow-y-auto px-5 py-4">
-                {props.check}
+            {/* 구성안 고치기(답의 「구성안 고치기」 — 블록 편집·도식 고르기·재료표·짜임 갤러리·경영관리 절 목록, 기능은 예전 구성안 패널 그대로) */}
+            {outlinePanel && (
+              <div className={pane(side === "outline")}>
+                <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-5">
+                  <h2 className="min-w-0 truncate font-serif text-base font-bold text-navy">구성안 고치기</h2>
+                  <button type="button" onClick={() => setOther(null)} aria-label="구성안 고치기 닫기" title="닫기 — AI 초안 대화로(Esc)" className={`${T.iconBtn} ml-auto border-field-line text-muted hover:border-navy`}>
+                    <X size={16} aria-hidden />
+                  </button>
+                </div>
+                <div className="min-h-0 grow overflow-y-auto px-5 py-4">{outlinePanel}</div>
               </div>
-            </div>
+            )}
             <div className={pane(side === "sources")}>
               <DraftSources {...props} sel={sel} busy={Boolean(busy)} onClose={() => setOther(null)} />
             </div>
@@ -709,6 +722,7 @@ export function DraftWorkspace(
             confirmLabel={`이 짜임으로 구성안 다시 만들기(${rangeText(draftExpect("story", props.mg))})`}
             request={{ initial: ed.memo }}
             alts={props.canWrite}
+            showCost={props.admin}
             onPick={(frame, request) => ed.regenerate(frame, request)}
             onAlts={(cands, request) => {
               ed.setGallery(false);
@@ -731,6 +745,7 @@ export function DraftWorkspace(
               confirmLabel={`이 짜임으로 절 다시 짜기(${rangeText(draftExpect("story", true))})`}
               request={{ initial: "" }}
               alts={props.canWrite}
+              showCost={props.admin}
               onPick={(frame, request) => ed.partGallery && ed.regeneratePart(ed.partGallery, frame, request)}
               onAlts={(cands, request) => {
                 const key = ed.partGallery;
@@ -743,7 +758,7 @@ export function DraftWorkspace(
           )}
         </>
       )}
-      <OutlineAlts uid={props.uid} req={alts} onClose={() => setAlts(null)} onAdopted={(message) => setMsg({ ok: true, text: message })} />
+      <OutlineAlts uid={props.uid} req={alts} onClose={() => setAlts(null)} onAdopted={() => setOther(null)} />
     </main>
   );
 }
@@ -755,17 +770,20 @@ const sameSentence = (a: string, b: string) => a === b || (a.length >= 8 && b.le
 
 function SibLink({ sib, dir }: { sib: Sib; dir: "prev" | "next" }) {
   const Icon = dir === "prev" ? ChevronLeft : ChevronRight;
-  const cls = "flex size-7 shrink-0 items-center justify-center rounded-md border no-underline";
+  const cls = "flex h-7 shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 text-xs whitespace-nowrap no-underline max-md:w-7 max-md:px-0";
+  const word = dir === "prev" ? "앞 과제" : "다음 과제";
   if (!sib)
     return (
       <span aria-hidden className={`${cls} border-line text-muted opacity-40`}>
         <Icon size={15} />
+        <span className="max-md:hidden">{word}</span>
       </span>
     );
   const name = `${dir === "prev" ? "앞" : "다음"} 과제 ${sib.taskNo} ${sib.title}`;
   return (
     <Link href={sib.href} aria-label={name} title={name} className={`${cls} border-field-line text-ink hover:border-navy`}>
       <Icon size={15} aria-hidden />
+      <span className="max-md:hidden">{word}</span>
     </Link>
   );
 }
@@ -826,7 +844,7 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label="더보기"
-        title="더보기 — 카드 보기·보고서에서 보기·HTML 내려받기"
+        title="더보기 — 카드 보기·보고서에서 보기·HWPX 내려받기"
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" && !open) {
@@ -834,9 +852,10 @@ function MoreMenu({ items }: { items: MenuItem[] }) {
             setOpen(true);
           }
         }}
-        className={`${T.iconBtn} ${open ? "border-navy text-navy" : "border-field-line text-ink hover:border-navy"}`}
+        className={`${T.iconLabelBtn} ${open ? "border-navy text-navy" : "border-field-line text-ink hover:border-navy"}`}
       >
         <Ellipsis size={16} aria-hidden />
+        <span className={T.deskOnly}>더보기</span>
       </button>
       {open && (
         <div id={menuId} role="menu" aria-label="과제별 초안 더보기" onKeyDown={onMenuKey} className="absolute top-9 right-0 z-menu flex w-64 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu">

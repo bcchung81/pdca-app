@@ -741,9 +741,10 @@ export function CardEditor(props: {
               disabled={formPending || status.kind === "saving"}
               aria-label="지금 저장"
               title={autosave ? "지금 저장(자동 저장 켜짐 — 고친 뒤 1.5초면 저장)" : "지금 저장(자동 저장 꺼짐)"}
-              className={`${T.iconBtn} border-field-line text-navy hover:border-navy`}
+              className={`${T.iconLabelBtn} border-field-line text-navy hover:border-navy`}
             >
               <Save size={15} aria-hidden="true" />
+              <span className={T.deskOnly}>저장</span>
             </button>
           </div>
           {lockNote && formState.status !== "error" && status.kind !== "error" && (

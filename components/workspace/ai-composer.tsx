@@ -136,9 +136,10 @@ export function AiComposer<K extends string>(props: {
                 onClick={() => fileRef.current?.click()}
                 aria-label="파일 첨부"
                 title={props.attach.title}
-                className={`flex size-8 shrink-0 items-center justify-center rounded-md text-muted-2 hover:bg-thead hover:text-navy ${T.off}`}
+                className={`flex h-8 shrink-0 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-2 hover:bg-thead hover:text-navy max-md:size-8 max-md:px-0 ${T.off}`}
               >
                 <Paperclip size={18} aria-hidden="true" />
+                <span className="max-md:hidden">첨부</span>
               </button>
             </>
           )}

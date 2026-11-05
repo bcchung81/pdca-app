@@ -10,16 +10,21 @@ import { MG_FRAMEWORKS, MG_MAIN_STORIES, MG_STORIES } from "./frameworks-mg.ts";
 const ROOT = resolve(import.meta.dirname, "../..");
 const storiesLines = readFileSync(resolve(ROOT, "resources/prompts/report-draft-mg/stories.md"), "utf8").split("\n");
 
-test("MG_FRAMEWORKS: story 목록 = MG_STORIES와 같은 순서·같은 원소, 번호는 ①~⑫(섞음은 빈 글 — ⑨~⑪은 2026-10-10, ⑫는 2026-10-13)", () => {
+test("MG_FRAMEWORKS: story 목록 = MG_STORIES와 같은 순서·같은 원소, 번호는 ①~⑮(섞음은 빈 글 — ⑨~⑪은 2026-10-10, ⑫는 2026-10-13, ⑬~⑮는 2026-11-04)", () => {
   assert.deepEqual(MG_FRAMEWORKS.map((f) => f.story), MG_STORIES);
-  assert.deepEqual(MG_FRAMEWORKS.map((f) => f.no), ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫", ""]);
+  assert.deepEqual(MG_FRAMEWORKS.map((f) => f.no), ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩", "⑪", "⑫", "⑬", "⑭", "⑮", ""]);
 });
 
-test("MG_MAIN_STORIES: 주 틀 12종 = 섞음을 뺀 MG_STORIES(섞음은 옛 구성안 읽기용만 — 2026-10-12), stories.md는 섞음 대신 주 틀 + 보조 틀", () => {
+test("MG_MAIN_STORIES: 주 틀 15종 = 섞음을 뺀 MG_STORIES(섞음은 옛 구성안 읽기용만 — 2026-10-12), stories.md는 섞음 대신 주 틀 + 보조 틀", () => {
   assert.deepEqual([...MG_MAIN_STORIES, "섞음"], [...MG_STORIES]);
   const text = storiesLines.join("\n");
   assert.doesNotMatch(text, /고르거나 섞습니다/);
   assert.match(text, /주 틀 \+ 보조 틀 — 「섞음」은 없음/);
+});
+
+test("MG_MAIN_STORIES: 주요사업 ⑭ 환류 개선형은 경영관리에 넣지 않음(2026-11-04 사용자 결정 — ⑤ PDCA 체계형으로 갈음)", () => {
+  assert.ok(!(MG_MAIN_STORIES as readonly string[]).includes("환류 개선형"));
+  assert.ok(!storiesLines.some((l) => /^[①-⑳] 환류 개선형/.test(l.trimStart())));
 });
 
 test("stories.md(경영관리): 생애 단계 순환은 ⑤ PDCA 체계형이 아니라 ⑩ 생애주기형으로(2026-10-10 — 분석 §8.7 「⑤로 셌지만 PDCA가 아님」)", () => {
@@ -61,6 +66,12 @@ test("MG_FRAMEWORKS: 틀마다 어울리는 절 설명이 있고 예시는 「�
     if (fw.story === "AX 전환형") {
       assert.deepEqual(fw.examples, []);
       assert.match(storiesLines.find((l) => l.trimStart().startsWith(fw.no))!, /\(2025 예: 없음 — 타기관 AX 사례에서 뽑음\)/);
+      continue;
+    }
+    // ⑬~⑮(2026-11-04 사용자 승인)도 KCA 2025 예시가 없어 빈 목록(stories.md 줄에 「2025 예: 없음 — 2026-11-04 추가」)
+    if (["시범→확산형", "위험관리·안전형", "데이터 기반 의사결정형"].includes(fw.story)) {
+      assert.deepEqual(fw.examples, []);
+      assert.match(storiesLines.find((l) => l.trimStart().startsWith(fw.no))!, /\(2025 예: 없음 — 2026-11-04 추가\)/);
       continue;
     }
     assert.ok(fw.examples.length >= 2, `${fw.story} 사례`);

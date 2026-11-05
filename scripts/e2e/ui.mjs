@@ -324,7 +324,7 @@ try {
   check("AI 사용 기록(card_chat) 한 번", chatRows === 1, String(chatRows));
 
   // ── 경평 초안 › 과제별 초안: 카드 1장(원장) + 이 화면에서 올린 첨부 자료 → 평가내용2 소항목 HTML(2025 최종본 양식)
-  // 화면은 과제원장 전체 페이지와 같은 짜임: 머리 폴더 단추 → 오른쪽 자리에 「근거 자료」(✕·Esc로 탭에 돌아옴) · 「AI 초안」 탭 아래 요청 칸
+  // 화면은 과제원장 전체 페이지와 같은 짜임: 머리 폴더 단추 → 오른쪽 자리에 「근거 자료」(✕·Esc로 대화에 돌아옴) · 「AI 초안」 대화 아래 요청 칸
   await p.goto(`${BASE}/reports/cards/${own.uid}`, { waitUntil: "networkidle" });
   await p.getByRole("button", { name: "근거 자료", exact: true }).click();
   const src = p.getByRole("region", { name: "근거 자료" });
@@ -337,9 +337,9 @@ try {
   await src.getByRole("button", { name: "근거 자료 닫기" }).click();
   const aiDraft = p.getByRole("region", { name: "AI 초안" });
   check("과제별 초안: 올린 자료가 AI 초안 요청 칸의 첨부 칩에도 있음(고른 상태를 함께 씀)", (await aiDraft.getByText(attName).count()) > 0);
-  // 요청 종류는 단계 레일에서 고름(요청 칸 칩 없음, 2026-10-22) — 구성안이 없으면 보조 단추가 바로 보냄, 초안이 생기면 주 단추가 「점검 결과 보기」
+  // 대화형(2026-11-04): 구성안이 없으면 빈 대화의 조용한 단추 「구성안 없이 바로 만들기」가 바로 보냄, 초안이 저장되면 서버 기록으로 답 「구성안 없이 초안을 썼어요」
   await aiDraft.getByRole("button", { name: "구성안 없이 바로 만들기" }).click();
-  await aiDraft.getByRole("button", { name: "점검 결과 보기" }).waitFor({ timeout: 480000 });
+  await aiDraft.getByText("구성안 없이 초안을 썼어요").waitFor({ timeout: 480000 });
   check("보고서 초안: 소항목 HTML(실행과제 N-M·가.·라벨 사다리·추진성과)", (await p.locator(".k-task__no").count()) === 1 && (await p.locator("table.k-ladder").count()) === 1 && (await p.locator(".k-result__label").count()) === 1);
   const { data: draftRow } = await admin.from("card_report_drafts").select("spec, unknown_numbers, source_rev").eq("card_id", own.id).maybeSingle();
   check("보고서 초안 저장(spec·원장 개정 번호·첨부 1건)", [1, 2, 3].includes(draftRow?.spec?.version) && Array.isArray(draftRow.spec.rows) && (draftRow.spec.version !== 3 || draftRow.spec.blocks?.length > 0) && draftRow.source_rev !== null && draftRow.spec.sources?.length === 1 && draftRow.spec.sources[0].name === attName, JSON.stringify({ unknown: draftRow?.unknown_numbers ?? null, sources: draftRow?.spec?.sources ?? null }));

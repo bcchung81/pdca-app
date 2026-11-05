@@ -15,13 +15,14 @@ export const BLOCK_KINDS = ["bullets", "cards", "compare", "steps", "timeline", 
 export type BlockKind = (typeof BLOCK_KINDS)[number];
 
 /**
- * 이야기 틀 12종 — ①~⑧은 2025 소항목에서, ⑨~⑪은 주요사업 프레임워크 한글 3개(실행과제 틀 36개)를 그려 8종에 안 잡히는 반복 짜임에서 뽑음(2026-10-10).
+ * 이야기 틀 16종 — ①~⑧은 2025 소항목에서, ⑨~⑪은 주요사업 프레임워크 한글 3개(실행과제 틀 36개)를 그려 8종에 안 잡히는 반복 짜임에서 뽑음(2026-10-10).
  * ⑫ AX 전환형은 2025 산업진흥군 타기관 보고서 짜임 분석에서 뽑음(2026-10-13 — KCA 2025 예시 없음).
+ * ⑬~⑯(시범→확산·환류 개선·위험관리·안전·데이터 기반 의사결정)은 2026-11-04 사용자 승인으로 더함(KCA 2025 예시 없음).
  * 구성안 AI는 이 중에서 주 틀과 보조 틀을 고름(2026-10-09 — 섞음 대신 주 + 보조)
  */
-export const MAIN_STORIES = ["단계 전개형", "한계 극복·다자협업형", "이슈→해결책형", "현장 목소리형", "원스톱 통합형", "왜-어떻게형", "가치 축 분할형", "연혁·연도 사다리형", "기존→개선형", "구분표 중심형", "현황분석→대응형", "AX 전환형"] as const;
+export const MAIN_STORIES = ["단계 전개형", "한계 극복·다자협업형", "이슈→해결책형", "현장 목소리형", "원스톱 통합형", "왜-어떻게형", "가치 축 분할형", "연혁·연도 사다리형", "기존→개선형", "구분표 중심형", "현황분석→대응형", "AX 전환형", "시범→확산형", "환류 개선형", "위험관리·안전형", "데이터 기반 의사결정형"] as const;
 export type MainStory = (typeof MAIN_STORIES)[number];
-/** 이야기 틀(12종 + 섞음) — 짜임을 고르는 기준이자 형제 초안과 겹침을 보는 이름. 섞음은 옛 구성안·집필 답과 틀 갤러리(「AI가 주 + 보조를 고름」)에만 */
+/** 이야기 틀(16종 + 섞음) — 짜임을 고르는 기준이자 형제 초안과 겹침을 보는 이름. 섞음은 옛 구성안·집필 답과 틀 갤러리(「AI가 주 + 보조를 고름」)에만 */
 export const STORIES = [...MAIN_STORIES, "섞음"] as const;
 export type Story = (typeof STORIES)[number];
 export const isMainStory = (s: unknown): s is MainStory => (MAIN_STORIES as readonly string[]).includes(String(s));

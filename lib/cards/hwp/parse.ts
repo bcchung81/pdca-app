@@ -2,6 +2,7 @@
 // 입력은 kordoc(parse)이 내는 마크다운(HTML 표 포함). 같은 입력이면 파이썬 판과 같은 카드 JSON을 냅니다(parse.test.ts가 59장으로 대조).
 // 판단이 끼면 안 되는 일이라 AI를 쓰지 않습니다. 원문은 그대로 두고, 파서가 추정·보정한 것은 parseWarnings에 적습니다.
 
+import { groupHeadingNo, groupTitleNo } from "../../hwp/group-mark.ts";
 import type { LooseJson } from "../../loose-json.ts";
 
 // 마크다운 이스케이프(\$ \~ \* …)만 되돌린다. "\ 0.26원" 같은 원화 기호는 그대로 둔다.
@@ -362,6 +363,9 @@ function firstCellText(table: Table): string {
   return "";
 }
 
+/** AX 붙임 머리 칸(띄어쓰기를 뺀 글): 「AX연계과제」 + 붙임 번호 기호(❶·①·⓫·1·(1)·#1 등, 없어도 됨) */
+const AX_HEADER_RE = /^AX연계과제[\d#()①-⓿❶-➓]*$/;
+
 function classify(b: Block): string {
   if (b.kind === "para") {
     const t = b.text;
@@ -376,7 +380,7 @@ function classify(b: Block): string {
   if (f.startsWith("(주요사업")) return "groupTitle";
   if (nospace(f) === "대상사업") return "index";
   if (nospace(f).startsWith("과제명")) return "card";
-  if (nospace(f) === "AX연계과제") return "axHeader";
+  if (AX_HEADER_RE.test(nospace(f))) return "axHeader";
   const labels = new Set(t.rows.filter((row) => row.length).map((row) => nospace(plainText(row[0]))));
   if (labels.has("과제목적") || labels.has("주요기능")) return "axBody";
   return "unknown";
@@ -1173,10 +1177,45 @@ export interface ParsedGroup {
  * kordoc 마크다운 한 파일 → 목차·카드. groupId는 목차 첫 칸 「(주요사업N)」에서 읽고, 없으면 fallbackGroup.
  * 그림은 imageResolver가 kordoc 그림 이름을 앱의 그림 경로로 바꿉니다(없으면 null).
  */
-export function parseCardMarkdown(md: string, opts: { groupNo?: number; sourceName: string; imageResolver?: ImageResolver; fileType?: string }): ParsedGroup {
+export function parseCardMarkdown(md: string, opts: ParseOptions): ParsedGroup {
   currentResolver = opts.imageResolver ?? (() => null);
-  const fileType = opts.fileType ?? (/\.hwpx$/i.test(opts.sourceName) ? "hwpx" : "hwp");
-  const blocks = splitBlocks(md, fileType === "hwpx");
+  const res = parseGroupBlocks(splitBlocks(md, fileTypeOf(opts) === "hwpx"), opts);
+  currentResolver = () => null;
+  return res;
+}
+
+type ParseOptions = { groupNo?: number; sourceName: string; imageResolver?: ImageResolver; fileType?: string };
+const fileTypeOf = (opts: ParseOptions) => opts.fileType ?? (/\.hwpx$/i.test(opts.sourceName) ? "hwpx" : "hwp");
+
+/**
+ * kordoc 마크다운 한 파일 → 묶음마다 목차·카드(주요사업 묶음 여럿을 합친 파일도 — 앱 현행화 읽기 readCardFile가 이것을 씀).
+ * 묶음 표지(묶음 제목 표·묶음 머리 줄 — lib/hwp/group-mark.ts)가 가리키는 묶음이 하나뿐이거나 groupNo를 주면 parseCardMarkdown과 같은 결과 하나.
+ * 여럿이면 블록마다 자기 앞의 가장 가까운 표지의 묶음(앞에 표지가 없으면 첫 묶음)으로 나눠 묶음마다 읽음 — 묶음 제목 표 뒤의 요약·목차는
+ * 그 표의 묶음, 카드와 그 붙임은 카드 앞 표지(합본은 제목 표를 앞에 모으고 카드 묶음마다 「[주요사업N]」 줄을 둠)의 묶음
+ */
+export function parseCardGroups(md: string, opts: ParseOptions): ParsedGroup[] {
+  currentResolver = opts.imageResolver ?? (() => null);
+  const blocks = splitBlocks(md, fileTypeOf(opts) === "hwpx");
+  const split = opts.groupNo ? null : splitGroups(blocks);
+  const out = split ? split.order.map((n) => parseGroupBlocks(blocks.filter((_, i) => split.of[i] === n), { ...opts, groupNo: n })) : [parseGroupBlocks(blocks, opts)];
+  currentResolver = () => null;
+  return out;
+}
+
+/** 블록마다 묶음 번호 — 표지가 가리키는 묶음이 둘 이상일 때만(아니면 null) */
+function splitGroups(blocks: Block[]): { order: number[]; of: number[] } | null {
+  const marks = blocks.map((b) => (b.type === "groupTitle" ? groupTitleNo(firstCellText(b.tables[0])) : b.type === "para" ? groupHeadingNo(b.text.replace(/^#{1,6}\s+/, "")) : null));
+  const order = [...new Set(marks.filter((n): n is number => n !== null))];
+  if (order.length < 2) return null;
+  let near = order[0];
+  const of = marks.map((m) => {
+    if (m !== null) near = m;
+    return near;
+  });
+  return { order, of };
+}
+
+function parseGroupBlocks(blocks: Block[], opts: ParseOptions): ParsedGroup {
   let groupNo = opts.groupNo;
   const gt = blocks.find((b) => b.type === "groupTitle");
   if (!groupNo && gt) {
@@ -1282,6 +1321,5 @@ export function parseCardMarkdown(md: string, opts: { groupNo?: number; sourceNa
       raw,
     };
   });
-  currentResolver = () => null;
   return { group, cards, ignored, indexRows };
 }

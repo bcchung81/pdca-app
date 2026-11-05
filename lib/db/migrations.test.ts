@@ -1567,3 +1567,91 @@ test("부서 확정 조건 재료(report_submit_cards rpc, 2026-11-03 §5-1): �
     await db.query("delete from auth.users where id = any($1)", [Object.values(temp)]);
   }
 });
+
+test("카드 전용 자료 근거 잠금(20261104100000): 제출·승인한 보고서 초안·구성안의 근거 자료는 부서·성과관리팀·관리자 모두 못 지움(행·저장소 객체), 근거가 아닌 자료·잠기지 않은 보고서는 지움, 과제 영구 삭제 연쇄는 그대로", { skip: NO_SEED_CARDS }, async () => {
+  const own = (await db.query<{ id: string; uid: string; eval_unit_id: string }>("select c.id, c.uid::text as uid, c.eval_unit_id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' order by c.id limit 1")).rows[0];
+  const insp = await teamId("검사기획팀");
+  const year = 2045;
+  const material = async (cardId: string, path: string) =>
+    (await db.query<{ id: string }>("insert into public.card_materials (card_id, storage_path, file_name, uploaded_by) values ($1, $2, 'a.pdf', $3) returning id", [cardId, path, users.inspector])).rows[0].id;
+  const object = (path: string) => db.query("insert into storage.objects (bucket_id, name) values ('card-materials', $1)", [path]);
+  const delRow = (user: keyof typeof users, id: string) => as(user, () => db.query("delete from public.card_materials where id = $1", [id])).then((r) => r.affectedRows ?? 0);
+  const delObj = (user: keyof typeof users, path: string) => as(user, () => db.query("delete from storage.objects where bucket_id = 'card-materials' and name = $1", [path])).then((r) => r.affectedRows ?? 0);
+  const paths = { spec: `${own.uid}/lock-spec.pdf`, outline: `${own.uid}/lock-outline.pdf`, free: `${own.uid}/lock-free.pdf` };
+  const ids = { spec: await material(own.id, paths.spec), outline: await material(own.id, paths.outline), free: await material(own.id, paths.free) };
+  for (const p of Object.values(paths)) await object(p);
+  const reportId = (await as("pmo", () => db.query<{ id: number }>("insert into public.reports (eval_unit_id, year, team_id, created_by) values ($1, $2, $3, $4) returning id", [own.eval_unit_id, year, insp, users.pmo]))).rows[0].id;
+  const purge = "시험/근거삭제";
+  try {
+    // 초안 spec.sources에 하나, 구성안 outline.sources.card에 하나(첫 초안이 보고서를 작성 중으로 바꿈)
+    await db.query("insert into public.card_report_drafts (card_id, year, spec, outline, outline_status, model, source_rev) values ($1, $2, $3::jsonb, $4::jsonb, 'draft', 'm', 1)", [
+      own.id,
+      year,
+      JSON.stringify({ version: 3, rows: [], sources: [{ kind: "card", id: ids.spec, name: "a.pdf" }, { kind: "report", id: ids.free, name: "같은 id라도 보고서 자료" }] }),
+      JSON.stringify({ version: 1, blocks: [], sources: { card: [ids.outline], report: [], prior: [] } }),
+    ]);
+    assert.equal((await db.query<{ status: string }>("select status from public.reports where id = $1", [reportId])).rows[0].status, "drafting");
+    await as("pmo", () => db.query("update public.reports set status = 'submitted' where id = $1", [reportId]));
+
+    // 제출: 근거 자료 둘은 누구도 못 지움(행·저장소 객체), 근거가 아닌 자료는 됨(report 종류의 같은 id는 근거 아님)
+    for (const user of ["inspector", "pmo", "admin"] as const) {
+      assert.equal(await delRow(user, ids.spec), 0, `${user}: 초안 근거 자료 행`);
+      assert.equal(await delRow(user, ids.outline), 0, `${user}: 구성안 근거 자료 행`);
+      assert.equal(await delObj(user, paths.spec), 0, `${user}: 초안 근거 자료 파일`);
+      assert.equal(await delObj(user, paths.outline), 0, `${user}: 구성안 근거 자료 파일`);
+    }
+    assert.equal(await delRow("inspector", ids.free), 1, "근거가 아닌 자료는 부서가 지움");
+    assert.equal(await delObj("inspector", paths.free), 1);
+    assert.equal(await delRow("license", ids.spec), 0, "남의 부서는 예전처럼 못 지움");
+
+    // 승인(확정)도 잠김
+    await as("pmo", () => db.query("update public.reports set status = 'approved', approved_by = $2, approved_at = now() where id = $1", [reportId, users.pmo]));
+    assert.equal(await delRow("admin", ids.outline), 0, "승인한 보고서의 근거도 관리자까지 못 지움");
+
+    // 확정을 풀면(작성 중) 다시 지움
+    await as("pmo", () => db.query("update public.reports set status = 'drafting', approved_by = null, approved_at = null where id = $1", [reportId]));
+    assert.equal(await delObj("inspector", paths.spec), 1, "잠기지 않은 보고서의 근거 파일은 지움");
+    assert.equal(await delRow("inspector", ids.spec), 1, "잠기지 않은 보고서의 근거 자료는 지움");
+
+    // 관리자 영구 삭제: 잠긴 근거 자료가 있는 보관 카드도 지워지고 자료·초안이 연쇄 삭제됨(RLS는 연쇄 삭제에 적용되지 않음)
+    await db.query(
+      "insert into public.cards (id, eval_unit_id, task_no, title, team_id, edition, data, status) select $2, eval_unit_id, '근거삭제-1', title, team_id, edition, data, 'retired' from public.cards where id = $1",
+      [own.id, purge],
+    );
+    const purgeUid = (await db.query<{ uid: string }>("select uid::text as uid from public.cards where id = $1", [purge])).rows[0].uid;
+    const locked = await material(purge, `${purgeUid}/lock.pdf`);
+    await db.query("insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, $3::jsonb, 'm', 1)", [purge, year, JSON.stringify({ version: 3, rows: [], sources: [{ kind: "card", id: locked, name: "a.pdf" }] })]);
+    await as("pmo", () => db.query("update public.reports set status = 'submitted' where id = $1", [reportId]));
+    assert.equal(await delRow("admin", locked), 0, "직접 지우기는 막힘");
+    assert.equal((await as("admin", () => db.query("delete from public.cards where id = $1 and status = 'retired'", [purge]))).affectedRows, 1, "보관 카드 영구 삭제는 됨");
+    assert.equal(await count("select 1 from public.card_materials where card_id = $1", [purge]), 0, "자료도 연쇄 삭제");
+    assert.equal(await count("select 1 from public.card_report_drafts where card_id = $1", [purge]), 0, "초안도 연쇄 삭제");
+  } finally {
+    await db.query("delete from public.cards where id = $1", [purge]);
+    await db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [own.id, year]);
+    await db.query("delete from public.card_materials where id = any($1)", [Object.values(ids)]);
+    await db.query("delete from storage.objects where bucket_id = 'card-materials' and name = any($1)", [Object.values(paths)]);
+    await db.query("delete from public.reports where id = $1", [reportId]);
+  }
+});
+
+test("현행화 원본 파일 삭제(마이그레이션 없음): 성과관리팀은 원장 묶음의 원본 객체를 지우고 files에 지운 기록을 남김, 부서 담당자는 원본 객체를 못 지움, 묶음·반영 항목은 그대로", { skip: NO_SEED_CARDS }, async () => {
+  const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' order by c.id limit 1")).rows[0];
+  const files = JSON.stringify([{ n: 1, name: "a.hwpx", type: "hwpx", bytes: 1, path: "" }]);
+  const ledger = (await as("pmo", () => db.query<{ id: number }>("insert into public.card_imports (scope, files, created_by, status) values ('ledger', $1::jsonb, $2, 'parsed') returning id", [files, users.pmo]))).rows[0].id;
+  const draft = (await as("inspector", () => db.query<{ id: number }>("insert into public.card_imports (scope, target_card_id, created_by) values ('draft', $1, $2) returning id", [own.id, users.inspector]))).rows[0].id;
+  try {
+    await as("pmo", () => db.query("insert into public.card_import_items (import_id, file_n, seq, parsed, match, card_id, status) values ($1, 1, 1, '{}'::jsonb, 'exact', $2, 'applied')", [ledger, own.id]));
+    await db.query("insert into storage.objects (bucket_id, name) values ('card-imports', $1), ('card-imports', $2)", [`${ledger}/1.hwpx`, `${draft}/1.hwpx`]);
+    const delObj = (user: keyof typeof users, name: string) => as(user, () => db.query("delete from storage.objects where bucket_id = 'card-imports' and name = $1", [name])).then((r) => r.affectedRows ?? 0);
+    assert.equal(await delObj("inspector", `${draft}/1.hwpx`), 0, "부서 담당자는 자기 작성본 묶음 원본도 못 지움(is_staff)");
+    assert.equal(await delObj("pmo", `${ledger}/1.hwpx`), 1, "성과관리팀은 원본 객체를 지움");
+    const removed = JSON.stringify([{ n: 1, name: "a.hwpx", type: "hwpx", bytes: 1, path: "", removedAt: "2045-01-01T00:00:00.000Z", removedBy: users.pmo }]);
+    assert.equal((await as("pmo", () => db.query("update public.card_imports set files = $2::jsonb where id = $1", [ledger, removed]))).affectedRows, 1, "지운 기록은 묶음 files에");
+    assert.equal(await count("select 1 from public.card_import_items where import_id = $1 and status = 'applied'", [ledger]), 1, "반영 항목은 그대로");
+    assert.equal((await db.query<{ by: string }>("select files -> 0 ->> 'removedBy' as by from public.card_imports where id = $1", [ledger])).rows[0].by, users.pmo);
+  } finally {
+    await db.query("delete from storage.objects where bucket_id = 'card-imports' and name = any($1)", [[`${ledger}/1.hwpx`, `${draft}/1.hwpx`]]);
+    await db.query("delete from public.card_imports where id = any($1)", [[ledger, draft]]);
+  }
+});

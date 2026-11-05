@@ -21,6 +21,7 @@
     "db:user": "node --env-file-if-exists=.env.local scripts/db/user.ts",
     "db:layout": "node --env-file-if-exists=.env.local scripts/db/layout.ts",
     "db:cards-mg": "node --env-file-if-exists=.env.local scripts/db/mgmt-cards.ts",
+    "db:cards-biz": "node --conditions=react-server --env-file-if-exists=.env.local scripts/db/biz-cards.ts",
     "prep": "node --conditions=react-server --env-file-if-exists=.env.local scripts/prep/run.ts",
     "e2e": "node --env-file-if-exists=.env.local scripts/e2e/run.mjs",
     "e2e:ui": "node --env-file-if-exists=.env.local scripts/e2e/ui.mjs",

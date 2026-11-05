@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { type DeptTile, type HqGroup, HqDeptPanel, type TodoItem, TodoPanel, UnitsPanel } from "../../../components/dashboard/dash-panels";
-import { NoAccess, PageHeader, Screen, StatPanel, T } from "../../../components/ui/kit";
+import { NoAccess, PageHeader, Screen, StatPanel } from "../../../components/ui/kit";
 import { INSPECTION_STATUS_TONE } from "../../../components/ui/status-tone.ts";
 import { requireAtLeast } from "../../../lib/auth/dal.ts";
 import { EMPTY_VIEW, viewParams } from "../../../lib/cards/board-view.ts";
@@ -132,14 +131,7 @@ export default async function DashboardPage() {
   return (
     <Screen
       header={
-        <PageHeader title="현황">
-          <Link href="/cards" className={`${T.btn} ${T.deskOnly}`}>
-            과제 원장
-          </Link>
-          <Link href="/inspections" className={`${T.btnPrimary} ${T.deskOnly}`}>
-            월간 점검
-          </Link>
-        </PageHeader>
+        <PageHeader title="현황" />
       }
     >
       {/* 한 화면 틀: 바깥 상자가 남는 높이를 채우고(grow), 안쪽 패널은 flex로 높이를 나눠 가짐. 낮은 창에서는 min-h에서 멈추고 본문이 스크롤(안전망) */}

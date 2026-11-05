@@ -10,12 +10,14 @@ import type { OutlineText } from "../../lib/reports/outline-text.ts";
 import type { OutlineView, ShapeRow } from "../../lib/reports/outline-view.ts";
 import { MG_MAIN_STORIES } from "../../lib/reports/frameworks-mg.ts";
 import { storyLabel } from "../../lib/reports/frameworks.ts";
+import { MAIN_STORIES } from "../../lib/reports/blocks.ts";
 import type { FrameChoice } from "../../lib/reports/framework-pick.ts";
 import { patternOf } from "../../lib/reports/framework-patterns.ts";
 import { draftExpect, rangeText } from "../../lib/ai/progress.ts";
 import type { MgPart } from "../../lib/reports/mg-types.ts";
 import { LAYOUT_LABEL, LAYOUT_USE, layoutName } from "../../lib/reports/layout.ts";
-import { FIT_RANGE_TEXT, fitVerdict } from "../../lib/reports/fit.ts";
+import { FIT_RANGE_TEXT } from "../../lib/reports/fit.ts";
+import { fitWord } from "../../lib/reports/draft-thread.ts";
 import { T, Tag } from "../ui/kit";
 import { FIT_TAG } from "../ui/status-tone.ts";
 import { useAsk } from "../ui/confirm-dialog";
@@ -108,15 +110,6 @@ export function useOutlineEdit(uid: string, data: OutlineData | null) {
   // 지금 도는 요청을 시작한 시각(ms) — AI 초안 탭의 진행 줄이 경과 시간을 셈
   const [busyAt, setBusyAt] = useState(0);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  // 확인 전(draft) 구성안은 펼쳐 보임 — 처음 열 때뿐 아니라 이 화면에서 구성안이 새로 생기거나(없음 → 확인 전) 다시 만들어 확인 전이 될 때도.
-  // 처음 열 때만 정하면 구성안이 없던 과제에서 「구성안 만들기」 뒤 접힌 채로 남아 이야기 틀·절 목록이 안 보였음(2026-10-10)
-  const status = data?.status ?? null;
-  const [open, setOpen] = useState(status === "draft");
-  const [seenStatus, setSeenStatus] = useState(status);
-  if (seenStatus !== status) {
-    setSeenStatus(status);
-    if (status === "draft") setOpen(true);
-  }
   const [picker, setPicker] = useState<{ pos: number; mode: "change" | "add" } | null>(null);
   // 펼친 블록(한 번에 하나 — 블록 열쇠): 여백 메모·좁은 창 목록·종이 블록 누르기가 함께 씀
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -314,7 +307,6 @@ export function useOutlineEdit(uid: string, data: OutlineData | null) {
     });
   };
   const focusMaterial = (id: string) => {
-    setOpen(true);
     setMatFocus((f) => ({ id, n: (f?.n ?? 0) + 1 }));
   };
 
@@ -341,8 +333,6 @@ export function useOutlineEdit(uid: string, data: OutlineData | null) {
     busy,
     busyAt,
     msg,
-    open,
-    setOpen,
     dirty,
     run,
     setBlock,
@@ -423,7 +413,8 @@ function headOf(w: string): { tag: string; text: string } {
  * 이야기 틀(틀 갤러리에서 고르면 AI가 그 틀로 다시 짬), 그림 자리(빼기·종류), 추진성과 모양, 메모. 칸 글은 집필 단계에서.
  * 「판면에 맞게 줄이기」는 서버의 결정론 함수(lib/reports/composition.ts fitComposition).
  * margin이면 블록 편집은 왼쪽 여백 메모(components/reports/outline-notes.tsx)에 있고 여기에는 블록 칩만 — 좁은 창이면 여기 목록으로 돌아옴.
- * 읽는 차례(2026-09-28 가독성 개선): 결론(핵심 메시지) → 근거(평가 논점) → 짜임(이야기 틀·블록) → 추진성과 → 재료 → 확인할 것 → 할 일.
+ * 2026-11-04부터 「AI 초안」 대화 답의 「구성안 고치기」로 여는 오른쪽 창(components/reports/draft-workspace.tsx) 안에서만 그림 — 늘 펼침.
+ * 읽는 차례: 결론(핵심 메시지 + 접힌 평가 논점 한 상자) → 짜임(이야기 틀·블록) → 추진성과 → 재료(자료 필요만, 나머지는 「재료 전체」) → 확인할 것 → 할 일.
  * 좁은 패널이라 재료는 표가 아니라 카드 목록(예전 표는 칸이 좁아 글이 옆 칸으로 넘쳐 겹쳤음)
  */
 export function OutlinePanel(props: {
@@ -443,16 +434,16 @@ export function OutlinePanel(props: {
   const tx = data.text;
   const view = ed.view ?? data.view;
   const { busy, dirty } = ed;
-  const ratio = view.fit.budget ? Math.round((view.fit.total / view.fit.budget) * 100) : 0;
-  // 판면 판정 하나(lib/reports/fit.ts fitVerdict — 도구줄·부서 허브와 같은 문턱)
-  const fitV = fitVerdict(ratio);
+  // 판면 한 마디(lib/reports/draft-thread.ts fitWord — 판정은 fitVerdict 하나, 도구줄·대화 답과 같은 글)
+  const fitW = fitWord(view.fit, c.module ?? 1);
   const editable = props.canWrite && !busy;
   const shapeOf = (b: BlockEdit) => rowOf(data.names.table, b.kind, b.variant)?.name ?? b.kind;
 
-  // 확인할 것: 틀 경고(이야기 틀 아래)·원문 못 찾은 재료·자료 필요(재료 목록)와 겹치는 것은 빼고 머리를 떼어 굵게
+  // 확인할 것: 틀 경고(이야기 틀 아래)·원문 못 찾은 재료·자료 필요(재료 목록)와 겹치는 것은 빼고 머리를 떼어 굵게.
+  // 판면 경고(compositionIssues 「판면:」 — 85%·108% 문턱)는 화면에서 빼고 머리의 판면 한 마디(fitVerdict 하나)로만 알림(2026-11-04 판면 기준 하나로 — 경고를 만드는 코드는 그대로)
   const checks = [
     ...ed.notes.map((w) => ({ tag: "바꾸지 않음", text: w })),
-    ...view.warnings.filter((w) => !w.startsWith("틀:") && !w.startsWith("재료: 근거 원문에서 구절을") && !/^자료 필요 \d+건/.test(w)).map(headOf),
+    ...view.warnings.filter((w) => !w.startsWith("틀:") && !w.startsWith("판면:") && !w.startsWith("재료: 근거 원문에서 구절을") && !/^자료 필요 \d+건/.test(w)).map(headOf),
   ];
   const needN = c.materials.filter((m) => m.kind === "need").length;
   const unfoundN = c.materials.filter((m) => m.kind !== "need" && !m.found).length;
@@ -468,17 +459,15 @@ export function OutlinePanel(props: {
         <h2 className="font-serif text-base font-bold text-navy">구성안</h2>
         <Tag tone={data.status === "approved" && !dirty ? "navy" : "warn"}>{dirty ? "고치는 중 · 저장 전" : data.status === "approved" ? "승인 · 집필함" : "확인 전"}</Tag>
         {/* 경영관리는 판면을 어림하지 않음(2026 서식 자료 전 — fit 0/0) */}
-        {view.fit.budget > 0 && (
-          <Tag tone={FIT_TAG[fitV.tone]} title={`${fitV.hint} — 판면 어림 ${view.fit.total}/${view.fit.budget}mm · ${ratio}%(구성안 블록을 칸을 채운 보통 모양으로 어림, 집필 결과와 약 2% 차이 — 고치면 바로 다시 셈) · ${FIT_RANGE_TEXT}`}>
-            {fitV.label} · {ratio}%{ed.previewing ? " …" : ""}
+        {fitW && (
+          <Tag tone={FIT_TAG[fitW.tone]} title={`${fitW.title}(${view.fit.total}/${view.fit.budget}mm — 구성안 블록을 칸을 채운 보통 모양으로 어림, 고치면 바로 다시 셈) · ${FIT_RANGE_TEXT}`}>
+            {fitW.text}
+            {ed.previewing ? " …" : ""}
           </Tag>
         )}
-        <span className="min-w-0 truncate text-xs text-muted-2">
-          {data.model ?? "AI"} · {data.at ? new Date(data.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
+        <span className="min-w-0 truncate text-xs text-muted-2" title={data.model ? `만든 모델 ${data.model}` : undefined}>
+          {data.at ? new Date(data.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
         </span>
-        <button type="button" onClick={() => ed.setOpen((o) => !o)} className={`${T.btn} ml-auto`} aria-expanded={ed.open}>
-          {ed.open ? "접기" : "구성안 보기"}
-        </button>
         {/* 만들 때 담당자가 고른 짜임(2026-10-12 — 경영관리는 절마다 절 목록에) */}
         {tx.frame && (
           <span className="max-w-full min-w-0 basis-full truncate text-xs text-muted" title={`짜임: ${tx.frame}${tx.frameRequest ? `\n요청: ${tx.frameRequest}` : ""}`}>
@@ -487,47 +476,47 @@ export function OutlinePanel(props: {
         )}
       </header>
 
-      {ed.open && (
         <div className="flex min-w-0 flex-col divide-y divide-line px-4 text-ui leading-[1.6] text-ink">
-          {/* 결론: 핵심 메시지 */}
+          {/* 결론: 핵심 메시지 + 평가 논점(머리 = 편람 항목 등 — 접힘)을 한 상자 */}
           <div className="py-3">
             <div className="rounded-md border-l-[3px] border-navy bg-thead px-3 py-2.5">
               <p className={SEC}>핵심 메시지</p>
               <p className="mt-0.5 text-sm leading-[1.55] font-semibold break-keep text-navy">{c.message || "—"}</p>
+              {tx.points.length > 0 && (
+                <details aria-label="평가 논점" className="group mt-2 min-w-0">
+                  <summary className="flex cursor-pointer list-none items-center gap-1 [&::-webkit-details-marker]:hidden">
+                    <ChevronRight size={13} aria-hidden="true" className="shrink-0 text-muted-2 transition-transform group-open:rotate-90" />
+                    <h3 className={SEC}>평가 논점 {tx.points.length}</h3>
+                  </summary>
+                  <ol className="mt-1.5 flex min-w-0 flex-col gap-1">
+                    {tx.points.map((p, i) => {
+                      const on = Boolean(pointOpen[i]);
+                      return (
+                        <li key={i} className="flex min-w-0">
+                          <button type="button" aria-expanded={on} onClick={() => setPointOpen((o) => ({ ...o, [i]: !on }))} title={on ? "한 줄로 접기" : `${p.tag ? `${p.tag} ` : ""}${p.text}`} className="flex w-full min-w-0 items-start gap-2 rounded px-0.5 text-left hover:bg-thead">
+                            <span aria-hidden="true" className="mt-[2px] flex size-[18px] shrink-0 items-center justify-center rounded-full bg-navy text-xs font-bold text-white">
+                              {i + 1}
+                            </span>
+                            {on ? (
+                              <span className="min-w-0 grow text-ui leading-[1.6] break-keep">
+                                {p.tag && <b className="block font-semibold text-navy">{p.tag}</b>}
+                                {p.text}
+                              </span>
+                            ) : (
+                              <span className="min-w-0 grow truncate text-ui leading-[1.6]">
+                                {p.tag && <b className="font-semibold text-navy">{p.tag} </b>}
+                                {p.text}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </details>
+              )}
             </div>
           </div>
-
-          {/* 근거: 평가 논점(머리 = 편람 항목 등) */}
-          {tx.points.length > 0 && (
-            <section aria-label="평가 논점" className="flex min-w-0 flex-col gap-2 py-3">
-              <h3 className={SEC}>평가 논점 {tx.points.length}</h3>
-              <ol className="flex min-w-0 flex-col gap-1">
-                {tx.points.map((p, i) => {
-                  const on = Boolean(pointOpen[i]);
-                  return (
-                    <li key={i} className="flex min-w-0">
-                      <button type="button" aria-expanded={on} onClick={() => setPointOpen((o) => ({ ...o, [i]: !on }))} title={on ? "한 줄로 접기" : `${p.tag ? `${p.tag} ` : ""}${p.text}`} className="flex w-full min-w-0 items-start gap-2 rounded px-0.5 text-left hover:bg-thead">
-                        <span aria-hidden="true" className="mt-[2px] flex size-[18px] shrink-0 items-center justify-center rounded-full bg-navy text-xs font-bold text-white">
-                          {i + 1}
-                        </span>
-                        {on ? (
-                          <span className="min-w-0 grow text-ui leading-[1.6] break-keep">
-                            {p.tag && <b className="block font-semibold text-navy">{p.tag}</b>}
-                            {p.text}
-                          </span>
-                        ) : (
-                          <span className="min-w-0 grow truncate text-ui leading-[1.6]">
-                            {p.tag && <b className="font-semibold text-navy">{p.tag} </b>}
-                            {p.text}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
-            </section>
-          )}
 
           {/* 짜임: 이야기 틀(이유·차선) + 블록 */}
           <section aria-label="이야기 틀과 블록" className="flex min-w-0 flex-col gap-2 py-3">
@@ -545,7 +534,7 @@ export function OutlinePanel(props: {
               )}
               <SkeletonSelect ed={ed} can={editable} className="ml-auto h-7 w-[7.5rem] shrink-0 rounded-md border border-field-line bg-paper px-1.5 text-xs text-ink disabled:bg-thead" />
               {props.canWrite && (
-                <button type="button" disabled={Boolean(busy)} onClick={() => ed.setGallery(true)} className={`${T.btn} shrink-0`} title="이야기 틀 12종 + 섞음 · 구성 패턴(도식 Pool·표준보고서) · 2025 예시 절 중에서 고르면 AI가 그 짜임으로 구성안을 다시 짭니다 — 여러 안을 만들어 견줄 수도 있음">
+                <button type="button" disabled={Boolean(busy)} onClick={() => ed.setGallery(true)} className={`${T.btn} shrink-0`} title={`이야기 틀 ${ed.mg ? `${MG_MAIN_STORIES.length}종` : `${MAIN_STORIES.length}종 + 섞음`} · 구성 패턴(도식 Pool·표준보고서) · 2025 예시 절 중에서 고르면 AI가 그 짜임으로 구성안을 다시 짭니다 — 여러 안을 만들어 견줄 수도 있음`}>
                   {busy === "story" ? `그 짜임으로 짜는 중…(${rangeText(draftExpect("story", ed.mg))})` : "짜임 바꾸기"}
                 </button>
               )}
@@ -602,14 +591,13 @@ export function OutlinePanel(props: {
                 {ed.items.map((x, pos) => (
                   <li key={x.key} data-oblock={pos} className="min-w-0 rounded-md border border-line bg-paper px-3 py-2">
                     {partStarts(ed, pos) && <p className="mb-1 truncate text-xs font-semibold text-navy">{partOf(ed, pos)}</p>}
-                    <button type="button" onClick={() => ed.setOpenKey((o) => (o === x.key ? null : x.key))} aria-expanded={ed.openKey === x.key} className="flex w-full min-w-0 items-center gap-2 text-left">
+                    <button type="button" onClick={() => ed.setOpenKey((o) => (o === x.key ? null : x.key))} aria-expanded={ed.openKey === x.key} title={view.budgets[pos] ? `높이 예산 약 ${view.budgets[pos]}mm` : undefined} className="flex w-full min-w-0 items-center gap-2 text-left">
                       <span className="font-mono text-xs text-muted-2">{pos + 1}</span>
                       <b className="min-w-0 truncate" title={x.block.label || "전폭"}>
                         {x.block.label || <span className="font-normal text-muted-2">전폭</span>}
                       </b>
                       <span className="shrink-0 text-xs text-muted">{shapeOf(x.block)}</span>
                       {(x.block.layout || x.block.span) && <span className="shrink-0 rounded-chip border border-field-line px-1 text-xs text-muted">{layoutName(x.block)}</span>}
-                      <span className="ml-auto shrink-0 text-xs text-muted-2">{view.budgets[pos] ? `약 ${view.budgets[pos]}mm` : ""}</span>
                     </button>
                     {ed.openKey === x.key ? <BlockEditor ed={ed} pos={pos} canEdit={props.canWrite} onShowMaterial={props.onShowMaterial} /> : x.block.purpose && <p className="mt-1 min-w-0 truncate text-xs text-muted">{x.block.purpose}</p>}
                   </li>
@@ -726,7 +714,6 @@ export function OutlinePanel(props: {
             </div>
           )}
         </div>
-      )}
       {ed.askDialog}
     </section>
   );
@@ -915,8 +902,8 @@ const KIND_CHIP: Record<string, string> = {
 
 /**
  * 재료 목록(좁은 패널용 카드 — 2026-09-28, 예전 6칸 표는 글이 옆 칸으로 넘쳐 겹쳤음): 종류·시점·원문 확인 한 줄 + 재료 글(두 줄, 누르면 전부와 근거 원문)
- * + 출처(읽는 이름)·쓰는 블록(누르면 그 블록). 위에 거르기(자료 필요·원문 못 찾음·안 쓰는 재료).
- * 여백 메모·블록 편집에서 재료를 짚으면(ed.focusMaterial) 펼치고 거르기를 풀고 그 재료로 — draft-workspace도 data-materials·data-mat으로 찾음
+ * + 출처(읽는 이름)·쓰는 블록(누르면 그 블록). 기본은 「자료 필요」만 보이고(2026-11-04) 「재료 전체」를 펼치면 거르기(자료 필요·원문 못 찾음·안 쓰는 재료)와 전부.
+ * 재료 번호(m1…)는 title에만. 여백 메모·블록 편집에서 재료를 짚으면(ed.focusMaterial) 전체를 펼치고 거르기를 풀고 그 재료로 — data-materials·data-mat으로 찾음
  */
 function MaterialList({ ed, margin }: { ed: OutlineEdit; margin: boolean }) {
   const data = ed.data!;
@@ -969,69 +956,82 @@ function MaterialList({ ed, margin }: { ed: OutlineEdit; margin: boolean }) {
   const found = mats.filter((m) => m.kind !== "need" && m.found).length;
 
   return (
-    <details data-materials open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="group min-w-0 py-3">
-      <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
-        <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-muted-2 transition-transform group-open:rotate-90" />
-        <h3 className={SEC}>재료 {mats.length}</h3>
-        <span className="min-w-0 truncate text-xs text-muted-2">
-          원문 확인 {found}
-          {count("need") > 0 && <b className="ml-1.5 font-semibold text-warn">자료 필요 {count("need")}</b>}
-          {count("unfound") > 0 && <b className="ml-1.5 font-semibold text-error">원문 못 찾음 {count("unfound")}</b>}
-        </span>
-      </summary>
-
-      <div className="mt-2 flex min-w-0 flex-col gap-2">
-        <div role="group" aria-label="재료 거르기" className="flex min-w-0 flex-wrap gap-1">
-          {chips
-            .filter(([k]) => k === "all" || count(k) > 0)
-            .map(([k, label]) => (
-              <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} className={`h-6 rounded-full border px-2 text-xs whitespace-nowrap ${filter === k ? "border-navy bg-navy text-white" : "border-field-line bg-paper text-ink hover:border-navy"}`}>
-                {label} {count(k)}
-              </button>
-            ))}
-        </div>
-
-        <ul ref={list} className="flex min-w-0 flex-col gap-1.5">
-          {shown.map((m) => {
-            const isOpen = expanded === m.id;
-            const u = uses.get(m.id) ?? [];
-            const src = sources[m.id] || m.source;
-            return (
-              <li key={m.id} data-mat={m.id} className={`min-w-0 rounded-md border px-2.5 py-2 ${m.kind === "need" ? "border-warn/40 bg-warn-bg" : "border-line bg-paper"}`}>
-                <button type="button" onClick={() => setExpanded((e) => (e === m.id ? null : m.id))} aria-expanded={isOpen} title={isOpen ? "접기" : m.quote ? "누르면 재료 전부와 근거 원문" : "누르면 재료 전부"} className="block w-full min-w-0 text-left">
-                  <span className="flex min-w-0 items-center gap-1.5 text-xs leading-5">
-                    <span className="font-mono text-muted-2">{m.id}</span>
-                    <span className={`shrink-0 rounded-chip px-1 font-semibold ${KIND_CHIP[m.kind] ?? KIND_CHIP.fact}`}>{labels[m.kind] ?? m.kind}</span>
-                    {m.when && <span className="min-w-0 truncate text-muted">{m.when}</span>}
-                    <span className={`ml-auto shrink-0 ${m.kind === "need" ? "font-semibold text-warn" : m.found ? "text-muted-2" : "font-semibold text-error"}`}>{m.kind === "need" ? "자료 필요" : m.found ? "✓ 원문 확인" : "원문 못 찾음"}</span>
-                  </span>
-                  <span className={`mt-0.5 block text-ui leading-[1.55] break-keep ${m.kind !== "need" && !m.found ? "text-muted" : "text-ink"} ${isOpen ? "" : "line-clamp-2"}`}>{m.text}</span>
-                </button>
-                {isOpen && m.quote && <blockquote className="mt-1.5 border-l-2 border-line-strong pl-2 text-xs leading-[1.55] break-keep text-muted">“{m.quote}”</blockquote>}
-                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs leading-5 text-muted-2">
-                  {src && (
-                    <span className="max-w-full min-w-0 truncate" title={m.source}>
-                      {src}
-                    </span>
-                  )}
-                  {u.length ? (
-                    u.map((x) => (
-                      <button key={x.key} type="button" onClick={() => revealBlock(ed, x.key, x.pos, margin)} title={`${x.pos + 1}번 블록(${x.name})에 씀 — 누르면 그 블록`} className="flex h-6 max-w-[150px] min-w-0 items-center gap-0.5 rounded-chip border border-field-line bg-paper px-1 text-ink hover:border-navy">
-                        <span className="text-muted-2">→</span>
-                        <span className="font-mono text-muted-2">{x.pos + 1}</span>
-                        <span className="min-w-0 truncate">{x.name}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <span className="rounded-chip border border-dashed border-field-line px-1">안 씀</span>
-                  )}
-                </div>
+    <div className="flex min-w-0 flex-col gap-2 py-3">
+      {/* 자료 필요(늘 보임): 근거에 없어 채울 자료 — 쉬운 말 그대로 */}
+      {count("need") > 0 && (
+        <section aria-label="자료 필요" className="flex min-w-0 flex-col gap-1">
+          <h3 className={SEC}>자료 필요 {count("need")}</h3>
+          <ul className="flex min-w-0 flex-col gap-1">
+            {mats.filter(test.need).map((m) => (
+              <li key={m.id} title={m.id} className="min-w-0 rounded-md border border-warn/40 bg-warn-bg px-2.5 py-1.5 text-ui leading-[1.55] break-keep text-ink">
+                {m.text}
               </li>
-            );
-          })}
-          {!shown.length && <li className="text-xs text-muted-2">해당 재료가 없습니다.</li>}
-        </ul>
-      </div>
-    </details>
+            ))}
+          </ul>
+        </section>
+      )}
+      <details data-materials open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="group min-w-0">
+        <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+          <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-muted-2 transition-transform group-open:rotate-90" />
+          <h3 className={SEC}>재료 전체 {mats.length}</h3>
+          <span className="min-w-0 truncate text-xs text-muted-2">
+            원문 확인 {found}
+            {count("unfound") > 0 && <b className="ml-1.5 font-semibold text-error">원문 못 찾음 {count("unfound")}</b>}
+          </span>
+        </summary>
+
+        <div className="mt-2 flex min-w-0 flex-col gap-2">
+          <div role="group" aria-label="재료 거르기" className="flex min-w-0 flex-wrap gap-1">
+            {chips
+              .filter(([k]) => k === "all" || count(k) > 0)
+              .map(([k, label]) => (
+                <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)} className={`h-6 rounded-full border px-2 text-xs whitespace-nowrap ${filter === k ? "border-navy bg-navy text-white" : "border-field-line bg-paper text-ink hover:border-navy"}`}>
+                  {label} {count(k)}
+                </button>
+              ))}
+          </div>
+
+          <ul ref={list} className="flex min-w-0 flex-col gap-1.5">
+            {shown.map((m) => {
+              const isOpen = expanded === m.id;
+              const u = uses.get(m.id) ?? [];
+              const src = sources[m.id] || m.source;
+              return (
+                <li key={m.id} data-mat={m.id} title={m.id} className={`min-w-0 rounded-md border px-2.5 py-2 ${m.kind === "need" ? "border-warn/40 bg-warn-bg" : "border-line bg-paper"}`}>
+                  <button type="button" onClick={() => setExpanded((e) => (e === m.id ? null : m.id))} aria-expanded={isOpen} title={isOpen ? "접기" : m.quote ? "누르면 재료 전부와 근거 원문" : "누르면 재료 전부"} className="block w-full min-w-0 text-left">
+                    <span className="flex min-w-0 items-center gap-1.5 text-xs leading-5">
+                      <span className={`shrink-0 rounded-chip px-1 font-semibold ${KIND_CHIP[m.kind] ?? KIND_CHIP.fact}`}>{labels[m.kind] ?? m.kind}</span>
+                      {m.when && <span className="min-w-0 truncate text-muted">{m.when}</span>}
+                      <span className={`ml-auto shrink-0 ${m.kind === "need" ? "font-semibold text-warn" : m.found ? "text-muted-2" : "font-semibold text-error"}`}>{m.kind === "need" ? "자료 필요" : m.found ? "✓ 원문 확인" : "원문 못 찾음"}</span>
+                    </span>
+                    <span className={`mt-0.5 block text-ui leading-[1.55] break-keep ${m.kind !== "need" && !m.found ? "text-muted" : "text-ink"} ${isOpen ? "" : "line-clamp-2"}`}>{m.text}</span>
+                  </button>
+                  {isOpen && m.quote && <blockquote className="mt-1.5 border-l-2 border-line-strong pl-2 text-xs leading-[1.55] break-keep text-muted">“{m.quote}”</blockquote>}
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs leading-5 text-muted-2">
+                    {src && (
+                      <span className="max-w-full min-w-0 truncate" title={m.source}>
+                        {src}
+                      </span>
+                    )}
+                    {u.length ? (
+                      u.map((x) => (
+                        <button key={x.key} type="button" onClick={() => revealBlock(ed, x.key, x.pos, margin)} title={`${x.pos + 1}번 블록(${x.name})에 씀 — 누르면 그 블록`} className="flex h-6 max-w-[150px] min-w-0 items-center gap-0.5 rounded-chip border border-field-line bg-paper px-1 text-ink hover:border-navy">
+                          <span className="text-muted-2">→</span>
+                          <span className="font-mono text-muted-2">{x.pos + 1}</span>
+                          <span className="min-w-0 truncate">{x.name}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <span className="rounded-chip border border-dashed border-field-line px-1">안 씀</span>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+            {!shown.length && <li className="text-xs text-muted-2">해당 재료가 없습니다.</li>}
+          </ul>
+        </div>
+      </details>
+    </div>
   );
 }

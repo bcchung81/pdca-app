@@ -98,7 +98,7 @@ export function cardDomTarget(uid: string, before?: () => Promise<boolean>): Dom
     fonts: false,
     limitMm: null,
     gzip: true,
-    fallback: { href: `/cards/${uid}/hwpx`, label: "한글(원본 배치)" },
+    fallback: { href: `/cards/${uid}/hwpx`, label: "HWPX(원본 배치)" },
     before,
   };
 }
@@ -147,19 +147,19 @@ export function useDomHwpx(): { start: (it: DomHwpxItem) => void; startTarget: (
       setFail({ title: "화면 배치 자료가 너무 큽니다", body: [`화면 배치 자료가 ${DOM_HWPX_MAX_BYTES / 1024 / 1024}MB를 넘어 보낼 수 없습니다.`], fallback: it.fallback });
       return;
     }
-    setBusy("한글 파일을 만드는 중…");
+    setBusy("HWPX 파일을 만드는 중…");
     try {
       const res = await fetch(it.postHref, { method: "POST", headers: { "content-type": packed ? DOM_HWPX_GZIP_TYPE : "application/json" }, body });
       if (!res.ok || !(res.headers.get("content-type") ?? "").includes("hwp")) {
-        const why = res.ok ? "서버 응답이 한글 파일이 아닙니다(로그인이 끊겼을 수 있음)." : (await res.text()).slice(0, 300) || `서버 오류(${res.status})`;
-        setFail({ title: "한글 파일을 만들지 못했습니다", body: [why], fallback: it.fallback });
+        const why = res.ok ? "서버 응답이 HWPX 파일이 아닙니다(로그인이 끊겼을 수 있음)." : (await res.text()).slice(0, 300) || `서버 오류(${res.status})`;
+        setFail({ title: "HWPX 파일을 만들지 못했습니다", body: [why], fallback: it.fallback });
         return;
       }
       const url = URL.createObjectURL(await res.blob());
       download(url, fileNameOf(res.headers.get("content-disposition")));
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e) {
-      setFail({ title: "한글 파일을 만들지 못했습니다", body: [e instanceof Error ? e.message : String(e)], fallback: it.fallback });
+      setFail({ title: "HWPX 파일을 만들지 못했습니다", body: [e instanceof Error ? e.message : String(e)], fallback: it.fallback });
     } finally {
       setBusy(null);
     }
@@ -218,7 +218,7 @@ export function useDomHwpx(): { start: (it: DomHwpxItem) => void; startTarget: (
     <>
       {dialog}
       <ConfirmDialog
-        label={fail?.title ?? "한글 내려받기 실패"}
+        label={fail?.title ?? "HWPX 내려받기 실패"}
         title={fail?.title ?? ""}
         open={fail !== null}
         onOpenChange={(v) => {

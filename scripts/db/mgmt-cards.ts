@@ -1,6 +1,8 @@
 // 경영관리 과제관리카드(한글 파일)를 원장에 올립니다(현행화 — 경영관리 원장은 비어 있으므로 모두 새 카드).
-//   pnpm db:cards-mg [--file <경로>] [--dry-run | --write]
+//   pnpm db:cards-mg [--file <경로>] [--allow-warnings] [--dry-run | --write]
 // 기본은 읽기만(--dry-run): 파일을 읽고 카드·원본 배치·팀·평가단위를 계획해 보여 줍니다(DB는 읽기만).
+// 읽기 경고가 있는 카드가 있으면 경고 목록을 보이고 멈춤 — --allow-warnings면 경고와 함께(카드 글은 파일 그대로) 올림.
+// 원본 배치 그림이 저장소(card-originals) 파일 한도를 넘으면 그 그림만 흰 바탕 JPEG로 바꿔 올림(fitLayoutImages — 주요사업 적재와 같은 함수), 바꿔도 넘으면 멈춤.
 // --write: ① 평가단위 MG-1~14 ② 없는 팀 ③ 원본 배치 그림(저장소 card-originals) ④ 카드를 차례로 넣음. 이미 있는 카드(id)는 건드리지 않고 건너뜁니다.
 // 파일: 기본 data/cards/260904/cards-260904-mg.hwp(HWP·HWPX). 카드 id = 경영관리N/N-M, 평가단위 = 지표 MG-N.
 // 필요한 환경변수(.env.local): NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY
@@ -10,7 +12,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { parse } from "kordoc";
-import { buildLayouts } from "../../lib/cards/layout-build.ts";
+import { CARD_ORIGINALS_MAX, buildLayouts, fitLayoutImages } from "../../lib/cards/layout-build.ts";
 import { parseMgmtMarkdown } from "../../lib/cards/hwp/parse-mgmt.ts";
 import { renderMgmtCard } from "../../lib/cards/render-mgmt.ts";
 import { readHwp5 } from "../../lib/hwp/hwp5.ts";
@@ -23,6 +25,7 @@ const args = process.argv.slice(2);
 const has = (f: string) => args.includes(f);
 const arg = (f: string) => (args.includes(f) ? args[args.indexOf(f) + 1] : null);
 const WRITE = has("--write");
+const ALLOW_WARNINGS = has("--allow-warnings");
 const file = resolve(arg("--file") ?? `${ROOT}/data/cards/260904/cards-260904-mg.hwp`);
 const edition = /(\d{6})/.exec(basename(file))?.[1] ?? "260904";
 
@@ -38,11 +41,18 @@ async function main() {
   console.log(`파일 ${basename(file)} (${(bytes.length / 1024).toFixed(0)}KB) · 카드 ${parsed.cards.length}장 · 목차 ${declared.length}개 · 경고 있는 카드 ${warned.length}장`);
   console.log(`  목차에는 있고 파일에 카드가 없는 과제: ${declared.filter((n) => !got.has(n)).join(", ") || "없음"}`);
   if (parsed.skipped) throw new Error(`과제번호를 못 읽은 카드 표 ${parsed.skipped}개 — 중단`);
-  if (warned.length) throw new Error(`읽기 경고가 있는 카드 ${warned.map((c) => c.taskNo).join(", ")} — 중단`);
+  for (const c of warned) console.log(`  읽기 경고 ${c.id}: ${c.parseWarnings.join(" / ")}`);
+  if (warned.length && !ALLOW_WARNINGS) throw new Error(`읽기 경고가 있는 카드 ${warned.map((c) => c.taskNo).join(", ")} — 중단(경고와 함께 올리려면 --allow-warnings)`);
+  if (warned.length) console.log(`  --allow-warnings: 경고 있는 카드 ${warned.length}장도 파일 그대로 올림`);
 
   const doc = ext === "hwp" ? readHwp5(new Uint8Array(bytes)) : await readHwpx(new Uint8Array(bytes));
   const { built, skipped } = buildLayouts(doc, parsed.cards);
   for (const s of skipped) console.log(`  배치 건너뜀: ${s}`);
+  for (const b of built)
+    for (const f of fitLayoutImages(b)) {
+      console.log(`  한도를 넘어 흰 바탕 JPEG로: ${parsed.cards[b.index].id} ${f.from} ${f.before.toLocaleString()}B → ${f.to ? `${f.to} ${f.after!.toLocaleString()}B(품질 ${f.quality})` : "못 바꿈"}`);
+      if (!f.to) throw new Error(`그림이 저장소 한도(${CARD_ORIGINALS_MAX}B)를 넘고 흰 바탕 JPEG로도 못 줄임: ${parsed.cards[b.index].id} ${f.from} — 중단`);
+    }
   const layoutOf = new Map(built.map((b) => [b.index, b]));
   const rates = built.map((b) => b.stats.bound / (b.stats.targets || 1));
   console.log(`원본 배치 ${built.length}/${parsed.cards.length}장 · 잇기 적중률 ${Math.min(...rates).toFixed(3)}~${Math.max(...rates).toFixed(3)} · 그림 ${built.reduce((n, b) => n + b.images.length, 0)}개`);
@@ -81,6 +91,7 @@ async function main() {
   const haveCards = new Set(cards.map((c) => c.id));
   const newCards = parsed.cards.filter((c) => !haveCards.has(c.id));
   console.log(`계획: 평가단위 추가 ${needUnits.length}개 · 팀 추가 ${wantTeams.size}개(${[...wantTeams].map(([n, h]) => `${n}←${h}`).join(", ")}) · 카드 새로 ${newCards.length}장 · 이미 있어 건너뜀 ${parsed.cards.length - newCards.length}장`);
+  console.log(`  (원장을 비운 뒤라면: 카드 새로 ${parsed.cards.length}장 · 그림 ${built.reduce((n, b) => n + b.images.length, 0)}개)`);
   const missingUnit = newCards.filter((c) => !MGMT_INDICATORS.some((i) => i.no === c.indicatorNo));
   if (missingUnit.length) throw new Error(`지표 번호가 14개 밖인 카드: ${missingUnit.map((c) => c.id).join(", ")}`);
   if (!WRITE) {

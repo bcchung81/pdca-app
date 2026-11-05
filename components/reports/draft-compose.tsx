@@ -1,18 +1,18 @@
 "use client";
 
-import { ChevronRight, FileText, X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { finishCardMaterialUpload, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
 import { getReportSelectPreview, runReportSectionDraft } from "../../app/(app)/reports/cards/actions";
 import { runReportOutline } from "../../app/(app)/reports/cards/outline-actions";
-import { type DraftRunKind, OUTLINE_RUNS, draftExpect, draftProgress, rangeText } from "../../lib/ai/progress.ts";
+import { type DraftRunKind, draftExpect, draftProgress, rangeText } from "../../lib/ai/progress.ts";
 import { ATTACH_ACCEPT, ATTACH_LABEL, isAttachableName } from "../../lib/ai/writer.ts";
-import { AiComposer } from "../workspace/ai-composer";
+import type { DraftThreadData } from "../../lib/reports/draft-thread.ts";
+import { AiComposer, type AiComposerMode } from "../workspace/ai-composer";
 import { AiProgress } from "../workspace/ai-progress";
-import { holdScroll } from "../workspace/scroll-within";
-import { PHONE_QUERY, useMedia } from "../workspace/use-narrow.ts";
+import { scrollWithin } from "../workspace/scroll-within";
 import { DropMenu } from "../ui/drop-menu";
 import { uploadSigned } from "../ui/file-drop";
 import { type AskStep, useAsk } from "../ui/confirm-dialog";
@@ -20,13 +20,10 @@ import { overwriteSteps } from "./draft-review";
 import { FrameworkGallery } from "./framework-gallery";
 import { type FrameChoice, frameLabel, isEmptyFrame } from "../../lib/reports/framework-pick.ts";
 import { patternOf } from "../../lib/reports/framework-patterns.ts";
-import { FIT_RANGE_TEXT, fitVerdict } from "../../lib/reports/fit.ts";
-import { type DraftStage, type StageAction, type StageKey, draftStage } from "../../lib/reports/draft-stage.ts";
-import { T, Tag } from "../ui/kit";
-import { StatusMark } from "../ui/next-steps";
-import { MARK_TAG } from "../ui/status-tone.ts";
+import { T } from "../ui/kit";
 import { type DraftSelection, type SourceFile, type SourceProps, kb, selectionLine } from "./draft-workbench";
 import { type DraftPick, mergeSources, pickOf } from "../../lib/reports/draft-sources.ts";
+import { AnswerHead, AskBubble, TodoList, TurnView } from "./draft-turns";
 
 /**
  * plan = 구성안대로 집필(승인하고 집필과 같음) · revise = 자료 반영 고치기(구성안대로 쓴 초안이 있을 때 — 같은 구성안대로 새 자료·요청 글을 더해 다시 씀, 2026-10-29) ·
@@ -36,61 +33,60 @@ export type DraftMode = "plan" | "revise" | "outline" | "draft";
 export type DraftBusy = false | DraftMode;
 export type DraftMsg = { ok: boolean; text: string } | null;
 
-/** 단계 레일 재료(서버가 셈 — app/(app)/reports/cards/[uid]/derive.ts draftMetaOf) */
-export interface DraftMeta {
-  /** 초안을 만든 뒤 원장이 바뀜 */
-  stale: boolean;
-  /** 구성안대로 쓴 초안의 짜임 맞음(spec.plan) */
-  plan: { matched: number; total: number } | null;
-  /** 판면 어림(mm) */
-  fit: { total: number; budget: number } | null;
-  /** 점검 결과 탭 할 일 나눔: 채울 자료 · 확인할 것 */
-  need: number;
-  warn: number;
-  /** 구성안 한 줄(모델·시각) */
-  outlineInfo: string | null;
-  /** 「제출은 …에서」 링크(점검 단계 아래, 잠김이면 주 행동 「보고서 상태 보기」가 감) */
-  submit: { href: string; label: string } | null;
-}
-
 /** 구성안 메모 상한(서버와 같음) */
 const MEMO_MAX = 500;
-/** 요청 칸 메모의 접근 이름(레일 「구성안 (다시) 만들기」가 이 이름으로 찾아 초점) */
+/** 요청 칸 메모의 접근 이름(답의 「구성안 다시 만들기」가 이 이름으로 찾아 초점 — 구성안 고치기 창에도 입력 칸이 있음) */
 const MEMO_LABEL = "요청 메모(구성안 만들기·집필에 씀)";
 /** 지금 시각(ms) — 확인 창 콜백(ask)에서 불리는 함수라 린트(react-hooks/purity)가 렌더 중 호출로 오인해 Date.now를 한 겹 감쌈 */
 const nowMs = () => Date.now();
-/** 구성안 패널 단추 중 AI 요청(판면 줄이기·저장은 결정론이라 진행 줄 없음) → 진행 줄의 요청 종류 */
-const OUTLINE_BUSY: Partial<Record<string, DraftRunKind>> = { story: "story", again: "again", approve: "plan" };
-/** 옮겨 갈 자리: 진행 줄 · 구성안 머리(맨 위) · 요청 칸 결과 알림 · 구성안 패널 결과 알림 */
-type Spot = "progress" | "top" | "msg" | "outline-msg";
+/** 구성안 고치기 창 단추 중 AI 요청(판면 줄이기·저장은 결정론이라 진행 줄 없음) → 진행 줄의 요청 종류 · 말풍선 이름 */
+const OUTLINE_BUSY: Partial<Record<string, { kind: DraftRunKind; label: string }>> = {
+  story: { kind: "story", label: "짜임 바꾸기" },
+  again: { kind: "again", label: "구성안 다시 만들기" },
+  approve: { kind: "plan", label: "승인하고 집필" },
+};
+/** 요청 칸 칩 이름(구성안 · 집필 · 고치기 — 바로 만들기는 답의 조용한 단추로만) */
+const CHIP: Partial<Record<DraftMode, string>> = { outline: "구성안", plan: "집필", revise: "고치기" };
+
+/** 지금 도는(또는 막 끝난·실패한) 요청 — 화면 상태(새로 고치면 사라짐). sig = 보낼 때의 대화 차례 열쇠(바뀌면 서버 기록이 이어받음) */
+interface Live {
+  id: number;
+  kind: DraftRunKind;
+  label: string;
+  lines: string[];
+  at: number;
+  sig: string;
+  state: "run" | "done" | "error";
+  message?: string;
+  /** 요청 칸·답 단추로 보낸 것(아니면 구성안 고치기 창) */
+  own: boolean;
+}
 
 /**
- * 경평 초안 과제별 초안 오른쪽 「AI 초안」 탭(과제원장 AI 작성지원과 같은 짜임): 맨 위는 단계 레일(구성안 · 초안 · 점검 + 주 단추 하나 + 「다시 쓰기」 묶음 — 2026-10-21),
- * 그 아래 결과(구성안이 있으면 구성안 패널·진행·알림), 아래는 붙박이 요청 칸(요청 종류 칩 · 초안 근거 한 줄 · 첨부 칩 · 📎 · 요청 메모 · 보내기).
- * 레일의 만들기 단추는 요청 칸 보내기와 같은 send(요청 종류만 그 단추 것 — 덮어쓰기 확인 그대로). 서버 액션·인자는 예전 근거 고르기 패널과 같음.
+ * 경평 초안 과제별 초안 오른쪽 「AI 초안」(2026-11-04 사용자 결정 — ChatGPT처럼 요청 → 짧은 답): 위는 대화(저장된 구성안·초안·블록 고치기 차례 + 지금 도는 요청),
+ * 아래는 붙박이 요청 칸(요청 종류 칩 구성안·집필·고치기 · 초안 근거 한 줄 · 첨부 칩 · 📎 · 요청 메모 · 보내기 — 과제원장 AI 작성지원과 같은 부품).
+ * 마지막 답에만 할 일(「채울 자료 N건 ▸」 — 예전 점검 결과)과 다음 단추(승인하고 집필 · 구성안 고치기 · 다시 만들기 …)가 붙음. 단추는 요청 칸 보내기와 같은 send
+ * (덮어쓰기·「구성안 없이 계속할까요?」 확인 그대로), 서버 액션·인자는 예전과 같음. 구성안 상세 편집은 「구성안 고치기」로 여는 오른쪽 창(작업 공간).
  */
 export function DraftCompose(props: {
   uid: string;
   canWrite: boolean;
   hasSpec: boolean;
   hasOutline: boolean;
-  /** 구성안 패널(서버가 그림) */
-  outline: ReactNode | null;
-  /** 지금 초안 한 줄(모델·시각) — 단계 레일의 초안 메타 줄 */
-  draftInfo: string | null;
-  meta: DraftMeta;
-  /** 구성안 승인(구성안대로 집필함) */
-  outlineApproved: boolean;
-  /** 점검 결과 탭 할 일(채울 자료 + 확인할 것) */
-  checkCount: number;
+  /** 지금 초안이 구성안대로 쓰였음(spec.plan) — 기본 요청 종류가 「고치기」 */
+  draftFromOutline: boolean;
+  /** 대화 차례·할 일·상태(서버가 셈 — lib/reports/draft-thread.ts) */
+  thread: DraftThreadData;
+  /** 카드 화면(원장 실적 넣기) */
+  cardHref: string;
   /** 제출·승인된 보고서의 과제(부서) */
   locked: boolean;
-  /** 부서 화면 보기(읽기 전용) */
-  deptView: boolean;
-  /** 「점검 결과」 탭으로 */
-  onShowCheck: () => void;
-  /** 구성안 판·구성안 패널 펼치기 */
-  onShowOutline: () => void;
+  /** 구성안 고치기 창 열기 */
+  onOpenOutline: () => void;
+  /** 왼쪽 종이의 블록으로(-1 = 추진성과) */
+  onGotoBlock: (j: number) => void;
+  /** 할 일을 펼쳐 그 자리로(휴대폰 머리 「할 일」 — 바뀔 때마다) */
+  todoFocus: number;
   cardFiles: SourceFile[];
   reportFiles: SourceFile[] | null;
   lensCount: number;
@@ -99,8 +95,6 @@ export function DraftCompose(props: {
   sel: DraftSelection;
   busy: DraftBusy;
   setBusy: (b: DraftBusy) => void;
-  msg: DraftMsg;
-  setMsg: (m: DraftMsg) => void;
   onOpenSources: () => void;
   /** 사람이 고친 블록 순번(다시 만들기 전 확인) */
   humanEdits: number[];
@@ -113,25 +107,26 @@ export function DraftCompose(props: {
   /** 지금 구성안의 이야기 틀·차선 */
   currentStory: string | null;
   alternative: string | null;
-  /** 이 탭이 지금 보이는지(숨은 동안 끝난 요청은 돌아올 때 결과로 옮김) */
+  /** 이 창이 지금 보이는지(숨은 동안 끝난 요청은 돌아올 때 그 자리로 옮김) */
   active: boolean;
-  /** 구성안 패널 단추(짜임 바꾸기·다시 만들기·승인하고 집필)로 도는 요청 — 같은 진행 줄을 여기 보임(frame = 그 요청에 넣은 구성 패턴·예시 절 이름) */
-  outlineRun: { busy: string | null; at: number; msg: DraftMsg; frame?: { pattern?: string; example?: string } | null };
+  /** 구성안 고치기 창 단추(짜임 바꾸기·다시 만들기·승인하고 집필·절 다시 짜기)로 도는 요청 — 같은 대화에 차례로 보임(frame = 그 요청에 넣은 구성 패턴·예시 절 이름, part = 경영관리 절 하나) */
+  outlineRun: { busy: string | null; at: number; msg: DraftMsg; frame?: { pattern?: string; example?: string } | null; part?: boolean };
   /** 짜임 고르기에서 「여러 안 비교」(지금 고른 근거로 — 작업 공간이 대화 창을 엶) */
   onAlts?: (alts: FrameChoice[], request: string, sources: { card: string[]; report: string[]; prior: string[] }) => void;
-  /** 구성안에 저장된 근거(구성안대로 집필·자료 반영 고치기는 여기에 지금 고른 첨부를 더함, 구성안 패널의 다시 만들기는 그대로 씀 — 없으면 옛 구성안: 첨부 없이 전년 절 자동) */
+  /** 구성안에 저장된 근거(구성안대로 집필·자료 반영 고치기는 여기에 지금 고른 첨부를 더함, 구성안 고치기 창의 다시 만들기는 그대로 씀 — 없으면 옛 구성안: 첨부 없이 전년 절 자동) */
   outlineSources: { card: string[]; report: string[]; prior: string[] } | null;
   /** 전년 절 이름·자동으로 고르는 절 */
   prior: SourceProps["prior"];
   /** 경영관리 카드(평가내용 → 대주제 → 절): 바로 만들기·구성안 전 틀 고르기 없음 — 구성안에서 절마다 틀을 고름 */
   mg?: boolean;
+  /** 관리자(짜임 고르기의 여러 안 비용 어림을 보임) */
+  admin?: boolean;
 }) {
   const router = useRouter();
-  const { sel, busy } = props;
-  // 구성안이 있으면 「구성안대로 집필」이 기본(2026-09-28 — 예전에는 「구성안 다시 만들기 | 바로 다시 만들기」뿐이라 바로 만들기로 써서 고른 틀이 무시됐음),
-  // 구성안대로 쓴 초안이 있으면 「자료 반영 고치기」가 기본(2026-10-29 — 초안을 쓴 뒤 올린 첨부·요청 글로 같은 구성안대로 다시 씀).
+  const { sel, busy, thread } = props;
+  // 기본 요청 종류: 구성안대로 쓴 초안이 있으면 「고치기」(자료 반영 고치기), 구성안이 있으면 「집필」, 없으면 「구성안」.
   // 기본이 바뀌면(구성안·초안이 새로 생기면 — 만들기 뒤 새로 고침) 기본을 따르던 요청 종류를 새 기본으로 옮김
-  const defaultMode: DraftMode = props.hasOutline ? (props.hasSpec && props.meta.plan ? "revise" : "plan") : "outline";
+  const defaultMode: DraftMode = props.hasOutline ? (props.hasSpec && props.draftFromOutline ? "revise" : "plan") : "outline";
   const [mode, setMode] = useState<DraftMode>(defaultMode);
   const [hadDefault, setHadDefault] = useState(defaultMode);
   if (hadDefault !== defaultMode) {
@@ -145,6 +140,7 @@ export function DraftCompose(props: {
   // 구성안 만들 때 고른 짜임(짜임 고르기 — 이야기 틀·구성 패턴·2025 예시 절, 없으면 AI가 고름)
   const [frame, setFrame] = useState<FrameChoice | null>(null);
   const [gallery, setGallery] = useState(false);
+  const [todoOpen, setTodoOpen] = useState(false);
 
   const story = props.currentStory ? `(${props.currentStory})` : "";
   const MODES: Array<[DraftMode, string, string]> = [
@@ -157,16 +153,37 @@ export function DraftCompose(props: {
     ...(props.mg ? [] : [["draft", props.hasSpec ? "바로 다시 만들기" : "바로 만들기", props.hasOutline ? `구성안을 쓰지 않고 AI가 짜임을 새로 정해 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})` : `구성안 없이 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})`] as [DraftMode, string, string]]),
   ];
   const label = (m: DraftMode) => MODES.find(([k]) => k === m)?.[1] ?? "";
+  const hint = (m: DraftMode) => MODES.find(([k]) => k === m)?.[2] ?? "";
+  // 요청 칸 칩: 지금 쓸 수 있는 종류만(구성안은 늘, 집필은 구성안이 있을 때, 고치기는 구성안대로 쓴 초안이 있을 때)
+  const chips: AiComposerMode<DraftMode>[] = (["outline", "plan", "revise"] as const).filter((m) => MODES.some(([k]) => k === m)).map((m) => ({ key: m, label: CHIP[m] ?? m, title: `${label(m)} — ${hint(m)}` }));
   // 뺀 자료(다시 넣을 수 있는 것): 카드 전용 자료 + 보고서 추가자료
   const excluded = [...props.cardFiles.filter((f) => f.attachable && sel.off.has(`c:${f.id}`)).map((f) => ({ key: `c:${f.id}`, f, report: false })), ...(props.reportFiles ?? []).filter((f) => f.attachable && sel.off.has(`r:${f.id}`)).map((f) => ({ key: `r:${f.id}`, f, report: true }))];
-  const chips = [...sel.card.map((f) => ({ key: `c:${f.id}`, f, report: false })), ...sel.report.map((f) => ({ key: `r:${f.id}`, f, report: true }))];
-  // 지금 도는 AI 요청: 이 요청 칸(busy) 또는 구성안 패널 단추 — 진행 줄과 스크롤이 함께 봄
-  const [startedAt, setStartedAt] = useState(0);
-  const outlineKind = props.outlineRun.busy ? OUTLINE_BUSY[props.outlineRun.busy] : undefined;
-  const run: { kind: DraftRunKind; at: number; own: boolean } | null = busy ? { kind: busy, at: startedAt, own: true } : outlineKind ? { kind: outlineKind, at: props.outlineRun.at, own: false } : null;
-  const blocked = Boolean(run) || Boolean(uploading);
+  const fileChips = [...sel.card.map((f) => ({ key: `c:${f.id}`, f, report: false })), ...sel.report.map((f) => ({ key: `r:${f.id}`, f, report: true }))];
+
+  // 대화 차례 열쇠(서버가 새 기록을 내려주면 바뀜 — 끝난 요청의 말풍선을 서버 차례가 이어받을 때를 앎)
+  const sig = thread.turns.map((t) => t.key).join("|");
+  const [live, setLive] = useState<Live | null>(null);
+  const [liveSeq, setLiveSeq] = useState(0);
+  // 구성안 고치기 창에서 도는 요청: 시작·끝을 그리는 중에 대화 차례로 옮김(창은 닫히고 대화에서 진행 줄을 봄)
+  const outlineBusy = props.outlineRun.busy ? OUTLINE_BUSY[props.outlineRun.busy] : undefined;
+  const outlineKey = outlineBusy ? `${props.outlineRun.busy}:${props.outlineRun.at}` : null;
+  const [seenOutlineKey, setSeenOutlineKey] = useState<string | null>(null);
+  if (seenOutlineKey !== outlineKey) {
+    setSeenOutlineKey(outlineKey);
+    if (outlineBusy) {
+      setLiveSeq(liveSeq + 1);
+      setLive({ id: liveSeq + 1, kind: outlineBusy.kind, label: props.outlineRun.part && outlineBusy.kind === "story" ? "절 다시 짜기" : outlineBusy.label, lines: [], at: props.outlineRun.at, sig, state: "run", own: false });
+    } else if (live && !live.own && live.state === "run") setLive(props.outlineRun.msg && !props.outlineRun.msg.ok ? { ...live, state: "error", message: props.outlineRun.msg.text } : { ...live, state: "done" });
+  }
+  // 끝난 요청은 서버 기록이 바뀌면(새 차례) 지움 — 그 전까지는 말풍선을 남겨 깜박이지 않게
+  if (live?.state === "done" && live.sig !== sig) setLive(null);
+  // 자료 반영 고치기로 쓴 초안(서버 기록에는 「구성안대로 집필」로 남음 — 쓴 종류를 저장하지 않음): 이 화면에서 막 보낸 것이면 그 이름으로(보낼 때의 차례 열쇠)
+  const [revised, setRevised] = useState<string | null>(null);
+
+  const running = live?.state === "run" ? live : null;
+  const blocked = Boolean(running) || Boolean(busy) || Boolean(uploading);
   // 진행 줄의 「넣은 근거」(서버 prepareDraft와 같음): 구성안 만들기·바로 만들기는 지금 고른 근거, 구성안대로 집필·자료 반영 고치기는 구성안에 저장된 근거 ∪ 지금 고른 첨부(뺀 자료 제외 —
-  // approveReportOutline mergeSources), 구성안 패널의 다시 만들기·짜임 다시 짜기는 구성안에 저장된 근거
+  // approveReportOutline mergeSources), 구성안 고치기 창의 다시 만들기·짜임 다시 짜기는 구성안에 저장된 근거
   const priorNames = (keys: string[]) =>
     keys
       .map((k) => props.prior.options.find((o) => o.key === k)?.label)
@@ -174,7 +191,6 @@ export function DraftCompose(props: {
       .slice(0, 2);
   const namesOf = (files: SourceFile[], ids: string[]) => ids.map((id) => files.find((f) => f.id === id)?.fileName).filter((x): x is string => Boolean(x));
   const src = props.outlineSources;
-  // 지금 고른 근거(서버에 보내는 값)와 구성안 근거에 합친 결과 — 머리 줄·진행 줄·보내기가 같은 값을 씀
   const pick = pickOf(
     sel.card.map((f) => f.id),
     sel.report.map((f) => f.id),
@@ -183,13 +199,6 @@ export function DraftCompose(props: {
   const merged = mergeSources(src, pick);
   const planFiles = [...namesOf(props.cardFiles, merged.sources.card), ...namesOf(props.reportFiles ?? [], merged.sources.report)];
   const addedFiles = [...namesOf(props.cardFiles, merged.added.card), ...namesOf(props.reportFiles ?? [], merged.added.report)];
-  // 구성안 근거 중 사람이 뺀 자료
-  const droppedSaved = (src?.card ?? []).filter((id) => sel.off.has(`c:${id}`)).length + (src?.report ?? []).filter((id) => sel.off.has(`r:${id}`)).length;
-  // 머리 줄 「근거:」 — 보내면 실제로 쓰는 첨부(구성안대로 집필·자료 반영 고치기는 구성안 근거 + 새 자료, 나머지는 지금 고른 첨부)
-  const basisLine =
-    mode === "plan" || mode === "revise"
-      ? `구성안 근거 ${planFiles.length - addedFiles.length}건 + 새 자료 ${addedFiles.length}건${droppedSaved ? ` · 뺀 자료 ${droppedSaved}건 제외` : ""}`
-      : `지금 고른 첨부 ${sel.count}건`;
   // 이번 요청에 요청 글을 보냈는지(진행 줄 「담당자 요청」 — 보낼 때 정함)
   const [sentRequest, setSentRequest] = useState(false);
   // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(서버가 요청 때와 같은 묶음으로 셈, null이면 통째로 넣기). 요청을 보낼 수 없으면 안 물음
@@ -200,50 +209,49 @@ export function DraftCompose(props: {
   }, [props.uid, props.canWrite]);
   const picked = selected ?? undefined;
   const spec =
-    run &&
+    running &&
     draftProgress(
-      run.kind,
-      run.kind === "outline" || run.kind === "draft"
-        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: run.own && run.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
-        : run.kind === "plan" || run.kind === "revise"
-          ? { files: planFiles, added: addedFiles, request: run.own && sentRequest, prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked }
-          : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: run.own ? undefined : (props.outlineRun.frame ?? undefined) },
+      running.kind,
+      running.kind === "outline" || running.kind === "draft"
+        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: running.own && running.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
+        : running.kind === "plan" || running.kind === "revise"
+          ? { files: planFiles, added: addedFiles, request: running.own && sentRequest, prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked }
+          : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: running.own ? undefined : (props.outlineRun.frame ?? undefined) },
     );
 
-  // 스크롤(2026-09-29 사용자 결정): 요청을 보내면 진행 줄로, 끝나면 결과로 — 구성안을 만든 요청이 잘 끝나면 구성안 머리(맨 위), 초안·오류면 결과 알림.
-  // 새로 고침으로 구성안이 다시 그려지는 동안 그 자리를 지키고(holdScroll), 탭이 숨어 있으면 자리를 기억했다가 보일 때 옮김
+  // 스크롤(과제원장 AI 작성지원과 같음): 요청을 보내면 맨 아래(말풍선 + 진행 줄), 끝나 새 차례가 오면 마지막 답의 첫머리, 창을 열면 마지막 답의 첫머리.
+  // 숨은 동안(다른 패널·닫힌 시트)에는 자리를 기억했다가 보일 때 옮김(scrollWithin이 숨은 상자에서는 false)
   const boxRef = useRef<HTMLDivElement>(null);
-  const rootRef = useRef<HTMLElement>(null);
-  const progRef = useRef<HTMLDivElement>(null);
-  const msgRef = useRef<HTMLParagraphElement>(null);
-  const spot = useRef<Spot | null>(null);
-  const lastRun = useRef<{ kind: DraftRunKind; own: boolean } | null>(null);
-  const stopHold = useRef<() => void>(() => {});
-  const runKey = run ? `${run.own ? "own" : "outline"}:${run.kind}` : "";
+  const focus = useRef<"end" | "last" | null>("last");
+  const liveKey = live ? `${live.id}:${live.state}` : "";
   useEffect(() => {
-    if (run) {
-      lastRun.current = { kind: run.kind, own: run.own };
-      spot.current = "progress";
-    } else if (lastRun.current) {
-      const r = lastRun.current;
-      lastRun.current = null;
-      const ok = (r.own ? props.msg : props.outlineRun.msg)?.ok;
-      spot.current = ok && OUTLINE_RUNS.has(r.kind) ? "top" : r.own ? "msg" : "outline-msg";
-    }
-    const box = boxRef.current;
-    const to = spot.current;
-    if (!box || !to || !props.active) return;
-    const target = (): Element | null => (to === "progress" ? progRef.current : to === "top" ? box.firstElementChild : to === "msg" ? msgRef.current : box.querySelector("[data-outline-msg]"));
-    stopHold.current();
-    const h = holdScroll(box, target, to === "top" ? "start" : "end");
-    if (h.ok) {
-      spot.current = null;
-      stopHold.current = h.stop;
-    }
-    // 요청이 시작·끝날 때와 탭이 보일 때만(그 사이 글·메모가 바뀔 때는 움직이지 않음)
+    focus.current = live && live.state !== "done" ? "end" : "last";
+    // 차례·요청 상태가 바뀔 때만(그 사이 글·메모가 바뀔 때는 움직이지 않음)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runKey, props.active]);
-  useEffect(() => () => stopHold.current(), []);
+  }, [sig, liveKey]);
+  useEffect(() => {
+    if (!props.active) return;
+    const box = boxRef.current;
+    if (!box || !focus.current) return;
+    const at = focus.current;
+    const el = at === "end" ? box.querySelector("[data-live]") : (box.querySelector("li[data-turn]:last-child [data-answer]") ?? box.querySelector("[data-empty]"));
+    if (el && scrollWithin(box, el, at === "end" ? "end" : "start", true)) focus.current = null;
+  }, [sig, liveKey, props.active]);
+  // 휴대폰 머리 「할 일」: 할 일을 펼치고 그 자리로
+  const [seenTodo, setSeenTodo] = useState(props.todoFocus);
+  if (seenTodo !== props.todoFocus) {
+    setSeenTodo(props.todoFocus);
+    setTodoOpen(true);
+  }
+  useEffect(() => {
+    if (!props.todoFocus) return;
+    const id = requestAnimationFrame(() => {
+      const box = boxRef.current;
+      const el = box?.querySelector("[data-todo]");
+      if (box && el) scrollWithin(box, el, "start", false);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [props.todoFocus]);
 
   /** 끌어 놓거나 고른 파일: AI가 읽는 형식·크기만 카드 전용 자료로 올림(새로 올린 자료는 곧바로 고른 근거에 들어감 — 다음 집필·자료 반영 고치기·블록 고치기가 씀) */
   const addFiles = async (list: FileList | File[]) => {
@@ -276,29 +284,34 @@ export function DraftCompose(props: {
   const { ask, dialog: askDialog } = useAsk();
   const doSend = async (m: DraftMode) => {
     const sources = { card: sel.card.map((f) => f.id), report: sel.report.map((f) => f.id), prior: sel.priorKeys };
-    // 요청 글은 요청 칸이 그 종류일 때 쓴 것만(레일 단추가 다른 종류를 보내면 다른 종류에 쓴 메모를 넣지 않음), 바로 만들기는 받지 않음
+    // 요청 글은 요청 칸이 그 종류일 때 쓴 것만(답의 단추가 다른 종류를 보내면 다른 종류에 쓴 메모를 넣지 않음), 바로 만들기는 받지 않음
     const own = m === mode && m !== "draft";
     const request = own ? memo.trim() : "";
-    // 쓰는 동안은 진행 줄(경과 시간·넣은 근거)이 알림을 대신함 — 지난 결과 알림은 지움
-    setStartedAt(nowMs());
+    const files = sel.card.length + sel.report.length;
+    const id = liveSeq + 1;
+    setLiveSeq(id);
+    const me: Live = { id, kind: m, label: label(m), lines: [request, m === "outline" && frame && !isEmptyFrame(frame) ? `짜임: ${frameLabel(frame)}` : "", files ? `첨부 ${files}건` : ""].filter(Boolean), at: nowMs(), sig, state: "run", own: true };
+    setLive(me);
     setSentRequest(Boolean(request));
+    setRevised(null);
     props.setBusy(m);
-    props.setMsg(null);
     try {
       const r = m === "outline" ? await runReportOutline(props.uid, sources, request || undefined, frame ?? undefined) : m === "plan" || m === "revise" ? await props.onPlan({ pick, request: request || undefined }) : await runReportSectionDraft(props.uid, sources);
-      props.setMsg({ ok: r.ok, text: r.message });
+      setLive(r.ok ? { ...me, state: "done" } : { ...me, state: "error", message: r.message });
       if (r.ok) {
         if (own) setMemo("");
         if (m === "outline") setFrame(null);
+        if (m === "revise") setRevised(sig);
         router.refresh();
       }
     } catch {
-      props.setMsg({ ok: false, text: "요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요." });
+      const text = "요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요.";
+      setLive({ ...me, state: "error", message: text });
     } finally {
       props.setBusy(false);
     }
   };
-  // m: 보낼 요청 종류 — 요청 칸 보내기는 고른 칩(mode), 단계 레일의 단추는 그 단추의 종류(칩도 그것으로 옮김). 확인 창은 둘 다 같음
+  // m: 보낼 요청 종류 — 요청 칸 보내기는 고른 칩(mode), 답의 단추는 그 단추의 종류. 확인 창은 둘 다 같음
   const send = (m: DraftMode = mode) => {
     if (!props.canWrite || blocked) return;
     // 확인이 필요한 순서 그대로 차례로 묻고, 모두 확인하면(필요 없으면 바로) 보냄 — 확인하는 동안 요청 칸은 모달에 막혀 값이 바뀌지 않으므로 보내는 값은 누른 때의 것을 씀
@@ -312,54 +325,70 @@ export function DraftCompose(props: {
     if (m === "draft" && props.hasOutline) {
       steps.push({
         title: "구성안 없이 계속할까요?",
-        body: [`바로 만들기는 지금 구성안${props.currentStory ? `(${props.currentStory})` : ""}을 쓰지 않고 AI가 짜임을 새로 정합니다.`, "구성안대로 쓰려면 「구성안대로 집필」을 고르세요."],
+        body: [`바로 만들기는 지금 구성안${props.currentStory ? `(${props.currentStory})` : ""}을 쓰지 않고 AI가 짜임을 새로 정합니다.`, "구성안대로 쓰려면 「집필」을 고르세요."],
         confirmLabel: label("draft"),
       });
     }
     if ((m === "plan" || m === "revise") && props.hasSpec) steps.push(...overwriteSteps(props.humanEdits));
     ask(steps, () => void doSend(m));
   };
-
-  // 단계 레일(lib/reports/draft-stage.ts): 저장된 구성안·초안·보고서 상태로만 셈. 만들기 단추는 요청 칸 보내기와 같은 경로(send — 덮어쓰기 확인 그대로)
-  const stage = draftStage({
-    hasOutline: props.hasOutline,
-    outlineApproved: props.outlineApproved,
-    hasDraft: props.hasSpec,
-    draftFromOutline: Boolean(props.meta.plan),
-    stale: props.meta.stale,
-    checks: props.checkCount,
-    mg: Boolean(props.mg),
-    canWrite: props.canWrite,
-    locked: props.locked,
-    deptView: props.deptView,
-  });
-  const onStage = (a: StageAction) => {
-    if (a.key === "show-check") props.onShowCheck();
-    else if (a.key === "show-outline") {
-      props.onShowOutline();
-      // 펼친 구성안 패널(이 탭 안)로 — 다시 그린 뒤
-      requestAnimationFrame(() => {
-        boxRef.current?.querySelector('section[aria-label="구성안"]')?.scrollIntoView({ block: "start" });
-      });
-    } else if (a.key === "outline") {
-      // 바로 실행하지 않음 — 요청 칸에서 바라는 점·짜임을 정하고 보냄(메모 칸은 outline일 때만 활성이라 상태가 바뀐 뒤 초점)
-      setMode("outline");
-      requestAnimationFrame(() => {
-        // 구성안 패널(위)에도 입력 칸이 있어 요청 칸 메모를 이름으로 찾음(AiComposer ariaLabel과 같은 글)
-        const ta = rootRef.current?.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${MEMO_LABEL}"]`);
-        if (!ta) return;
-        ta.focus();
-        ta.scrollIntoView({ block: "nearest" });
-      });
-    } else if (a.key === "plan" || a.key === "revise" || a.key === "draft") {
-      // 요청 칸 mode는 바꾸지 않음(칩이 없고 이 단추가 바로 보냄)
-      send(a.key);
-    }
+  /** 「구성안 (다시) 만들기」: 바로 보내지 않음 — 요청 칸을 그 종류로 바꾸고 메모 칸에 초점(바라는 점·짜임을 정하고 보냄) */
+  const askOutline = () => {
+    setMode("outline");
+    requestAnimationFrame(() => {
+      const ta = document.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${MEMO_LABEL}"]`);
+      if (!ta) return;
+      ta.focus();
+      ta.scrollIntoView({ block: "nearest" });
+    });
   };
+
+  // 다음 단추(마지막 답 아래): 저장된 상태로만 정함 — 아직 집필하지 않은 구성안이면 승인하고 집필 · 구성안 고치기 · 다시 만들기, 초안이 있으면 고치기·다시 쓰기
+  const outlineLast = thread.turns.at(-1)?.kind === "outline";
+  const btn = (key: string, text: string, onClick: () => void, kind: "primary" | "secondary" | "quiet", title?: string, make = true) => (
+    <button key={key} type="button" disabled={make && blocked} title={title} onClick={onClick} className={kind === "primary" ? T.btnPrimarySm : kind === "quiet" ? T.btnQuiet : T.btnSm}>
+      {text}
+    </button>
+  );
+  const editBtn = btn("edit", "구성안 고치기", props.onOpenOutline, "secondary", "블록·도식·재료·짜임을 고치는 창을 엽니다(왼쪽은 구성안 판면)", false);
+  const againBtn = btn("again", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", askOutline, "quiet", `요청 칸에서 바라는 점·짜임을 정하고 보냅니다 — ${hint("outline")}`);
+  const draftBtn = props.mg ? [] : [btn("draft", label("draft"), () => send("draft"), "quiet", hint("draft"))];
+  const actions = props.locked
+    ? thread.submit
+      ? [
+          <Link key="report" href={thread.submit.href} className={T.btnSm}>
+            보고서 상태 보기
+          </Link>,
+        ]
+      : []
+    : !props.canWrite
+      ? props.hasOutline
+        ? [btn("view", "구성안 보기", props.onOpenOutline, "secondary", "구성안 창에서 재료·짜임을 봅니다", false)]
+        : []
+      : outlineLast
+        ? [btn("plan", props.hasSpec ? "승인하고 다시 집필" : "승인하고 집필", () => send("plan"), "primary", hint("plan")), editBtn, againBtn, ...draftBtn]
+        : props.hasSpec
+          ? [...(props.hasOutline ? [props.draftFromOutline ? btn("revise", "자료 반영 고치기", () => send("revise"), "primary", hint("revise")) : btn("plan", "구성안대로 집필", () => send("plan"), "primary", hint("plan")), editBtn] : []), againBtn, ...draftBtn]
+          : [];
+  // 마지막 답에 붙는 것: 할 일 + 다음 단추 + 확정 링크
+  const state = (
+    <div className="flex min-w-0 flex-col gap-2.5 pt-1">
+      <TodoList todo={thread.todo} cardHref={props.cardHref} open={todoOpen} onToggle={setTodoOpen} />
+      {actions.length > 0 && <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2">{actions}</div>}
+      {/* 확정은 과제별 화면에서 하지 않음 — 부서 허브(성과관리팀은 보고서 검토)로. 잠기면 다음 단추가 그리로 감 */}
+      {props.hasSpec && thread.submit && !props.locked && (
+        <Link href={thread.submit.href} className={`${T.btnQuiet} self-start`}>
+          {thread.submit.label}
+        </Link>
+      )}
+    </div>
+  );
+  // 자료 반영 고치기로 막 쓴 초안: 서버 기록이 바뀐 뒤의 마지막 초안 차례만 이름을 바꿈
+  const revisedKey = revised !== null && revised !== sig ? thread.turns.findLast((t) => t.kind === "draft")?.key : undefined;
+  const lastOutlineKey = thread.turns.findLast((t) => t.kind === "outline")?.key;
 
   return (
     <section
-      ref={rootRef}
       aria-label="AI 초안"
       className="relative flex min-h-0 grow flex-col bg-paper"
       onDragOver={(e) => {
@@ -379,67 +408,75 @@ export function DraftCompose(props: {
     >
       {over && (
         <div className="pointer-events-none absolute inset-2 z-pop flex items-center justify-center rounded-xl border-2 border-dashed border-navy bg-paper/90 text-sm font-semibold text-navy">
-          놓으면 이 과제의 카드 전용 자료로 올려 수치 포함 근거로 바로 씁니다 — 다음 집필·자료 반영 고치기·블록 고치기가 씁니다 · {ATTACH_LABEL}
+          놓으면 이 과제의 카드 전용 자료로 올려 근거로 씁니다 · {ATTACH_LABEL}
         </div>
       )}
 
-      {/* 단계 레일 · 결과: 구성안(있으면) · 진행 · 알림 */}
+      {/* 대화: 요청(오른쪽 말풍선) → 답(짧은 요약 + 마지막 답에만 할 일·다음 단추) */}
       <div ref={boxRef} className="min-h-0 grow overflow-y-auto px-5 py-5">
-        <div className="mx-auto flex max-w-[800px] min-w-0 flex-col gap-4">
-          <DraftRail
-            stage={stage}
-            meta={props.meta}
-            draftInfo={props.draftInfo}
-            blocked={blocked}
-            hint={(k) => MODES.find(([m]) => m === k)?.[2]}
-            onAction={onStage}
-          />
-          {props.outline}
-          {/* 경영관리는 바로 만들기가 없어 구성안부터(서버도 막음) — 구성안이 없을 때만 안내 */}
-          {!props.outline && props.mg && props.canWrite && <p className="text-xs leading-5 text-muted-2">경영관리는 구성안에서 이 카드가 맡을 평가내용·대주제·절을 먼저 정한 뒤 집필합니다.</p>}
-          {run && spec && (
-            <div ref={progRef}>
-              <AiProgress key={`${run.kind}-${run.at}`} spec={spec} startedAt={run.at} />
+        <div className="mx-auto flex max-w-[760px] min-w-0 flex-col gap-5">
+          {thread.turns.length === 0 && (
+            <div data-empty className="flex min-w-0 flex-col gap-2.5">
+              <AnswerHead at={null} />
+              <p className="text-sm leading-[1.6] break-keep text-ink">
+                {props.mg ? "경영관리는 구성안에서 이 카드가 맡을 평가내용·대주제·절을 먼저 정한 뒤 집필합니다." : "구성안부터 만들어요 — 재료·짜임을 먼저 보고 고친 뒤 승인하면 그대로 집필합니다."}
+                {props.canWrite && " 아래 칸에 바라는 점을 적고(선택) 보내세요."}
+              </p>
+              {thread.todo.groups.length > 0 && <TodoList todo={thread.todo} cardHref={props.cardHref} open={todoOpen} onToggle={setTodoOpen} />}
+              {props.canWrite && !props.mg && <div className="flex">{btn("draft", "구성안 없이 바로 만들기", () => send("draft"), "quiet", hint("draft"))}</div>}
             </div>
           )}
-          {!busy && props.msg && (
-            <p ref={msgRef} role={props.msg.ok ? "status" : "alert"} className={props.msg.ok ? "text-ui leading-6 text-muted-2" : "rounded-md border border-error-line bg-error-bg px-3 py-2 text-ui text-error-strong"}>
-              {props.msg.text}
-            </p>
+          {thread.turns.length > 0 && (
+            <ol className="m-0 flex min-w-0 list-none flex-col gap-5 p-0">
+              {thread.turns.map((t, i) => (
+                <TurnView
+                  key={t.key}
+                  turn={t}
+                  askOverride={t.key === revisedKey ? { ask: "자료 반영 고치기", headline: "자료를 반영해 다시 썼어요(왼쪽 종이)" } : null}
+                  state={i === thread.turns.length - 1 ? state : undefined}
+                  onGotoBlock={props.onGotoBlock}
+                  onOpenOutline={props.onOpenOutline}
+                  showOutlineLink={t.kind === "outline" && t.key === lastOutlineKey && i < thread.turns.length - 1}
+                />
+              ))}
+            </ol>
+          )}
+          {live && (
+            <div data-live className="flex min-w-0 flex-col gap-2.5">
+              <AskBubble label={live.label} lines={live.lines} />
+              {live.state === "run" && spec && <AiProgress key={`${live.kind}-${live.at}`} spec={spec} startedAt={live.at} />}
+              {live.state === "done" && (
+                <AnswerHead at={null}>
+                  <span role="status" className="text-ui text-muted-2">
+                    다 됐어요 — 화면을 새로 그리는 중…
+                  </span>
+                </AnswerHead>
+              )}
+              {live.state === "error" && (
+                <p role="alert" className="rounded-md border border-error-line bg-error-bg px-3 py-2 text-ui text-error-strong">
+                  {live.message}
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>
 
-      {/* 요청(아래 고정): 요청 종류 → 초안 근거 → 첨부 → 메모·보내기 */}
+      {/* 요청(아래 고정): 요청 종류 칩 → 초안 근거 → 첨부 → 메모·보내기 */}
       {props.canWrite ? (
         <AiComposer
           onSubmit={() => send()}
-          head={
-            <div aria-live="polite" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-[18px] text-muted-2">
-              <span className="min-w-0">
-                보내면 <b className="font-semibold text-navy">{label(mode)}</b> <span>· {rangeText(draftExpect(mode, props.mg))}</span> <span>· 근거: {basisLine}</span>
-              </span>
-              {mode !== defaultMode && (
-                <button
-                  type="button"
-                  disabled={Boolean(busy)}
-                  onClick={() => {
-                    setMemo("");
-                    setFrame(null);
-                    setMode(defaultMode);
-                  }}
-                  className={`${T.btnQuiet} ml-auto`}
-                >
-                  취소
-                </button>
-              )}
-            </div>
-          }
+          modes={chips}
+          mode={mode === "draft" ? defaultMode : mode}
+          onMode={(m) => {
+            setMode(m);
+            if (m !== "outline") setFrame(null);
+          }}
           below={
             <>
               <section aria-label="초안 근거" className="flex min-w-0 items-center gap-2 text-xs">
-                <span className="min-w-0 truncate text-muted-2" title="넣을 근거 — 원장 카드는 늘 넣음">
-                  초안 근거 — {selectionLine(sel, props.lensCount)}
+                <span className="min-w-0 truncate text-muted-2" title={`넣을 근거 — 원장 카드는 늘 넣음 · 보내면 ${rangeText(draftExpect(mode, props.mg))}`}>
+                  초안 근거 — {selectionLine(sel)}
                 </span>
                 <button type="button" onClick={props.onOpenSources} className="shrink-0 text-link hover:underline">
                   근거 자료 열기
@@ -466,9 +503,9 @@ export function DraftCompose(props: {
             </>
           }
           attachments={
-            (chips.length > 0 || uploading || excluded.length > 0) && (
+            (fileChips.length > 0 || uploading || excluded.length > 0) && (
               <div aria-label="첨부" className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {chips.map(({ key, f, report }) => (
+                {fileChips.map(({ key, f, report }) => (
                   <span key={key} className="flex h-7 max-w-[240px] min-w-0 items-center gap-1 rounded-md border border-navy/40 bg-paper pr-1 pl-2 text-xs text-ink" title={`${report ? "보고서 추가자료" : "카드 전용 자료"} · ${f.fileName} · ${kb(f.bytes)}`}>
                     <FileText size={13} aria-hidden="true" className="shrink-0 text-navy" />
                     <span className="min-w-0 truncate">{f.fileName}</span>
@@ -513,23 +550,20 @@ export function DraftCompose(props: {
           value={memo}
           onChange={setMemo}
           maxLength={MEMO_MAX}
-          disabled={mode === "draft"}
           ariaLabel={MEMO_LABEL}
-          placeholder={mode === "outline" ? "구성안에 바라는 점(선택) ⌘↵" : mode === "revise" ? "고칠 방향(선택 — 짜임은 그대로, 근거로는 쓰지 않음) ⌘↵" : mode === "plan" ? "집필에 바라는 점(선택 — 짜임은 그대로, 근거로는 쓰지 않음) ⌘↵" : "메모 없이 바로 만듭니다"}
+          placeholder={mode === "outline" ? "구성안에 바라는 점(선택) ⌘↵" : mode === "revise" ? "고칠 방향(선택 — 짜임은 그대로, 근거로는 쓰지 않음) ⌘↵" : "집필에 바라는 점(선택 — 짜임은 그대로, 근거로는 쓰지 않음) ⌘↵"}
           submitDisabled={blocked}
-          submitLabel={`${label(mode)} 요청`}
+          submitLabel={`${label(mode === "draft" ? defaultMode : mode)} 요청`}
           error={
-            <>
-              {err && (
-                <p role="alert" className="text-xs text-error">
-                  {err}
-                </p>
-              )}
-            </>
+            err && (
+              <p role="alert" className="text-xs text-error">
+                {err}
+              </p>
+            )
           }
         />
       ) : (
-        <p className="shrink-0 border-t border-line bg-thead px-5 py-3 text-xs leading-5 text-muted-2">이 과제를 맡은 부서나 성과관리팀이 초안을 만듭니다.</p>
+        <p className="shrink-0 border-t border-line bg-thead px-5 py-3 text-xs leading-5 text-muted-2">{props.locked ? "확정(또는 제출)한 보고서의 과제라 고칠 수 없습니다." : "이 과제를 맡은 부서나 성과관리팀이 초안을 만듭니다."}</p>
       )}
       <FrameworkGallery
         open={gallery}
@@ -541,6 +575,7 @@ export function DraftCompose(props: {
         initial={frame}
         confirmLabel="이 짜임으로 정하기"
         alts={props.canWrite && Boolean(props.onAlts)}
+        showCost={props.admin}
         onPick={(x) => {
           setFrame(isEmptyFrame(x) ? null : x);
           setGallery(false);
@@ -554,125 +589,5 @@ export function DraftCompose(props: {
       />
       {askDialog}
     </section>
-  );
-}
-
-/** 판면 판정 톤 → 메타 줄 글자색(맞음은 메타 줄 그대로, 빔·조금 넘침은 우리 차례, 넘침만 경고색) */
-const FIT_TEXT = { done: "", doing: "text-st-doing-text", alert: "font-semibold text-warn" } as const;
-const SHOW_TITLE: Partial<Record<StageAction["key"], string>> = {
-  "show-check": "오른쪽 「점검 결과」 탭 — 채울 자료·확인할 것을 누르면 왼쪽 초안의 그 자리로",
-  "show-outline": "구성안 판면으로 바꾸고 구성안을 펼침 — 고친 뒤 「승인하고 집필」",
-  report: "경평 초안 허브에서 보고서 상태(확정)를 봅니다",
-};
-
-/**
- * 단계 레일(10-13 정제 시안 05 ol.rail — 셈은 lib/reports/draft-stage.ts): 단계마다 상태 표지 + 이름 + 상태 칩 + 작은 메타 줄(지금 단계 aria-current="step"),
- * 그 아래 주 단추 하나(T.btnPrimary) + 보조, 초안이 있으면 접힌 「다시 쓰기」 묶음(원장이 바뀌면 펼침). 진행률·남은 시간은 그리지 않음.
- */
-function DraftRail(props: { stage: DraftStage; meta: DraftMeta; draftInfo: string | null; blocked: boolean; hint: (k: DraftMode) => string | undefined; onAction: (a: StageAction) => void }) {
-  const { stage, meta, draftInfo } = props;
-  // 휴대폰 폭(md 미만): 파이프라인은 지금 단계 한 칸(메타 줄 없이)만 + 「단계 N」 펼치기 — 펼치면 예전 그대로. 서버·첫 하이드레이션은 넓은 폭
-  const phone = useMedia(PHONE_QUERY);
-  const [stepsOpen, setStepsOpen] = useState(false);
-  const folded = phone && !stepsOpen;
-  const nowAt = Math.max(0, stage.steps.findIndex((s) => s.now));
-  const stepsToggle = phone && stage.steps.length > 1 && (
-    <button type="button" aria-expanded={stepsOpen} onClick={() => setStepsOpen((v) => !v)} className="ml-auto flex h-6 shrink-0 items-center gap-0.5 text-xs font-semibold text-navy">
-      {stepsOpen ? "접기" : `단계 ${stage.steps.length}`}
-      <ChevronRight size={13} aria-hidden="true" className={stepsOpen ? "-rotate-90" : "rotate-90"} />
-    </button>
-  );
-  const fitPct = meta.fit ? Math.round((meta.fit.total / meta.fit.budget) * 100) : null;
-  const fv = fitPct !== null ? fitVerdict(fitPct) : null;
-
-  const metaLine = (key: StageKey): ReactNode => {
-    if (key === "outline") return meta.outlineInfo ? <p className="min-w-0 truncate text-xs text-muted" title={`지금 구성안 · ${meta.outlineInfo}`}>{meta.outlineInfo}</p> : null;
-    if (key === "draft") {
-      if (!draftInfo) return null;
-      const title = [`지금 초안 · ${draftInfo}`, meta.plan ? `구성안대로 짜임 ${meta.plan.matched}/${meta.plan.total}` : "", fv && meta.fit ? `${fv.label}(${fv.hint}) — 판면 어림 ${meta.fit.total}/${meta.fit.budget}mm · ${fitPct}% · ${FIT_RANGE_TEXT}` : ""].filter(Boolean).join(" · ");
-      return (
-        <p className="min-w-0 truncate text-xs text-muted" title={title}>
-          {draftInfo}
-          {meta.plan && (
-            <>
-              {" "}· 짜임 <span className="font-mono">{`${meta.plan.matched}/${meta.plan.total}`}</span>
-            </>
-          )}
-          {fv && (
-            <>
-              {" "}· <span className={FIT_TEXT[fv.tone]}>{`${fv.label} · ${fitPct}%`}</span>
-            </>
-          )}
-        </p>
-      );
-    }
-    if (!draftInfo || meta.need + meta.warn === 0) return null;
-    return <p className="min-w-0 truncate text-xs text-muted">{`채울 자료 ${meta.need} · 확인할 것 ${meta.warn}`}</p>;
-  };
-
-  const button = (a: StageAction, kind: "primary" | "secondary" | "quiet") => {
-    const cls = kind === "primary" ? T.btnPrimary : kind === "quiet" ? T.btnQuiet : T.btn;
-    if (a.key === "report")
-      return (
-        <Link key={a.key} href={meta.submit?.href ?? "/my/report"} title={SHOW_TITLE.report} className={cls}>
-          {a.label}
-        </Link>
-      );
-    const make = a.key === "outline" || a.key === "plan" || a.key === "revise" || a.key === "draft";
-    return (
-      <button key={a.key} type="button" disabled={make && props.blocked} title={a.key === "outline" ? `요청 칸에서 바라는 점·짜임을 정하고 보냅니다 — ${props.hint("outline") ?? ""}` : make ? props.hint(a.key as DraftMode) : SHOW_TITLE[a.key]} onClick={() => props.onAction(a)} className={cls}>
-        {a.label}
-      </button>
-    );
-  };
-
-  return (
-    <div className="flex min-w-0 flex-col gap-3">
-      {/* 파이프라인: 컨테이너 폭 20rem(320px) 이상이면 세 칸 한 줄 + 칸 사이 ›, 그보다 좁으면 세로 */}
-      <div className="@container min-w-0">
-        <ol aria-label="초안 단계" className={folded ? "m-0 flex list-none flex-col p-0" : "m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[20rem]:grid-cols-3 @min-[20rem]:gap-x-4"}>
-          {stage.steps.map((s, i) =>
-            folded && i !== nowAt ? null : (
-              <li key={s.key} aria-current={s.now ? "step" : undefined} className={`relative flex min-w-0 flex-col gap-1 rounded-md border px-2 py-1.5 ${s.now ? "border-navy bg-thead" : "border-line"}`}>
-                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <span className="flex h-5 shrink-0 items-center">
-                    <StatusMark tone={s.tone} />
-                  </span>
-                  <span className={`text-sm leading-5 font-semibold whitespace-nowrap ${s.now ? "text-navy" : "text-ink"}`}>{s.label}</span>
-                  <Tag tone={MARK_TAG[s.tone]}>{s.state}</Tag>
-                  {folded && stepsToggle}
-                </div>
-                {!folded && metaLine(s.key)}
-                {!folded && i < stage.steps.length - 1 && <ChevronRight size={14} aria-hidden="true" className="absolute top-2.5 -right-[15px] hidden text-muted-2 @min-[20rem]:block" />}
-              </li>
-            ),
-          )}
-        </ol>
-        {phone && stepsOpen && <div className="mt-1 flex">{stepsToggle}</div>}
-      </div>
-      {/* 제출은 과제별 화면에서 하지 않음 — 부서 허브(성과관리팀은 보고서 검토)로. 잠기면 주 단추가 그리로 감 */}
-      {meta.submit && stage.primary?.key !== "report" && stage.steps.some((s) => s.key === "check") && (
-        <Link href={meta.submit.href} className={`${T.btnQuiet} self-start`}>
-          {meta.submit.label}
-        </Link>
-      )}
-      {(stage.primary || stage.alt.length > 0) && (
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-          {stage.primary && button(stage.primary, "primary")}
-          {stage.alt.map((a) => button(a, a.quiet ? "quiet" : "secondary"))}
-        </div>
-      )}
-      {stage.redo.length > 0 && (
-        // 원장이 바뀌면 펼친 채로(기존 초안 유지·다시 쓰기는 사람이 고름) — 상태가 바뀌면 다시 그 기본으로
-        <details key={stage.redoOpen ? "open" : "closed"} open={stage.redoOpen} className="group min-w-0">
-          <summary className="flex min-h-6 cursor-pointer list-none items-center gap-1 text-ui font-semibold text-navy [&::-webkit-details-marker]:hidden">
-            <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
-            다시 쓰기
-            <span className="min-w-0 truncate text-xs font-normal text-muted-2">— 지금 초안을 새로 씀</span>
-          </summary>
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">{stage.redo.map((a) => button(a, a.quiet ? "quiet" : "secondary"))}</div>
-        </details>
-      )}
-    </div>
   );
 }

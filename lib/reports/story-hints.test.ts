@@ -10,8 +10,8 @@ import { hintSource, sectionHints } from "./section.ts";
 const hintsOf = (text: string, siblings: string[] = []) => storyHints(diagramHints(text), text, siblings);
 const top = (text: string, siblings: string[] = []) => hintsOf(text, siblings)[0]?.story;
 
-test("MAIN_STORIES: 섞음을 뺀 12종이고 틀 사전(FRAMEWORKS)에 모두 있음", () => {
-  assert.equal(MAIN_STORIES.length, 12);
+test("MAIN_STORIES: 섞음을 뺀 16종(⑬~⑯은 2026-11-04)이고 틀 사전(FRAMEWORKS)에 모두 있음", () => {
+  assert.equal(MAIN_STORIES.length, 16);
   assert.ok(!(MAIN_STORIES as readonly string[]).includes("섞음"));
   for (const s of MAIN_STORIES) assert.ok(frameworkOf(s)?.blocks.length, s);
 });

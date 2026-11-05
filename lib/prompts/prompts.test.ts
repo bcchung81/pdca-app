@@ -342,7 +342,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-02 올해 계량 실적 출처를 원장으로(부서 입력 절 actuals.kpiInput 삭제·「부서 입력」 문구를 원장 기준으로 — report-draft·report-draft-mg request·inputs, report-block request 근거 머리, lib/reports/actuals.ts ledgerFigure)로 판 바뀜(@99701910 → @20527615)
   // 2026-11-03 올해 실적: 원장에 없으면 이 과제 근거 첨부 값(request actuals.head·kpiNone·monthlyNone, files.relation.same 「계량지표와 이름이 같은 수치라도 재료·실적에 안 씀」 — 연결 안 한 같은 보고서 자료·공통 지식 수치는 실적으로 안 씀)으로 판 바뀜(@20527615 → @d836132b — 주요사업 report-draft도 같은 네 절로 바뀜, 판 고정 시험은 없음)
   // 2026-11-03 actuals.kpiNone에서 「자료 이름」을 뺌(보고서 본문에 파일 이름을 쓰지 않음 — report-draft도 같은 문구)으로 판 바뀜(@d836132b → @cdf529e2)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@cdf529e2");
+  // 2026-11-04 이야기 틀 ⑬~⑮(report-draft-mg/stories.md — 시범→확산형·위험관리·안전형·데이터 기반 의사결정형, 사용자 승인)로 판 바뀜(@cdf529e2 → @de6df39a — 주요사업 report-draft도 stories.md ⑬~⑯로 바뀜, 판 고정 시험은 없음)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@de6df39a");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜
@@ -355,7 +356,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-02 올해 계량 실적 출처를 원장으로(부서 입력 절 actuals.kpiInput 삭제·「부서 입력」 문구를 원장 기준으로 — report-draft·report-draft-mg request·inputs, report-block request 근거 머리, lib/reports/actuals.ts ledgerFigure)로 outline도 바뀜(@b57ceb9e → @e5d3dd3b — 끼운 report-draft-mg inputs)
   // 2026-11-03 올해 실적: 원장에 없으면 이 과제 근거 첨부 값 — 구성안 재료표(system 3번)에 「연결하지 않은 같은 보고서 자료의 수치는 이름이 같아도 수치 재료로 안 뽑음」으로 판 바뀜(@e5d3dd3b → @a667ef6b)
   // 2026-11-03 system 3번 같은 보고서 자료 문장을 코드(composition.ts unlinkedToNeed — 출처가 그 자료인 수치 재료를 need로 바꿈)와 맞춤(재료 출처에 첨부 번호·이름)으로 판 바뀜(@a667ef6b → @4915aa81)
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@4915aa81");
+  // 2026-11-04 이야기 틀 ⑬~⑮(끼운 report-draft-mg/stories.md, system 5번·request·schema story 「15종」)로 판 바뀜(@4915aa81 → @c2c704f7 — 주요사업 report-outline도 stories.md ⑬~⑯·「16종」으로 바뀜, 판 고정 시험은 없음)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@c2c704f7");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 반복 문장 보강 사유(report-block-mg/request.md fill.sentence·fill.sentence.item)로 블록 고치기 판만 바뀜(@e0653ee9 → @8302d6f6 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none)로 블록 고치기 판만 바뀜(@8302d6f6 → @0c7d879b — 집필·구성안·주요사업 판 그대로)

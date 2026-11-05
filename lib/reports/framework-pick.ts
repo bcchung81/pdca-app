@@ -43,7 +43,7 @@ const line = (s: unknown, max: number) =>
 export const isExampleKey = (key: string, mg: boolean) => (mg ? /^rpt25-mg-\d{2}\/MG-\d+\//.test(key) : /^rpt25-biz\/BZ-\d+\//.test(key));
 
 /**
- * 화면이 보낸 짜임 하나 검증: 이야기 틀은 그 트랙 목록(주요사업 12종 + 섞음 · 경영관리 12종), 구성 패턴은 카탈로그 id, 예시 절은 그 트랙의 2025 보고서 절 키 모양.
+ * 화면이 보낸 짜임 하나 검증: 이야기 틀은 그 트랙 목록(주요사업 16종 + 섞음 · 경영관리 15종), 구성 패턴은 카탈로그 id, 예시 절은 그 트랙의 2025 보고서 절 키 모양.
  * auto는 다른 갈래가 없을 때만 남김. 고른 것이 없으면 빈 짜임(ok)
  */
 export function cleanFrameChoice(raw: unknown, mg: boolean): { ok: true; frame: FrameChoice } | { ok: false; message: string } {

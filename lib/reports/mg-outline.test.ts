@@ -33,6 +33,16 @@ test("추천 평가내용: 분석 §5 첫 대응(9-3 → 3·4) 중 전년 골격
   assert.deepEqual(defaultEvals("1-1", []), []);
 });
 
+test("추천 평가내용: 2026-11-05 새 판 카드(261103판) 대응 — 7장 과제분리·번호 이동, 3-4 신규, 14는 평가내용별, 12·13은 키 없음", () => {
+  const evals = (unit: number[]) => unit.map((n) => sec(n, 1, "가", "절"));
+  const mg7 = evals([1, 2, 3]);
+  assert.deepEqual(["7-1", "7-2", "7-3", "7-4", "7-5"].map((t) => defaultEvals(t, mg7)), [[1], [1], [1], [2], [3]], "상생·공정계약·소상공인 → 1, 지역공부방 → 2, 시설·장비 → 3");
+  assert.deepEqual(defaultEvals("3-4", evals([1, 2, 3, 4])), [4], "여성 임원 → 여성 대표성");
+  const mg14 = evals([1, 2, 3, 4]);
+  assert.deepEqual([defaultEvals("14-1", mg14), defaultEvals("14-2", mg14)], [[1], [3]], "국정과제 이행관리 → 1, 청년인턴 → 3");
+  assert.deepEqual(defaultEvals("13-5", evals([1])), [1], "평가내용 하나뿐인 혁신가점은 대응 없이 그것");
+});
+
 const out = (): MgOutlineOutput => ({
   message: "핵심",
   points: ["논점 1", "논점 2"],

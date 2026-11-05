@@ -2,15 +2,16 @@
 import type { OutlineData } from "../../../../../components/reports/outline-panel";
 import type { SourceFile } from "../../../../../components/reports/draft-workbench";
 import type { MenuItem } from "../../../../../components/reports/draft-workspace";
-import type { DraftMeta } from "../../../../../components/reports/draft-compose";
 import { isMgmtCard } from "../../../../../lib/cards/mgmt-card.ts";
 import { compareTaskNo } from "../../../../../lib/cards/view.ts";
 import { kpiGaps, needsIn, yearActuals } from "../../../../../lib/reports/actuals.ts";
 import { FIGURE_KINDS, FIGURE_LABEL, figuresOf } from "../../../../../lib/reports/blocks.ts";
 import { type Composition, MATERIAL_KINDS, MATERIAL_LABEL, RESULT_SHAPES, RESULT_SHAPE_LABEL, editOf } from "../../../../../lib/reports/composition.ts";
 import { SHEET_CSS } from "../../../../../lib/reports/composition-sheet.ts";
-import { LABEL_SUGGESTIONS } from "../../../../../lib/reports/frameworks.ts";
-import { lensCover } from "../../../../../lib/reports/lens-cover.ts";
+import { LENS_AXES, lensCover } from "../../../../../lib/reports/lens-cover.ts";
+import { LABEL_SUGGESTIONS, storyLabel } from "../../../../../lib/reports/frameworks.ts";
+import { type DraftThreadData, type ThreadOutlineIn, draftThread, draftTodo, threadStatus } from "../../../../../lib/reports/draft-thread.ts";
+import { mgPartLabel } from "../../../../../lib/reports/mg-outline.ts";
 import { outlineText } from "../../../../../lib/reports/outline-text.ts";
 import { outlineView, shapeTable } from "../../../../../lib/reports/outline-view.ts";
 import { mgPdcaSkeleton } from "../../../../../lib/reports/mg-pdca.ts";
@@ -21,7 +22,7 @@ import { overflowLimitMm } from "../../../../../lib/reports/dom-hwpx/policy.ts";
 import { axesFor } from "../../../../../lib/reports/split-axes.ts";
 import { withReturn } from "../../../../../lib/nav/return-to.ts";
 import { fmtDateTime, isoDay } from "../../../../../lib/format.ts";
-import type { CardRow, DraftRow, MaterialRowDb, ReportCardData, ReportRef, SiblingRow } from "./load.ts";
+import type { CardRow, DraftRow, EditRow, MaterialRowDb, ReportCardData, ReportRef, SiblingRow } from "./load.ts";
 
 /** 성과관리팀 코멘트(점검 결과 탭 — 이 카드의 부서 보고서에서 이 과제 앵커만): card:<uid>(과제 전체)·card:<uid>#b<블록 순번> */
 export function cardCommentsOf(comments: ReportCardData["comments"], uid: string) {
@@ -100,21 +101,20 @@ export function usedOf(spec: ReportSectionSpec | null, draft: DraftRow | null) {
 }
 
 /**
- * 머리 더보기 메뉴. 한글 내려받기(2026-10-28): 두 트랙 모두 「화면 그대로」(DOM 방식 — 초안 판 version이 있을 때)가 기본이고,
- * 실패하면 기존 양식을 안내 — 주요사업은 「한글(기존 양식)」(A안 ?form=a)·「한글(개조식)」, 경영관리는 「한글(개조식)」(경영관리의 기존 양식)
+ * 머리 더보기 메뉴. HWPX 내려받기(2026-10-28): 두 트랙 모두 「화면 그대로」(DOM 방식 — 초안 판 version이 있을 때)가 기본이고,
+ * 실패하면 기존 양식을 안내 — 주요사업은 「HWPX(기존 양식)」(A안 ?form=a)·「HWPX(개조식)」, 경영관리는 「HWPX(개조식)」(경영관리의 기존 양식)
  */
 export function menuOf(o: { uid: string; teamQs: string; selfHref: string; reportId: number | null; staffView: boolean; mg: boolean; evalUnitId: string; hasSpec: boolean; version: string | null; module: number }): MenuItem[] {
   const { uid, teamQs, selfHref } = o;
-  const htmlHref = `/reports/cards/${uid}/html`;
   const hwpxHref = `/reports/cards/${uid}/hwpx`;
-  const formA = { href: `${hwpxHref}?form=a`, label: "한글(기존 양식)" };
-  const gaejo = { href: `${hwpxHref}?form=gaejo`, label: "한글(개조식)" };
+  const formA = { href: `${hwpxHref}?form=a`, label: "HWPX(기존 양식)" };
+  const gaejo = { href: `${hwpxHref}?form=gaejo`, label: "HWPX(개조식)" };
   const dom: MenuItem[] =
     o.hasSpec && o.version
       ? [
           {
             href: hwpxHref,
-            label: "한글 내려받기",
+            label: "HWPX 내려받기",
             hint: o.mg ? "화면 그대로(HWPX) — 미리보기 배치대로 옮김, 여러 쪽은 한글이 나눔" : "화면 그대로(HWPX) — 미리보기 배치대로 상자·표·그림을 옮김",
             dom: { uid, version: o.version, limitMm: overflowLimitMm({ mg: o.mg, module: o.module }), fallback: o.mg ? gaejo : formA },
           },
@@ -125,7 +125,6 @@ export function menuOf(o: { uid: string; teamQs: string; selfHref: string; repor
     ...(o.reportId !== null ? [{ href: withReturn(`/reports/${o.reportId}${teamQs}#평가내용2`, selfHref), label: "보고서에서 보기", hint: "이 사업·부서 보고서의 평가내용2에 모아 보기" }] : []),
     // 사업 조판은 성과관리팀 화면(부서 담당자는 열 수 없음 — 부서 화면 보기에서도 숨김)
     ...(o.staffView && !o.mg ? [{ href: withReturn(`/reports/business/${encodeURIComponent(o.evalUnitId)}#bz-${uid}`, selfHref), label: "사업 조판에서 보기", hint: "주요사업 전체를 쪽에 이어 붙인 모습에서 이 과제" }] : []),
-    ...(o.hasSpec ? [{ href: htmlHref, label: "HTML 내려받기", hint: "이 초안을 HTML 한 파일로", download: true }] : []),
     // 한글: 화면 그대로(기본) + 기존 양식(주요사업 A안 — 경영실적보고서 용지, 상자·칸 도식, 그림은 크기대로 빈 자리) + 개조식 원고(route.ts)
     ...dom,
     ...(o.hasSpec && !o.mg ? [{ ...formA, hint: "예전 변환(HWPX) — 초안을 양식대로 다시 짬, 그림은 크기대로 빈 자리", download: true }] : []),
@@ -135,8 +134,8 @@ export function menuOf(o: { uid: string; teamQs: string; selfHref: string; repor
 }
 
 /**
- * 「점검 결과」 탭 재료: 편람 논점(낱말 신호) · 근거 약한 문장 · 채울 자료(초안의 【확인: …】 + 원장에 올해 실적이 없는 지표 + 그림 자리표시)
- * 편람 논점 커버(4단계 검증 보강)는 초안 글에 그 논점의 낱말이 있는지만 보는 신호 — 판정이 아님
+ * 할 일 재료(오른쪽 대화의 「채울 자료」 — lib/reports/draft-thread.ts draftTodo가 행동별로 묶음): 근거 약한 문장 · 초안의 【확인: …】 · 원장에 올해 실적이 없는 지표 · 그림 자리표시.
+ * 편람 논점 커버(낱말 신호 — 판정 아님)는 2026-11-04부터 초안 답 첫 줄의 title로만(칩 없음)
  */
 export function checkNeedsOf(spec: ReportSectionSpec | null, cardData: unknown) {
   const cover = spec && lensCover(spec);
@@ -145,7 +144,9 @@ export function checkNeedsOf(spec: ReportSectionSpec | null, cardData: unknown) 
   // 그림 자리표시(사진·삽화·지도·화면·로고 — 초안은 자리만, 담당자가 채움). 같은 설명이 여럿이면 몇 번째인지(nth)로 찾음
   const figureNeeds = (spec?.blocks ? figuresOf(spec.blocks) : []).map((f, i, all) => ({ ...f, nth: all.slice(0, i).filter((x) => x.desc === f.desc).length }));
   const kpiNeeds = kpiGaps(yearActuals(cardData, isoDay(), { wide: isMgmtCard(cardData as Parameters<typeof isMgmtCard>[0]) }));
-  return { cover, weakSentences, draftNeeds, figureNeeds, kpiNeeds };
+  // 편람 논점 낱말 신호(title 한 줄 — 「편람 논점 낱말(판정 아님): 실행 ✓ · 효율 —」)
+  const lensNote = cover ? `편람 논점 낱말(판정 아님): ${LENS_AXES.map((k) => `${k} ${cover.checks[k] ? "✓" : "—"}`).join(" · ")}` : "";
+  return { weakSentences, draftNeeds, figureNeeds, kpiNeeds, lensNote };
 }
 
 /** 구성안 화면 재료(오른쪽 AI 초안 탭 패널 + 왼쪽 여백 메모 + 구성안 판면). 머리 모드(사업 단위 조판)는 만들 때 값. cardData = 카드 원장(경영관리 구성안 점검 「PDCA」의 뼈대) */
@@ -183,11 +184,65 @@ export function cardRefs(card: CardRow) {
 }
 
 /**
- * 「AI 초안」 탭 단계 레일 재료(2026-10-21 — 셈은 lib/reports/draft-stage.ts): 원장 바뀜·구성안대로 짜임·판면·점검 나눔·구성안 메타 한 줄과
- * 「제출은 …에서」 링크(부서 = 부서 허브, 부서 화면 보기 = 그 부서 허브 ?team=, 성과관리팀·관리자 = 이 사업·부서 보고서 검토가 있으면 그쪽)
+ * 오른쪽 「AI 초안」 대화 재료(2026-11-04 — 셈은 lib/reports/draft-thread.ts): 저장된 구성안·초안·블록 고치기 이력으로 차례 목록,
+ * 예전 「점검 결과」 탭 내용을 행동별로 묶은 할 일 하나, 머리 한 줄 상태, 「확정은 …에서」 링크(부서 = 부서 허브, 부서 화면 보기 = 그 부서 허브 ?team=,
+ * 성과관리팀·관리자 = 이 사업·부서 보고서 검토가 있으면 그쪽)
  */
-export function draftMetaOf(o: { uid: string; spec: ReportSectionSpec | null; draft: DraftRow | null; hasOutline: boolean; stale: boolean; need: number; warn: number; staff: boolean; deptView: boolean; teamQs: string; report: ReportRef | null }): DraftMeta {
-  const { spec, draft } = o;
+export function threadOf(o: {
+  uid: string;
+  composition: Composition | null;
+  outline: OutlineData | null;
+  draft: DraftRow | null;
+  spec: ReportSectionSpec | null;
+  stale: boolean;
+  edits: EditRow[];
+  needs: ReturnType<typeof checkNeedsOf>;
+  warnings: string[];
+  comments: ReturnType<typeof cardCommentsOf>;
+  year: number;
+  locked: boolean;
+  staff: boolean;
+  deptView: boolean;
+  teamQs: string;
+  report: ReportRef | null;
+}): DraftThreadData {
+  const { composition: c, spec, draft } = o;
+  const outline: ThreadOutlineIn | null =
+    c && o.outline
+      ? {
+          at: draft?.outline_at ?? null,
+          approved: o.outline.status === "approved",
+          approvedAt: draft?.outline_approved_at ?? null,
+          story: c.mg ? "" : storyLabel(c.story, c.subStory),
+          blocks: c.blocks.length,
+          parts: (c.mg?.parts ?? []).map((p) => ({ name: mgPartLabel(p), story: storyLabel(p.story, p.subStory) })),
+          fit: c.mg ? null : o.outline.view.fit,
+          module: c.module ?? spec?.module ?? 1,
+          message: c.message,
+          points: o.outline.text.points,
+          needs: c.materials.filter((m) => m.kind === "need").map((m) => m.text),
+          frame: o.outline.text.frame,
+          memo: c.memo ?? "",
+        }
+      : null;
+  const turns = draftThread({
+    outline,
+    draft: spec ? { updatedAt: draft?.updated_at ?? null, plan: Boolean(spec.plan), fit: spec.fit?.budget ? { total: spec.fit.total, budget: spec.fit.budget } : null, module: spec.module, stale: o.stale, note: o.needs.lensNote } : null,
+    edits: o.edits.map((e) => ({ id: Number(e.id), blockIndex: e.block_index, kind: e.kind, request: e.request ?? "", at: e.created_at, refId: e.ref_id })),
+  });
+  // 아직 집필하지 않은 구성안(마지막 차례가 구성안)의 자료 필요만 할 일에 — 집필한 뒤에는 초안의 【확인】이 남은 빈 곳
+  const last = turns.at(-1);
+  const { draftNeeds, figureNeeds, kpiNeeds, weakSentences } = o.needs;
+  const todo = draftTodo({
+    year: o.year,
+    kpi: kpiNeeds,
+    needs: draftNeeds,
+    figures: figureNeeds.map((f) => ({ label: FIGURE_LABEL[f.kind], desc: f.desc, nth: f.nth })),
+    warnings: spec ? o.warnings : [],
+    weak: weakSentences,
+    outlineNeeds: last?.kind === "outline" ? last.needs : [],
+    comments: o.comments.map((x) => ({ body: x.body, meta: `${x.kind} · ${x.author} · ${fmtDateTime(x.createdAt)}`, blockIndex: x.blockIndex, open: x.status === "open" })),
+  });
   const submit = !o.staff
     ? { href: "/my/report", label: "확정은 경평 초안 허브에서" }
     : o.deptView
@@ -196,12 +251,9 @@ export function draftMetaOf(o: { uid: string; spec: ReportSectionSpec | null; dr
         ? { href: withReturn(`/reports/${o.report.id}`, `/reports/cards/${o.uid}`), label: "승인은 보고서 검토에서" }
         : null;
   return {
-    stale: o.stale,
-    plan: spec?.plan ? { matched: spec.plan.matched, total: spec.plan.total } : null,
-    fit: spec?.fit?.budget ? { total: spec.fit.total, budget: spec.fit.budget } : null,
-    need: o.need,
-    warn: o.warn,
-    outlineInfo: o.hasOutline ? `${draft?.outline_model ?? "AI"} · ${fmtDateTime(draft?.outline_at)}` : null,
+    turns,
+    todo,
+    status: threadStatus({ hasOutline: Boolean(c), approved: o.outline?.status === "approved", hasDraft: Boolean(spec), stale: o.stale, todo: todo.count, locked: o.locked }),
     submit,
   };
 }

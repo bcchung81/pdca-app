@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { applyImportItems, applySafeImportItems, registerImportItem, skipImportItems } from "../../../app/(app)/cards/import/actions";
+import { applyImportItems, applySafeImportItems, deleteImportOriginals, registerImportItem, skipImportItems } from "../../../app/(app)/cards/import/actions";
 import type { BlockDiff, BlockKey } from "../../../lib/cards/hwp/sync.ts";
+import { useAsk } from "../../ui/confirm-dialog";
 import { T } from "../../ui/kit";
 import { CardFileUpload } from "./card-file-upload";
 import { SyncReview } from "./sync-review";
@@ -14,6 +15,47 @@ import { SKIP_REASON_MAX } from "../../../lib/cards/limits.ts";
 export function ImportUploader() {
   const router = useRouter();
   return <CardFileUpload onParsed={(id) => router.push(`/cards/import/${id}`)} />;
+}
+
+/** 현행화 기록 한 줄의 「원본 파일 삭제」: 저장소의 원본 한글 파일만 지우고 묶음·반영 기록은 남김(확인 창을 거침) */
+export function DeleteOriginals(props: { importId: number; names: string[]; pending: number }) {
+  const router = useRouter();
+  const [busy, start] = useTransition();
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const { ask, dialog } = useAsk();
+  const label = props.names.length > 1 ? `「${props.names[0]}」 외 ${props.names.length - 1}개` : `「${props.names[0] ?? "원본"}」`;
+  const body = [
+    `${label}의 원본 한글 파일을 저장소에서 지웁니다. 지운 원본은 다시 내려받을 수 없습니다.`,
+    "읽어 둔 카드·비교·반영 기록은 그대로 남습니다.",
+    ...(props.pending ? [`반영 대기 ${props.pending}건은 읽어 둔 내용으로 계속 검토·반영할 수 있습니다.`] : []),
+  ];
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {dialog}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() =>
+          ask([{ title: `${label} 원본 파일을 지울까요?`, body, confirmLabel: "원본 삭제" }], () =>
+            start(async () => {
+              const r = await deleteImportOriginals(props.importId);
+              setMsg({ ok: r.ok, text: r.message });
+              router.refresh();
+            }),
+          )
+        }
+        className="shrink-0 text-xs text-muted underline hover:text-warn"
+        aria-label={`${label} 원본 파일 삭제`}
+      >
+        {busy ? "지우는 중…" : "원본 파일 삭제"}
+      </button>
+      {msg && !msg.ok && (
+        <span role="alert" className="min-w-0 truncate text-xs text-error" title={msg.text}>
+          {msg.text}
+        </span>
+      )}
+    </span>
+  );
 }
 
 /** 「전체 반영」: 위험 없는 확정 매칭만(지침 14 일괄 승인) */

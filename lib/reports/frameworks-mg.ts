@@ -1,14 +1,14 @@
 // 경영관리 경평 초안 「이야기 틀」(순수): 2025 경영관리 보고서 육안 64쪽·프레임워크 12종에서 뽑은 8종 + 14개 지표 전수 육안(223단위)에서 8종으로 안 잡히던
-// 반복 짜임 3종(⑨~⑪, 2026-10-10) + 타기관 2025 보고서 짜임 분석의 ⑫ AX 전환형(2026-10-13) + 옛 섞음(2026-10-12부터 절마다 주 틀 + 보조 틀 — 분석 docs/analysis/2025-경영관리-경영실적보고서-분석.md §8.5·§8.7·§8.8). 블록 어휘는 주요사업과 같은 lib/reports/blocks.ts의 BLOCK_KINDS를 그대로 씀 —
+// 반복 짜임 3종(⑨~⑪, 2026-10-10) + 타기관 2025 보고서 짜임 분석의 ⑫ AX 전환형(2026-10-13) + 사용자 승인 ⑬~⑮(2026-11-04) + 옛 섞음(2026-10-12부터 절마다 주 틀 + 보조 틀 — 분석 docs/analysis/2025-경영관리-경영실적보고서-분석.md §8.5·§8.7·§8.8). 블록 어휘는 주요사업과 같은 lib/reports/blocks.ts의 BLOCK_KINDS를 그대로 씀 —
 // 달라지는 것은 이야기 틀 목록과 구성안 구조(평가내용 → 대주제 → 절)뿐. 틀의 블록 순서는 resources/prompts/report-draft-mg/stories.md 줄과 같은 순서여야 합니다(시험이 대조).
 // 틀 이름·개수는 후보(빈도 미집계)이고 사용자가 확정합니다. 주요사업의 FRAMEWORKS(frameworks.ts)는 건드리지 않습니다.
 
 import type { BlockKind } from "./blocks.ts";
 
-/** 주 틀 12종 — 구성안 AI는 절마다 이 중에서 주 틀과(필요하면) 보조 틀을 고름(2026-10-12 — 주요사업 MAIN_STORIES처럼 섞음 대신 주 + 보조) */
-export const MG_MAIN_STORIES = ["전략수립형", "배경·내용·성과형", "문제·해결형", "기존·개선형", "PDCA 체계형", "단계·연도 로드맵형", "구분표 중심형", "계량 모니터링형", "소과제 묶음형", "생애주기형", "준수 점검형", "AX 전환형"] as const;
+/** 주 틀 15종(⑬~⑮는 2026-11-04 — 주요사업의 환류 개선형은 경영관리에 넣지 않고 ⑤ PDCA 체계형으로 갈음, 사용자 결정) — 구성안 AI는 절마다 이 중에서 주 틀과(필요하면) 보조 틀을 고름(2026-10-12 — 주요사업 MAIN_STORIES처럼 섞음 대신 주 + 보조) */
+export const MG_MAIN_STORIES = ["전략수립형", "배경·내용·성과형", "문제·해결형", "기존·개선형", "PDCA 체계형", "단계·연도 로드맵형", "구분표 중심형", "계량 모니터링형", "소과제 묶음형", "생애주기형", "준수 점검형", "AX 전환형", "시범→확산형", "위험관리·안전형", "데이터 기반 의사결정형"] as const;
 export type MgMainStory = (typeof MG_MAIN_STORIES)[number];
-/** 이야기 틀(12종 + 섞음) — 섞음은 2026-10-12 전에 저장된 구성안·초안을 읽을 때만(AI 답·새로 고르기에는 없음) */
+/** 이야기 틀(15종 + 섞음) — 섞음은 2026-10-12 전에 저장된 구성안·초안을 읽을 때만(AI 답·새로 고르기에는 없음) */
 export const MG_STORIES = [...MG_MAIN_STORIES, "섞음"] as const;
 export type MgStory = (typeof MG_STORIES)[number];
 
@@ -32,7 +32,7 @@ export interface MgFramework {
   blocks: MgFrameworkBlock[];
   /**
    * 2025 보고서 예시 위치 「지표 평가내용-대주제(-절)」 — ①~⑧은 14개 지표 223단위 육안 판정(분석 §8.8)에서 그 틀이 주 틀인 곳, ⑨~⑪은 같은 판정에서
-   * 그 짜임이 「새 모양」(□ 소주제·생애주기 순환·띠 표·준수 칸)으로 기록된 곳. stories.md 그 틀 줄에도 같은 글(시험이 대조). ⑫는 KCA 2025 예시가 없어 빈 목록
+   * 그 짜임이 「새 모양」(□ 소주제·생애주기 순환·띠 표·준수 칸)으로 기록된 곳. stories.md 그 틀 줄에도 같은 글(시험이 대조). ⑫~⑮는 KCA 2025 예시가 없어 빈 목록
    */
   examples: string[];
 }
@@ -136,6 +136,31 @@ export const MG_FRAMEWORKS: MgFramework[] = [
     level: "section",
     fit: "AI·자동화로 업무 절차를 바꾼 과제 — 기존 절차 → 전환 → 사람·AI 역할 분담 → 단축 성과",
     blocks: [{ kind: "cards", variant: "arrow", label: "전환 배경" }, { kind: "compare", variant: "panels", label: "기존→AI 전환" }, { kind: "table", label: "역할 분담" }, { kind: "steps", variant: "row", label: "확산" }, RESULT],
+    examples: [],
+  },
+  // ⑬~⑮(2026-11-04 사용자 승인): KCA 2025 경영관리 보고서에서 확인한 위치가 없어 예시는 빈 목록. 주요사업 ⑭ 환류 개선형은 넣지 않음(⑤ PDCA 체계형으로 갈음 — 사용자 결정)
+  {
+    story: "시범→확산형",
+    no: "⑬",
+    level: "section",
+    fit: "일부 부서·사업소에서 시범 운영한 제도·방식을 지침·시스템으로 표준화해 전사로 넓히고 정착시킨 과제",
+    blocks: [{ kind: "cards", variant: "arrow", label: "시범 운영" }, { kind: "steps", variant: "row", label: "확산 단계" }, { kind: "table", label: "확산 실적" }, RESULT],
+    examples: [],
+  },
+  {
+    story: "위험관리·안전형",
+    no: "⑭",
+    level: "section",
+    fit: "위험 요인을 진단해 예방 조치·상시 점검으로 사고·위험을 줄인 과제(⑤는 제도 운영 순환, ⑪은 지침 준수 여부 — 이 틀은 위험 진단 → 예방 → 점검 → 저감)",
+    blocks: [{ kind: "cards", variant: "plus", label: "위험 요인" }, { kind: "steps", variant: "row", label: "예방 조치" }, { kind: "table", label: "상시 점검" }, RESULT],
+    examples: [],
+  },
+  {
+    story: "데이터 기반 의사결정형",
+    no: "⑮",
+    level: "section",
+    fit: "데이터를 모아 분석한 결과를 경영 의사결정·제도 개선에 반영한 과제(⑧은 관리 지표 수치를 지켜보는 것 자체, 이 틀은 분석 → 결정 → 효과로 이어진 경로)",
+    blocks: [{ kind: "cards", variant: "plain", label: "데이터 현황" }, { kind: "table", label: "분석 결과" }, { kind: "steps", variant: "row", label: "경영 반영" }, RESULT],
     examples: [],
   },
   // 옛 구성안·초안 읽기용(2026-10-12부터 AI 답·고르기에 없음 — 두 틀이 필요하면 주 틀 + 보조 틀)

@@ -6,7 +6,7 @@ import type { MouseEventHandler } from "react";
 import { T } from "../ui/kit";
 import { PHONE_QUERY, useMedia } from "./use-narrow.ts";
 
-const cls = `${T.iconBtn} border-field-line text-ink hover:border-navy`;
+const cls = `${T.iconLabelBtn} border-field-line text-ink hover:border-navy`;
 
 /**
  * 옆 창·전체 페이지 머리의 목록 아이콘(늘 맨 앞, shrink-0 — 제목이 길어도 줄거나 숨지 않음).
@@ -18,11 +18,13 @@ export function ListIconButton(props: { label: string; href?: string; onClick?: 
     return (
       <Link href={props.href} aria-label={title} title={title} className={cls}>
         <List size={16} aria-hidden />
+        <span className={T.deskOnly}>목록</span>
       </Link>
     );
   return (
     <button type="button" onClick={props.onClick} aria-label={title} title={title} className={cls}>
       <List size={16} aria-hidden />
+      <span className={T.deskOnly}>목록</span>
     </button>
   );
 }

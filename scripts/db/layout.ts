@@ -8,6 +8,7 @@
 //
 // 잇기 표시는 적재 때의 카드 JSON(seed/cards/{판}/biz-{판}.json)으로 적습니다 — 원본 한글 파일과 글이 짝지어진 JSON.
 // 그사이 원장이 고쳐졌어도 화면이 목록마다 다시 맞춰 그립니다(lib/cards/layout-render.ts).
+// 원장 카드의 판(cards.edition)이 이 판(CARD_EDITION)과 다르면 건너뜁니다 — 새 판으로 다시 채운 원장(같은 id라도 다른 과제일 수 있음)을 9.16 원본으로 덮지 않게.
 // 필요한 환경변수(.env.local): NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -60,15 +61,20 @@ async function main() {
   const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("NEXT_PUBLIC_SUPABASE_URL과 SUPABASE_SECRET_KEY가 필요합니다(.env.local)");
   const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: rows, error } = await db.from("cards").select("id, uid, layout");
+  const { data: rows, error } = await db.from("cards").select("id, uid, layout, edition");
   if (error || !rows) throw new Error(`cards select: ${error?.message ?? "응답 없음"}`);
-  const byId = new Map(rows.map((r) => [r.id as string, r as { id: string; uid: string; layout: unknown }]));
+  const byId = new Map(rows.map((r) => [r.id as string, r as { id: string; uid: string; layout: unknown; edition: string }]));
   let done = 0;
   let kept = 0;
+  const otherEdition: string[] = [];
   for (const r of results) {
     const row = byId.get(r.card.id);
     if (!row) {
       console.log(`  원장에 없음: ${r.card.id}`);
+      continue;
+    }
+    if (row.edition !== CARD_EDITION) {
+      otherEdition.push(`${r.card.id}(${row.edition})`);
       continue;
     }
     if (row.layout && !has("--all") && !only) {
@@ -83,7 +89,8 @@ async function main() {
     if (e) throw new Error(`cards.layout ${r.card.id}: ${e.message}`);
     done++;
   }
-  console.log(`  채움 ${done}장${kept ? ` · 이미 있어 둠 ${kept}장(--all로 다시)` : ""}`);
+  console.log(`  채움 ${done}장${kept ? ` · 이미 있어 둠 ${kept}장(--all로 다시)` : ""}${otherEdition.length ? ` · 원장의 판이 ${CARD_EDITION}이 아니어서 건너뜀 ${otherEdition.length}장` : ""}`);
+  if (otherEdition.length) console.log(`  건너뛴 카드: ${otherEdition.join(", ")}`);
 }
 
 main().catch((e) => {

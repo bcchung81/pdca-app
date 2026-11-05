@@ -103,7 +103,9 @@ export const partOrder = (a: { evalNo: number; themeNo: number; mark: string }, 
 
 /**
  * 카드 ↔ 2025 보고서 평가내용 첫 대응(분석 문서 §5 — 카드 제목과 평가내용 제목 대조, 신뢰도 중~낮음 칸 포함). 구성안의 추천 기본값으로만 쓰고(설계 결정 2026-10-09),
- * 불명한 칸(3-1·7-2·9-3·10-2)은 후보를 여럿 둠 — 구성안에서 사람이 고름. 혁신가점(12~14)은 평가지표 한 장이라 빈 배열(그 지표의 평가내용 모두)
+ * 불명한 칸(3-1·9-3·10-2)은 후보를 여럿 둠 — 구성안에서 사람이 고름. 혁신가점 12·13은 2025 평가내용이 하나라 키 없음(그 지표의 평가내용 모두)
+ * 2026-11-05 새 판 카드(261103판, 47장) 대응: 3-4(여성 임원) → 4 · 7장 과제분리로 7-1(상생·우선구매)·7-2(공정계약) → 1, 7-3(소상공인·사회적경제, 옛 7-2) → 1,
+ * 7-4(지역공부방, 옛 7-3) → 2, 7-5(시설·장비 개방, 옛 7-4) → 3 · 14는 평가내용이 넷이라 14-1(국정과제 이행관리) → 1, 14-2(청년인턴) → 3(2·4는 대응 카드 없음)
  */
 export const MG_CARD_EVALS: Record<string, number[]> = {
   "1-1": [1],
@@ -114,6 +116,7 @@ export const MG_CARD_EVALS: Record<string, number[]> = {
   "3-1": [1, 3],
   "3-2": [2],
   "3-3": [4],
+  "3-4": [4],
   "4-1": [1],
   "4-2": [1],
   "4-3": [1],
@@ -126,8 +129,9 @@ export const MG_CARD_EVALS: Record<string, number[]> = {
   "6-4": [4],
   "7-1": [1],
   "7-2": [1],
-  "7-3": [2],
-  "7-4": [3],
+  "7-3": [1],
+  "7-4": [2],
+  "7-5": [3],
   "8-1": [1],
   "8-2": [2],
   "8-3": [3],
@@ -142,6 +146,8 @@ export const MG_CARD_EVALS: Record<string, number[]> = {
   "11-2": [1],
   "11-3": [2],
   "11-4": [2],
+  "14-1": [1],
+  "14-2": [3],
 };
 
 /** 이 카드의 추천 평가내용(전년 골격에 있는 번호만 — 대응이 없거나 골격에 없으면 그 지표의 평가내용 모두) */
@@ -207,7 +213,7 @@ export function mgOutlineOutSchema(desc?: Descriptions) {
     themeTitle: d(z.string(), "part.themeTitle"),
     mark: d(z.string(), "part.mark"),
     title: d(z.string(), "part.title"),
-    // 주 틀 12종(섞음 없음 — 2026-10-12 C5, 두 틀이 필요하면 보조 틀). enum이 아니라 문자열로 받고 정리가 12종으로 맞춤(matchName — 가운뎃점 변형·띄어쓰기 하나로
+    // 주 틀 15종(섞음 없음 — 2026-10-12 C5, 두 틀이 필요하면 보조 틀). enum이 아니라 문자열로 받고 정리가 15종으로 맞춤(matchName — 가운뎃점 변형·띄어쓰기 하나로
     // 답 전체 파싱이 실패하지 않게, 2026-10-12). 모르는 이름·섞음은 빈 글. 옛 구성안의 섞음은 정리·편집에서만 읽음
     story: d(z.string(), "part.story"),
     subStory: d(z.string(), "part.subStory").optional(),
@@ -284,7 +290,7 @@ function clipSentences(s: string, max: number): string {
   return ends.length ? s.slice(0, ends.at(-1)).trim() : clipLine(s, max);
 }
 export const isMgStory = (s: unknown): s is MgStory => (MG_STORIES as readonly string[]).includes(String(s));
-/** 주 틀 12종인가(섞음 아님) — AI 답·절 다시 짜기·보조 틀은 이것만 */
+/** 주 틀 15종인가(섞음 아님) — AI 답·절 다시 짜기·보조 틀은 이것만 */
 export const isMgMainStory = (s: unknown): s is MgMainStory => (MG_MAIN_STORIES as readonly string[]).includes(String(s));
 
 /** 절 이름(화면·경고): 「평가내용 1 · 대주제 2 · 가. 제목」 */
@@ -312,7 +318,7 @@ export function sortByParts(blocks: PlanBlock[], parts: MgPart[]): PlanBlock[] {
 /**
  * AI 구성안(경영관리) → 저장할 구성안 + 경고. 재료·블록은 주요사업과 같은 정리(cleanMaterials·cleanPlanBlock — 재료 상한만 절 수에 비례 mgMaterialCap), 절은 번호·표지를 정리하고
  * 평가내용·대주제 제목은 전년 골격에 있으면 그 이름을 씀(전년 골격에 없는 평가내용 번호는 버리지 않고 경고 — 보고서에 빈 평가내용 상자가 나옴).
- * 이야기 틀은 주 틀 12종만(섞음·모르는 틀은 빈 글), 보조 틀은 주 틀과 다를 때만. 블록은 가리킨 절(1부터 세는 번호)이 없으면 버리고, 블록이 없는 절도 뺌.
+ * 이야기 틀은 주 틀 15종만(섞음·모르는 틀은 빈 글), 보조 틀은 주 틀과 다를 때만. 블록은 가리킨 절(1부터 세는 번호)이 없으면 버리고, 블록이 없는 절도 뺌.
  * 갈래 축은 사전 이름으로(모르면 버림 — ctx.axis를 주면(절 다시 짜기) AI 답 대신 그 축), 절 칩은 그 축의 표준 값이거나 근거 원문(hayKey)에 있는 낱말만(split-axes.ts cleanChip — 축이 없거나 절 표지가 없는 절은 칩 없음).
  * ctx.outcomes(요청에 준 절 성과 재료 — mg-close.ts ledgerOutcomeItems)는 mg.outcomes에 남겨 구성안 점검 「성과 배정」이 씀.
  * 값 충돌(out.conflicts — 2026-10-30)은 두 값의 수치가 근거(known)에 있는 것만 mg.conflicts로(mg-consistency.ts cleanConflicts — 근거로 확인되지 않은 충돌은 지어낸 것으로 보고 경고 없이 버림).
@@ -593,8 +599,8 @@ export function mgCompositionIssues(c: Composition, pdca?: PdcaSkeleton): string
 }
 
 /**
- * 절 이야기 틀 고치기(사람 편집): 주 틀은 12종(옛 섞음은 원래 섞음이던 절이 그대로 둘 때만 — 새로 섞음을 고를 수는 없음), 모르는 틀이면 그대로.
- * 보조 틀은 빈 글이면 지우고 주 틀과 다른 12종이면 받음(빠뜨리면 그대로). 주 틀을 바꾸면서 보조 틀을 옛 값 그대로 보내면 지움(주요사업처럼 주 틀에 딸린 것)
+ * 절 이야기 틀 고치기(사람 편집): 주 틀은 15종(옛 섞음은 원래 섞음이던 절이 그대로 둘 때만 — 새로 섞음을 고를 수는 없음), 모르는 틀이면 그대로.
+ * 보조 틀은 빈 글이면 지우고 주 틀과 다른 15종이면 받음(빠뜨리면 그대로). 주 틀을 바꾸면서 보조 틀을 옛 값 그대로 보내면 지움(주요사업처럼 주 틀에 딸린 것)
  */
 function partStories(p: MgPart, x: { story?: string; subStory?: string } | undefined): Pick<MgPart, "story" | "subStory"> {
   const story: MgPart["story"] = isMgMainStory(x?.story) || (x?.story === "섞음" && p.story === "섞음") ? (x!.story as MgStory) : p.story;
@@ -897,7 +903,7 @@ const materialNo = (id: string) => Number(/^m(\d+)$/.exec(id)?.[1] ?? 0);
 /**
  * 절 하나만 다시 짠 AI 구성안(next)을 지금 구성안(current)에 합침(결정론): 그 절의 블록만 새 블록으로 바꾸고(새 블록은 모두 그 절 열쇠로 — AI가 표지를 바꿔도),
  * 새 블록의 재료는 지금 재료와 글·구절이 같으면 그 번호를, 아니면 겹치지 않는 새 번호로 붙임. 그 절의 틀은 고른 주 틀로(보조 틀은 지움 — 주 틀 기준으로 다시 짬),
- * 틀을 고르지 않은 다시 짜기(구성 패턴·예시 절·요청 글만 — 2026-10-12)는 AI가 그 절에 적은 주 틀·보조 틀(정리된 12종 — 없으면 지금 틀), 둔 이유는 새 답에 있으면 바꿈.
+ * 틀을 고르지 않은 다시 짜기(구성 패턴·예시 절·요청 글만 — 2026-10-12)는 AI가 그 절에 적은 주 틀·보조 틀(정리된 15종 — 없으면 지금 틀), 둔 이유는 새 답에 있으면 바꿈.
  * 고른 짜임(frame)은 그 절에 남김(주면 바꾸고, 안 주면 지움). 갈래 칩은 새 답에 (정리를 통과한) 칩이 있으면 그것, 없으면 지금 칩 그대로(축은 카드의 것 — 절 다시 짜기에서 안 바뀜).
  * 다른 절의 블록·재료·사람이 고친 내용은 그대로. 바뀐 절의 옛 블록만 가리키던 재료는 뺌.
  * 블록 상한(MG_LIMITS.blocks)을 넘는 새 블록은 버림. AI가 블록을 내지 못하면 바꾸지 않음(changed false)

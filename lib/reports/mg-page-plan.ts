@@ -130,7 +130,7 @@ export interface MgOutlinePlan {
 
 /**
  * 배정안: 평가내용마다 쪽(본문 예산 몫 — withMgVolume, 작성분량이 없으면 2025 쪽)을 그 평가내용에 대응한 카드 수로 똑같이 나누고 카드마다 더함 → 0.5쪽 단위(카드당 0.5~10쪽, 큰 나머지 순으로 합을 맞춤).
- * 카드 ↔ 평가내용은 evalsFor(MG_CARD_EVALS ∩ 2025 평가내용, 없으면 그 지표의 평가내용 모두 — 혁신가점 12~14)
+ * 카드 ↔ 평가내용은 evalsFor(MG_CARD_EVALS ∩ 2025 평가내용, 없으면 그 지표의 평가내용 모두 — 혁신가점 12·13)
  */
 export function buildMgOutline(unit: string, ref: MgPageRef, cards: Array<{ id: string; taskNo: string }>): MgOutlinePlan {
   const nos = ref.evals.map((e) => e.no);

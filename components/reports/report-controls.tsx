@@ -17,7 +17,7 @@ import { fmtDateTime } from "../../lib/format.ts";
 import { type MaterialMatch, initialSelection, materialSummary, suggestCards } from "../../lib/reports/material-match.ts";
 import { COMMENT_KINDS, type ReportStatus, UNAPPROVE_TO, canMove } from "../../lib/reports/model.ts";
 import { REVIEW_NOTE_MAX } from "../../lib/reports/submission.ts";
-import { ConfirmDialog, plain, primary } from "../ui/confirm-dialog";
+import { ConfirmDialog, plain, primary, useAsk } from "../ui/confirm-dialog";
 import { FileDrop, type FileItem } from "../ui/file-drop";
 
 function useAction() {
@@ -244,6 +244,7 @@ function MaterialRow({ reportId, item, cards, canEdit }: { reportId: number; ite
   const suggested = suggestCards(item.fileName, cards);
   const [sel, setSel] = useState<Set<string>>(() => new Set(initialSelection(item.matches, suggested)));
   const [delPending, startDelete] = useTransition();
+  const { ask, dialog } = useAsk();
   const { pending, run, note } = useAction();
   const sum = materialSummary(item.matches, suggested);
   const confirmedNow = new Set(item.matches.map((m) => m.cardId));
@@ -258,6 +259,7 @@ function MaterialRow({ reportId, item, cards, canEdit }: { reportId: number; ite
         : "연결한 과제 없음 — 「같은 보고서 자료」(초안에는 넣지만 수치는 숫자 근거로 안 씀)";
   return (
     <li className="min-w-0 border-b border-row-line last:border-b-0">
+      {dialog}
       <details open={needsAction} className="group">
         <summary className="flex min-w-0 cursor-pointer items-center gap-2 px-3 py-2">
           <span className="w-10 shrink-0 font-mono text-xs text-muted uppercase">{(item.fileName.split(".").pop() ?? "").slice(0, 5)}</span>
@@ -273,6 +275,9 @@ function MaterialRow({ reportId, item, cards, canEdit }: { reportId: number; ite
               AI가 못 읽음
             </span>
           )}
+          <span className="max-w-[30%] shrink-0 truncate text-xs text-muted" title={`올린 사람 · 올린 때: ${[item.uploadedBy, fmtDateTime(item.createdAt)].filter(Boolean).join(" · ")}`}>
+            {[item.uploadedBy, fmtDateTime(item.createdAt)].filter(Boolean).join(" · ")}
+          </span>
           <span className={`ml-auto max-w-[46%] truncate text-xs ${needsAction ? "font-semibold text-warn" : "text-muted-2"}`} title={summary}>
             {summary}
           </span>
@@ -282,10 +287,12 @@ function MaterialRow({ reportId, item, cards, canEdit }: { reportId: number; ite
               disabled={delPending}
               onClick={(e) => {
                 e.preventDefault();
-                startDelete(async () => {
-                  await deleteMaterial(item.id);
-                  router.refresh();
-                });
+                ask([{ title: `「${item.fileName}」을(를) 지울까요?`, body: ["지운 파일은 되돌릴 수 없고, 과제 연결도 함께 사라집니다."], confirmLabel: "삭제" }], () =>
+                  startDelete(async () => {
+                    await deleteMaterial(item.id);
+                    router.refresh();
+                  }),
+                );
               }}
               className="shrink-0 text-xs text-muted underline hover:text-warn"
               aria-label={`${item.fileName} 삭제`}

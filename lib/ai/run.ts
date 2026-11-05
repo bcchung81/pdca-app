@@ -501,7 +501,7 @@ export function reportOutlineAsk(input: ReportOutlineInput): (files: ReportFile[
   const draft = reportDraftPrompts().prompts;
   const { prompts } = reportOutlinePrompts();
   // 담당자가 틀 갤러리에서 고른 이야기 틀(lib/reports/frameworks.ts) — 요청에 그 틀의 블록 순서를 적고 답의 틀은 코드가 그 틀로 덮음(withFixedStory — 스키마는 늘 문자열, 2026-10-12).
-  // 「섞음」을 고르면 12종 중 주 틀 + 보조 틀을 고르게 하고(story.mix), 고르지 않으면 앱이 뽑은 틀 후보(storyHints — lib/reports/story-hints.ts)를 붙임
+  // 「섞음」을 고르면 16종 중 주 틀 + 보조 틀을 고르게 하고(story.mix), 고르지 않으면 앱이 뽑은 틀 후보(storyHints — lib/reports/story-hints.ts)를 붙임
   const fw = input.story ? frameworkOf(input.story) : null;
   const storyText = (files: ReportFile[]) => {
     if (fw?.story === "섞음") return fillFrom(prompts, "request", "story.mix");

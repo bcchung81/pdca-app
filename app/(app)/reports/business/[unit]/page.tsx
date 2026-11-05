@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BusinessZoom, BusinessZoomColumn, BusinessZoomControl, BusinessZoomSheet } from "../../../../../components/reports/business-zoom";
 import { WarningList } from "../../../../../components/reports/warning-list";
-import { Empty, NoAccess, PageHeader, Panel, Screen, Tag, type Tone } from "../../../../../components/ui/kit";
+import { Empty, NoAccess, PageHeader, Panel, Screen, T, Tag, type Tone } from "../../../../../components/ui/kit";
 import { requireAtLeast } from "../../../../../lib/auth/dal.ts";
 import { compareUnitId, currentPeriod } from "../../../../../lib/cards/view.ts";
 import { withReturn } from "../../../../../lib/nav/return-to.ts";
@@ -100,20 +100,22 @@ export default async function BusinessLayoutPage({ params, searchParams }: PageP
               href={partsHref}
               aria-label="카드 밖 부분"
               title="카드 밖 부분 — 표지·지적사항 조치실적·전년 대비 주요 추진실적·성과분석 및 환류"
-              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-field-line text-ink no-underline hover:border-navy"
+              className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}
             >
               <ClipboardList size={16} aria-hidden />
+              <span className={T.deskOnly}>카드 밖 부분</span>
             </Link>
           )}
-          {/* 경영관리 지표만: 지표 한 파일 한글 내려받기(R5d) — 파일을 받는 주소라 Link(미리 불러오기) 대신 a */}
+          {/* 경영관리 지표만: 지표 한 파일 HWPX 내려받기(R5d) — 파일을 받는 주소라 Link(미리 불러오기) 대신 a */}
           {mg && (
             <a
               href={`/reports/business/${encodeURIComponent(unit)}/hwpx${startQuery > 0 ? `?start=${startQuery}` : ""}`}
-              aria-label="한글 내려받기"
-              title="한글 내려받기 — 표지·지적사항 조치실적·전년 대비·과제별 초안(목차 순)·성과분석 및 환류를 한 파일로. 한글에서 다듬는 출발 원고이며 장 사이 쪽 나눔은 한글에서"
-              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-field-line text-ink no-underline hover:border-navy"
+              aria-label="HWPX 내려받기"
+              title="HWPX 내려받기 — 표지·지적사항 조치실적·전년 대비·과제별 초안(목차 순)·성과분석 및 환류를 한 파일로. 한글에서 다듬는 출발 원고이며 장 사이 쪽 나눔은 한글에서"
+              className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}
             >
               <FileDown size={16} aria-hidden />
+              <span className={T.deskOnly}>HWPX 내려받기</span>
             </a>
           )}
         </PageHeader>

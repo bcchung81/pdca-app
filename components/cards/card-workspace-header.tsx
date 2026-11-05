@@ -118,7 +118,7 @@ function HeaderTitle({ props }: { props: WorkspaceProps }) {
   }
   return (
     // 휴대폰 폭: 전체 페이지와 같은 한 줄(과제번호 · 제목 말줄임)
-    <div className="flex min-w-0 flex-col gap-1 max-md:flex-row max-md:items-baseline max-md:gap-1.5">
+    <div className="flex min-w-[8rem] flex-col gap-1 max-md:flex-row max-md:items-baseline max-md:gap-1.5">
       <span className="truncate font-mono text-xs text-muted max-md:shrink-0">
         <span className="max-md:hidden">{props.group} · </span>
         {props.taskNo}
@@ -147,16 +147,20 @@ function HeaderButtons({ props, ws }: HeaderProps) {
   const { variant } = props;
   const { side, toggle } = ws;
   return (
-    <div className="flex shrink-0 items-center justify-end gap-2 max-md:hidden">
+    // 전체 페이지는 머리 한 줄(56px) — 버튼은 줄지 않고 제목이 말줄임. 옆 창은 폭이 좁아 버튼 묶음이 줄을 바꿔 감(머리가 이미 제목 두 줄까지 늘어나는 구조)
+    <div className={`flex items-center justify-end gap-2 max-md:hidden ${variant === "peek" ? "min-w-0 flex-wrap" : "shrink-0"}`}>
       <ListIconButton label={ws.listLabel} onClick={() => void ws.close()} />
-      <Link href={ws.reportHref} aria-label="경평 초안" title="경평 초안 — 과제별 초안 열기" className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}>
+      <Link href={ws.reportHref} aria-label="경평 초안" title="경평 초안 — 과제별 초안 열기" className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}>
         <FileText size={16} aria-hidden />
+        <span className={T.deskOnly}>경평 초안</span>
       </Link>
-      <button type="button" aria-pressed={side === "materials"} aria-label="자료" title="자료 — 카드 전용 자료" onClick={() => toggle("materials")} className={`${T.iconBtn} ${side === "materials" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
+      <button type="button" aria-pressed={side === "materials"} aria-label="자료" title="자료 — 카드 전용 자료" onClick={() => toggle("materials")} className={`${T.iconLabelBtn} ${side === "materials" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
         <FolderOpen size={16} aria-hidden />
+        <span className={T.deskOnly}>자료</span>
       </button>
-      <button type="button" aria-pressed={side === "history"} aria-label="수정 이력" title="수정 이력" onClick={() => toggle("history")} className={`${T.iconBtn} ${side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
+      <button type="button" aria-pressed={side === "history"} aria-label="수정 이력" title="수정 이력" onClick={() => toggle("history")} className={`${T.iconLabelBtn} ${side === "history" ? "border-navy bg-navy text-white" : "border-field-line text-ink hover:border-navy"}`}>
         <History size={16} aria-hidden />
+        <span className={T.deskOnly}>수정 이력</span>
       </button>
       <MoreMenu props={props} ws={ws} />
       {variant === "peek" && (
@@ -168,21 +172,23 @@ function HeaderButtons({ props, ws }: HeaderProps) {
           }}
           aria-label="전체 페이지로 열기"
           title="전체 페이지로 열기"
-          className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}
+          className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}
         >
           <Maximize2 size={15} aria-hidden />
+          <span className={T.deskOnly}>전체 페이지</span>
         </Link>
       )}
       {variant === "peek" && (
-        <button type="button" onClick={() => void ws.close()} aria-label="닫고 목록으로 (Esc)" title="닫고 목록으로 (Esc)" className={`${T.iconBtn} border-field-line text-muted hover:border-navy`}>
+        <button type="button" onClick={() => void ws.close()} aria-label="닫고 목록으로 (Esc)" title="닫고 목록으로 (Esc)" className={`${T.iconLabelBtn} border-field-line text-muted hover:border-navy`}>
           <X size={16} aria-hidden />
+          <span className={T.deskOnly}>닫고 목록으로</span>
         </button>
       )}
     </div>
   );
 }
 
-/** 더보기 메뉴: 한글 내려받기(원본 배치 · 화면 그대로) · 작성본 채우기 · 현행화 · 보관 */
+/** 더보기 메뉴: HWPX 내려받기(다시 올리기용 · 화면 그대로) · 작성본 채우기 · 보관 */
 function MoreMenu({ props, ws }: HeaderProps) {
   const { draft } = props;
   const { menu, setMenu, draftMode, menuRef } = ws;
@@ -191,14 +197,15 @@ function MoreMenu({ props, ws }: HeaderProps) {
   return (
     <div ref={menuRef} className="relative">
       {dom.ui}
-      <button type="button" aria-haspopup="menu" aria-expanded={menu} aria-label="더보기" title="더보기 — 한글 내려받기·채우기·현행화·보관" onClick={() => setMenu(!menu)} className={`${T.iconBtn} ${menu ? "border-navy text-navy" : "border-field-line text-ink hover:border-navy"}`}>
+      <button type="button" aria-haspopup="menu" aria-expanded={menu} aria-label="더보기" title="더보기 — HWPX 내려받기·채우기·보관" onClick={() => setMenu(!menu)} className={`${T.iconLabelBtn} ${menu ? "border-navy text-navy" : "border-field-line text-ink hover:border-navy"}`}>
         <Ellipsis size={16} aria-hidden />
+        <span className={T.deskOnly}>더보기</span>
       </button>
       {menu && (
         <div role="menu" aria-label="카드 더보기" className="absolute top-9 right-0 z-menu flex w-60 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu">
           <a role="menuitem" href={`/cards/${props.uid}/hwpx`} download onClick={() => setMenu(false)} className="px-3 py-2 text-ink no-underline hover:bg-row-hover">
-            한글(HWPX)로 내려받기
-            <span className="block text-xs text-muted">지금 보이는 {draftMode ? "작성본" : "원장"} 카드 · 9.16 양식</span>
+            HWPX 내려받기(다시 올리기용)
+            <span className="block text-xs text-muted">지금 보이는 {draftMode ? "작성본" : "원장"} · 9.16 양식 · 채우기·현행화에 다시 올림</span>
           </a>
           {props.layout && (
             <button
@@ -211,8 +218,8 @@ function MoreMenu({ props, ws }: HeaderProps) {
               }}
               className={`px-3 py-2 text-left text-ink hover:bg-row-hover ${T.off}`}
             >
-              한글(화면 그대로)
-              <span className="block text-xs text-muted">화면 모양 그대로 옮김 · 다시 올리기(채우기·현행화)에는 위 파일</span>
+              HWPX 내려받기(화면 그대로)
+              <span className="block text-xs text-muted">보기용 — 다시 올리기에는 위 파일</span>
             </button>
           )}
           {draftMode && !props.readOnly && (
@@ -232,10 +239,6 @@ function MoreMenu({ props, ws }: HeaderProps) {
           )}
           {!draft && !props.preview && !props.readOnly && (
             <>
-              <Link role="menuitem" href="/cards/import" onClick={() => setMenu(false)} className="px-3 py-2 text-ink no-underline hover:bg-row-hover">
-                한글 파일로 현행화
-                <span className="block text-xs text-muted">부서가 보낸 한글 파일로 원장을 최신으로</span>
-              </Link>
               <button
                 role="menuitem"
                 type="button"

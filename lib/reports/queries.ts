@@ -7,6 +7,7 @@ import type { ReportStatus } from "./model.ts";
 import { readSection } from "./section.ts";
 import type { SubmitCard } from "./submission.ts";
 import { DEFAULT_TRACK, type TrackId, trackOfUnit } from "../tracks/index.ts";
+import { loadWho } from "../users/who.ts";
 
 
 /** reports.inputs — 옛 열(앱이 더는 읽거나 쓰지 않음, 2026-11-02: 올해 계량 실적은 카드 원장에서 읽음) */
@@ -101,6 +102,8 @@ export interface MaterialRow {
   bytes: number | null;
   storagePath: string;
   createdAt: string;
+  /** 올린 사람 이름(읽을 수 없는 프로필은 「다른 사용자」 — lib/users/who.ts, 기록 없음은 null) */
+  uploadedBy: string | null;
   url: string | null;
   /** AI가 읽었는지(참고자료 설계 1단계) */
   parseStatus: "pending" | "parsed" | "failed";
@@ -115,10 +118,11 @@ export async function listMaterials(supabase: SupabaseClient, reportIds: number[
   if (!reportIds.length) return [];
   const { data } = await supabase
     .from("report_materials")
-    .select("id, report_id, file_name, mime_type, bytes, storage_path, created_at, parse_status, parse_error, parsed_chars")
+    .select("id, report_id, file_name, mime_type, bytes, storage_path, created_at, uploaded_by, parse_status, parse_error, parsed_chars")
     .in("report_id", reportIds)
     .order("created_at");
   const rows = data ?? [];
+  const who = await loadWho(supabase, rows.map((r) => r.uploaded_by));
   const { data: signed } = rows.length ? await supabase.storage.from("report-materials").createSignedUrls(rows.map((r) => r.storage_path), 600) : { data: [] };
   const { data: links } = rows.length ? await supabase.from("report_material_cards").select("material_id, card_id, method, basis").eq("status", "confirmed").in("material_id", rows.map((r) => r.id)) : { data: [] };
   const byMaterial = new Map<string, MaterialMatch[]>();
@@ -131,6 +135,7 @@ export async function listMaterials(supabase: SupabaseClient, reportIds: number[
     bytes: r.bytes,
     storagePath: r.storage_path,
     createdAt: r.created_at,
+    uploadedBy: who(r.uploaded_by),
     url: signed?.[i]?.signedUrl ?? null,
     parseStatus: (r.parse_status ?? "pending") as "pending" | "parsed" | "failed",
     parseError: r.parse_error ?? null,

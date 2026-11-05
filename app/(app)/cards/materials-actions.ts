@@ -8,6 +8,8 @@ import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/previe
 import { safeExt } from "../../../lib/reports/model.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { MATERIAL_MAX_BYTES, materialNameProblem } from "../../../lib/cards/limits.ts";
+import { type DraftSourceRow, MATERIAL_LOCKED_MSG, lockedMaterialIds } from "../../../lib/cards/material-lock.ts";
+import { loadWho } from "../../../lib/users/who.ts";
 
 // 카드 전용 자료(card-materials/{cards.uid}/…): 그 카드 안에서만 씀. 권한은 RLS(can_read_card·can_write_card)가 판정합니다.
 
@@ -17,6 +19,10 @@ export interface CardMaterial {
   mimeType: string | null;
   bytes: number | null;
   createdAt: string;
+  /** 올린 사람 이름(읽을 수 없는 프로필은 「다른 사용자」, 기록 없음은 null) */
+  uploadedBy: string | null;
+  /** 지울 수 없는 까닭(확정된 보고서의 근거 자료) — 있으면 목록의 삭제 단추를 끔 */
+  locked: string | null;
   url: string | null;
   /** AI가 읽었는지(참고자료 설계 1단계 — pending은 아직 안 읽음, 요청 때 서버가 읽음) */
   parseStatus: "pending" | "parsed" | "failed";
@@ -32,17 +38,37 @@ async function cardFor(uid: string) {
   return { supabase, card: data };
 }
 
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * 이 카드에서 확정(제출·승인)한 보고서 초안·구성안이 근거로 쓴 자료 id — DB 정책 private.card_material_locked(20261104100000)와 같은 규칙.
+ * 사용자 권한으로 읽음(지울 수 있는 사람은 그 카드 초안과 그 팀 보고서를 읽음). 못 읽어 놓쳐도 DB 정책이 지우기를 막음
+ */
+async function lockedIds(supabase: Supabase, cardId: string): Promise<Set<string>> {
+  const { data: card } = await supabase.from("cards").select("eval_unit_id, team_id").eq("id", cardId).maybeSingle();
+  if (!card?.team_id) return new Set();
+  const [{ data: drafts }, { data: reports }] = await Promise.all([
+    supabase.from("card_report_drafts").select("year, sources:spec->sources, outlineCard:outline->sources->card").eq("card_id", cardId),
+    supabase.from("reports").select("year").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).in("status", ["submitted", "approved"]),
+  ]);
+  return lockedMaterialIds((drafts ?? []) as DraftSourceRow[], new Set((reports ?? []).map((r) => Number(r.year))));
+}
+
 export async function listCardMaterials(uid: string): Promise<{ ok: boolean; items: CardMaterial[]; canEdit: boolean; message?: string }> {
   const me = await requireUser("/cards");
   const { supabase, card } = await cardFor(uid);
   if (!card) return { ok: false, items: [], canEdit: false, message: "카드를 찾을 수 없습니다." };
   const { data } = await supabase
     .from("card_materials")
-    .select("id, file_name, mime_type, bytes, storage_path, created_at, parse_status, parse_error, parsed_chars")
+    .select("id, file_name, mime_type, bytes, storage_path, created_at, uploaded_by, parse_status, parse_error, parsed_chars")
     .eq("card_id", card.id)
     .order("created_at", { ascending: false });
   const rows = data ?? [];
-  const { data: signed } = rows.length ? await supabase.storage.from("card-materials").createSignedUrls(rows.map((r) => r.storage_path), 600) : { data: [] };
+  const [{ data: signed }, who, locked] = await Promise.all([
+    rows.length ? supabase.storage.from("card-materials").createSignedUrls(rows.map((r) => r.storage_path), 600) : Promise.resolve({ data: [] as Array<{ signedUrl: string }> }),
+    loadWho(supabase, rows.map((r) => r.uploaded_by)),
+    rows.length ? lockedIds(supabase, card.id) : Promise.resolve(new Set<string>()),
+  ]);
   const canEdit = me.role !== "dept_user" || (me.team?.id ?? -1) === card.team_id;
   return {
     ok: true,
@@ -53,6 +79,8 @@ export async function listCardMaterials(uid: string): Promise<{ ok: boolean; ite
       mimeType: r.mime_type,
       bytes: r.bytes,
       createdAt: r.created_at,
+      uploadedBy: who(r.uploaded_by),
+      locked: locked.has(String(r.id)) ? MATERIAL_LOCKED_MSG : null,
       url: signed?.[i]?.signedUrl ?? null,
       parseStatus: (r.parse_status ?? "pending") as "pending" | "parsed" | "failed",
       parseError: r.parse_error ?? null,
@@ -108,6 +136,8 @@ export async function deleteCardMaterial(id: string): Promise<{ ok: boolean; mes
   const supabase = await createClient();
   const { data: row } = await supabase.from("card_materials").select("id, card_id, storage_path").eq("id", id).maybeSingle();
   if (!row) return { ok: false, message: "자료를 찾을 수 없습니다." };
+  // 확정된 보고서의 근거 자료는 누구도 못 지움(DB 정책 card_materials_delete도 같은 규칙으로 막음)
+  if ((await lockedIds(supabase, row.card_id)).has(String(row.id))) return { ok: false, message: MATERIAL_LOCKED_MSG };
   const { data, error } = await supabase.from("card_materials").delete().eq("id", id).select("id");
   if (error || !data?.length) return { ok: false, message: "지우지 못했습니다(자기 부서 카드만)." };
   await supabase.storage.from("card-materials").remove([row.storage_path]);

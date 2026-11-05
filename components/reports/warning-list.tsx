@@ -24,7 +24,7 @@ function Items({ list }: { list: GradedWarning[] }) {
 }
 
 /**
- * 초안 경고 목록(과제별 초안 「점검 결과」 탭·사업 조판 검사 레일 공용).
+ * 초안 경고 목록(사업 조판 검사 레일 — 과제별 초안은 2026-11-04부터 「AI 초안」 대화 할 일 「문장 고치기」가 같은 등급으로 묶음, lib/reports/draft-thread.ts).
  * 막힘은 전부, 참고는 막힘과 합쳐 3개까지 보이고 나머지 참고는 「참고 N개 더 보기」로 접음(등급·개수 규칙은 lib/reports/warning-levels.ts)
  */
 export function WarningList({ list, title = "확인할 것", headingClass = "text-xs font-semibold text-muted" }: { list: string[]; title?: string; headingClass?: string }) {

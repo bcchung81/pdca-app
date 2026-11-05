@@ -1,4 +1,4 @@
-// 한글 파일 속 BMP 그림 → PNG·JPEG(작은 쪽): 초기 변환(sips) 규칙과 같게, 무손실 PNG는 픽셀 그대로
+// 한글 파일 속 BMP 그림 → PNG·JPEG(작은 쪽): 초기 변환(sips) 규칙과 같게, 무손실 PNG는 픽셀 그대로. 저장소 한도를 넘는 그림의 흰 바탕 JPEG
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { inflateSync } from "node:zlib";
 import jpeg from "jpeg-js";
 import { parse } from "kordoc";
-import { decodeBmp, decodePng as decodePngLib, encodePng, shrinkPhoto, toWebImage } from "./image.ts";
+import { decodeBmp, decodePng as decodePngLib, encodePng, jpegOnWhite, shrinkPhoto, toWebImage } from "./image.ts";
 import { cardSourceFile } from "../file-names.ts";
 import { NO_SEED_CARDS } from "../../testing/originals.ts";
 
@@ -154,4 +154,30 @@ test("shrinkPhoto(공통 지식 그림): 투명한 곳 없는 큰 PNG는 JPEG로
   assert.equal(shrinkPhoto(clear, "a.png", "image/png").mime, "image/png", "투명한 곳이 있으면 PNG");
   const small = encodePng(photo(20, 20, false), 20, 20, false);
   assert.equal(shrinkPhoto(small, "s.png", "image/png").data, small, "50KB 미만은 그대로");
+});
+
+test("저장소 한도를 넘는 그림 → 흰 바탕 JPEG: 투명한 곳은 흰색, 픽셀 크기 그대로, 품질 90부터 한도 안까지, 못 맞추거나 모르는 형식이면 null", () => {
+  // 왼쪽 절반 투명, 오른쪽 절반 불투명 빨강(48×32)
+  const w = 48;
+  const h = 32;
+  const rgba = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 4;
+      rgba.set(x < w / 2 ? [0, 0, 0, 0] : [220, 20, 20, 255], o);
+    }
+  const png = encodePng(rgba, w, h, true);
+  const out = jpegOnWhite(png, "image_028.png", 1_000_000);
+  assert.ok(out);
+  assert.deepEqual([out.name, out.mime, out.quality], ["image_028.jpg", "image/jpeg", 90]);
+  const back = jpeg.decode(out.data, { useTArray: true });
+  assert.deepEqual([back.width, back.height], [w, h], "픽셀 크기 그대로");
+  const at = (x: number, y: number) => [...back.data.slice((y * w + x) * 4, (y * w + x) * 4 + 3)];
+  assert.ok(at(4, 16).every((v) => v >= 245), `투명 → 흰색 ${at(4, 16)}`);
+  assert.ok(at(40, 16)[0] > 180 && at(40, 16)[1] < 80, `불투명 빨강은 그대로 ${at(40, 16)}`);
+  const q90 = out.data.byteLength;
+  const lower = jpegOnWhite(png, "a.png", q90 - 1);
+  assert.ok(lower && lower.quality < 90 && lower.data.byteLength <= q90 - 1, "한도에 들 때까지 품질을 낮춤");
+  assert.equal(jpegOnWhite(png, "a.png", 10), null, "가장 낮은 품질로도 넘으면 null");
+  assert.equal(jpegOnWhite(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0]), "a.gif", 1_000_000), null, "풀 수 없는 형식");
 });

@@ -1,4 +1,4 @@
-// 경평 초안 「짜임 사전」(순수): 2025 최종본·주요사업 프레임워크 분석에서 뽑은 이야기 틀 12종 + 섞음(resources/prompts/report-draft/stories.md)과
+// 경평 초안 「짜임 사전」(순수): 2025 최종본·주요사업 프레임워크 분석에서 뽑은 이야기 틀 16종(⑬~⑯은 2026-11-04) + 섞음(resources/prompts/report-draft/stories.md)과
 // 도식(블록 모양) 30가지(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 2026-10-13)(블록 사전 report-draft/blocks.md · 도식 카탈로그 docs/analysis/diagram-catalog-2025.html — 전략체계도·PDCA 순환은 2026-10-09)를
 // 담당자가 구성안에서 골라 쓰게 한 데이터(2026-09-28 사용자 결정 「분석한 프레임워크 중 선택 · AI 추천 도식을 골라 수정」).
 // 쓰는 곳: 구성안 화면의 틀 갤러리·블록 도식 고르기(견본 그림은 서버가 lib/reports/section-html.ts로 그림), 서버의 편집 검증(칸 범위·근거 조건).
@@ -20,7 +20,7 @@ export interface FrameworkBlock {
 
 export interface Framework {
   story: Story;
-  /** 틀 번호(①~⑫, 섞음은 빈 글) */
+  /** 틀 번호(①~⑯, 섞음은 빈 글) */
   no: string;
   /** 어울리는 과제 한 줄 */
   fit: string;
@@ -116,6 +116,35 @@ export const FRAMEWORKS: Framework[] = [
     fit: "AI·자동화로 업무 절차를 바꾼 과제 — 기존 절차 → 전환 → 사람·AI 역할 분담 → 단축 성과",
     blocks: [{ kind: "cards", variant: "arrow", label: "전환 배경" }, { kind: "compare", variant: "panels", label: "기존→AI 전환" }, { kind: "table", label: "역할 분담" }, { kind: "steps", variant: "row", label: "확산" }],
     example: "타기관 2025 — 한국지능정보사회진흥원 지능화 확산(B+)·KEIT R&D시스템(B0)",
+  },
+  // ⑬~⑯은 2026-11-04 사용자 승인으로 더함 — KCA 2025 최종본에서 확인한 예시 소항목이 없어 예시는 「2025 예시 없음」
+  {
+    story: "시범→확산형",
+    no: "⑬",
+    fit: "시범 운영 성과를 지침·시스템으로 표준화해 전국에 넓히고 정착시킨 과제(①은 기술을 연구→개발해 온 경과, 이 틀은 이미 검증한 방식을 넓힌 범위·지역)",
+    blocks: [{ kind: "cards", variant: "arrow", label: "시범 성과" }, { kind: "steps", variant: "row", label: "확산 단계" }, { kind: "table", label: "지역별 실적" }, { kind: "compare", variant: "panels", label: "확산 전후" }],
+    example: "2025 예시 없음(2026-11-04 추가)",
+  },
+  {
+    story: "환류 개선형",
+    no: "⑭",
+    fit: "전년 평가·점검 결과를 받아 개선 계획 → 실행 → 재점검 → 재개선으로 돌린 과제(⑨는 한 번 바꾼 전후, 이 틀은 점검 결과가 다음 개선으로 돌아가는 순환)",
+    blocks: [{ kind: "cards", variant: "plain", label: "개선 과제" }, { kind: "pdca", label: "개선 순환" }, { kind: "compare", variant: "panels", label: "개선 전후" }, { kind: "table", label: "점검 결과" }],
+    example: "2025 예시 없음(2026-11-04 추가)",
+  },
+  {
+    story: "위험관리·안전형",
+    no: "⑮",
+    fit: "위험 요인을 진단해 예방 조치·상시 점검으로 사고·피해를 줄인 과제 — 위험 진단 → 예방 → 점검 → 무사고·저감 성과",
+    blocks: [{ kind: "cards", variant: "plus", label: "위험 요인" }, { kind: "steps", variant: "row", label: "예방 조치" }, { kind: "table", label: "상시 점검" }, { kind: "compare", variant: "table", label: "저감 성과" }],
+    example: "2025 예시 없음(2026-11-04 추가)",
+  },
+  {
+    story: "데이터 기반 의사결정형",
+    no: "⑯",
+    fit: "데이터를 모아 분석한 결과를 정책·기준·배분 결정에 반영한 과제(⑪은 현장 문제를 조사해 맞춤 대응, 이 틀은 쌓은 데이터가 의사결정을 바꾼 경로)",
+    blocks: [{ kind: "cards", variant: "plain", label: "데이터 현황" }, { kind: "table", label: "분석 결과" }, { kind: "steps", variant: "row", label: "정책 반영" }, { kind: "compare", variant: "table", label: "반영 효과" }],
+    example: "2025 예시 없음(2026-11-04 추가)",
   },
   // 섞음을 고르면 AI가 주 틀 하나 + 보조 틀 하나를 고름(2026-10-09 — 구성안 답에는 섞음이 없음, report-outline/request.md story.mix)
   { story: "섞음", no: "", fit: "두 틀을 함께 — AI가 뼈대 틀 하나와 한 행만 빌려 올 보조 틀 하나를 고름", blocks: [], example: "" },

@@ -354,7 +354,18 @@ export function AiAssist(props: {
         {props.tabs ?? <h3 className="flex min-w-0 items-center font-serif text-base font-bold text-navy">AI 작성지원</h3>}
         <div className="flex shrink-0 items-center gap-1.5 self-center">
           {turns.length > 0 && (
-            <DropMenu label={<Ellipsis size={18} aria-hidden="true" />} ariaLabel="더보기" title="내려받기·기록 지우기" width={176} buttonClass="flex size-8 items-center justify-center rounded-md text-muted-2 hover:bg-thead hover:text-navy">
+            <DropMenu
+              label={
+                <>
+                  <Ellipsis size={18} aria-hidden="true" />
+                  <span className="text-xs font-medium max-md:hidden">기록</span>
+                </>
+              }
+              ariaLabel="기록"
+              title="기록 — 내려받기·지우기"
+              width={176}
+              buttonClass="flex h-8 items-center justify-center gap-1 rounded-md px-1.5 text-muted-2 hover:bg-thead hover:text-navy max-md:size-8 max-md:px-0"
+            >
               {(close) => (
                 <>
                   <button type="button" role="menuitem" onClick={() => { download(); close(); }} title="이 대화를 마크다운 문서로 내려받기" className="px-3 py-1.5 text-left text-xs text-ink hover:bg-thead">

@@ -310,6 +310,8 @@ export const T = {
   btnQuiet: "flex shrink-0 items-center gap-1 rounded-md px-1 text-xs font-medium whitespace-nowrap text-link no-underline hover:underline disabled:cursor-not-allowed disabled:text-muted disabled:no-underline",
   /** 아이콘만 있는 단추 32×32 — 모양만, 줄·글자 색은 쓰는 곳이 더함(켜짐 border-navy text-navy 등). aria-label·title 필수 */
   iconBtn: `flex size-8 shrink-0 items-center justify-center rounded-md border no-underline max-md:size-10 ${OFF}`,
+  /** 아이콘 + 한글 이름 단추 32px — 글자는 `<span className={T.deskOnly}>`로 감싸 휴대폰 폭에서는 아이콘만(size-10). 보이는 글자는 aria-label에 들어 있어야 함(label-in-name) */
+  iconLabelBtn: `flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs font-medium whitespace-nowrap no-underline max-md:size-10 max-md:px-0 ${OFF}`,
   /** 모양을 따로 둔 단추(둥근 칩·큰 로그인 단추 등)의 끈 상태 */
   off: OFF,
   /** 휴대폰 폭(md 미만)에서 숨김 — 일괄 처리·내려받기·올리기·설정성 단추. 단추 자신의 className 끝에 붙임(데스크톱은 그대로) */

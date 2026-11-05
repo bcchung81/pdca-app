@@ -5,16 +5,14 @@ import { requireUser } from "../../../../../lib/auth/dal.ts";
 import { deptScope } from "../../../../../lib/auth/scope.ts";
 import { currentPeriod } from "../../../../../lib/cards/view.ts";
 import { isMgmtCard } from "../../../../../lib/cards/mgmt-card.ts";
-import { fmtDateTime } from "../../../../../lib/format.ts";
 import { returnTarget, safeReturn, withReturn } from "../../../../../lib/nav/return-to.ts";
 import { blockShapeCode, shapeMenu, shapeRules } from "../../../../../lib/reports/block-shape.ts";
 import { planMatch, readComposition } from "../../../../../lib/reports/composition.ts";
 import { LENS_LABEL } from "../../../../../lib/reports/lens.ts";
 import { readSection } from "../../../../../lib/reports/section.ts";
 import { createClient } from "../../../../../lib/supabase/server.ts";
-import { cardCommentsOf, cardRefs, checkNeedsOf, draftMetaOf, menuOf, neighborsOf, outlineDataOf, priorChoices, sourceFilesOf, usedOf } from "./derive.ts";
+import { cardCommentsOf, cardRefs, checkNeedsOf, menuOf, neighborsOf, outlineDataOf, priorChoices, sourceFilesOf, threadOf, usedOf } from "./derive.ts";
 import { loadCard, loadReportCardData } from "./load.ts";
-import { ReportCheck } from "./report-card-check";
 import { ReportCardPreview } from "./report-card-preview";
 import { ReportFontNotice } from "../../../../../components/reports/report-font-status";
 import { ReportToolbar, ReportToolbarEnd } from "./report-card-toolbar";
@@ -27,11 +25,11 @@ export const maxDuration = 800;
  * 경평 초안 · 과제별 초안(카드 1장 → 평가내용2 소항목). 한 해 동안 고친 과제관리카드(원장)와 고른 첨부 자료(카드 전용 자료·그 보고서
  * 추가자료)로 2025년도 경영실적보고서 최종본 양식의 소항목 초안을 만들고 봅니다. 원장 편집·AI 작성지원 같은 원장 기능은 두지 않습니다.
  * 그 카드를 볼 수 있는 사람은 보고(RLS), 고칠 수 있는 사람(부서는 자기 부서 카드)은 만듭니다.
- * 화면은 과제원장 전체 페이지와 같은 짜임(늘 전체 보기 — 좌측 메뉴 없음): 머리 한 줄 → 왼쪽 도구줄 + 보고서 미리보기, 오른쪽 「AI 초안 | 점검 결과」 탭과
- * 머리 폴더 단추로 바꿔 여는 「근거 자료」(components/reports/draft-workspace.tsx).
+ * 화면은 과제원장 전체 페이지와 같은 짜임(늘 전체 보기 — 좌측 메뉴 없음): 머리 한 줄 → 왼쪽 도구줄 + 보고서 미리보기, 오른쪽 「AI 초안」 대화(요청 → 짧은 답,
+ * 2026-11-04)와 머리 폴더 단추로 바꿔 여는 「근거 자료」·답의 「구성안 고치기」로 여는 구성안 편집(components/reports/draft-workspace.tsx).
  * ?from은 연 목록으로 돌아갈 주소(머리 오른쪽 위 목록 아이콘) — 앞뒤 과제(‹ ›)는 같은 from을 이어받고, 다른 화면으로 가는 더보기 메뉴는 이 화면 주소로 되돌아옵니다.
  * 성과관리팀·관리자가 ?team=으로 오면 부서 화면 보기(읽기 전용 — 부서 경평 초안 /my/report?team=에서 들어옴): 팀을 못 찾아도 읽기 전용으로 둡니다.
- * 조회는 load.ts, 파생 값은 derive.ts, 도구줄·점검 결과·미리보기는 report-card-*.tsx에 있고 이 파일은 권한·부서 화면 보기 판단과 조립만 합니다.
+ * 조회는 load.ts, 파생 값은 derive.ts(대화 차례·할 일은 lib/reports/draft-thread.ts), 도구줄·미리보기는 report-card-*.tsx에 있고 이 파일은 권한·부서 화면 보기 판단과 조립만 합니다.
  */
 export default async function ReportCardPage({ params, searchParams }: PageProps<"/reports/cards/[uid]">) {
   const { uid } = await params;
@@ -55,7 +53,7 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
   // 경영관리 카드(2026-10-09 R3): 평가내용 → 대주제 → 절 — 구성안부터(바로 만들기 없음), 판면 어림·사업 조판 없음, 전년 절은 구성안이 평가내용으로 고름
   const mg = isMgmtCard(card.data);
   const year = Number(currentPeriod().slice(0, 4));
-  const { draft, report, matRows, sibs, outlineSort, locked, priorSections, lens, inspectionLabel, signed, reportMats, comments } = await loadReportCardData(supabase, card, { year, staff, staffView });
+  const { draft, report, matRows, sibs, outlineSort, locked, priorSections, lens, inspectionLabel, signed, reportMats, comments, edits } = await loadReportCardData(supabase, card, { year, staff, staffView });
   const prior = priorChoices(card.data, priorSections);
   const { cardFiles, reportFiles } = sourceFilesOf({ matRows, signed, report, reportMats }, card.id);
 
@@ -78,10 +76,10 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
   const group = mg ? (unit?.name ?? card.eval_unit_id) : (unit?.card_group ?? card.eval_unit_id);
   const menu = menuOf({ uid, teamQs, selfHref: `/reports/cards/${uid}${teamQs}`, reportId: report?.id ?? null, staffView, mg, evalUnitId: card.eval_unit_id, hasSpec: Boolean(spec), version: draft?.updated_at ? String(draft.updated_at) : null, module: spec?.module ?? 1 });
 
-  // 「점검 결과」 탭의 채울 자료 건수가 작업 공간 탭 표지에도 쓰임
+  // 오른쪽 「AI 초안」 대화: 저장된 구성안·초안·블록 고치기 이력으로 차례, 예전 점검 결과(채울 자료·확인할 것)는 마지막 답의 할 일 하나로(2026-11-04)
   const needs = checkNeedsOf(spec, card.data);
-  const needCount = needs.draftNeeds.length + needs.kpiNeeds.length + needs.figureNeeds.length;
-  const checkCount = needCount + warnings.length;
+  const outline = outlineDataOf(composition, draft, spec, outlineModule, card.data);
+  const thread = threadOf({ uid, composition, outline, draft, spec, stale, edits, needs, warnings, comments: cardCommentsOf(comments, uid), year, locked, staff, deptView, teamQs, report });
   // 올해 계량 실적은 카드 원장에서 읽음 — 결손 지표는 카드 화면(AI 작성지원 「실적 반영」)으로 보냄(2026-11-02)
   const cardHref = withReturn(`/cards/${uid}${teamQs}`, `/reports/cards/${uid}${teamQs}`);
 
@@ -101,8 +99,9 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
       canWrite={canWrite}
       locked={locked}
       hasSpec={Boolean(spec)}
-      draftInfo={spec ? `${draft?.model ?? "AI"} · ${fmtDateTime(draft?.updated_at)}` : null}
-      draftMeta={draftMetaOf({ uid, spec, draft, hasOutline: Boolean(composition), stale, need: needCount, warn: warnings.length, staff, deptView, teamQs, report })}
+      thread={thread}
+      cardHref={cardHref}
+      admin={me.role === "admin"}
       toolbar={
         <>
           <ReportFontNotice />
@@ -111,12 +110,10 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
       }
       toolbarEnd={<ReportToolbarEnd uid={uid} spec={spec} canWrite={canWrite} />}
       preview={<ReportCardPreview spec={spec} unknown={unknown} weak={needs.weakSentences} canWrite={canWrite} hasOutline={Boolean(composition)} />}
-      outline={outlineDataOf(composition, draft, spec, outlineModule, card.data)}
+      outline={outline}
       match={composition ? planMatch(composition, spec?.blocks ?? []) : []}
       // 처음 볼 판(2026-09-28 사용자 요구): 초안이 있으면 늘 초안, 초안 없이 구성안만 있으면 구성안 판면
       defaultView={spec ? "draft" : composition ? "outline" : "draft"}
-      check={<ReportCheck spec={spec} needs={needs} cardComments={cardCommentsOf(comments, uid)} warnings={warnings} year={year} cardHref={cardHref} />}
-      checkCount={checkCount}
       version={spec && spec.version === 3 && spec.blocks?.length && draft?.updated_at ? String(draft.updated_at) : null}
       humanEdits={spec?.humanEdits ?? []}
       mg={mg}

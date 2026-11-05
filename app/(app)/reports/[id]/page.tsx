@@ -101,8 +101,9 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
           )}
           {deptView && <span className="shrink-0 text-xs text-muted">부서 화면 보기 · 읽기 전용</span>}
           {!deptView && <ReportStatusButtons id={report.id} status={report.status} staff={staff} readiness={{ ready: teamReadiness.ready, total: teamReadiness.total, drafted: teamReadiness.drafted, missing: teamReadiness.missing.map(missingLabel), checks: teamReadiness.checks }} />}
-          <Link href={target.href} aria-label={`목록으로 — ${target.label}`} title={`목록으로 — ${target.label}`} className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}>
+          <Link href={target.href} aria-label={`목록으로 — ${target.label}`} title={`목록으로 — ${target.label}`} className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}>
             <List size={16} aria-hidden />
+            <span className={T.deskOnly}>목록</span>
           </Link>
         </div>
       </div>

@@ -10,6 +10,9 @@
 //
 // 필요한 환경변수(.env.local): NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SECRET_KEY
 // 사람이 확정한 연결(card_knowledge_scope, task_map의 confirmed·rejected)은 덮어쓰지 않습니다.
+// 카드는 seed 판(CARD_EDITION — 9.16)입니다. 원장 카드의 판이 다르면(새 판으로 다시 채운 원장 — 같은 id라도 다른 과제일 수 있음)
+//  · 전체 적재는 그 카드를 9.16판으로 덮지 않고 멈추고,
+//  · 공통 지식의 9.16 카드 연결(card_knowledge_scope 규칙 행·task_map)은 원장에 같은 판으로 있는 카드에만 씁니다(없는 id·다른 판은 건너뜀).
 
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
@@ -92,6 +95,10 @@ async function main() {
   else await seedCards();
 
   async function seedCards() {
+    const ledger = check("cards edition", await db.from("cards").select("id, edition").range(0, 9999));
+    const seedIds = new Set(rows.cards.map((c) => c.id));
+    const other = ledger.filter((c) => seedIds.has(c.id as string) && c.edition !== seed.edition);
+    if (other.length) throw new Error(`원장에 ${seed.edition}판이 아닌 같은 id 카드 ${other.length}장(${[...new Set(other.map((c) => c.edition))].join(", ")}판)이 있어 전체 적재를 멈춥니다 — 9.16판으로 덮어쓰지 않음(공통 지식만은 --knowledge-only)`);
     await upsert("teams", rows.teams, "name");
     const teamIds = new Map(
       check("teams select", await db.from("teams").select("id, name")).map(
@@ -187,6 +194,13 @@ async function main() {
   };
   await saveDocumentsAndChunks(db, rows.documents, rows.chunks as unknown as Array<Record<string, unknown>>, { prune: args.has("--prune"), beforeChunks: uploadImages, log: (m) => console.log(`  ${m}`) });
 
+  // 9.16 카드에서 만든 연결은 원장에 같은 판(seed.edition)으로 있는 카드에만 — 새 판 원장의 같은 id(다른 과제일 수 있음)·없는 id(외래 키 오류)는 건너뜀
+  const sameEdition = new Set(check("cards edition", await db.from("cards").select("id").eq("edition", seed.edition).range(0, 9999)).map((c) => c.id as string));
+  const linkScope = rows.scope.filter((l) => sameEdition.has(l.card_id as string));
+  const linkTasks = rows.taskMap.filter((r) => sameEdition.has(r.card_id as string));
+  if (linkScope.length < rows.scope.length || linkTasks.length < rows.taskMap.length)
+    console.log(`  ${seed.edition}판 카드 연결 건너뜀(원장에 같은 판 카드 없음): 과제 대응표 규칙 행 ${rows.scope.length - linkScope.length}/${rows.scope.length} · 과제 대응 ${rows.taskMap.length - linkTasks.length}/${rows.taskMap.length}`);
+
   // 사람이 정한 연결(확정·뺌)은 그대로 둡니다. 과제 대응표는 (과제, 조각) 단위입니다.
   const decided = check(
     "scope status",
@@ -198,7 +212,7 @@ async function main() {
   const decidedKeys = new Set(decided.map((r) => `${r.card_id}|${r.chunk_key}`));
   await upsert(
     "card_knowledge_scope",
-    rows.scope.filter((l) => !decidedKeys.has(`${l.card_id}|${l.chunk_key}`)),
+    linkScope.filter((l) => !decidedKeys.has(`${l.card_id}|${l.chunk_key}`)),
     "card_id,chunk_key",
   );
   const confirmedTasks = new Set(
@@ -209,7 +223,7 @@ async function main() {
   );
   await upsert(
     "task_map",
-    rows.taskMap.filter((r) => !confirmedTasks.has(r.card_id as string)),
+    linkTasks.filter((r) => !confirmedTasks.has(r.card_id as string)),
     "card_id",
   );
 

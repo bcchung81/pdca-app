@@ -64,7 +64,10 @@ export interface IngestOutput {
   orphanTasks: TaskLite[];
 }
 
-/** 카드 지적 연결 회귀 표본(분석 §5-4 시험 결과) */
+/**
+ * 카드 지적 연결 회귀 표본(분석 §5-4 시험 결과). id는 runIngest에 넣는 카드(scripts/knowledge/ingest.ts — seed/cards/260916, 9.16판) 기준이라
+ * 운영 원장과 무관 — 이 연결을 운영에 쓰는 db:seed는 원장에 같은 판으로 있는 카드에만 씀(scripts/db/seed.ts)
+ */
 export const LINK_REGRESSION: Array<{ card: string; expect: string | null; minScore: number }> = [
   { card: "주요사업1/1-가", expect: "mid25-biz/BZ-1/03", minScore: 0.6 },
   { card: "주요사업1/2-가", expect: null, minScore: 0.9 },

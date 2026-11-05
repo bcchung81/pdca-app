@@ -94,8 +94,8 @@ export function useDraftSelection(p: SourceProps): DraftSelection {
   return { card, report, count: card.length + report.length, off, toggle, priorKeys, setPriorKeys };
 }
 
-/** 넣을 근거 한 줄(요청 칸·근거 자료 패널 공용) */
-export const selectionLine = (sel: DraftSelection, lens: number) => `카드 · 첨부 ${sel.count}건${sel.priorKeys.length ? ` · 전년 절 ${sel.priorKeys.length}` : ""}${lens ? ` · 평가 근거 ${lens}` : ""}`;
+/** 넣을 근거 한 줄(요청 칸·근거 자료 패널 공용) — 사람이 고른 것만(자동으로 고르는 평가 근거 조각 수는 근거 자료 패널에만, 2026-11-04) */
+export const selectionLine = (sel: DraftSelection) => `카드 · 첨부 ${sel.count}건${sel.priorKeys.length ? ` · 전년 절 ${sel.priorKeys.length}` : ""}`;
 
 /**
  * 경평 초안 과제별 초안 오른쪽 자리의 「근거 자료」 패널(과제원장 「자료」처럼 머리의 폴더 단추로 바꿔 열고 ✕·Esc로 탭에 돌아감):

@@ -84,8 +84,10 @@ export default async function ImportReviewPage({ params, searchParams }: PagePro
   const ids = [...new Set(items.flatMap((i) => [i.card_id, ...((i.candidates as string[]) ?? [])]).filter(Boolean))] as string[];
   const [{ data: cards }, { data: signed }] = await Promise.all([
     ids.length ? supabase.from("cards").select("id, uid, task_no, title, data, fixed_locked_at, status").in("id", ids) : Promise.resolve({ data: [] as ReviewCardRow[] }),
-    files.length ? supabase.storage.from("card-imports").createSignedUrls(files.map((f) => f.path), 600) : Promise.resolve({ data: [] as Array<{ signedUrl: string }> }),
+    // 원본을 지운 파일(deleteImportOriginals — path 빈 글)은 서명하지 않음
+    files.some((f) => f.path) ? supabase.storage.from("card-imports").createSignedUrls(files.filter((f) => f.path).map((f) => f.path), 600) : Promise.resolve({ data: [] as Array<{ path: string | null; signedUrl: string }> }),
   ]);
+  const signedOf = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
   const byId = new Map(((cards ?? []) as ReviewCardRow[]).map((c) => [c.id, c]));
   const fileName = (n: number) => files.find((f) => f.n === n)?.name ?? `파일 ${n}`;
 
@@ -175,8 +177,9 @@ export default async function ImportReviewPage({ params, searchParams }: PagePro
       peek={peek}
       header={
         <PageHeader title="현행화 검토">
-          <Link href="/cards/import" aria-label="목록으로 — 카드 현행화" title="목록으로 — 카드 현행화" className={`${T.iconBtn} border-field-line text-ink hover:border-navy`}>
+          <Link href="/cards/import" aria-label="목록으로 — 카드 현행화" title="목록으로 — 카드 현행화" className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}>
             <List size={16} aria-hidden />
+            <span className={T.deskOnly}>목록</span>
           </Link>
           <ApplySafeButton importId={id} safe={safe} same={same} />
         </PageHeader>
@@ -197,16 +200,17 @@ export default async function ImportReviewPage({ params, searchParams }: PagePro
 
       <Panel title="올린 파일">
         <ul className="flex flex-col">
-          {files.map((f, i) => (
+          {files.map((f) => (
             <li key={f.n} className="flex min-w-0 items-center gap-3 border-b border-row-line px-5 py-2.5 text-ui last:border-b-0">
               <span className="w-12 shrink-0 font-mono text-xs text-muted uppercase">{f.type}</span>
-              {signed?.[i]?.signedUrl ? (
-                <a href={signed[i].signedUrl} className="min-w-0 truncate text-link" title={`${f.name} 원본 받기`}>
+              {f.path && signedOf.get(f.path) ? (
+                <a href={signedOf.get(f.path) ?? undefined} className="min-w-0 truncate text-link" title={`${f.name} 원본 받기`}>
                   {f.name}
                 </a>
               ) : (
                 <span className="min-w-0 truncate">{f.name}</span>
               )}
+              {f.removedAt && <span className="shrink-0 text-xs text-muted-2">원본 삭제됨 · {fmtDateTime(f.removedAt)}</span>}
               <span className="shrink-0 font-mono text-xs text-muted">{size(f.bytes)}</span>
               {f.group && <Tag>{f.group}</Tag>}
               {f.error ? (

@@ -276,3 +276,36 @@ export function shrinkPhoto(data: Uint8Array, name: string, mime?: string): WebI
   const jpg = new Uint8Array(jpeg.encode({ data: Buffer.from(img.rgba), width: img.width, height: img.height }, PHOTO_QUALITY).data);
   return jpg.byteLength < web.data.byteLength ? { data: jpg, name: web.name.replace(/\.[^.]+$/, ".jpg"), mime: "image/jpeg" } : web;
 }
+
+/** 흰 바탕 JPEG 품질 단계(높은 것부터) */
+const ON_WHITE_QUALITIES = [90, 85, 80, 75, 70, 60, 50];
+
+/**
+ * 저장소 한도를 넘는 그림 → 흰 바탕 JPEG(카드 적재 스크립트, 2026-11-05 사용자 결정 — 한도를 넘는 그림에만): 투명한 곳은 흰색으로 평탄화하고
+ * 픽셀 크기는 그대로, 품질 90부터 maxBytes 안에 들 때까지 낮춤. 풀 수 없는 형식(BMP·PNG·JPEG 밖)이거나 가장 낮은 품질로도 넘으면 null
+ */
+export function jpegOnWhite(data: Uint8Array, name: string, maxBytes: number): (WebImage & { quality: number }) | null {
+  let img: { width: number; height: number; rgba: Uint8Array } | null = isBmp(data) ? decodeBmp(data) : decodePng(data);
+  if (!img && data[0] === 0xff && data[1] === 0xd8) {
+    try {
+      const d = jpeg.decode(data, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 2048, maxResolutionInMP: 400 });
+      img = { width: d.width, height: d.height, rgba: d.data };
+    } catch {
+      img = null;
+    }
+  }
+  if (!img) return null;
+  const px = Buffer.from(img.rgba);
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3];
+    if (a === 255) continue;
+    for (let k = 0; k < 3; k++) px[i + k] = Math.round((px[i + k] * a + 255 * (255 - a)) / 255);
+    px[i + 3] = 255;
+  }
+  const stem = name.replace(/\.[^.]+$/, "");
+  for (const quality of ON_WHITE_QUALITIES) {
+    const out = new Uint8Array(jpeg.encode({ data: px, width: img.width, height: img.height }, quality).data);
+    if (out.byteLength <= maxBytes) return { data: out, name: `${stem}.jpg`, mime: "image/jpeg", quality };
+  }
+  return null;
+}

@@ -2,7 +2,7 @@ import "server-only";
 
 import { parse } from "kordoc";
 import { toWebImage } from "./image.ts";
-import { type ParsedGroup, parseCardMarkdown } from "./parse.ts";
+import { type ParsedGroup, parseCardGroups } from "./parse.ts";
 import { looksLikeMgmtFile, parseMgmtMarkdown } from "./parse-mgmt.ts";
 import type { LooseJson } from "../../loose-json.ts";
 
@@ -64,10 +64,11 @@ export async function readCardFile(bytes: Uint8Array, fileName: string): Promise
     cards = r.cards;
     ignored = r.skipped;
   } else {
-    const r = parseCardMarkdown(res.markdown, { sourceName: fileName, fileType: res.fileType });
-    group = r.group;
-    cards = r.cards;
-    ignored = r.ignored.length;
+    // 주요사업 묶음 여럿을 합친 파일도: 카드마다 자기 묶음(card.group — parseCardGroups). group은 첫 묶음
+    const rs = parseCardGroups(res.markdown, { sourceName: fileName, fileType: res.fileType });
+    group = rs[0].group;
+    cards = rs.flatMap((r) => r.cards);
+    ignored = rs.reduce((n, r) => n + r.ignored.length, 0);
   }
   if (!cards.length) throw new CardFileError("파일에서 과제관리카드 표(「과제명 (과제번호)」 행)를 찾지 못했습니다. 카드 양식 그대로인지 확인해 주세요.");
   const used = new Set(cards.flatMap(imageNames));
