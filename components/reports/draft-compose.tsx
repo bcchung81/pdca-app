@@ -185,8 +185,6 @@ export function DraftCompose(props: {
   }
   // 끝난 요청은 서버 기록이 바뀌면(새 차례) 지움 — 그 전까지는 말풍선을 남겨 깜박이지 않게
   if (live?.state === "done" && live.sig !== sig) setLive(null);
-  // 자료 반영 고치기로 쓴 초안(서버 기록에는 「구성안대로 집필」로 남음 — 쓴 종류를 저장하지 않음): 이 화면에서 막 보낸 것이면 그 이름으로(보낼 때의 차례 열쇠)
-  const [revised, setRevised] = useState<string | null>(null);
 
   // 이 카드의 경평 초안 작업(서버 기록 — 어느 화면·어느 PC에서 시작했든, components/workspace/ai-jobs.ts). 이 화면에서 지금 보낸 요청(live)이 없을 때
   // 진행 중이면 진행 차례로, 다른 화면에 가 있는 동안 실패했으면 그 이유를, 여러 안이 다 됐으면 「여러 안 보기」를 보임(한 번 본 것은 다시 안 띄움)
@@ -248,11 +246,12 @@ export function DraftCompose(props: {
 
   // 스크롤(과제원장 AI 작성지원과 같음): 요청을 보내면 맨 아래(말풍선 + 진행 줄), 끝나 새 차례가 오면 마지막 답의 첫머리, 창을 열면 마지막 답의 첫머리.
   // 숨은 동안(다른 패널·닫힌 시트)에는 자리를 기억했다가 보일 때 옮김(scrollWithin이 숨은 상자에서는 false)
+  // 서버 기록의 작업(serverJob)도 맨 아래로: 새로 고침·주소로 돌아오면 작업 목록이 화면보다 늦게 와서 진행 줄이 나중에 붙음
   const boxRef = useRef<HTMLDivElement>(null);
   const focus = useRef<"end" | "last" | null>("last");
-  const liveKey = live ? `${live.id}:${live.state}` : "";
+  const liveKey = live ? `${live.id}:${live.state}` : serverJob ? `job:${serverJob.id}:${serverJob.state}` : "";
   useEffect(() => {
-    focus.current = live && live.state !== "done" ? "end" : "last";
+    focus.current = (live && live.state !== "done") || serverJob ? "end" : "last";
     // 차례·요청 상태가 바뀔 때만(그 사이 글·메모가 바뀔 때는 움직이지 않음)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, liveKey]);
@@ -320,7 +319,6 @@ export function DraftCompose(props: {
     const me: Live = { id, kind: m, label: label(m), lines: [request, m === "outline" && frame && !isEmptyFrame(frame) ? `짜임: ${frameLabel(frame)}` : "", files ? `첨부 ${files}건` : ""].filter(Boolean), at: nowMs(), sig, state: "run", own: true };
     setLive(me);
     setSentRequest(Boolean(request));
-    setRevised(null);
     props.setBusy(m);
     // 앞서 보인 실패·여러 안 알림은 새 요청으로 대신함
     if (latestJob && latestJob.state !== "running") markAiJobSeen(latestJob.id);
@@ -333,7 +331,6 @@ export function DraftCompose(props: {
       if (r.ok) {
         if (own) setMemo("");
         if (m === "outline") setFrame(null);
-        if (m === "revise") setRevised(sig);
         router.refresh();
       }
     } catch {
@@ -415,8 +412,6 @@ export function DraftCompose(props: {
       )}
     </div>
   );
-  // 자료 반영 고치기로 막 쓴 초안: 서버 기록이 바뀐 뒤의 마지막 초안 차례만 이름을 바꿈
-  const revisedKey = revised !== null && revised !== sig ? thread.turns.findLast((t) => t.kind === "draft")?.key : undefined;
   const lastOutlineKey = thread.turns.findLast((t) => t.kind === "outline")?.key;
 
   return (
@@ -464,7 +459,6 @@ export function DraftCompose(props: {
                 <TurnView
                   key={t.key}
                   turn={t}
-                  askOverride={t.key === revisedKey ? { ask: "자료 반영 고치기", headline: "자료를 반영해 다시 썼어요(왼쪽 종이)" } : null}
                   state={i === thread.turns.length - 1 ? state : undefined}
                   onGotoBlock={props.onGotoBlock}
                   onOpenOutline={props.onOpenOutline}

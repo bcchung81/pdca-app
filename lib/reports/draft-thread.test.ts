@@ -162,3 +162,11 @@ test("threadStatus: 머리 한 줄", () => {
   assert.equal(threadStatus({ ...base, hasDraft: true, stale: true }), "원장이 바뀜 · 다시 쓰기 권장");
   assert.equal(threadStatus({ ...base, hasDraft: true, locked: true }), "확정한 보고서 · 읽기만");
 });
+
+test("draftThread: 자료 반영 고치기로 쓴 초안은 저장된 revise로 이름이 바뀜", () => {
+  const find = (d: ThreadDraftIn) => draftThread({ outline: null, draft: d, edits: [] }).find((t) => t.kind === "draft");
+  const a = find(draft({ plan: true, revise: true }));
+  assert.equal(a?.ask, "자료 반영 고치기");
+  assert.equal(a?.headline, "자료를 반영해 다시 썼어요(왼쪽 종이)");
+  assert.equal(find(draft({ plan: true }))?.ask, "구성안대로 집필");
+});

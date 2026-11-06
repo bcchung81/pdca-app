@@ -56,6 +56,8 @@ export interface ThreadDraftIn {
   updatedAt: string | null;
   /** 구성안대로 쓴 초안(spec.plan) */
   plan: boolean;
+  /** 자료 반영 고치기로 쓴 초안(spec.plan.revise) */
+  revise?: boolean;
   fit: { total: number; budget: number } | null;
   module: number;
   /** 초안을 만든 뒤 원장이 바뀜 */
@@ -188,9 +190,9 @@ export function draftThread(i: { outline: ThreadOutlineIn | null; draft: ThreadD
           kind: "draft",
           key: `d${d.updatedAt ?? ""}`,
           at: draftAt ?? d.updatedAt,
-          ask: d.plan ? "구성안대로 집필" : "바로 만들기",
+          ask: d.revise ? "자료 반영 고치기" : d.plan ? "구성안대로 집필" : "바로 만들기",
           askLines: [],
-          headline: d.plan ? "초안을 썼어요(왼쪽 종이)" : "구성안 없이 초안을 썼어요(왼쪽 종이)",
+          headline: d.revise ? "자료를 반영해 다시 썼어요(왼쪽 종이)" : d.plan ? "초안을 썼어요(왼쪽 종이)" : "구성안 없이 초안을 썼어요(왼쪽 종이)",
           plan: d.plan,
           fit: fitWord(d.fit, d.module),
           stale: d.stale,

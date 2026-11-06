@@ -13,17 +13,15 @@ import { FIT_TAG } from "../ui/status-tone.ts";
  * 모양은 과제원장 「AI 작성지원」(components/cards/ai-assist.tsx)과 같음: 오른쪽 말풍선(요청 종류 · 아래 줄) → AI 동그라미 + 답.
  * 마지막 차례에만 할 일(「채울 자료 N건 ▸」)과 다음 단추가 붙음(state — 부르는 쪽이 그림).
  */
-export function TurnView(props: { turn: ThreadTurn; askOverride?: { ask: string; headline: string } | null; state?: ReactNode; onGotoBlock: (j: number) => void; onOpenOutline: () => void; showOutlineLink: boolean }) {
+export function TurnView(props: { turn: ThreadTurn; state?: ReactNode; onGotoBlock: (j: number) => void; onOpenOutline: () => void; showOutlineLink: boolean }) {
   const t = props.turn;
-  const ask = props.askOverride?.ask ?? t.ask;
-  const headline = props.askOverride?.headline ?? t.headline;
   return (
     <li data-turn={t.key} className="flex min-w-0 flex-col gap-2.5">
-      <AskBubble label={ask} lines={t.askLines} />
+      <AskBubble label={t.ask} lines={t.askLines} />
       <div data-answer className="flex min-w-0 flex-col gap-2">
         <AnswerHead at={t.at} />
         <p className="text-sm leading-[1.55] font-bold break-keep text-navy" title={t.kind === "draft" && t.note ? t.note : undefined}>
-          {headline}
+          {t.headline}
         </p>
         {t.kind === "outline" && <OutlineSummary turn={t} onOpenOutline={props.onOpenOutline} showOutlineLink={props.showOutlineLink} />}
         {t.kind === "draft" && (

@@ -72,7 +72,7 @@ async function writeMgDraftWork(p: Prepared & { mg: MgDraftContext }, r: ReportJ
     const evals = new Set(plan.mg.parts.map((x) => x.evalNo));
     const spec: ReportSectionSpec = {
       ...v.spec,
-      plan: { story: "", matched: adherence.matched, total: adherence.total },
+      plan: { story: "", matched: adherence.matched, total: adherence.total, ...(r.job.kind === "revise" ? { revise: true as const } : {}) },
       sources: [
         ...files.map((x): ReportSource => ({ kind: x.kind, id: x.id, name: x.name })),
         ...p.mg.prior.filter((s) => evals.has(s.evalNo)).map((s): ReportSource => ({ kind: "prior", id: s.key, name: `2025 보고서 ${mgPartLabel(s)}` })),
@@ -143,7 +143,7 @@ async function writeDraftWork(r: ReportJob, plan?: Composition, revise?: PlanRev
     const spec = {
       ...v.spec,
       // 구성안대로 쓴 초안 표시(없으면 바로 만들기) — 화면 도구줄 칩
-      ...(plan && adherence ? { plan: { story: plan.story, ...(plan.subStory ? { subStory: plan.subStory } : {}), matched: adherence.matched, total: adherence.total } } : {}),
+      ...(plan && adherence ? { plan: { story: plan.story, ...(plan.subStory ? { subStory: plan.subStory } : {}), matched: adherence.matched, total: adherence.total, ...(r.job.kind === "revise" ? { revise: true as const } : {}) } } : {}),
       sources: [
         ...files.map((x): ReportSource => ({ kind: x.kind, id: x.id, name: x.name })),
         ...prior.map((x): ReportSource => ({ kind: "prior", id: x.section.key, name: priorLabel(x.section) })),

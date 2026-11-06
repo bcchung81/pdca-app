@@ -131,9 +131,10 @@ export interface ReportSectionSpec {
   ground?: { weak: string[]; checked: number };
   /**
    * 승인된 구성안대로 쓴 초안(「구성안대로 집필」·「승인하고 집필」 — 2026-09-28): 구성안 이야기 틀과 짜임이 같은 순서로 맞은 블록 수.
+   * revise = 「자료 반영 고치기」로 쓴 초안이면 true(대화 말풍선 이름, 2026-11-06).
    * 없으면 구성안 없이 쓴 초안(「바로 만들기」) — 화면 도구줄이 「구성안대로 · 짜임 m/t」 또는 「구성안 안 씀」으로 보임
    */
-  plan?: { story: string; subStory?: string; matched: number; total: number };
+  plan?: { story: string; subStory?: string; matched: number; total: number; revise?: true };
   /** 사람이 드래그 「AI 수정 요청」으로 고친 블록 번호(lib/reports/block-edit.ts) — 다시 만들기가 덮기 전에 경고. AI가 새로 쓰면 없어짐 */
   humanEdits?: number[];
   /** 경영관리: 평가내용 → 대주제 → 절 골격과 블록마다 절 열쇠(lib/reports/mg-draft.ts) — 있으면 판면 어림을 하지 않고 렌더러가 절 머리를 그림. 주요사업은 없음 */

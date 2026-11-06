@@ -227,7 +227,7 @@ export function threadOf(o: {
       : null;
   const turns = draftThread({
     outline,
-    draft: spec ? { updatedAt: draft?.updated_at ?? null, plan: Boolean(spec.plan), fit: spec.fit?.budget ? { total: spec.fit.total, budget: spec.fit.budget } : null, module: spec.module, stale: o.stale, note: o.needs.lensNote } : null,
+    draft: spec ? { updatedAt: draft?.updated_at ?? null, plan: Boolean(spec.plan), revise: Boolean(spec.plan?.revise), fit: spec.fit?.budget ? { total: spec.fit.total, budget: spec.fit.budget } : null, module: spec.module, stale: o.stale, note: o.needs.lensNote } : null,
     edits: o.edits.map((e) => ({ id: Number(e.id), blockIndex: e.block_index, kind: e.kind, request: e.request ?? "", at: e.created_at, refId: e.ref_id })),
   });
   // 아직 집필하지 않은 구성안(마지막 차례가 구성안)의 자료 필요만 할 일에 — 집필한 뒤에는 초안의 【확인】이 남은 빈 곳
