@@ -38,7 +38,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 - 「AI 작성지원」 옆 창의 요청 종류 마지막 칩 「질문」. 요청 종류(구조화 제안·반영 버튼)와 **한 대화 흐름**이라, 앞의 요청·답(구조화 답은 글로 — `chatHistory`)을 이력으로 보내 이어서 물을 수 있습니다. 카드는 고치지 않습니다. 개별 수정(리뷰어 드래그 코멘트)과는 별개입니다. 서버 액션 `runCardChat`, 순수 `lib/ai/chat.ts`. 옆 창 머리의 「AI 대화」 버튼·`ai-chat.tsx`는 없앴습니다.
 - 시스템 프롬프트 = 대화 적응문(`resources/prompts/card-chat/system.md` — 첨부 자료는 이 질문에 붙인 카드 전용 자료, 점검결과 조회는 「점검결과」로, 답은 지침 출력기호 + 마크다운 표) + 지침 09 + 문체 기준. 근거 = 편집기에 지금 보이는 카드(부서는 작성본) + 공통 지식 규칙 범위 전부(`lib/knowledge/bundle.ts` `buildBundle`, `lib/ai/context.ts` `loadCardBundle` — 검색 상위 N건이 아니라 기관 공통·공통지표·사업 미지정·이 사업 공통 세 층을 자르지 않고 다 넣고, 과제 목록표로만 알림. 참고자료 2단계, `docs/reference-materials.md` §4.2·§4.3) + 이 과제의 최근 점검표(부서는 받은 것만 — RLS) + 이 질문에 고른 첨부 자료(요청 종류와 같은 길). 빠른 질문 단추는 없습니다(카드 전체 개선안·전략연계는 「개선 제안」과, 점검결과 보기는 옆 창 「점검 결과」 탭과 겹쳐 뺌 — `QUICK_PROMPTS`는 연기 시험 질문으로만 남음). 자유 질문(⌘↵)만. 점검결과를 물으면 지침 「점검결과조회」대로 판단·문장을 바꾸지 않고(요약·수정·재판정 금지) 배치만 정리하고 계산값은 계산값이라고 밝힙니다(`card-chat/system.md` 「점검결과 조회」).
 - 답은 구조화 출력 `{answer}`(마크다운)로 API·CLI 한 길. 화면은 자체 안전 렌더러(`lib/markdown.ts` 파서 + `components/ui/markdown.tsx` — React 요소로만 그림, 원문 HTML은 글자로; 표·목록·제목·지침 기호 줄)로 보여 주고 「답 복사」, 대화 전체는 「.md 내려받기」(`threadMarkdown`).
-- 기록은 요청 종류와 함께 이 브라우저 탭에만(sessionStorage `card-assist|<uid>` — 예전 `card-chat|<uid>` 기록은 처음 열 때 옮겨 담고 지움), 최근 8턴·2.4만 자만 서버로(`cleanHistory`). 서버는 본문을 저장하지 않고 `ai_requests.feature = card_chat`(사용량 화면 「카드 작성지원 · 질문」, 다른 AI와 합쳐 1분 5회)만.
+- 기록은 요청 종류와 함께 이 브라우저 탭에만(sessionStorage `card-assist|<uid>` — 예전 `card-chat|<uid>` 기록은 처음 열 때 옮겨 담고 지움), 최근 8턴·2.4만 자만 서버로(`cleanHistory`). 호출 기록은 `ai_requests.feature = card_chat`(사용량 화면 「카드 작성지원 · 질문」, 다른 AI와 합쳐 1분 5회). 2026-11-06부터 답 차례는 요청한 본인만 읽는 `ai_results`(7일)에도 남음 — 아래 「AI 요청 백그라운드 작업」.
 - 수동 연기 시험: `node --conditions=react-server --env-file=.env.local scripts/smoke/ai-chat-smoke.ts [카드 id] [질문 예시 key]`(실측 약 1분 20초).
 - 최신 Chrome은 `scrollIntoView`가 Promise를 돌려주므로 `useEffect(() => el.scrollIntoView())`처럼 값을 돌려주면 React가 정리 함수로 불러 화면이 깨집니다. 효과 본문은 중괄호로 씁니다.
 - **진행 줄·자동 스크롤·답 줄이기(2026-09-29 사용자 결정 — 「indicator를 인터랙티브하게(기존 한 줄에 요소만), 마지막 챗 응답절로 자동 스크롤」, 「줄 간격이 넓고 너무 많은 내용」)**: 쓰는 중에는 예전 한 줄(AI · 점 세 개 · 글)에 경과 시간(`0:42 / 보통 30초~2분`, 넘기면 「조금 더 걸리고 있습니다」)과 「근거 n ▾」(누르면 이 요청에 넣은 근거 목록)만 더함(`components/workspace/ai-progress.tsx` `AiProgress`, 글과 셈은 순수 `lib/ai/progress.ts` `assistProgress` — 경평 초안 「AI 초안」과 공용. 서버가 단계를 알려 주지 않아 진행률·단계는 지어내지 않음. 「넣은 근거」는 서버 액션이 실제로 넣는 것만: 개선 제안 = 전략연계, 실적 발굴 = 유관기관 사례, 질문 = 둘 다 + 최종 점검표 + 앞 대화 최근 4차례, 첨부는 그 요청에 고른 이름 — 기록 `AssistTurn.files`). 처음 만든 큰 진행 카드(막대·도움말)는 과하다고 해 한 줄로 되돌림. 스크롤은 대화 상자 안에서만(`components/workspace/scroll-within.ts` `scrollWithin` — scrollIntoView는 옆 창·전체 페이지까지 굴려 쓰지 않음): 보내면 새 차례의 끝, 답이 오면 그 답의 첫머리, **탭을 열거나 다른 탭에서 돌아오면 마지막 답의 첫머리**(쓰는 중·오류면 끝, 바로). 「점검 결과」 탭을 보는 동안 온 답은 자리를 기억했다가 돌아올 때 옮김(`CardWorkspace`가 `active`를 넘김). 답 줄이기: 가장 최근 답만 펼치고 **지난 답은 결론 한 줄**(`turnHeadline` — 요청 종류는 결론, 질문은 첫 글줄, 누르면 펼침·머리의 ▴로 다시 접음), 요약 본문·질문 답은 **◆ 절 중 첫 절만 펼침**(`Markdown fold` — `lib/markdown.ts` `foldSections`, 첫 머리 앞 글과 **맺음 글(끝 문단·※ — 모드 A의 「원본자료 수치와 일치하는지 확인 후 반영」)은 늘 보임**), 카드 반영 제안은 **앞 3건 + 「나머지 N건 더 보기」**(반영 번호는 전체 목록 기준), 제안의 지금 글(취소선)·이유는 **한 줄 말줄임 + 「자세히」**. 마크다운 보기는 13.5px(여백 메모 13px) · 줄 높이 1.6 · 블록 사이 4px(예전 14px · 2.0 · 8px).
@@ -53,7 +53,7 @@ report-harness 리뷰어의 사용법(드래그 → 유형 → 코멘트 → 5�
 - 근거는 공통 지식 규칙 범위 전부(작성지원·질문과 같은 `loadCardBundle`) + **이 카드의 카드 전용 자료 전부**(작성지원·질문과 같은 `loadCardFiles`, 저장본 전체 글 — 참고자료 설계 1단계 전에는 첨부를 안 봤음). 「첨부 기준으로 수치 고쳐 줘」 같은 코멘트도 근거로 처리합니다.
 - 합치기: AI는 **보낼 때 카드** 기준으로 편집을 돌려줍니다. 화면은 묶음(글줄이면 가장 바깥 줄 목록, 칸이면 그 칸)마다 "보낼 때 값 = 지금 값"일 때만 반영하고, 기다리는 동안 사용자가 고친 묶음은 덮지 않고 「충돌」로 제안 글을 보여 줍니다. 되돌리기는 코멘트별이고, 그 뒤 같은 묶음을 또 고쳤으면 막습니다.
 - 서버는 카드를 저장하지 않습니다. 반영된 카드는 평소 자동 저장(원장 `saveCard`·작성본 `saveDraft`)으로 저장되고 수정 이력에 남습니다. 부서 작성본에서는 잠긴 고정 영역을 AI가 고치지 않습니다(서버 `editTargets(card, locked)`).
-- 코멘트 메모는 이 브라우저 탭에만 둡니다(sessionStorage `card-review|<uid>`). AI가 처리하는 중에 옆 창을 닫으려 하면 확인 막대를 띄웁니다(닫으면 결과를 반영하지 못함).
+- 코멘트 메모는 이 브라우저 탭에만 둡니다(sessionStorage `card-review|<uid>`). AI가 처리하는 중에 옆 창을 닫으려 하면 확인 막대를 띄웁니다. 2026-11-06부터 처리는 백그라운드 작업이라 처리 중 코멘트에 작업 id를 두고, 같은 탭에서 다시 열면 작업 끝을 기다려 결과(서버가 쓴 「보낼 때 카드」 포함)를 같은 규칙으로 합침 — 아래 「AI 요청 백그라운드 작업」.
 - 호출 기록은 `ai_requests.feature = card_comment`(mode는 종류별 개수, 예: `edit:2,ask:1`). AI 작성지원과 합쳐 1분 5회입니다.
 - `::highlight()`(고른 글 칠하기)는 CSS 빌드 도구가 아직 몰라 `card-editor.tsx`의 `<style>`에 둡니다.
 
@@ -106,7 +106,7 @@ CLAUDE.md를 40KB 이하로 줄이면서 옮긴 날짜별 결정 배경·실측�
 ### AI 작성지원 「질문」
 
 - **[같은 탭의 「질문」 칩으로, 앞의 요청·답을 이력으로 이어서 묻는 대화]** 같은 탭의 「질문」 칩으로, 앞의 요청·답을 이력으로 이어서 묻는 대화 기능입니다(서버 액션 `runCardChat`, 순수 `lib/ai/chat.ts`). 카드는 절대 고치지 않고, 답은 구조화 출력 `{answer}`(마크다운)를 자체 안전 렌더러(`lib/markdown.ts`+`components/ui/markdown.tsx`)로 보여줍니다.
-- **[서버는 대화 본문을 저장하지 않음 — 기록은 이 브라우저 탭 sessio]** 기록은 이 브라우저 탭 sessionStorage에만, `ai_requests.feature = card_chat`은 토큰만 남김
+- **[서버는 대화 본문을 저장하지 않음 — 기록은 이 브라우저 탭 sessio]** 기록은 이 브라우저 탭 sessionStorage에만, `ai_requests.feature = card_chat`은 토큰만 남김 — **2026-11-06에 바뀜**: 답 차례는 본인만 읽는 `ai_results`(7일)에도 남겨 다른 PC·닫은 탭에서 다시 채움(아래 「AI 요청 백그라운드 작업」)
 - **[최근 8턴·2.4만 자만 서버로 보냄]** - 최근 8턴·2.4만 자만 서버로 보냄(`cleanHistory`)
 - **[빠른 질문 단추는 없음]** - 빠른 질문 단추는 없음(자유 질문만, ⌘↵로 보냄) 개선안·전략연계는 「개선 제안」과, 점검결과 보기는 「점검 결과」 탭과 겹쳐 뺌
 
@@ -131,3 +131,24 @@ CLAUDE.md를 40KB 이하로 줄이면서 옮긴 날짜별 결정 배경·실측�
 - **[카드 전용 자료는 그 카드 밖에서 쓰지 않습니다. DB 권한과 저장 경로]** DB 권한과 저장 경로(`card-materials/{cards.uid}/…`)가 이를 막습니다.
 
 - **AI 작성지원 화면 단순화(2026-10-29, `components/cards/ai-assist.tsx`)**: 답 머리는 요청 종류만 남기고 시작 화면은 한 줄. 내려받기·기록 지우기는 「⋯」 메뉴로, 복사는 아이콘으로 옮김. 제안 카드는 `pathLabel`을 씀. 공용 입력부 `AiComposer`에 `keyHint` 옵션을 더함.
+
+## AI 요청 백그라운드 작업(2026-11-06 사용자 결정 — 「다른 화면으로 가도 답이 나올 때까지 유지」)
+
+예전에는 AI 서버 액션이 AI 호출·검증·저장까지 다 하고 답을 돌려줘 ① 과제원장 답은 브라우저 탭에만 남아 새로 고침·탭 닫기·다른 PC에서 잃었고 ② 경평 초안은 진행 상태가 컴포넌트 상태뿐이라 다른 화면에 갔다 오면 「진행 중」이 사라져 중복 요청이 됐고 ③ Next 클라이언트는 서버 액션을 한 번에 하나씩 보내 긴 AI 액션 동안 카드 자동 저장 같은 다른 액션이 줄을 섰음(`node_modules/next/dist/docs/01-app/01-getting-started/07-mutating-data.md`, `02-guides/server-actions.md` 「Sequential dispatch」).
+
+**흐름**: 시작 액션 → `after()` 작업 → 저장 → GET 라우트 → 화면 폴링.
+- **시작**(서버 액션): 로그인·권한·`previewWriteBlocked`·입력 검증·잠금·근거 모으기(카드 자료·공통 지식·`prepareDraft`)를 예전처럼 앞에서 한 뒤 `startAiJob`(`lib/ai/background.ts`) — 같은 카드·같은 묶음 작업 중복 막기(`busyJobMessage` — 경평 초안끼리·작성지원과 질문끼리·코멘트끼리, 본인 기록, 다른 탭·PC 포함) → `startAiRequest`(1분 5회·동시 2건, running 행에 `job` = 작업 종류). 그리고 `launchAiJob`으로 나머지를 `after()`에 넘기고 `{ requestId }`를 바로 돌려줌. 대상: `runCardAssist`(`assist`)·`runCardChat`(`chat`)·`runCardComments`(`comment`)·`runReportOutline`(`outline`)·`runOutlineAlternatives`(`alts` — 첫 행에만)·`regenerateMgPart`(`part`)·`approveReportOutline`(`plan`·`revise`)·`runReportSectionDraft`(`draft`). 블록 고치기·모양 바꾸기 미리보기·월간 점검은 그대로 동기.
+- **after 작업**: 예전 액션 본문 그대로(AI → 호출 기록 ok(검증 전 토큰) → 검증 → 저장). 경평 초안의 1차 먼저 저장(`onFirst`)·`FIX_DEADLINE_MS`·저장 충돌(`updated_at` 조건)·경영관리 분량 채움(블록마다 `report_block` 기록)은 같음. after 안에서는 `revalidatePath`를 부르지 않음(화면이 끝을 보고 `router.refresh`). 끝나면 `runJob`(`lib/ai/job-run.ts`)이 결과 행 하나(`ai_results.result = { ok, message, data? }`)를 넣고, 던지면 짧은 글(`JOB_CRASH_MSG`)로 실패 결과 + 아직 running인 기록은 error로 닫음(멈춘 running 행이 동시 실행 제한에 남지 않게). after는 그 서버 액션이 놓인 화면 함수의 `maxDuration`(카드·내 과제·과제별 초안 800초) 안에서 돎(`after.md` 「Duration」).
+- **after 안의 사용자 권한**: Next 문서상 서버 액션의 after 안에서도 `cookies()`는 읽히지만(`after.md` 「In Route Handlers and Server Functions」) 응답이 이미 나가 쿠키를 다시 쓸 수 없음 — 쿠키 클라이언트가 after 안에서 토큰을 갱신하면 새 리프레시 토큰이 브라우저에 못 가 다음 갱신 때 세션이 끊길 수 있음. 그래서 시작에서 `createJobClient`(`lib/supabase/job-client.ts`)가 토큰 남은 시간이 25분(작업 최장 20분 + 여유, `job-token.ts`)보다 짧으면 먼저 갱신(쿠키는 액션 응답으로)하고, 그 접근 토큰을 싣고 스스로 갱신하지 않는 사용자 권한 클라이언트를 after에 넘김. 서비스 키는 쓰지 않음.
+- **저장**: 경평 초안의 구성안·초안은 예전처럼 `card_report_drafts`(`saveDraftRow`), 결과 행에는 끝맺음 글만. 과제원장 작성지원·질문은 결과 행 `data`에 대화 차례(요청 말풍선 포함 — 실패도), 코멘트는 처리 결과 + 서버가 쓴 「보낼 때 카드」, 여러 안은 견본 + 만들 때 요청·근거·절(`req`).
+- **GET 라우트**(서버 액션이 아님 — 줄을 서지 않음): `app/api/ai/requests`(본인의 최근 30분 작업 — 상태·종류·카드 uid·과제번호·시작/끝 시각·짧은 메시지, `?card=<uid>`·`?ids=`), `app/api/ai/results`(본인 결과 — `?ids=` 또는 `?card=<uid>&feature=card_assist,card_chat` 최근 12건). 상태 판정은 `jobState`(결과 행이 있으면 그 끝맺음, 없고 기록 error면 실패, 결과 전이면 기록이 ok여도 진행 중, 20분 넘으면 끊김).
+- **화면 폴링**(`components/workspace/ai-jobs.ts` — 탭에 하나): 진행 중 작업이 있거나 막 시작한 작업을 아직 못 봤을 때만, 창이 보일 때만 4초마다(`shouldPoll`), 끝나면 멈춤. 창이 다시 보이거나 초점이 오면 한 번 읽음(다른 탭·PC에서 시작한 작업도). 끝난 작업은 구독자에게(`finishedSince`).
+
+**과제원장 AI 작성지원**(`components/cards/ai-assist.tsx`): sessionStorage 차례 기록은 그대로 두고 차례마다 `requestId`. 열 때 서버 결과(최근 7일·본인)로 합치고(`mergeServerTurns` — 서버 기준, 같은 requestId 한 번, 이 탭의 말풍선·반영 표시 유지), 다른 곳에서 보낸 진행 중 작업은 쓰는 중 차례(「다른 화면에서 보낸 요청」)로, 끝난 작업은 결과를 받아 차례를 채움. 쓰는 중 차례는 작업 창(30분)까지 기다림. 「기록 지우기」는 탭 기록과 서버 결과(본인 것, `clearCardAiResults`)를 함께. 「질문」 이력(`cleanHistory` 8턴·2.4만 자)·「카드에 반영」(편집 권한일 때만)은 그대로. 진행 줄의 시작 시각은 다른 곳에서 보낸 차례면 running 행 `created_at`.
+
+**카드 리뷰어**(`components/cards/review/use-card-review.ts`): 처리 중 코멘트에 작업 id. 같은 탭에서 다시 열면 그 작업 끝을 기다려 서버 결과의 「보낼 때 카드」 기준으로 지금 카드에 합침(합치기·충돌 규칙 `mergeEdits` 그대로). 처리 중 묶음이 있으면 새 묶음은 그 뒤에. 다른 PC·닫은 탭에서는 코멘트 메모가 없어 결과를 다시 붙이지 않음(메모가 탭에만 있음 — 결과는 7일 뒤 지워짐).
+
+**경평 초안**(`components/reports/draft-compose.tsx`·`outline-panel.tsx`·`outline-alts.tsx`): 단추는 예전처럼 `{ ok, message }`를 기다리되 `settleAiJob`이 시작 → 작업 끝까지 기다려 끝맺음 글을 돌려줌. 대화는 이 화면에서 지금 보낸 요청이 없으면 이 카드의 서버 기록(최신 1건)으로: 진행 중이면 진행 차례(근거 목록은 이 화면이 모르므로 비움 — `remoteDraftProgress`), 떠난 사이 실패했으면 그 이유(닫기), 여러 안이 다 됐으면 「여러 안 보기」(결과로 비교 창을 다시 엶 — `reopenAlts`). 진행 중이면 보내기를 막고(서버도 막음), 끝나면 `router.refresh`. 한 번 본 실패·여러 안은 다시 안 띄움(sessionStorage `ai-jobs-seen`).
+
+**머리띠**: 「AI 작업 N건」(`components/shell/ai-jobs-menu.tsx` — `docs/design/screen-frame.md`).
+

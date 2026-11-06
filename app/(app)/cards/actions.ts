@@ -9,7 +9,8 @@ import { loadMaterialTexts } from "../../../lib/ai/attachments.ts";
 import { MATERIAL_COLS, type MaterialDoc, type MaterialRow, fileRefs } from "../../../lib/ai/material-text.ts";
 import { type VerifiedComment, readCommentInput, verifyComments } from "../../../lib/ai/comments.ts";
 import { aiErrorMessage, callChat, callComments, callWriter, modelLabel } from "../../../lib/ai/run.ts";
-import { startAiRequest } from "../../../lib/ai/request-log.ts";
+import { launchAiJob, startAiJob } from "../../../lib/ai/background.ts";
+import { ASK_CLIP, type AssistTurn, askLines } from "../../../lib/ai/assist-thread.ts";
 import { type FollowupBasis, NO_INSPECTION_MESSAGE, followupBasis } from "../../../lib/ai/followup.ts";
 import { ASSIST_TEXT_MAX, type VerifiedResult, WRITER_MODES, type WriterMode, noRequirementResult, verifyResult } from "../../../lib/ai/writer.ts";
 import { requireRole, requireUser } from "../../../lib/auth/dal.ts";
@@ -132,8 +133,11 @@ export async function saveCard(_prev: SaveState, formData: FormData): Promise<Sa
   return { status: "ok", message: "저장됨", at: now, rev: newRev };
 }
 
-/** skipped = AI가 못 읽어 빠진 카드 자료 이름(「AI가 못 읽음」 — 요청은 나머지로 함) */
-export type AssistState = { status: "idle" } | { status: "ok"; mode: WriterMode; result: VerifiedResult; model: string; sources: number; skipped: string[] } | { status: "error"; message: string };
+/**
+ * skipped = AI가 못 읽어 빠진 카드 자료 이름(「AI가 못 읽음」 — 요청은 나머지로 함). ok = AI 없이 바로 낸 결과(보완 점검 미흡 0건),
+ * started = 백그라운드 작업을 시작함(결과는 화면이 GET /api/ai/requests·/api/ai/results로 받음 — lib/ai/background.ts)
+ */
+export type AssistState = { status: "idle" } | { status: "ok"; mode: WriterMode; result: VerifiedResult; model: string; sources: number; skipped: string[] } | { status: "started"; requestId: number } | { status: "error"; message: string };
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -205,31 +209,42 @@ export async function runCardAssist(_prev: AssistState, formData: FormData): Pro
   }
   // 공통 지식: 규칙 범위 전부(참고자료 설계 2단계 — 요청 종류와 상관없이 같은 묶음, 요청 종류별 쓰임은 프롬프트가 정함). KNOWLEDGE_SELECT에 card·writer가 있으면 선별 방식
   const kb = await loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, "card", "writer");
-  // 남용 방지·호출 기록: 진행 중 호출도 세는 1분 5회·동시 실행 제한(lib/ai/request-log.ts — 다른 AI 기능과 합산)
-  const ai = await startAiRequest(supabase, { userId: me.id, cardId: card.id, feature: "card_assist", mode });
-  if (!ai.ok) return { status: "error", message: ai.message };
-  const t0 = Date.now();
-  try {
-    const call = await callWriter({ card: working, kb, req: { ...req, followup }, files });
-    // 토큰은 검증 전에 기록(검증이 예외를 던져도 쓴 토큰이 남음)
-    await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: Date.now() - t0 } });
-    // 인용 대조: 공통 지식 조각 + 첨부 전체 글(file:N)
-    const result = verifyResult(call.result, working, [...bundleRefs(kb), ...fileRefs(files)], followup);
-    return { status: "ok", mode, result, model: modelLabel(call), sources: bundleRefs(kb).length + files.length, skipped: loaded.skipped };
-  } catch (e) {
-    const message = aiErrorMessage(e);
-    console.error("runCardAssist", e);
-    await ai.finish({ status: "error", error: message });
-    return { status: "error", message };
-  }
+  // 남용 방지·호출 기록: 같은 카드 대화 중복 막기 + 진행 중 호출도 세는 1분 5회·동시 실행 제한(lib/ai/request-log.ts — 다른 AI 기능과 합산)
+  const job = await startAiJob({ userId: me.id, cardId: card.id, kind: "assist", mode });
+  if (!job.ok) return { status: "error", message: job.message };
+  const ai = job.reqs[0];
+  // 결과 차례(요청 말풍선 포함 — 다른 PC·닫은 탭에서도 이 결과로 대화를 다시 채움, lib/ai/assist-thread.ts mergeServerTurns)
+  const names = files.map((f) => f.name);
+  const base = { id: `r${job.requestId}`, requestId: job.requestId, at: new Date().toISOString(), mode, ask: askLines({ note: text, files: names, clip: mode === "reflect" ? ASK_CLIP : undefined }), files: names };
+  // AI 호출·검증은 응답 뒤(after) — 화면은 requestId로 끝을 기다림
+  launchAiJob(job, async () => {
+    const t0 = Date.now();
+    try {
+      const call = await callWriter({ card: working, kb, req: { ...req, followup }, files });
+      // 토큰은 검증 전에 기록(검증이 예외를 던져도 쓴 토큰이 남음)
+      await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: Date.now() - t0 } });
+      // 인용 대조: 공통 지식 조각 + 첨부 전체 글(file:N)
+      const result = verifyResult(call.result, working, [...bundleRefs(kb), ...fileRefs(files)], followup);
+      const turn: AssistTurn = { ...base, status: "ok", result, model: modelLabel(call), sources: bundleRefs(kb).length + files.length, skipped: loaded.skipped, doneAt: new Date().toISOString() };
+      return { ok: true, message: "", data: turn };
+    } catch (e) {
+      const message = aiErrorMessage(e);
+      console.error("runCardAssist", e);
+      await ai.finish({ status: "error", error: message });
+      const turn: AssistTurn = { ...base, status: "error", message };
+      return { ok: false, message, data: turn };
+    }
+  });
+  return { status: "started", requestId: job.requestId };
 }
 
-export type ChatState = { ok: true; answer: string; model: string; sources: number; inspected: boolean; skipped: string[] } | { ok: false; message: string };
+/** 질문 시작: 백그라운드 작업 requestId(답은 화면이 GET /api/ai/results로 받음) */
+export type ChatState = { ok: true; requestId: number } | { ok: false; message: string };
 
 /**
  * 카드 「AI 작성지원 › 질문」(담당자 작성지원 지침 09를 채팅으로, 앞의 요청·답을 이력으로 받음). 카드를 볼 수 있는 사람이면 누구나 묻고, 카드는 고치지 않고 개선안(마크다운)만 돌려줍니다.
  * 근거는 편집기에 지금 보이는 카드(부서는 작성본) + 공통 지식 + 이 과제의 최종 점검표(부서에 보낸·확인한 것 중 점검월이 가장 늦은 1건 — 초안은 성과관리팀이 물어도 주지 않음).
- * 대화 이력은 브라우저에만 두고 서버는 본문을 저장하지 않습니다(호출 기록만 ai_requests.feature = card_chat).
+ * 대화 이력은 브라우저(sessionStorage)가 보내고, 답 차례는 요청한 본인만 읽는 결과 표(ai_results — 7일)에 남깁니다(호출 기록 ai_requests.feature = card_chat).
  */
 /** excludeIds = 화면에서 뺀 카드 자료(나머지 카드 자료는 전부 근거로) */
 export async function runCardChat(uid: string, question: string, history: unknown, cardJson: string | null, excludeIds: string[] = []): Promise<ChatState> {
@@ -270,22 +285,46 @@ export async function runCardChat(uid: string, question: string, history: unknow
     periodLabel: `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`,
     inspection: inspectionBrief(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null),
   };
-  // 남용 방지·호출 기록(AI 작성지원·코멘트·점검과 합산 — lib/ai/request-log.ts)
-  const ai = await startAiRequest(supabase, { userId: me.id, cardId: card.id, feature: "card_chat", mode: req.history.length ? `turn:${Math.floor(req.history.length / 2) + 1}` : "turn:1" });
-  if (!ai.ok) return { ok: false, message: ai.message };
-  const t0 = Date.now();
-  try {
-    const call = await callChat({ card: working, kb, req, files: loaded.files });
-    await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: Date.now() - t0 } });
-    const answer = call.result.answer.trim();
-    if (!answer) return { ok: false, message: "AI가 빈 답을 보냈습니다. 다시 물어 주세요." };
-    return { ok: true, answer, model: modelLabel(call), sources: bundleRefs(kb).length + loaded.files.length, inspected: Boolean(ins), skipped: loaded.skipped };
-  } catch (e) {
-    const message = aiErrorMessage(e);
-    console.error("runCardChat", e);
-    await ai.finish({ status: "error", error: message });
-    return { ok: false, message };
-  }
+  // 남용 방지·호출 기록: 같은 카드 대화 중복 막기 + AI 작성지원·코멘트·점검과 합산(lib/ai/request-log.ts)
+  const job = await startAiJob({ userId: me.id, cardId: card.id, kind: "chat", mode: req.history.length ? `turn:${Math.floor(req.history.length / 2) + 1}` : "turn:1" });
+  if (!job.ok) return { ok: false, message: job.message };
+  const ai = job.reqs[0];
+  const names = loaded.files.map((f) => f.name);
+  const base = { id: `r${job.requestId}`, requestId: job.requestId, at: new Date().toISOString(), mode: "chat" as const, ask: askLines({ note: q, files: names }), files: names };
+  launchAiJob(job, async () => {
+    const t0 = Date.now();
+    try {
+      const call = await callChat({ card: working, kb, req, files: loaded.files });
+      await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: Date.now() - t0 } });
+      const answer = call.result.answer.trim();
+      if (!answer) {
+        const message = "AI가 빈 답을 보냈습니다. 다시 물어 주세요.";
+        return { ok: false, message, data: { ...base, status: "error", message } satisfies AssistTurn };
+      }
+      const turn: AssistTurn = { ...base, status: "ok", answer, model: modelLabel(call), sources: bundleRefs(kb).length + loaded.files.length, skipped: loaded.skipped, doneAt: new Date().toISOString() };
+      return { ok: true, message: "", data: turn };
+    } catch (e) {
+      const message = aiErrorMessage(e);
+      console.error("runCardChat", e);
+      await ai.finish({ status: "error", error: message });
+      return { ok: false, message, data: { ...base, status: "error", message } satisfies AssistTurn };
+    }
+  });
+  return { ok: true, requestId: job.requestId };
+}
+
+/**
+ * 「기록 지우기」: 이 카드의 AI 작성지원·질문 결과 중 본인 것(ai_results — RLS가 본인 행만)을 지움. 브라우저 탭 기록은 화면이 지움.
+ * 지우지 않으면 다음에 열 때 서버 결과로 대화가 다시 채워짐
+ */
+export async function clearCardAiResults(uid: string): Promise<{ ok: boolean; message?: string }> {
+  const me = await requireUser("/cards");
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
+  const supabase = await createClient();
+  const { data: card } = await supabase.from("cards").select("id").eq("uid", uid).maybeSingle();
+  if (!card) return { ok: false, message: "카드를 찾을 수 없습니다." };
+  const { error } = await supabase.from("ai_results").delete().eq("user_id", me.id).eq("card_id", card.id).in("feature", ["card_assist", "card_chat"]);
+  return error ? { ok: false, message: "서버 기록을 지우지 못했습니다." } : { ok: true };
 }
 
 /**
@@ -299,11 +338,19 @@ export async function getCardSelectPreview(uid: string): Promise<Partial<Record<
   return card ? cardSelectPreview(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }) : {};
 }
 
-export type CommentRunResult = { ok: true; comments: VerifiedComment[]; model: string } | { ok: false; message: string };
+/** 코멘트 처리 결과(ai_results.result.data — 화면이 받아 지금 카드에 합침). card = 보낼 때 카드(서버가 기준으로 쓴 것 — 다른 화면에 갔다 와도 같은 기준으로 합침) */
+export interface CommentJobData {
+  comments: VerifiedComment[];
+  model: string;
+  card: Record<string, unknown>;
+}
+
+/** 코멘트 시작: 백그라운드 작업 requestId */
+export type CommentRunResult = { ok: true; requestId: number } | { ok: false; message: string };
 
 /**
  * 카드 리뷰어 코멘트 묶음 → AI(담당자 작성지원 지침 09). 카드를 볼 수 있는 사람이면 누구나 보냅니다.
- * AI는 화면이 보낸 카드(편집기에 지금 보이는 카드 — 부서는 작성본) 기준으로 편집·답을 돌려주고, 서버는 저장하지 않습니다.
+ * AI는 화면이 보낸 카드(편집기에 지금 보이는 카드 — 부서는 작성본) 기준으로 편집·답을 돌려주고, 서버는 카드를 저장하지 않습니다(결과는 본인만 읽는 ai_results에).
  * 편집은 편집 권한이 있는 화면이 지금 카드에 합친 뒤 평소 자동 저장(원장 saveCard·작성본 saveDraft)으로 저장됩니다.
  */
 export async function runCardComments(uid: string, payload: string): Promise<CommentRunResult> {
@@ -337,21 +384,25 @@ export async function runCardComments(uid: string, payload: string): Promise<Com
     .join(",");
   // 근거: 공통 지식 규칙 범위 전부 + 이 카드의 카드 전용 자료 전부(참고자료 설계 1·2단계 — 「첨부 기준으로 수치 고쳐 줘」 같은 코멘트도 근거로 처리)
   const [kb, loaded] = await Promise.all([loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, "card", "comment"), loadCardFiles(supabase, card.id, [])]);
-  // 남용 방지·호출 기록(AI 작성지원과 합산 — lib/ai/request-log.ts)
-  const ai = await startAiRequest(supabase, { userId: me.id, cardId: card.id, feature: "card_comment", mode });
-  if (!ai.ok) return { ok: false, message: ai.message };
-  const t0 = Date.now();
-  try {
-    const call = await callComments({ card: working, targets, kb, req: { periodLabel: `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`, comments: input.comments, keeps: input.keeps }, files: loaded.files });
-    await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: Date.now() - t0 } });
-    const comments = verifyComments(call.result, working, targets, input.comments);
-    return { ok: true, comments, model: modelLabel(call) };
-  } catch (e) {
-    const message = aiErrorMessage(e);
-    console.error("runCardComments", e);
-    await ai.finish({ status: "error", error: message });
-    return { ok: false, message };
-  }
+  // 남용 방지·호출 기록: 같은 카드 코멘트 묶음 중복 막기 + AI 작성지원과 합산(lib/ai/request-log.ts)
+  const job = await startAiJob({ userId: me.id, cardId: card.id, kind: "comment", mode });
+  if (!job.ok) return { ok: false, message: job.message };
+  const ai = job.reqs[0];
+  launchAiJob(job, async () => {
+    const t0 = Date.now();
+    try {
+      const call = await callComments({ card: working, targets, kb, req: { periodLabel: `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`, comments: input.comments, keeps: input.keeps }, files: loaded.files });
+      await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: Date.now() - t0 } });
+      const data: CommentJobData = { comments: verifyComments(call.result, working, targets, input.comments), model: modelLabel(call), card: working };
+      return { ok: true, message: "", data };
+    } catch (e) {
+      const message = aiErrorMessage(e);
+      console.error("runCardComments", e);
+      await ai.finish({ status: "error", error: message });
+      return { ok: false, message };
+    }
+  });
+  return { ok: true, requestId: job.requestId };
 }
 
 /**

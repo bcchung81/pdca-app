@@ -21,6 +21,8 @@ import { fitWord } from "../../lib/reports/draft-thread.ts";
 import { T, Tag } from "../ui/kit";
 import { FIT_TAG } from "../ui/status-tone.ts";
 import { useAsk } from "../ui/confirm-dialog";
+import { markAiJobSeen, settleAiJob } from "../workspace/ai-jobs";
+import type { JobKind } from "../../lib/ai/jobs.ts";
 import { askBody, overwriteSteps } from "./draft-review";
 import { BlockEditor } from "./outline-block";
 
@@ -166,12 +168,17 @@ export function useOutlineEdit(uid: string, data: OutlineData | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit, dirty]);
 
-  const run = async (label: string, fn: () => Promise<{ ok: boolean; message: string }>) => {
+  /**
+   * 단추 하나 실행. AI 요청(짜임 바꾸기·다시 만들기·승인하고 집필·절 다시 짜기)은 서버가 시작만 하고 작업 id를 돌려주므로 작업이 끝날 때까지 기다려 끝맺음 글을 보임
+   * (lib/ai/background.ts — 이 창이 사라져도 서버는 끝까지 돌고, 대화가 작업 상태로 진행 줄·결과를 이어 받음). kind = 작업 종류(진행 표시 자리)
+   */
+  const run = async (label: string, fn: () => Promise<{ ok: boolean; message: string; requestId?: number }>, kind: JobKind = label === "approve" ? "plan" : "outline") => {
     setBusy(label);
     setBusyAt(Date.now());
     setMsg(null);
     try {
-      const r = await fn();
+      const r = await settleAiJob(fn(), kind, { card: { uid } });
+      if (r.requestId) markAiJobSeen(r.requestId);
       setMsg({ ok: r.ok, text: r.message });
       if (r.ok) router.refresh();
     } catch {
@@ -303,7 +310,7 @@ export function useOutlineEdit(uid: string, data: OutlineData | null) {
       setPartGallery(null);
       setRedoKey(key);
       setBusyFrame(typeof pick === "string" ? null : frameNames(pick));
-      void run("story", () => regenerateMgPart(uid, key, pick, request)).finally(() => setRedoKey(null));
+      void run("story", () => regenerateMgPart(uid, key, pick, request), "part").finally(() => setRedoKey(null));
     });
   };
   const focusMaterial = (id: string) => {

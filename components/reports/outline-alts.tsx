@@ -8,6 +8,7 @@ import type { ProgressSpec } from "../../lib/ai/progress.ts";
 import type { FrameChoice } from "../../lib/reports/framework-pick.ts";
 import { FIT_RANGE_TEXT, type FitTone, fitVerdict } from "../../lib/reports/fit.ts";
 import { AiProgress } from "../workspace/ai-progress";
+import { fetchAiResults, markAiJobSeen, settleAiJob } from "../workspace/ai-jobs";
 import { T } from "../ui/kit";
 import { useAsk } from "../ui/confirm-dialog";
 import { askBody } from "./draft-review";
@@ -23,6 +24,8 @@ export interface AltsRequest {
   part?: string;
   /** 고르기 전에 물을 글(사람이 고친 블록이 덮일 때 — 없으면 묻지 않음) */
   confirm?: string | null;
+  /** 다시 연 결과(reopenAlts)의 물을 글 — 절은 결과에서 알게 됨 */
+  confirmOf?: (part?: string) => string | null;
   /** 진행 줄(실제로 넣는 근거 — 부르는 쪽이 셈) */
   progress: ProgressSpec;
   /** 서버 호출(누른 때 한 번 — 효과에서 부르면 개발 모드에서 두 번 돌아 비용이 두 배) */
@@ -30,16 +33,39 @@ export interface AltsRequest {
   startedAt: number;
 }
 
-/** 여러 안 시작(단추를 누른 처리기에서 부름 — 서버 호출은 여기서 한 번만) */
+const CUT = "요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요.";
+
+/** 끝난 여러 안 작업의 결과 읽기(작업 결과 표 — 본인만). 받으면 「여러 안 보기」 알림을 다시 띄우지 않게 본 것으로 */
+export async function altsResult(id: number): Promise<OutlineAltsResult> {
+  const [row] = await fetchAiResults({ ids: [id] });
+  if (!row) return { ok: false, message: "여러 안 결과를 찾을 수 없습니다(7일이 지났거나 지움). 다시 만들어 주세요." };
+  markAiJobSeen(id);
+  const data = row.result.data as OutlineAltsResult | undefined;
+  return row.result.ok && data?.ok ? data : { ok: false, message: row.result.message || "여러 안을 만들지 못했습니다." };
+}
+
+/**
+ * 여러 안 시작(단추를 누른 처리기에서 부름 — 서버 호출은 여기서 한 번만). 서버는 시작만 하고(백그라운드 작업 alts) 이 약속이 작업 끝을 기다려 결과를 받음 —
+ * 창이 열린 채 다른 화면으로 가도 서버는 끝까지 만들고, 돌아오면 대화의 「여러 안 보기」로 다시 엶(components/reports/draft-compose.tsx)
+ */
 export function startAlts(uid: string, r: Omit<AltsRequest, "pending" | "startedAt">): AltsRequest {
-  const pending = runOutlineAlternatives(uid, { alts: r.alts, request: r.request, sources: r.sources, part: r.part }).catch((): OutlineAltsResult => ({ ok: false, message: "요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요." }));
+  const pending = settleAiJob(runOutlineAlternatives(uid, { alts: r.alts, request: r.request, sources: r.sources, part: r.part }), "alts", { card: { uid } })
+    .then((s): Promise<OutlineAltsResult> | OutlineAltsResult => (s.ok && s.requestId ? altsResult(s.requestId) : { ok: false, message: s.message }))
+    .catch((): OutlineAltsResult => ({ ok: false, message: CUT }));
   return { ...r, pending, startedAt: Date.now() };
+}
+
+/** 끝난 여러 안 작업을 다시 엶(대화의 「여러 안 보기」 — 요청·근거는 결과에 남은 것, 덮을지 묻는 글은 부르는 쪽이 지금 구성안으로 셈) */
+export function reopenAlts(id: number, o: { confirmOf: (part?: string) => string | null; progress: ProgressSpec }): AltsRequest {
+  const pending = altsResult(id).catch((): OutlineAltsResult => ({ ok: false, message: CUT }));
+  return { alts: [], request: "", progress: o.progress, pending, startedAt: Date.now(), confirm: null, confirmOf: o.confirmOf };
 }
 
 /**
  * 「다른 짜임 여러 안」 비교 대화 창(2026-10-12 ③): 열리면 서버가 고른 짜임마다 구성안을 동시에 한 번씩 만들고(runOutlineAlternatives — 저장 안 함),
  * 안마다 고른 짜임·AI가 정한 틀·핵심 메시지(경영관리는 절을 둔 이유)·판면 어림·블록 목록(라벨·도식·배치)·구성안 판면 견본·확인할 것을 나란히 보입니다.
- * 「이 안으로 정하기」를 누르면 그 안만 구성안으로 저장(adoptOutlineAlternative — 만들 때 읽은 버전이 그대로일 때만). 도는 동안은 닫지 않음(서버 호출은 끝까지 돌고 비용이 듦)
+ * 「이 안으로 정하기」를 누르면 그 안만 구성안으로 저장(adoptOutlineAlternative — 만들 때 읽은 버전이 그대로일 때만). 도는 동안은 닫지 않음(서버 호출은 끝까지 돌고 비용이 듦 —
+ * 다른 화면으로 가면 서버가 끝까지 만들고 결과는 작업 결과 표에 7일 남아 대화의 「여러 안 보기」로 다시 엶)
  */
 export function OutlineAlts(props: { uid: string; req: AltsRequest | null; onClose: () => void; onAdopted: (message: string) => void }) {
   const router = useRouter();
@@ -80,11 +106,14 @@ export function OutlineAlts(props: { uid: string; req: AltsRequest | null; onClo
 
   const adopt = (a: OutlineAltView) => {
     if (!req || !result?.ok || !a.ok) return;
+    // 만들 때 요청·근거·절(결과에 남은 것 — 다른 화면에 갔다 와서 다시 연 결과도 같음)
+    const q = { request: result.req?.request ?? req.request, sources: result.req?.sources ?? req.sources, part: result.req?.part ?? req.part };
+    const confirm = req.confirm ?? req.confirmOf?.(q.part) ?? null;
     const save = async () => {
       setAdopting(a.no);
       setError(null);
       try {
-        const r = await adoptOutlineAlternative(props.uid, { out: a.out, frame: a.frame, request: req.request, sources: req.sources, part: req.part, model: a.model, version: result.version });
+        const r = await adoptOutlineAlternative(props.uid, { out: a.out, frame: a.frame, request: q.request, sources: q.sources, part: q.part, model: a.model, version: result.version });
         if (!r.ok) {
           setError(r.message);
           return;
@@ -99,7 +128,7 @@ export function OutlineAlts(props: { uid: string; req: AltsRequest | null; onClo
       }
     };
     // 사람이 고친 블록이 덮이면 먼저 묻고, 확인하면(없으면 바로) 저장 — 저장하는 값은 누른 때의 안·요청·읽은 버전
-    ask(req.confirm ? [{ title: "이 안으로 정할까요?", body: [askBody(req.confirm)], confirmLabel: "이 안으로 정하기" }] : [], () => void save());
+    ask(confirm ? [{ title: "이 안으로 정할까요?", body: [askBody(confirm)], confirmLabel: "이 안으로 정하기" }] : [], () => void save());
   };
 
   const ok = result?.ok ? result : null;

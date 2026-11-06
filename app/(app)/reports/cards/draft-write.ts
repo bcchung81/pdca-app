@@ -13,7 +13,8 @@ import { reportBlockPromptsMg } from "../../../../lib/prompts/sets.ts";
 import { relevantRefs } from "../../../../lib/knowledge/bundle.ts";
 import { mgPartLabel } from "../../../../lib/reports/mg-outline.ts";
 import type { PlanRevise } from "../../../../lib/reports/draft-sources.ts";
-import { type Prepared, type ReportDraftState, beginAi, logAiError } from "./draft-prepare.ts";
+import type { JobKind } from "../../../../lib/ai/jobs.ts";
+import { type Prepared, type ReportDraftState, type ReportJob, beginAi, beginJob, launchReportJob, logAiError } from "./draft-prepare.ts";
 
 /** 호출 기록 mode 꼬리(구성안 뒤 추가된 자료 수·담당자 요청 있음) */
 const reviseTag = (r?: PlanRevise | null) => `${r?.added.length ? `+${r.added.length}new` : ""}${r?.request.trim() ? "+req" : ""}`;
@@ -45,11 +46,18 @@ const fillCall =
  * 경영관리 집필(승인된 구성안대로 한 번 — 판면 맞추기 없음): 검증 → 1차 저장(구성안도 승인으로) → 분량 채움 보강(lib/reports/mg-fill.ts — 2026-10-29 사용자 승인,
  * 집필이 빠뜨린 구성안 블록을 먼저 되살리고, 분량 부족·빈 칸·안 쓴 원장 성과·반복 수치가 있을 때만 고른 블록을 하나씩 다시 씀 — 최대 2회, Vercel에서는 fixDeadlineMs·로컬은 MG_FILL.maxSec 안에서만) → 1차 저장 버전 조건으로 갱신(그 사이 사람이 고쳤으면 건너뜀)
  */
-async function writeMgDraft(p: Prepared & { mg: MgDraftContext }, plan?: Composition, revise?: PlanRevise | null): Promise<ReportDraftState> {
+async function writeMgDraft(p0: Prepared & { mg: MgDraftContext }, plan: Composition | undefined, revise: PlanRevise | null | undefined, kind: JobKind): Promise<ReportDraftState> {
   if (!plan?.mg) return { ok: false, message: "경영관리 초안은 「구성안 만들기」로 평가내용·대주제·절을 정하고 승인한 뒤 씁니다." };
+  const mgPlan = { ...plan, mg: plan.mg };
+  const b = await beginJob(p0, kind, `${p0.mode}+plan${reviseTag(revise)}`);
+  if (!b.ok) return b;
+  return launchReportJob(b, "집필을 시작했습니다 — 다른 화면으로 가도 서버에서 끝까지 씁니다.", (r) => writeMgDraftWork({ ...r.p, mg: p0.mg }, r, mgPlan, revise));
+}
+
+/** 경영관리 집필 본문(after 안 — 호출 기록은 시작에서 넣음) */
+async function writeMgDraftWork(p: Prepared & { mg: MgDraftContext }, r: ReportJob, plan: Composition & { mg: NonNullable<Composition["mg"]> }, revise?: PlanRevise | null): Promise<ReportDraftState> {
   const { me, supabase, card, year, files, skipped, lens, actuals, known, quoteOnly } = p;
-  const ai = await beginAi(p, "report_section", `${p.mode}+plan${reviseTag(revise)}`);
-  if (!ai.ok) return { ok: false, message: ai.message };
+  const ai = r.ai;
   const t0 = Date.now();
   try {
     const call = await callReportDraftMg({ card: card.data, ctx: p.mg, year, files, lens, actuals, kb: p.kb, plan, revise });
@@ -96,14 +104,21 @@ async function writeMgDraft(p: Prepared & { mg: MgDraftContext }, plan?: Composi
 }
 
 /**
- * 초안 쓰기(바로 만들기·승인된 구성안으로 집필 공용): 초안 → 검증 → 판면 고치기 → 저장.
- * revise = 구성안 뒤 추가된 자료·담당자 요청(구성안대로 집필·자료 반영 고치기 — 「승인된 구성안」 끝에 붙음, 짜임은 그대로)
+ * 초안 쓰기(바로 만들기·승인된 구성안으로 집필 공용): 시작(백그라운드 작업 — lib/ai/background.ts)만 하고 곧바로 돌려줌. 응답 뒤 after 안에서 초안 → 검증 → 판면 고치기 → 저장.
+ * revise = 구성안 뒤 추가된 자료·담당자 요청(구성안대로 집필·자료 반영 고치기 — 「승인된 구성안」 끝에 붙음, 짜임은 그대로), kind = 작업 종류(plan·revise·draft — 진행 표시 이름)
  */
-export async function writeDraft(p: Prepared, plan?: Composition, revise?: PlanRevise | null): Promise<ReportDraftState> {
-  if (p.mg) return writeMgDraft({ ...p, mg: p.mg }, plan, revise);
+export async function writeDraft(p: Prepared, plan?: Composition, revise?: PlanRevise | null, kind: JobKind = plan ? "plan" : "draft"): Promise<ReportDraftState> {
+  if (p.mg) return writeMgDraft({ ...p, mg: p.mg }, plan, revise, kind);
+  const b = await beginJob(p, kind, `${p.mode}${plan ? `+plan${reviseTag(revise)}` : ""}`);
+  if (!b.ok) return b;
+  return launchReportJob(b, plan ? "집필을 시작했습니다 — 다른 화면으로 가도 서버에서 끝까지 씁니다." : "초안을 쓰기 시작했습니다 — 다른 화면으로 가도 서버에서 끝까지 씁니다.", (r) => writeDraftWork(r, plan, revise));
+}
+
+/** 주요사업 초안 본문(after 안 — 호출 기록은 시작에서 넣음, 저장은 작업 클라이언트로) */
+async function writeDraftWork(r: ReportJob, plan?: Composition, revise?: PlanRevise | null): Promise<ReportDraftState> {
+  const p = r.p;
   const { me, supabase, card, year, files, skipped, ctx, prior, siblingsLayout, lens, actuals, known, quoteOnly, own, years } = p;
-  const ai = await beginAi(p, "report_section", `${p.mode}${plan ? `+plan${reviseTag(revise)}` : ""}`);
-  if (!ai.ok) return { ok: false, message: ai.message };
+  const ai = r.ai;
   const t0 = Date.now();
   // 저장할 행(1차 초안 먼저 저장·최종 저장 공용) — 경고·구성안 지킴·출처·판
   const rowOf = (call: Awaited<ReturnType<typeof callReportSectionFitted>>["call"], v: Awaited<ReturnType<typeof callReportSectionFitted>>["check"], trace: Awaited<ReturnType<typeof callReportSectionFitted>>["trace"] | null) => {

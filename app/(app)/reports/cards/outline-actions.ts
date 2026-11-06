@@ -29,7 +29,7 @@ import type { MgDraftContext } from "../../../../lib/reports/mg-draft.ts";
 import { addMgDataBlocks } from "../../../../lib/reports/mg-data-blocks.ts";
 import { mgPdcaSkeleton } from "../../../../lib/reports/mg-pdca.ts";
 import { type MgOutlineOutput, type MgPartRedo, applyMgCompositionEdit, cleanMgComposition, isMgMainStory, mgCompositionIssues, mgHintOptions, mgOutlineOutSchema, mgOverlapIssues, mgPartLabel, mgPartRedo, replaceMgPart } from "../../../../lib/reports/mg-outline.ts";
-import { DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginAi, beginAiBatch, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
+import { type AiReq, DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginJob, launchReportJob, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
 import { writeDraft } from "./draft-write.ts";
 import { type DraftPick, type PlanRevise, mergeSources, readPick } from "../../../../lib/reports/draft-sources.ts";
 
@@ -38,6 +38,9 @@ const outlineWarnings = (c: Composition, module: number, materialWarnings: strin
 
 /** 사람 편집의 갈래 칩 근거 글: 카드 글 + 원문을 찾은 재료 구절(만들 때의 첨부 원문은 다시 읽지 않음 — 저장된 칩은 같은 축이면 그대로 둠) */
 const editHayKey = (cardData: unknown, c: Composition) => evidenceOf(cardData, c.materials.filter((m) => m.found).map((m) => m.quote).join("\n")).hayKey;
+
+/** 구성안 만들기 시작 알림(끝맺음 글은 작업 결과 — 화면이 작업 끝을 보고 새로 그림) */
+const STARTED_OUTLINE = "구성안을 만들기 시작했습니다 — 다른 화면으로 가도 서버에서 끝까지 만듭니다.";
 
 /** 요청 글(구성안 메모·절 다시 짜기 요청 — 500자) */
 const requestText = (s: unknown) => (typeof s === "string" ? s.trim().slice(0, FRAME_REQUEST_MAX) : "");
@@ -78,7 +81,7 @@ const saveOutlineRow = (supabase: Prepared["supabase"], cardId: string, year: nu
  * 구성안 만들기(구현 계획 2단계): 초안과 같은 근거로 재료표·핵심 메시지·평가 논점·이야기 틀·블록 목록·그림 자리를 만들고 저장(상태 draft).
  * 담당자가 보고 고친 뒤 「승인하고 집필」하면 그 짜임대로 초안을 씀. memo = 담당자 요청(만들 때·다시 만들 때), pick = 틀 갤러리에서 고른 짜임 —
  * 이야기 틀(문자열, 예전 호출) 또는 이야기 틀·구성 패턴·2025 예시 절(FrameChoice — 2026-10-12, 구성안에 frame으로 남김).
- * 호출 기록 feature = report_outline(mode 끝에 +틀·+패턴·+예시 — 고른 짜임)
+ * 호출 기록 feature = report_outline(mode 끝에 +틀·+패턴·+예시 — 고른 짜임). 2026-11-06부터 백그라운드 작업(작업 종류 outline — 시작만 하고 requestId, lib/ai/background.ts)
  */
 export async function runReportOutline(uid: string, sources?: DraftSources, memo?: string, pick?: string | FrameChoice): Promise<ReportDraftState> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
@@ -86,40 +89,47 @@ export async function runReportOutline(uid: string, sources?: DraftSources, memo
   if (!c.ok) return c;
   const p = await prepareDraft(uid, sources);
   if (!p.ok) return p;
-  if (p.mg) return runReportOutlineMg({ ...p, mg: p.mg }, uid, memo);
+  if (p.mg) return runReportOutlineMg({ ...p, mg: p.mg }, memo);
   const { supabase, card, year, ctx } = p;
   const loaded = await frameInputOf(supabase, c.frame, false);
   if (!loaded.ok) return loaded;
   const f = loaded.frame;
   const fixed = f.story && isStory(f.story) ? f.story : undefined;
   const request = requestText(memo);
-  const ai = await beginAi(p, "report_outline", `${p.mode}${frameTag(f)}`);
-  if (!ai.ok) return { ok: false, message: ai.message };
-  const t0 = Date.now();
-  try {
-    const inspection = await loadInspectionBasis(supabase, card.id);
-    const oc = await callBizOutline(p, inspection, { memo: request, story: fixed, frame: loaded.input });
-    await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
-    const { composition, warnings } = bizComposition(p, oc.output, request, frameRecord(f, request));
-    const saved = await saveOutlineRow(supabase, card.id, year, composition, warnings, modelLabel(oc), p.base);
-    if (!saved.ok) {
-      if (!saved.conflict) console.error("runReportOutline save", saved.message);
-      return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
+  const b = await beginJob(p, "outline", `${p.mode}${frameTag(f)}`);
+  if (!b.ok) return b;
+  // AI 호출·저장은 응답 뒤(after — 작업 클라이언트 j.p.supabase로)
+  return launchReportJob(b, STARTED_OUTLINE, async ({ ai, p: jp }) => {
+    const t0 = Date.now();
+    try {
+      const inspection = await loadInspectionBasis(jp.supabase, card.id);
+      const oc = await callBizOutline(jp, inspection, { memo: request, story: fixed, frame: loaded.input });
+      await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
+      const { composition, warnings } = bizComposition(jp, oc.output, request, frameRecord(f, request));
+      const saved = await saveOutlineRow(jp.supabase, card.id, year, composition, warnings, modelLabel(oc), jp.base);
+      if (!saved.ok) {
+        if (!saved.conflict) console.error("runReportOutline save", saved.message);
+        return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
+      }
+      const fit = compositionFit(composition, ctx.module, ctx.head);
+      const label = frameLabel(f);
+      return { ok: true, message: `구성안을 만들었습니다(${label ? `${label} · ` : ""}블록 ${composition.blocks.length}개 · 재료 ${composition.materials.length}개 · 판면 어림 ${fit.total}/${fit.budget}mm) — 블록마다 도식·목적·재료를 확인하고 고친 뒤 「승인하고 집필」을 눌러 주세요.` };
+    } catch (e) {
+      return { ok: false, message: await logAiError(ai, "report_outline", e) };
     }
-    refresh(uid);
-    const fit = compositionFit(composition, ctx.module, ctx.head);
-    const label = frameLabel(f);
-    return { ok: true, message: `구성안을 만들었습니다(${label ? `${label} · ` : ""}블록 ${composition.blocks.length}개 · 재료 ${composition.materials.length}개 · 판면 어림 ${fit.total}/${fit.budget}mm) — 블록마다 도식·목적·재료를 확인하고 고친 뒤 「승인하고 집필」을 눌러 주세요.` };
-  } catch (e) {
-    return { ok: false, message: await logAiError(ai, "report_outline", e) };
-  }
+  });
 }
 
 /** 경영관리 구성안 만들기: 평가내용·대주제·절과 절마다 블록·재료(lib/reports/mg-outline.ts) — 호출 기록 feature = report_outline(mode mg…) */
-async function runReportOutlineMg(p: Prepared & { mg: MgDraftContext }, uid: string, memo?: string): Promise<ReportDraftState> {
+async function runReportOutlineMg(p0: Prepared & { mg: MgDraftContext }, memo?: string): Promise<ReportDraftState> {
+  const b = await beginJob(p0, "outline");
+  if (!b.ok) return b;
+  return launchReportJob(b, STARTED_OUTLINE, ({ ai, p: jp }) => runReportOutlineMgWork({ ...jp, mg: p0.mg }, ai, memo));
+}
+
+/** 경영관리 구성안 본문(after 안) */
+async function runReportOutlineMgWork(p: Prepared & { mg: MgDraftContext }, ai: AiReq, memo?: string): Promise<ReportDraftState> {
   const { supabase, card, year, picked, files, lens, actuals, known, quoteOnly } = p;
-  const ai = await beginAi(p, "report_outline");
-  if (!ai.ok) return { ok: false, message: ai.message };
   const t0 = Date.now();
   try {
     // 도식 후보(카드·첨부·추천 평가내용의 2025 절 신호 — diagramHints 경영관리 신호 포함)와 같은 지표 다른 카드의 구성안 절을 요청에 넣음
@@ -144,7 +154,6 @@ async function runReportOutlineMg(p: Prepared & { mg: MgDraftContext }, uid: str
       if (!saved.conflict) console.error("runReportOutlineMg save", saved.message);
       return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
     }
-    refresh(uid);
     const parts = composition.mg?.parts ?? [];
     return { ok: true, message: `구성안을 만들었습니다(평가내용 ${[...new Set(parts.map((x) => x.evalNo))].join("·") || "—"} · 절 ${parts.length}개 · 블록 ${composition.blocks.length}개 · 재료 ${composition.materials.length}개) — 절과 블록을 확인하고 고친 뒤 「승인하고 집필」을 눌러 주세요.` };
   } catch (e) {
@@ -199,28 +208,29 @@ export async function regenerateMgPart(uid: string, key: string, pick: string | 
   const p = await prepareDraft(uid, o.outline.sources);
   if (!p.ok) return p;
   if (!p.mg) return { ok: false, message: "경영관리 카드가 아닙니다." };
-  const mp: MgPrepared = { ...p, mg: p.mg };
-  const ai = await beginAi(p, "report_outline", `${p.mode}+절${frameTag(f)}`);
-  if (!ai.ok) return { ok: false, message: ai.message };
-  const t0 = Date.now();
-  try {
-    const inspection = await loadInspectionBasis(p.supabase, p.card.id);
-    const oc = await callMgPart(mp, inspection, redo, req);
-    await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
-    const { r, warnings } = mgPartMerge(mp, o, oc.output, key, story, outlineFrameOf(f, req));
-    if (!r.changed) return { ok: false, message: r.notes.join(" ") };
-    const saved = await saveOutlineRow(p.supabase, p.card.id, p.year, r.composition, warnings, modelLabel(oc), o.version);
-    if (!saved.ok) {
-      if (!saved.conflict) console.error("regenerateMgPart save", saved.message);
-      return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
+  const b = await beginJob(p, "part", `${p.mode}+절${frameTag(f)}`);
+  if (!b.ok) return b;
+  return launchReportJob(b, `「${mgPartLabel(redo.part)}」 절을 다시 짜기 시작했습니다 — 다른 화면으로 가도 서버에서 끝까지 짭니다.`, async ({ ai, p: jp }) => {
+    const mp: MgPrepared = { ...jp, mg: p.mg! };
+    const t0 = Date.now();
+    try {
+      const inspection = await loadInspectionBasis(jp.supabase, jp.card.id);
+      const oc = await callMgPart(mp, inspection, redo, req);
+      await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
+      const { r, warnings } = mgPartMerge(mp, o, oc.output, key, story, outlineFrameOf(f, req));
+      if (!r.changed) return { ok: false, message: r.notes.join(" ") };
+      const saved = await saveOutlineRow(jp.supabase, jp.card.id, jp.year, r.composition, warnings, modelLabel(oc), o.version);
+      if (!saved.ok) {
+        if (!saved.conflict) console.error("regenerateMgPart save", saved.message);
+        return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
+      }
+      const n = r.composition.blocks.filter((x) => x.at === key).length;
+      const how = story && !f.pattern && !f.example ? `「${story}」 틀로` : `고른 짜임(${frameLabel(f) || "요청 글"})으로`;
+      return { ok: true, message: `「${mgPartLabel(redo.part)}」 절을 ${how} 다시 짰습니다(블록 ${n}개 — 다른 절은 그대로).${r.notes.length ? ` ${r.notes.join(" ")}` : ""} 확인하고 「승인하고 집필」을 눌러 주세요.` };
+    } catch (e) {
+      return { ok: false, message: await logAiError(ai, "report_outline", e) };
     }
-    refresh(uid);
-    const n = r.composition.blocks.filter((b) => b.at === key).length;
-    const how = story && !f.pattern && !f.example ? `「${story}」 틀로` : `고른 짜임(${frameLabel(f) || "요청 글"})으로`;
-    return { ok: true, message: `「${mgPartLabel(redo.part)}」 절을 ${how} 다시 짰습니다(블록 ${n}개 — 다른 절은 그대로).${r.notes.length ? ` ${r.notes.join(" ")}` : ""} 확인하고 「승인하고 집필」을 눌러 주세요.` };
-  } catch (e) {
-    return { ok: false, message: await logAiError(ai, "report_outline", e) };
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +265,13 @@ export interface OutlineAltView {
   same?: number | null;
 }
 
-export type OutlineAltsResult = { ok: true; version: string | null; css: string; mg: boolean; partLabel?: string; dropped: number; alts: OutlineAltView[] } | { ok: false; message: string };
+/** 여러 안 결과(작업 결과 ai_results.result.data — 화면이 GET /api/ai/results로 받음). req = 만들 때 요청(고를 때 그대로 돌려보냄 — 다른 화면에 갔다 와서 다시 열어도 같음) */
+export type OutlineAltsResult = { ok: true; version: string | null; css: string; mg: boolean; partLabel?: string; dropped: number; alts: OutlineAltView[]; req?: { request: string; sources?: DraftSources; part?: string } } | { ok: false; message: string };
+/** 여러 안 시작(백그라운드 작업 — 작업 종류 alts) */
+export type OutlineAltsStart = { ok: true; message: string; requestId: number } | { ok: false; message: string };
+
+const STARTED_ALTS = "여러 안을 만들기 시작했습니다 — 다른 화면으로 가도 서버에서 끝까지 만듭니다.";
+const DONE_ALTS = "여러 안을 다 만들었습니다 — 하나를 고르면 그 안만 저장합니다.";
 
 /** 여러 안 결과 공통 꼬리: 같은 짜임 표시 */
 function withDuplicates(views: Array<OutlineAltView & { sig: string | null }>): OutlineAltView[] {
@@ -272,9 +288,10 @@ const blockRows = (bs: Composition["blocks"]) => bs.map((b) => ({ label: b.label
 /**
  * 다른 짜임 여러 안 만들기(저장 안 함): alts = 고른 짜임 2~3개(이야기 틀·구성 패턴·2025 예시 절·「AI가 다르게」 — 같은 짜임은 한 번만), request = 함께 보낼 요청 글,
  * sources = 근거(주요사업 — 화면이 고른 첨부·전년 절), part = 경영관리 절 열쇠(그 절만 여러 안). 진행 중 AI 호출이 없을 때만, 1분 제한에 안 수만큼 셈(beginAiBatch).
- * 안마다 호출 기록 한 행(feature report_outline, mode 끝 +N안). 실패한 안은 그 안만 실패로 돌려줌
+ * 안마다 호출 기록 한 행(feature report_outline, mode 끝 +N안 — 작업 종류 alts는 첫 행에만). 실패한 안은 그 안만 실패로 돌려줌.
+ * 2026-11-06부터 시작만 하고 requestId를 돌려줌(안 만들기는 after — 결과는 작업 결과 표)
  */
-export async function runOutlineAlternatives(uid: string, raw: { alts: FrameChoice[]; request?: string; sources?: DraftSources; part?: string }): Promise<OutlineAltsResult> {
+export async function runOutlineAlternatives(uid: string, raw: { alts: FrameChoice[]; request?: string; sources?: DraftSources; part?: string }): Promise<OutlineAltsStart> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const mg = Boolean(raw?.part);
   const ca = cleanAltChoices(raw?.alts, mg);
@@ -283,7 +300,7 @@ export async function runOutlineAlternatives(uid: string, raw: { alts: FrameChoi
   return mg ? mgAlternatives(uid, String(raw.part), ca.alts, request, ca.dropped) : bizAlternatives(uid, raw?.sources, ca.alts, request, ca.dropped);
 }
 
-async function bizAlternatives(uid: string, sources: DraftSources | undefined, alts: FrameChoice[], request: string, dropped: number): Promise<OutlineAltsResult> {
+async function bizAlternatives(uid: string, sources: DraftSources | undefined, alts: FrameChoice[], request: string, dropped: number): Promise<OutlineAltsStart> {
   const p = await prepareDraft(uid, sources);
   if (!p.ok) return p;
   if (p.mg) return { ok: false, message: "경영관리 카드는 절마다 여러 안을 만듭니다 — 구성안의 절 목록에서 「짜임 고르기」를 눌러 주세요." };
@@ -293,47 +310,51 @@ async function bizAlternatives(uid: string, sources: DraftSources | undefined, a
     if (!l.ok) return l;
     inputs.push({ input: { ...l.input, alt: altContext(alts, k) }, frame: l.frame });
   }
-  const batch = await beginAiBatch(p, "report_outline", `${p.mode}+${alts.length}안`, alts.length);
-  if (!batch.ok) return { ok: false, message: batch.message };
-  const inspection = await loadInspectionBasis(p.supabase, p.card.id);
-  const views = await Promise.all(
-    inputs.map(async ({ input, frame }, k): Promise<OutlineAltView & { sig: string | null }> => {
-      const req = batch.reqs[k];
-      const label = frameLabel(frame);
-      const t0 = Date.now();
-      try {
-        const fixed = frame.story && isStory(frame.story) ? frame.story : undefined;
-        const oc = await callBizOutline(p, inspection, { memo: request, story: fixed, frame: input });
-        await req.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
-        const { composition, materialWarnings } = bizComposition(p, oc.output, request, frameRecord(frame, request));
-        const view = outlineView(composition, p.ctx.module, p.ctx.head, materialWarnings);
-        return {
-          no: k + 1,
-          label,
-          frame,
-          ok: true,
-          out: oc.output,
-          model: modelLabel(oc),
-          sec: Math.round((Date.now() - t0) / 1000),
-          story: storyLabel(composition.story, composition.subStory) || "—",
-          message: composition.message,
-          blocks: blockRows(composition.blocks),
-          fit: view.fit,
-          warnings: view.warnings,
-          materials: composition.materials.length,
-          need: composition.materials.filter((m) => m.kind === "need").length,
-          sheetHtml: view.sheetHtml,
-          sig: composition.blocks.length ? altSignature(composition.blocks, composition.story, composition.subStory) : null,
-        };
-      } catch (e) {
-        return { no: k + 1, label, frame, ok: false, error: await logAiError(req, "report_outline", e), sig: null };
-      }
-    }),
-  );
-  return { ok: true, version: p.base, css: REPORT_CSS + SHEET_CSS, mg: false, dropped, alts: withDuplicates(views) };
+  const b = await beginJob(p, "alts", `${p.mode}+${alts.length}안`, alts.length);
+  if (!b.ok) return b;
+  const started = launchReportJob(b, STARTED_ALTS, async ({ job, p: jp }) => {
+    const inspection = await loadInspectionBasis(jp.supabase, jp.card.id);
+    const views = await Promise.all(
+      inputs.map(async ({ input, frame }, k): Promise<OutlineAltView & { sig: string | null }> => {
+        const req = job.reqs[k];
+        const label = frameLabel(frame);
+        const t0 = Date.now();
+        try {
+          const fixed = frame.story && isStory(frame.story) ? frame.story : undefined;
+          const oc = await callBizOutline(jp, inspection, { memo: request, story: fixed, frame: input });
+          await req.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
+          const { composition, materialWarnings } = bizComposition(jp, oc.output, request, frameRecord(frame, request));
+          const view = outlineView(composition, jp.ctx.module, jp.ctx.head, materialWarnings);
+          return {
+            no: k + 1,
+            label,
+            frame,
+            ok: true,
+            out: oc.output,
+            model: modelLabel(oc),
+            sec: Math.round((Date.now() - t0) / 1000),
+            story: storyLabel(composition.story, composition.subStory) || "—",
+            message: composition.message,
+            blocks: blockRows(composition.blocks),
+            fit: view.fit,
+            warnings: view.warnings,
+            materials: composition.materials.length,
+            need: composition.materials.filter((m) => m.kind === "need").length,
+            sheetHtml: view.sheetHtml,
+            sig: composition.blocks.length ? altSignature(composition.blocks, composition.story, composition.subStory) : null,
+          };
+        } catch (e) {
+          return { no: k + 1, label, frame, ok: false, error: await logAiError(req, "report_outline", e), sig: null };
+        }
+      }),
+    );
+    const data: OutlineAltsResult = { ok: true, version: jp.base, css: REPORT_CSS + SHEET_CSS, mg: false, dropped, alts: withDuplicates(views), req: { request, sources } };
+    return { ok: true, message: DONE_ALTS, data };
+  });
+  return { ok: true, message: started.message, requestId: b.job.requestId };
 }
 
-async function mgAlternatives(uid: string, key: string, alts: FrameChoice[], request: string, dropped: number): Promise<OutlineAltsResult> {
+async function mgAlternatives(uid: string, key: string, alts: FrameChoice[], request: string, dropped: number): Promise<OutlineAltsStart> {
   const o = await loadOutline(uid);
   if (!o.ok) return o;
   const part = o.outline.mg?.parts.find((x) => x.key === key);
@@ -341,7 +362,7 @@ async function mgAlternatives(uid: string, key: string, alts: FrameChoice[], req
   const p = await prepareDraft(uid, o.outline.sources);
   if (!p.ok) return p;
   if (!p.mg) return { ok: false, message: "경영관리 카드가 아닙니다." };
-  const mp: MgPrepared = { ...p, mg: p.mg };
+  const mgCtx = p.mg;
   const redos: Array<{ redo: MgPartRedo; frame: FrameChoice; story?: MgMainStory }> = [];
   for (const [k, f0] of alts.entries()) {
     const l = await frameInputOf(p.supabase, f0, true);
@@ -351,47 +372,52 @@ async function mgAlternatives(uid: string, key: string, alts: FrameChoice[], req
     if (!redo) return { ok: false, message: "구성안에 없는 절입니다." };
     redos.push({ redo, frame: l.frame, story });
   }
-  const batch = await beginAiBatch(p, "report_outline", `${p.mode}+절+${alts.length}안`, alts.length);
-  if (!batch.ok) return { ok: false, message: batch.message };
-  const inspection = await loadInspectionBasis(p.supabase, p.card.id);
-  const views = await Promise.all(
-    redos.map(async ({ redo, frame, story }, k): Promise<OutlineAltView & { sig: string | null }> => {
-      const req = batch.reqs[k];
-      const label = frameLabel(frame);
-      const t0 = Date.now();
-      try {
-        const oc = await callMgPart(mp, inspection, redo, request);
-        await req.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
-        const { r, newMaterialWarnings, dataNotes } = mgPartMerge(mp, o, oc.output, key, story, frameRecord(frame, request) ?? (request ? { request } : undefined));
-        if (!r.changed) return { no: k + 1, label, frame, ok: false, error: r.notes.join(" "), sig: null };
-        // 견본·점검은 그 절만(다른 절은 지금 구성안 그대로)
-        const meta = r.composition.mg!;
-        const sub: Composition = { ...r.composition, blocks: r.composition.blocks.filter((b) => b.at === key), mg: { ...meta, parts: meta.parts.filter((x) => x.key === key) } };
-        const np = sub.mg!.parts[0];
-        return {
-          no: k + 1,
-          label,
-          frame,
-          ok: true,
-          out: oc.output,
-          model: modelLabel(oc),
-          sec: Math.round((Date.now() - t0) / 1000),
-          story: storyLabel(np?.story ?? "", np?.subStory) || "—",
-          message: np?.why ?? "",
-          blocks: blockRows(sub.blocks),
-          fit: { total: 0, budget: 0 },
-          warnings: [...newMaterialWarnings, ...dataNotes, ...mgCompositionIssues(sub)],
-          materials: new Set(sub.blocks.flatMap((b) => b.materials)).size,
-          need: sub.materials.filter((m) => m.kind === "need" && sub.blocks.some((b) => b.materials.includes(m.id))).length,
-          sheetHtml: mgSheetHtml(sub),
-          sig: altSignature(sub.blocks, np?.story ?? "", np?.subStory ?? ""),
-        };
-      } catch (e) {
-        return { no: k + 1, label, frame, ok: false, error: await logAiError(req, "report_outline", e), sig: null };
-      }
-    }),
-  );
-  return { ok: true, version: o.version, css: REPORT_CSS + SHEET_CSS, mg: true, partLabel: mgPartLabel(part), dropped, alts: withDuplicates(views) };
+  const b = await beginJob(p, "alts", `${p.mode}+절+${alts.length}안`, alts.length);
+  if (!b.ok) return b;
+  const started = launchReportJob(b, STARTED_ALTS, async ({ job, p: jp }) => {
+    const mp: MgPrepared = { ...jp, mg: mgCtx };
+    const inspection = await loadInspectionBasis(jp.supabase, jp.card.id);
+    const views = await Promise.all(
+      redos.map(async ({ redo, frame, story }, k): Promise<OutlineAltView & { sig: string | null }> => {
+        const req = job.reqs[k];
+        const label = frameLabel(frame);
+        const t0 = Date.now();
+        try {
+          const oc = await callMgPart(mp, inspection, redo, request);
+          await req.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
+          const { r, newMaterialWarnings, dataNotes } = mgPartMerge(mp, o, oc.output, key, story, frameRecord(frame, request) ?? (request ? { request } : undefined));
+          if (!r.changed) return { no: k + 1, label, frame, ok: false, error: r.notes.join(" "), sig: null };
+          // 견본·점검은 그 절만(다른 절은 지금 구성안 그대로)
+          const meta = r.composition.mg!;
+          const sub: Composition = { ...r.composition, blocks: r.composition.blocks.filter((b) => b.at === key), mg: { ...meta, parts: meta.parts.filter((x) => x.key === key) } };
+          const np = sub.mg!.parts[0];
+          return {
+            no: k + 1,
+            label,
+            frame,
+            ok: true,
+            out: oc.output,
+            model: modelLabel(oc),
+            sec: Math.round((Date.now() - t0) / 1000),
+            story: storyLabel(np?.story ?? "", np?.subStory) || "—",
+            message: np?.why ?? "",
+            blocks: blockRows(sub.blocks),
+            fit: { total: 0, budget: 0 },
+            warnings: [...newMaterialWarnings, ...dataNotes, ...mgCompositionIssues(sub)],
+            materials: new Set(sub.blocks.flatMap((b) => b.materials)).size,
+            need: sub.materials.filter((m) => m.kind === "need" && sub.blocks.some((b) => b.materials.includes(m.id))).length,
+            sheetHtml: mgSheetHtml(sub),
+            sig: altSignature(sub.blocks, np?.story ?? "", np?.subStory ?? ""),
+          };
+        } catch (e) {
+          return { no: k + 1, label, frame, ok: false, error: await logAiError(req, "report_outline", e), sig: null };
+        }
+      }),
+    );
+    const data: OutlineAltsResult = { ok: true, version: o.version, css: REPORT_CSS + SHEET_CSS, mg: true, partLabel: mgPartLabel(part), dropped, alts: withDuplicates(views), req: { request, part: key } };
+    return { ok: true, message: DONE_ALTS, data };
+  });
+  return { ok: true, message: started.message, requestId: b.job.requestId };
 }
 
 /**
@@ -544,9 +570,10 @@ export async function getOutlineCatalog(mg = false): Promise<OutlineCatalog & { 
  * 구성안 승인하고 집필(「구성안대로 집필」·「자료 반영 고치기」·구성안 패널 「승인하고 집필」): 저장된 구성안의 짜임(블록·라벨·재료)은 그대로 두고 초안을 쓰고, 구성안을 승인(approved)으로.
  * 근거 = 구성안을 만들 때 쓴 근거(첨부·전년 절) ∪ 지금 고른 첨부(pick — 새로 올린 자료 포함, 사람이 뺀 자료는 저장된 근거에 있어도 뺌 — lib/reports/draft-sources.ts mergeSources).
  * 지금 고른 자료가 이 카드의 자료가 아니면 거절(prepareDraft loose), 저장된 근거 중 그 뒤 지운 자료만 빼고 씀. 구성안에 없던 자료는 요청 글 「구성안 뒤 추가된 자료」로 이름을 알리고,
- * request(요청 칸 글 — 500자)는 「담당자 요청」(집필 지시일 뿐 근거 아님). pick이 있으면 저장하는 구성안·초안의 근거 목록도 합친 것으로(다음 블록 고치기가 새 자료를 씀)
+ * request(요청 칸 글 — 500자)는 「담당자 요청」(집필 지시일 뿐 근거 아님). pick이 있으면 저장하는 구성안·초안의 근거 목록도 합친 것으로(다음 블록 고치기가 새 자료를 씀).
+ * revise = 「자료 반영 고치기」로 보냄(작업 종류 이름만 — 쓰는 방법은 같음). 2026-11-06부터 시작만 하고 requestId(lib/ai/background.ts)
  */
-export async function approveReportOutline(uid: string, opts?: { pick?: DraftPick; request?: string }): Promise<ReportDraftState> {
+export async function approveReportOutline(uid: string, opts?: { pick?: DraftPick; request?: string; revise?: boolean }): Promise<ReportDraftState> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const o = await loadOutline(uid);
   if (!o.ok) return o;
@@ -558,7 +585,6 @@ export async function approveReportOutline(uid: string, opts?: { pick?: DraftPic
   const isNew = (kind: "card" | "report", id: string) => (kind === "card" ? merged.added.card : merged.added.report).includes(id);
   const revise: PlanRevise = { added: p.files.filter((f) => isNew(f.kind, f.id)).map((f) => f.name), request: requestText(opts?.request) };
   const plan: Composition = pick ? { ...o.outline, sources: sourcesOf(p) } : o.outline;
-  const r = await writeDraft(p, plan, revise);
-  if (r.ok) refresh(uid);
-  return r;
+  // 시작만 하고 돌려줌(집필·저장은 after — 작업 종류 plan·revise는 진행 표시 이름만 다름)
+  return writeDraft(p, plan, revise, opts?.revise ? "revise" : "plan");
 }

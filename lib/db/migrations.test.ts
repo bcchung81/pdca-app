@@ -426,6 +426,62 @@ test("AI 호출 기록 진행 중·끝맺기(2026-10-10 개선 계획 P0-3): 자
   await db.query("delete from public.ai_requests where id = any($1)", [[id, other, mine]]);
 });
 
+test("AI 백그라운드 작업 결과(ai_results, 20261106100000): 본인 결과만 읽고 지움(성과관리팀·관리자도 남의 답은 못 읽음), 자기 작업 기록에만 넣음, 만료 행은 안 보이고 다음 넣기 때 지워짐, 작업 종류는 넣을 때만·과제 영구 삭제면 연쇄", { skip: NO_SEED_CARDS }, async () => {
+  const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 order by c.id limit 1", [users.inspector])).rows[0].id;
+  const job = (who: keyof typeof users, card: string | null, kind: string | null = "assist") =>
+    as(who, () => db.query<{ id: number }>("insert into public.ai_requests (user_id, card_id, feature, status, job) values ($1, $2, 'card_assist', 'running', $3) returning id", [users[who], card, kind])).then((r) => r.rows[0].id);
+  const put = (who: keyof typeof users, req: number, card: string | null, o: { user?: keyof typeof users; feature?: string } = {}) =>
+    as(who, () => db.query("insert into public.ai_results (request_id, user_id, card_id, feature, result) values ($1, $2, $3, $4, '{\"ok\":true,\"message\":\"끝\"}')", [req, users[o.user ?? who], card, o.feature ?? "card_assist"]));
+  const mine = await job("inspector", own);
+  const plain = await job("inspector", own, null);
+  const theirs = await job("license", null);
+  try {
+    await rejects(() => as("inspector", () => db.query("insert into public.ai_requests (user_id, feature, status, job) values ($1, 'card_assist', 'running', 'nope')", [users.inspector])), /check constraint|violates/);
+    // 작업 종류는 넣을 때만(열 단위 update 권한에 없음)
+    await rejects(() => as("inspector", () => db.query("update public.ai_requests set job = 'chat' where id = $1", [mine])), /permission denied/);
+
+    await put("inspector", mine, own);
+    assert.equal(await as("inspector", () => count("select 1 from public.ai_results where request_id = $1", [mine])), 1, "본인은 읽음");
+    for (const u of ["license", "pmo", "admin"] as const) assert.equal(await as(u, () => count("select 1 from public.ai_results")), 0, `${u}: 남의 결과는 안 보임`);
+    // 남의 요청·남의 이름·작업이 아닌 요청·다른 기능·다른 카드로는 못 넣음
+    await rejects(() => put("inspector", theirs, null), /row-level security/);
+    await rejects(() => put("license", theirs, null, { user: "inspector" }), /row-level security/);
+    await rejects(() => put("inspector", plain, own), /row-level security/);
+    const second = await job("inspector", own);
+    await rejects(() => put("inspector", second, own, { feature: "card_chat" }), /row-level security/);
+    await rejects(() => put("inspector", second, null), /row-level security/);
+    // 남은 못 지우고 본인은 지움
+    assert.equal((await as("license", () => db.query("delete from public.ai_results where request_id = $1", [mine]))).affectedRows, 0);
+    assert.equal((await as("inspector", () => db.query("delete from public.ai_results where request_id = $1", [mine]))).affectedRows, 1);
+
+    // 만료 행: 본인에게도 안 보이고, 누가 새로 넣으면 지워짐
+    await put("inspector", mine, own);
+    await db.query("update public.ai_results set expires_at = now() - interval '1 minute' where request_id = $1", [mine]);
+    assert.equal(await as("inspector", () => count("select 1 from public.ai_results where request_id = $1", [mine])), 0, "만료 행은 안 보임");
+    assert.equal(await count("select 1 from public.ai_results where request_id = $1", [mine]), 1, "아직 물리 삭제 전");
+    await put("license", theirs, null);
+    assert.equal(await count("select 1 from public.ai_results where request_id = $1", [mine]), 0, "다음 넣기 때 만료 행 삭제");
+    assert.equal(await as("license", () => count("select 1 from public.ai_results where request_id = $1", [theirs])), 1, "새 행은 그대로");
+    assert.equal(await count("select 1 from public.ai_results where expires_at between now() + interval '6 days 23 hours' and now() + interval '7 days 1 minute'"), 1, "기본 만료 7일");
+  } finally {
+    await db.query("delete from public.ai_requests where user_id = any($1) and (job is not null or id = $2)", [[users.inspector, users.license], plain]);
+  }
+
+  // 과제 영구 삭제(관리자 purgeCard)면 그 과제의 결과도 연쇄 삭제
+  const purge = "시험/AI결과삭제";
+  await db.query("insert into public.cards (id, eval_unit_id, task_no, title, team_id, edition, data, status) select $2, eval_unit_id, 'AI결과삭제-1', title, team_id, edition, data, 'retired' from public.cards where id = $1", [own, purge]);
+  try {
+    const req = (await db.query<{ id: number }>("insert into public.ai_requests (user_id, card_id, feature, status, job) values ($1, $2, 'card_chat', 'ok', 'chat') returning id", [users.pmo, purge])).rows[0].id;
+    await db.query("insert into public.ai_results (request_id, user_id, card_id, feature, result) values ($1, $2, $3, 'card_chat', '{\"ok\":true}')", [req, users.pmo, purge]);
+    assert.equal((await as("admin", () => db.query("delete from public.cards where id = $1 and status = 'retired'", [purge]))).affectedRows, 1);
+    assert.equal(await count("select 1 from public.ai_results where request_id = $1", [req]), 0, "결과도 연쇄 삭제");
+    assert.equal(await count("select 1 from public.ai_requests where id = $1 and card_id is null", [req]), 1, "호출 기록은 남음(card_id on delete set null)");
+    await db.query("delete from public.ai_requests where id = $1", [req]);
+  } finally {
+    await db.query("delete from public.cards where id = $1", [purge]);
+  }
+});
+
 test("카드 원본 그림: 그 카드를 볼 수 있는 사람만 읽고, 담당자는 못 올린다", { skip: NO_SEED_CARDS }, async () => {
   const uids = (
     await db.query<{ uid: string; team: string }>(

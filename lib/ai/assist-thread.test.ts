@@ -175,3 +175,89 @@ test("보완 점검 대화: 요청 종류 이름·기록 복원, .md에 대조�
   const noCounts = ok({ id: "nc", mode: "followup", result: { ...followupResult, followup: { ...followupResult.followup, counts: undefined as never } } });
   assert.deepEqual(readTurns([noCounts], now), [], "counts가 없는 followup도 버림(화면이 깨지지 않게)");
 });
+
+// ---------------------------------------------------------------------------
+// 2026-11-06 백그라운드 작업: 차례마다 requestId, 서버 결과(ai_results)와 이 탭 기록 합치기
+
+test("기록 읽기(백그라운드): 작업 id가 있는 쓰는 중 차례는 서버가 끝을 알려 주므로 작업 창(30분)까지 기다림, 잘못된 id는 버림", async () => {
+  const { JOB_WINDOW_MS } = await import("./jobs.ts");
+  const now = Date.parse("2026-11-06T09:30:00.000Z");
+  const at = (ms: number) => new Date(now - ms).toISOString();
+  const ts = readTurns(
+    [
+      { id: "j1", at: at(PENDING_STALE_MS + 60_000), mode: "improve", ask: [], status: "pending", requestId: 11 },
+      { id: "j2", at: at(JOB_WINDOW_MS + 1), mode: "improve", ask: [], status: "pending", requestId: 12 },
+      { id: "j3", at: at(60_000), mode: "chat", ask: [], status: "pending", requestId: -3 },
+    ],
+    now,
+  );
+  assert.deepEqual(
+    ts.map((t) => [t.id, t.status, t.requestId]),
+    [
+      ["j1", "pending", 11],
+      ["j2", "error", 12],
+      ["j3", "pending", undefined],
+    ],
+  );
+});
+
+test("mergeServerTurns: 쓰는 중 차례는 서버 결과로 채우고(이 탭 id·시각·말풍선·반영 표시 유지), 없는 서버 결과·다른 곳의 진행 중 작업은 더하고, 같은 requestId는 한 번만", async () => {
+  const { OTHER_ASK, mergeServerTurns } = await import("./assist-thread.ts");
+  const local: AssistTurn[] = [
+    ok({ id: "old", at: "2026-11-06T08:00:00.000Z" }), // 옛 기록(작업 id 없음) — 그대로
+    { id: "mine", at: "2026-11-06T09:00:00.000Z", mode: "improve", ask: ["지적 중심으로", "첨부: a.pdf"], files: ["a.pdf"], status: "pending", requestId: 7 },
+    ok({ id: "done", at: "2026-11-06T09:05:00.000Z", requestId: 8, applied: [0] }),
+  ];
+  const server: AssistTurn[] = [
+    ok({ id: "r7", at: "2026-11-06T09:00:01.000Z", requestId: 7, ask: ["지적 중심으로"], model: "cli/opus" }),
+    ok({ id: "r8", at: "2026-11-06T09:05:01.000Z", requestId: 8, model: "다른 답" }),
+    { id: "r9", at: "2026-11-06T08:30:00.000Z", mode: "chat", ask: ["다른 PC 질문"], status: "ok", answer: "답", requestId: 9 },
+  ];
+  const jobs = [
+    { id: 10, kind: "chat" as const, mode: "turn:1", state: "running" as const, message: "", at: "2026-11-06T09:10:00.000Z" },
+    { id: 9, kind: "chat" as const, mode: "turn:1", state: "ok" as const, message: "", at: "2026-11-06T08:30:00.000Z" },
+    { id: 11, kind: "comment" as const, mode: "edit:1", state: "running" as const, message: "", at: "2026-11-06T09:11:00.000Z" },
+  ];
+  const m = mergeServerTurns(local, server, jobs);
+  assert.deepEqual(
+    m.map((t) => [t.id, t.status, t.requestId ?? null]),
+    [
+      ["old", "ok", null],
+      ["r9", "ok", 9],
+      ["mine", "ok", 7],
+      ["done", "ok", 8],
+      ["r10", "pending", 10],
+    ],
+    "요청 시각 순, 코멘트 작업은 대화에 안 넣음",
+  );
+  const mine = m.find((t) => t.id === "mine")!;
+  assert.equal(mine.model, "cli/opus", "서버 결과로 채움");
+  assert.deepEqual(mine.ask, ["지적 중심으로", "첨부: a.pdf"], "이 탭의 말풍선 그대로");
+  assert.equal(mine.at, "2026-11-06T09:00:00.000Z");
+  assert.equal(m.find((t) => t.id === "done")!.model, "m", "이미 받은 차례는 이 탭 것(반영 표시 포함)");
+  assert.deepEqual(m.find((t) => t.id === "done")!.applied, [0]);
+  assert.deepEqual(m.find((t) => t.id === "r10")!.ask, [OTHER_ASK]);
+  assert.equal(m.find((t) => t.id === "r10")!.mode, "chat");
+  // 다시 합쳐도 그대로(중복 없음)
+  assert.deepEqual(mergeServerTurns(m, server, jobs), m);
+});
+
+test("mergeServerTurns: 결과 행 없이 실패한 작업은 쓰는 중 차례를 실패로, 진행 중 작성지원은 요청 종류(mode)로, 최근 ASSIST_KEEP건만", async () => {
+  const { mergeServerTurns } = await import("./assist-thread.ts");
+  const pend: AssistTurn = { id: "p", at: "2026-11-06T09:00:00.000Z", mode: "discover", ask: [], status: "pending", requestId: 5 };
+  const failed = mergeServerTurns([pend], [], [{ id: 5, kind: "assist", mode: "discover", state: "error", message: "AI 작업이 끝맺지 못했습니다", at: pend.at }]);
+  assert.equal(failed[0].status, "error");
+  assert.match(failed[0].message ?? "", /끝맺지 못했/);
+  const remote = mergeServerTurns([], [], [{ id: 6, kind: "assist", mode: "reflect", state: "running", message: "", at: pend.at }]);
+  assert.equal(remote[0].mode, "reflect");
+  // 이 탭에서 막 보내 작업 id를 아직 못 받은 차례가 있으면 진행 중 작업을 따로 더하지 않음(그 차례의 작업일 수 있음)
+  const sending: AssistTurn = { id: "s", at: pend.at, mode: "improve", ask: [], status: "pending" };
+  assert.deepEqual(
+    mergeServerTurns([sending], [], [{ id: 6, kind: "assist", mode: "improve", state: "running", message: "", at: pend.at }]).map((t) => t.id),
+    ["s"],
+  );
+  const many = Array.from({ length: ASSIST_KEEP + 3 }, (_, i) => ok({ id: `s${i}`, at: new Date(Date.parse("2026-11-06T00:00:00.000Z") + i * 1000).toISOString(), requestId: 100 + i }));
+  const kept = mergeServerTurns([], many);
+  assert.equal(kept.length, ASSIST_KEEP);
+  assert.equal(kept.at(-1)!.id, `s${ASSIST_KEEP + 2}`);
+});

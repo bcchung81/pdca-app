@@ -3,11 +3,13 @@
 import { FileText, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { finishCardMaterialUpload, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
 import { getReportSelectPreview, runReportSectionDraft } from "../../app/(app)/reports/cards/actions";
 import { runReportOutline } from "../../app/(app)/reports/cards/outline-actions";
-import { type DraftRunKind, draftExpect, draftProgress, rangeText } from "../../lib/ai/progress.ts";
+import { type DraftRunKind, draftExpect, draftProgress, rangeText, remoteDraftProgress } from "../../lib/ai/progress.ts";
+import { type AiJob, JOB_KINDS, type JobKind } from "../../lib/ai/jobs.ts";
+import { markAiJobSeen, seenAiJob, settleAiJob, useAiJobs, useAiJobsDone } from "../workspace/ai-jobs";
 import { ATTACH_ACCEPT, ATTACH_LABEL, isAttachableName } from "../../lib/ai/writer.ts";
 import type { DraftThreadData } from "../../lib/reports/draft-thread.ts";
 import { AiComposer, type AiComposerMode } from "../workspace/ai-composer";
@@ -47,6 +49,8 @@ const OUTLINE_BUSY: Partial<Record<string, { kind: DraftRunKind; label: string }
 };
 /** 요청 칸 칩 이름(구성안 · 집필 · 고치기 — 바로 만들기는 답의 조용한 단추로만) */
 const CHIP: Partial<Record<DraftMode, string>> = { outline: "구성안", plan: "집필", revise: "고치기" };
+/** 요청 종류 → 백그라운드 작업 종류(진행 표시 자리) */
+const JOB_OF: Record<DraftMode, JobKind> = { outline: "outline", plan: "plan", revise: "revise", draft: "draft" };
 
 /** 지금 도는(또는 막 끝난·실패한) 요청 — 화면 상태(새로 고치면 사라짐). sig = 보낼 때의 대화 차례 열쇠(바뀌면 서버 기록이 이어받음) */
 interface Live {
@@ -60,6 +64,8 @@ interface Live {
   message?: string;
   /** 요청 칸·답 단추로 보낸 것(아니면 구성안 고치기 창) */
   own: boolean;
+  /** 서버가 돌려준 작업 id(받은 뒤) */
+  requestId?: number;
 }
 
 /**
@@ -102,8 +108,8 @@ export function DraftCompose(props: {
   outlineHuman: number;
   /** 모양 종류마다 근거 있음(구성안이 있을 때 — 틀 갤러리의 준비 정도) */
   avail: Record<string, { ok: boolean; why: string }> | null;
-  /** 구성안대로 집필·자료 반영 고치기(고친 구성안이 있으면 먼저 저장 → 승인하고 집필 — 작업 공간이 구성안 편집 상태로 함). pick = 지금 고른 근거, request = 요청 칸 글 */
-  onPlan: (o: { pick: DraftPick; request?: string }) => Promise<{ ok: boolean; message: string }>;
+  /** 구성안대로 집필·자료 반영 고치기(고친 구성안이 있으면 먼저 저장 → 승인하고 집필 — 작업 공간이 구성안 편집 상태로 함). pick = 지금 고른 근거, request = 요청 칸 글, revise = 자료 반영 고치기로 보냄. 돌려주는 requestId = 시작한 작업 */
+  onPlan: (o: { pick: DraftPick; request?: string; revise?: boolean }) => Promise<{ ok: boolean; message: string; requestId?: number }>;
   /** 지금 구성안의 이야기 틀·차선 */
   currentStory: string | null;
   alternative: string | null;
@@ -121,6 +127,8 @@ export function DraftCompose(props: {
   mg?: boolean;
   /** 관리자(짜임 고르기의 여러 안 비용 어림을 보임) */
   admin?: boolean;
+  /** 끝난 여러 안 작업을 비교 창으로 다시 엶(다른 화면에 갔다 온 뒤 — 대화의 「여러 안 보기」) */
+  onOpenAlts?: (requestId: number) => void;
 }) {
   const router = useRouter();
   const { sel, busy, thread } = props;
@@ -180,8 +188,27 @@ export function DraftCompose(props: {
   // 자료 반영 고치기로 쓴 초안(서버 기록에는 「구성안대로 집필」로 남음 — 쓴 종류를 저장하지 않음): 이 화면에서 막 보낸 것이면 그 이름으로(보낼 때의 차례 열쇠)
   const [revised, setRevised] = useState<string | null>(null);
 
+  // 이 카드의 경평 초안 작업(서버 기록 — 어느 화면·어느 PC에서 시작했든, components/workspace/ai-jobs.ts). 이 화면에서 지금 보낸 요청(live)이 없을 때
+  // 진행 중이면 진행 차례로, 다른 화면에 가 있는 동안 실패했으면 그 이유를, 여러 안이 다 됐으면 「여러 안 보기」를 보임(한 번 본 것은 다시 안 띄움)
+  const allJobs = useAiJobs();
+  const latestJob = allJobs.filter((j) => j.card?.uid === props.uid && JOB_KINDS[j.kind].group === "report").sort((a, b) => b.at.localeCompare(a.at))[0] ?? null;
+  const [dismissed, setDismissed] = useState<number | null>(null);
+  const serverJob = !live && latestJob && latestJob.id !== dismissed && (latestJob.state === "running" || (!seenAiJob(latestJob.id) && (latestJob.state === "error" || latestJob.kind === "alts"))) ? latestJob : null;
+  const dismissJob = (id: number) => {
+    markAiJobSeen(id);
+    setDismissed(id);
+  };
+  // 이 카드의 경평 초안 작업이 끝나면 화면을 새로 그림(구성안·초안은 서버가 저장함 — 다른 화면에서 시작한 것도)
+  const onJobsDone = useCallback(
+    (done: AiJob[]) => {
+      if (done.some((j) => j.card?.uid === props.uid && JOB_KINDS[j.kind].group === "report" && j.state === "ok" && j.kind !== "alts")) router.refresh();
+    },
+    [props.uid, router],
+  );
+  useAiJobsDone(onJobsDone);
+
   const running = live?.state === "run" ? live : null;
-  const blocked = Boolean(running) || Boolean(busy) || Boolean(uploading);
+  const blocked = Boolean(running) || Boolean(busy) || Boolean(uploading) || serverJob?.state === "running";
   // 진행 줄의 「넣은 근거」(서버 prepareDraft와 같음): 구성안 만들기·바로 만들기는 지금 고른 근거, 구성안대로 집필·자료 반영 고치기는 구성안에 저장된 근거 ∪ 지금 고른 첨부(뺀 자료 제외 —
   // approveReportOutline mergeSources), 구성안 고치기 창의 다시 만들기·짜임 다시 짜기는 구성안에 저장된 근거
   const priorNames = (keys: string[]) =>
@@ -295,8 +322,13 @@ export function DraftCompose(props: {
     setSentRequest(Boolean(request));
     setRevised(null);
     props.setBusy(m);
+    // 앞서 보인 실패·여러 안 알림은 새 요청으로 대신함
+    if (latestJob && latestJob.state !== "running") markAiJobSeen(latestJob.id);
     try {
-      const r = m === "outline" ? await runReportOutline(props.uid, sources, request || undefined, frame ?? undefined) : m === "plan" || m === "revise" ? await props.onPlan({ pick, request: request || undefined }) : await runReportSectionDraft(props.uid, sources);
+      // 서버는 시작만 하고 작업 id를 돌려줌 — 작업이 끝날 때까지 기다림(다른 화면에 가도 서버는 끝까지 돌고, 돌아오면 서버 기록으로 진행 줄을 이어 받음)
+      const started = m === "outline" ? runReportOutline(props.uid, sources, request || undefined, frame ?? undefined) : m === "plan" || m === "revise" ? props.onPlan({ pick, request: request || undefined, revise: m === "revise" }) : runReportSectionDraft(props.uid, sources);
+      const r = await settleAiJob(started, JOB_OF[m], { card: { uid: props.uid }, onStart: (requestId) => setLive((l) => (l && l.id === id ? { ...l, requestId } : l)) });
+      if (r.requestId) markAiJobSeen(r.requestId);
       setLive(r.ok ? { ...me, state: "done" } : { ...me, state: "error", message: r.message });
       if (r.ok) {
         if (own) setMemo("");
@@ -440,6 +472,34 @@ export function DraftCompose(props: {
                 />
               ))}
             </ol>
+          )}
+          {serverJob && (
+            // 서버 기록의 작업(다른 화면·다른 PC에서 시작했거나 이 화면을 떠난 사이 끝난 것) — 근거 목록은 이 화면이 모르므로 비움
+            <div data-live data-job={serverJob.id} className="flex min-w-0 flex-col gap-2.5">
+              <AskBubble label={JOB_KINDS[serverJob.kind].label} lines={[]} />
+              {serverJob.state === "running" && <AiProgress key={`job-${serverJob.id}`} spec={remoteDraftProgress(serverJob.kind, props.mg)} startedAt={Date.parse(serverJob.at)} />}
+              {serverJob.state === "error" && (
+                <div role="alert" className="flex min-w-0 items-start gap-2 rounded-md border border-error-line bg-error-bg px-3 py-2 text-ui text-error-strong">
+                  <span className="min-w-0 grow">{serverJob.message}</span>
+                  <button type="button" onClick={() => dismissJob(serverJob.id)} aria-label="알림 닫기" className="flex size-5 shrink-0 items-center justify-center rounded hover:text-ink">
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+              {serverJob.state === "ok" && serverJob.kind === "alts" && (
+                <AnswerHead at={serverJob.endAt}>
+                  <span className="text-ui text-ink">여러 안을 다 만들었어요</span>
+                  {props.onOpenAlts && props.canWrite && (
+                    <button type="button" onClick={() => props.onOpenAlts?.(serverJob.id)} className={T.btnSm}>
+                      여러 안 보기
+                    </button>
+                  )}
+                  <button type="button" onClick={() => dismissJob(serverJob.id)} className={T.btnQuiet} title="고르지 않고 닫기 — 결과는 저장되지 않음">
+                    닫기
+                  </button>
+                </AnswerHead>
+              )}
+            </div>
           )}
           {live && (
             <div data-live className="flex min-w-0 flex-col gap-2.5">

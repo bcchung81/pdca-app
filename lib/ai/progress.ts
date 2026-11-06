@@ -4,6 +4,7 @@
 // 선별 방식이 적용되는 기능은 getCardSelectPreview가 미리 알려 준 고른 수로 「공통 규칙 문서 + 고른 자료 + 제목 목록」),
 // 경평 초안은 app/(app)/reports/cards/draft-prepare.ts(prepareDraft — 고른 근거, 구성안대로 집필·자료 반영 고치기는 구성안에 저장된 근거 ∪ 지금 고른 첨부(lib/reports/draft-sources.ts mergeSources),
 // 선별 방식이면 getReportSelectPreview가 알려 준 고른 수). 자료 범위가 바뀌면 여기도 함께 고칩니다.
+import type { JobKind } from "./jobs.ts";
 import { MG_FILL } from "../reports/mg-fill-limits.ts";
 import { CHAT_LIMITS } from "./chat.ts";
 import { WRITER_MODES, type WriterMode } from "./writer.ts";
@@ -185,6 +186,18 @@ export function draftProgress(
     sources.push({ label: "분량 보강", detail: `초안을 쓴 뒤 먼저 저장하고, 분량이 배정의 ${Math.round(MG_FILL.low * 100)}%보다 적거나 나란한 칸이 비거나 초안에 안 쓴 원장 성과·같은 수치 되풀이(반복 수치)가 있으면 보강할 수 있는 블록을 모두 하나씩 다시 쓰고, 아직 배정의 ${Math.round(MG_FILL.low * 100)}%에 못 미치면 한 번 더(최대 ${MG_FILL.rounds}회·${Math.round(MG_FILL.maxSec / 60)}분 안 — 블록 고치기와 같은 근거·검증, 받지 못한 블록은 1차 글 그대로)` });
   sources.push(reportKnowledge(o.selected, " — 평가 근거·전년 절은 그중 이 과제에 맞게 고른 것"));
   return { title: DRAFT_TITLE[kind], expect: draftExpect(kind, o.mg), sources };
+}
+
+/** 백그라운드 작업 종류 → 경평 초안 진행 줄 종류 */
+const JOB_RUN: Partial<Record<JobKind, DraftRunKind>> = { outline: "outline", alts: "alts", part: "story", plan: "plan", revise: "revise", draft: "draft" };
+
+/**
+ * 다른 화면·다른 PC에서 보내 아직 도는 경평 초안 작업의 진행 줄(2026-11-06 — 백그라운드 작업): 이 화면은 그 요청에 넣은 근거를 모르므로 근거 목록은 비우고
+ * 제목·보통 걸리는 시간만(지어내지 않음). 경과 시간은 부르는 쪽이 작업 시작 시각(running 행 created_at)으로 셈
+ */
+export function remoteDraftProgress(kind: JobKind, mg = false): ProgressSpec {
+  const run = JOB_RUN[kind] ?? "outline";
+  return { title: DRAFT_TITLE[run], expect: draftExpect(run, mg), sources: [] };
 }
 
 // ---------------------------------------------------------------------------

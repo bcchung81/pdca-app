@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { Suspense } from "react";
 import Link from "next/link";
 import { NAV_COOKIE, type NavMode, navSectionsFor } from "../../components/shell/nav-items";
+import { AiJobsMenu } from "../../components/shell/ai-jobs-menu";
 import { BrandLogo } from "../../components/shell/brand-mark";
 import { NavProvider } from "../../components/shell/nav-context";
 import { NavDrawer } from "../../components/shell/nav-drawer";
@@ -89,6 +90,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           {tracks.has("경영관리") && tracks.has("주요사업") && <TrackSwitch track={track} />}
         </div>
         <div className="flex min-w-0 shrink items-center gap-2.5 max-md:gap-1">
+          {/* 진행 중인 AI 작업(없으면 안 그림 — components/shell/ai-jobs-menu.tsx) */}
+          <AiJobsMenu />
           <QuickFind items={findItems} base={user.role === "dept_user" ? "/my" : "/cards"} />
           <Link href="/help" className="shrink-0 text-xs whitespace-nowrap text-link no-underline hover:underline max-md:hidden">
             도움말

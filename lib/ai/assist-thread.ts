@@ -1,7 +1,9 @@
 // 카드 「AI 작성지원」 대화 기록(순수): 요청 종류(구조화 제안)와 「질문」(자유 대화)을 한 흐름에 차례로 쌓아 보여 주고
-// 이 브라우저 탭에만 남깁니다(sessionStorage). 서버는 결과 본문을 저장하지 않습니다(ai_requests에 토큰만).
-// 옆 창을 닫았다 열거나 AI가 도는 사이 닫아도 결과가 남고, 「질문」은 앞의 요청·답을 이어서 물을 수 있습니다.
+// 이 브라우저 탭(sessionStorage)에 남깁니다. 2026-11-06부터 요청은 백그라운드 작업(lib/ai/background.ts)이라 차례마다 requestId를 두고,
+// 답 차례는 요청한 본인만 읽는 결과 표(ai_results — 7일)에도 남아 다른 PC·닫은 탭에서도 서버 기준으로 다시 채웁니다(mergeServerTurns — 같은 requestId는 한 번만).
+// 옆 창을 닫았다 열거나 AI가 도는 사이 다른 화면에 가도 결과가 남고, 「질문」은 앞의 요청·답을 이어서 물을 수 있습니다.
 import type { ChatTurn } from "./chat.ts";
+import { type AiJob, JOB_WINDOW_MS } from "./jobs.ts";
 import { type VerifiedResult, WRITER_MODES, type WriterMode } from "./writer.ts";
 
 /** 없앤 요청 종류 — 이 탭에 남은 옛 기록을 버리지 않고 이름만 보임(칩에는 없음) */
@@ -36,6 +38,8 @@ export interface AssistTurn {
   applied?: number[];
   /** 결과를 받은 시각(ISO) */
   doneAt?: string;
+  /** 백그라운드 작업 id(ai_requests.id — 서버 결과와 맞추는 열쇠). 옛 기록·시작 전에 막힌 요청은 없음 */
+  requestId?: number;
 }
 
 /** 이 탭에 남기는 요청 수 */
@@ -62,7 +66,10 @@ export function readTurns(raw: unknown, now = Date.now()): AssistTurn[] {
     const ask = Array.isArray(t.ask) ? t.ask.filter((a: unknown): a is string => typeof a === "string") : [];
     const turn: AssistTurn = { ...t, ask };
     if (t.skipped !== undefined) turn.skipped = Array.isArray(t.skipped) ? t.skipped.filter((x: unknown): x is string => typeof x === "string") : undefined;
-    if (turn.status === "pending" && now - Date.parse(turn.at) > PENDING_STALE_MS) Object.assign(turn, { status: "error", message: "요청이 끊겼습니다(화면을 새로 고쳤거나 시간이 지남). 다시 요청해 주세요." });
+    if (t.requestId !== undefined) turn.requestId = Number.isSafeInteger(t.requestId) && t.requestId > 0 ? t.requestId : undefined;
+    // 쓰는 중: 작업 id가 있으면 서버가 끝을 알려 주므로 작업 창(30분)이 지날 때까지 기다림, 없으면(옛 기록) 예전대로
+    const stale = turn.requestId ? JOB_WINDOW_MS : PENDING_STALE_MS;
+    if (turn.status === "pending" && now - Date.parse(turn.at) > stale) Object.assign(turn, { status: "error", message: "요청이 끊겼습니다(화면을 새로 고쳤거나 시간이 지남). 다시 요청해 주세요." });
     out.push(turn);
   }
   return out.slice(-ASSIST_KEEP);
@@ -198,3 +205,50 @@ export function threadMarkdown(title: string, turns: AssistTurn[], at: (iso: str
   }
   return out.join("\n").trim() + "\n";
 }
+
+/** 다른 화면·다른 PC에서 보내 아직 도는 요청의 말풍선(요청 글은 끝난 뒤 서버 결과로 채움) */
+export const OTHER_ASK = "다른 화면에서 보낸 요청";
+
+/**
+ * 서버 기준으로 대화 합치기(순수): local = 이 탭 기록, server = 결과 표의 차례(작성지원·질문 — readTurns로 모양 확인한 것), jobs = 이 카드의 작업 상태(진행 중·실패).
+ *  - 이 탭의 쓰는 중 차례에 서버 결과가 오면 결과로 채움(이 탭의 id·요청 시각·말풍선·반영 표시는 그대로)
+ *  - 결과 행이 없이 실패한 작업(함수 끊김 등)이면 그 차례를 실패로
+ *  - 이 탭에 없는 서버 결과는 차례로 더하고, 이 탭에 없는 진행 중 작업은 쓰는 중 차례로 더함(같은 requestId는 한 번만 — 이 탭에서 막 보내 작업 id를 아직 못 받은 차례가 있으면 더하지 않음)
+ *  - 요청 시각 순, 최근 ASSIST_KEEP건
+ */
+export function mergeServerTurns(local: AssistTurn[], server: AssistTurn[], jobs: Array<Pick<AiJob, "id" | "kind" | "mode" | "state" | "message" | "at">> = []): AssistTurn[] {
+  const byReq = new Map(server.filter((t) => t.requestId).map((t) => [t.requestId!, t] as const));
+  const jobById = new Map(jobs.map((j) => [j.id, j] as const));
+  const seen = new Set<number>();
+  const out: AssistTurn[] = [];
+  for (const t of local) {
+    if (!t.requestId) {
+      out.push(t);
+      continue;
+    }
+    if (seen.has(t.requestId)) continue;
+    seen.add(t.requestId);
+    const s = byReq.get(t.requestId);
+    const j = jobById.get(t.requestId);
+    if (t.status === "pending" && s) out.push({ ...s, id: t.id, at: t.at, ask: t.ask.length ? t.ask : s.ask, files: t.files ?? s.files, ...(t.applied ? { applied: t.applied } : {}) });
+    else if (t.status === "pending" && j?.state === "error") out.push({ ...t, status: "error", message: j.message });
+    else out.push(t);
+  }
+  for (const s of server) {
+    if (!s.requestId || seen.has(s.requestId)) continue;
+    seen.add(s.requestId);
+    out.push(s);
+  }
+  // 이 탭에서 막 보내 아직 작업 id를 못 받은 차례가 있으면 진행 중 작업을 새 차례로 더하지 않음(그 차례의 작업일 수 있음 — id를 받으면 이어짐)
+  const starting = local.some((t) => t.status === "pending" && !t.requestId);
+  for (const j of jobs) {
+    if (starting || seen.has(j.id) || j.state !== "running" || (j.kind !== "assist" && j.kind !== "chat")) continue;
+    seen.add(j.id);
+    const mode: TurnMode = j.kind === "chat" ? "chat" : j.mode && j.mode in WRITER_MODES ? (j.mode as WriterMode) : "improve";
+    out.push({ id: `r${j.id}`, requestId: j.id, at: j.at, mode, ask: [OTHER_ASK], status: "pending" });
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at)).slice(-ASSIST_KEEP);
+}
+
+/** 두 기록이 같은가(합친 뒤 바뀐 것이 없으면 다시 저장하지 않게) */
+export const sameTurns = (a: AssistTurn[], b: AssistTurn[]) => JSON.stringify(a) === JSON.stringify(b);

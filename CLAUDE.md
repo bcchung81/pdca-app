@@ -139,12 +139,12 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 카드 전용 자료는 그 카드의 `card_materials` 안에서만 사용자 권한으로 읽음. 첨부는 올릴 때 kordoc으로 읽어 전체 글 저장(`parsed_text`, `PARSER_VERSION`), 요청 때는 **자르지 않음**(`loadMaterialTexts`) — 대신 요청 전체가 `INPUT_BUDGET` 40만을 넘으면 멈춤(`BudgetError`). `ASSIST_TEXT_MAX`는 화면 maxLength와 서버 자르기가 같은 값
 - 이미지·스캔 PDF 첨부는 light 모델(`material_describe`)이 적은 그림 설명이 전체 글(표지 「[그림 설명 — AI가 … 적은 글입니다]」, 원문 인용 금지). **API 경로에서만**(CLI·일시 오류는 `pending`)
 - Vercel(`VERCEL`)에서는 늘 `api`. 모델·effort·출력 상한은 `lib/ai/models.ts`의 `FEATURE_TIER`·`FEATURE_EFFORT`(월간 점검 `xhigh`)·`FEATURE_MAX_TOKENS`(환경변수 `CLAUDE_MODEL_HEAVY` 등이 앞섬)
-- 호출 기록 `ai_requests`는 토큰·오류·소요 시간만. **부르기 전에 running 행**(`startAiRequest`), 제한 1분 5회 + 동시 2건(`AI_LIMITS`). `duration_ms`는 래퍼 `finish`가 계산하고, 래퍼를 안 거치는 직접 insert(`prep_match`·`material_describe`)는 호출부가 잰 ms를 남김
+- 호출 기록 `ai_requests`(토큰·오류·시간). **부르기 전에 running 행**(`startAiRequest`), 1분 5회 + 동시 2건(`AI_LIMITS`). AI 요청은 백그라운드: 액션은 검증·제한·running 행까지, AI·저장은 `after()`(`lib/ai/background.ts`), 진행은 GET `/api/ai/requests`(서버 액션 폴링 금지)
 - 진행 줄(`AiProgress`)은 서버가 실제로 넣는 자료와 같게만 적고 지어내지 않음. **카드 배율은 0.6~1.1배까지**
 
 ### AI 작성지원 「질문」·카드 리뷰어(코멘트)
 
-「질문」(`runCardChat`, `lib/ai/chat.ts`)은 카드를 고치지 않고 답 `{answer}`(마크다운)만 냄. 점검결과를 물으면 판단·문장을 바꾸지 않고(요약·수정·재판정 금지) 배치만 정리, 계산값은 계산값이라고 밝힘. 서버는 대화 본문을 저장하지 않고(sessionStorage, `card_chat`은 토큰만) 최근 8턴·2.4만 자만 받음(`cleanHistory`).
+「질문」(`runCardChat`, `lib/ai/chat.ts`)은 카드를 고치지 않고 답 `{answer}`(마크다운)만 냄. 점검결과를 물으면 판단·문장을 바꾸지 않고(요약·수정·재판정 금지) 배치만 정리, 계산값은 계산값이라고 밝힘. 답 차례는 sessionStorage + 본인만 읽는 `ai_results`(7일), 서버는 최근 8턴·2.4만 자만 받음(`cleanHistory`).
 카드 리뷰어(`runCardComments`): 한 번에 최대 12개, 합치기는 「보낼 때 값 = 지금 값」일 때만(아니면 「충돌」). 서버는 카드를 직접 저장하지 않고 `saveCard`·`saveDraft` 경로로만 반영하며, 부서 작성본의 잠긴 고정 영역은 AI가 못 고침(`fixedSectionsOf`, `editTargets(card, locked)`). 삭제는 AI 없이 바로(「되돌리기」), 「좋음」은 다음 요청의 「유지할 부분」.
 
 상세: `docs/design/ai-assist.md`

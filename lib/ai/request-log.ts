@@ -36,7 +36,7 @@ export type AiRequestStart = { ok: true; id: number; finish: (o: AiRequestFinish
  * AI 호출 직전에 부름. limited(기본 true)면 최근 60초 기록·진행 중 호출 수로 거절할 수 있음. 성공하면 running 행 id와 끝맺기 함수.
  * now는 시험용(기본 Date.now())
  */
-export async function startAiRequest(db: SupabaseClient, o: { userId: string; cardId?: string | null; feature: string; mode?: string | null; limited?: boolean }, now = Date.now()): Promise<AiRequestStart> {
+export async function startAiRequest(db: SupabaseClient, o: { userId: string; cardId?: string | null; feature: string; mode?: string | null; limited?: boolean; job?: string }, now = Date.now()): Promise<AiRequestStart> {
   await closeStale(db, o.userId, now);
   if (o.limited !== false) {
     const { running, recent } = await countActive(db, o.userId, now);
@@ -58,15 +58,16 @@ export function batchLimitMessage(s: { running: number; recent: number }, n: num
 }
 
 /**
- * 여러 안 묶음 시작: 제한(batchLimitMessage)을 본 뒤 안마다 running 행 하나(기록은 안마다 한 행 — 토큰·오류·소요 시간이 따로 남음). 행을 넣다 실패하면 이미 넣은 행은 error로 닫고 거절
+ * 여러 안 묶음 시작: 제한(batchLimitMessage)을 본 뒤 안마다 running 행 하나(기록은 안마다 한 행 — 토큰·오류·소요 시간이 따로 남음). 행을 넣다 실패하면 이미 넣은 행은 error로 닫고 거절.
+ * job(백그라운드 작업 종류 — lib/ai/jobs.ts)은 첫 행에만 적음(묶음 하나가 작업 하나 — 결과 행은 첫 행 id로)
  */
-export async function startAiRequests(db: SupabaseClient, o: { userId: string; cardId?: string | null; feature: string; mode?: string | null }, n: number, now = Date.now()): Promise<{ ok: true; reqs: Array<Extract<AiRequestStart, { ok: true }>> } | { ok: false; message: string }> {
+export async function startAiRequests(db: SupabaseClient, o: { userId: string; cardId?: string | null; feature: string; mode?: string | null; job?: string }, n: number, now = Date.now()): Promise<{ ok: true; reqs: Array<Extract<AiRequestStart, { ok: true }>> } | { ok: false; message: string }> {
   await closeStale(db, o.userId, now);
   const blocked = batchLimitMessage(await countActive(db, o.userId, now), n);
   if (blocked) return { ok: false, message: blocked };
   const reqs: Array<Extract<AiRequestStart, { ok: true }>> = [];
   for (let i = 0; i < n; i++) {
-    const r = await insertRunning(db, o, now);
+    const r = await insertRunning(db, i === 0 ? o : { ...o, job: undefined }, now);
     if (!r.ok) {
       for (const x of reqs) await x.finish({ status: "error", error: "여러 안 — 호출 기록을 남기지 못해 묶음을 멈춤" }, now);
       return r;
@@ -95,11 +96,11 @@ async function countActive(db: SupabaseClient, userId: string, now: number): Pro
   return { running: running ?? 0, recent: recent ?? 0 };
 }
 
-/** running 행 하나 넣고 끝맺기 함수를 돌려줌 */
-async function insertRunning(db: SupabaseClient, o: { userId: string; cardId?: string | null; feature: string; mode?: string | null }, now: number): Promise<AiRequestStart> {
+/** running 행 하나 넣고 끝맺기 함수를 돌려줌. job = 백그라운드 작업 종류(없으면 열을 안 보냄 — 동기 호출) */
+async function insertRunning(db: SupabaseClient, o: { userId: string; cardId?: string | null; feature: string; mode?: string | null; job?: string }, now: number): Promise<AiRequestStart> {
   const { data, error } = await db
     .from("ai_requests")
-    .insert({ user_id: o.userId, card_id: o.cardId ?? null, feature: o.feature, mode: o.mode ?? null, status: "running" })
+    .insert({ user_id: o.userId, card_id: o.cardId ?? null, feature: o.feature, mode: o.mode ?? null, status: "running", ...(o.job ? { job: o.job } : {}) })
     .select("id")
     .single();
   if (error || !data) return { ok: false, message: "AI 호출 기록을 남기지 못해 요청을 멈췄습니다. 잠시 뒤 다시 시도해 주세요." };

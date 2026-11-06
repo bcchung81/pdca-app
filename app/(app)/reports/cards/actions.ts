@@ -37,16 +37,15 @@ export async function setReportSectionBp(uid: string, bp: boolean): Promise<Repo
  * 경평 초안 과제별 초안(카드 1장 → 평가내용2 소항목 spec) — 「AI로 바로 만들기」. 근거 = 원장 카드(한 해 동안 고친 결과) + 고른 첨부 자료
  * (그 카드의 전용 자료 · 그 카드가 속한 보고서의 추가자료). 번호·마커·숫자 대조는 코드가 정합니다.
  * 그 카드를 고칠 수 있는 사람만(부서는 자기 부서 카드) — 최종 판정은 RLS. 자료도 사용자 권한으로 저장소에서 읽음.
- * 호출 기록 ai_requests.feature = report_section.
+ * 호출 기록 ai_requests.feature = report_section. 2026-11-06부터 백그라운드 작업(시작만 하고 requestId — lib/ai/background.ts, 작업 종류 draft).
  */
 export async function runReportSectionDraft(uid: string, sources?: DraftSources): Promise<ReportDraftState> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const p = await prepareDraft(uid, sources);
   if (!p.ok) return p;
   if (p.mg) return { ok: false, message: "경영관리는 「구성안 만들기」로 시작합니다(이 카드가 맡을 평가내용·대주제·절을 먼저 정하고 승인한 뒤 집필)." };
-  const r = await writeDraft(p);
-  if (r.ok) refresh(uid);
-  return r;
+  // 시작만 하고 돌려줌(AI·저장은 after — 화면이 작업 끝을 보고 새로 그림)
+  return writeDraft(p);
 }
 
 /**

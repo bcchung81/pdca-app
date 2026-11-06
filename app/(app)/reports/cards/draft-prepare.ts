@@ -23,6 +23,8 @@ import { loadPriorSections } from "../../../../lib/reports/prior-queries.ts";
 import { type ReportFile, type SectionContext, type SiblingCard, type SiblingLayout, draftEvidence, readSection, sectionContext, sectionHints, siblingLayout } from "../../../../lib/reports/section.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { type AiRequestStart, startAiRequest, startAiRequests } from "../../../../lib/ai/request-log.ts";
+import { type AiJobStart, launchAiJob, startAiJob } from "../../../../lib/ai/background.ts";
+import type { JobKind } from "../../../../lib/ai/jobs.ts";
 import { isMgmtCard } from "../../../../lib/cards/mgmt-card.ts";
 import { type MgDraftContext, mgCardAsOf, mgMarkers } from "../../../../lib/reports/mg-draft.ts";
 import { type MgSibling, defaultEvals, mgSiblingOf } from "../../../../lib/reports/mg-outline.ts";
@@ -32,7 +34,8 @@ import { type FollowupBasis, followupBasis } from "../../../../lib/ai/followup.t
 import { readResult } from "../../../../lib/inspections/model.ts";
 import type { SplitSibling } from "../../../../lib/reports/split-axes.ts";
 
-export type ReportDraftState = { ok: true; message: string } | { ok: false; message: string };
+/** requestId = 백그라운드로 시작한 AI 작업(화면이 GET /api/ai/requests로 끝을 기다림 — message는 시작 알림, 끝맺음 글은 작업 결과) */
+export type ReportDraftState = { ok: true; message: string; requestId?: number } | { ok: false; message: string };
 
 /** 초안에 넣을 첨부 자료: 카드 전용 자료 id · 그 보고서 추가자료 id */
 export interface DraftSources {
@@ -266,6 +269,33 @@ export const beginAi = (p: Prepared, feature: string, mode = p.mode) => startAiR
 /** 여러 안(같은 요청 n번을 동시에): 진행 중 AI 호출이 없을 때만, 1분 제한에 n건으로 셈 — 안마다 기록 한 행(lib/ai/request-log.ts startAiRequests) */
 export const beginAiBatch = (p: Prepared, feature: string, mode: string, n: number) => startAiRequests(p.supabase, { userId: p.me.id, cardId: p.card.id, feature, mode }, n);
 export type AiReq = Extract<AiRequestStart, { ok: true }>;
+
+/** 시작한 백그라운드 작업 + after 안에서 쓸 근거(supabase를 작업 클라이언트로 바꾼 것 — 사용자 권한, 토큰을 스스로 갱신하지 않음) */
+export interface ReportJob {
+  job: AiJobStart;
+  /** 첫 호출 기록(여러 안이면 job.reqs 전부) */
+  ai: AiReq;
+  p: Prepared;
+}
+
+/**
+ * 경평 초안 AI 작업 시작(lib/ai/background.ts — 같은 카드의 경평 초안 작업 중복 막기 → 1분 5회·동시 2건 → running 행). n = 여러 안 수(안마다 기록 한 행).
+ * 근거 모으기·권한·잠금은 부르는 쪽이 이미 함(prepareDraft)
+ */
+export async function beginJob(p: Prepared, kind: JobKind, mode = p.mode, n?: number): Promise<({ ok: true } & ReportJob) | { ok: false; message: string }> {
+  const job = await startAiJob({ userId: p.me.id, cardId: p.card.id, kind, mode, n });
+  if (!job.ok) return job;
+  return { ok: true, job, ai: job.reqs[0], p: { ...p, supabase: job.db as Prepared["supabase"] } };
+}
+
+/**
+ * 시작한 작업을 응답 뒤(after)에 돌리고 곧바로 시작 알림을 돌려줌. work = 예전 서버 액션 본문(AI 호출·검증·저장 — 끝맺음 글을 ReportDraftState로).
+ * work 안에서는 refresh(revalidatePath)를 부르지 않음 — 화면이 작업이 끝난 것을 보고 router.refresh로 새로 그림
+ */
+export function launchReportJob(r: ReportJob, started: string, work: (r: ReportJob) => Promise<ReportDraftState | { ok: boolean; message: string; data?: unknown }>): ReportDraftState {
+  launchAiJob(r.job, () => work(r));
+  return { ok: true, message: started, requestId: r.job.requestId };
+}
 
 /** AI 실패 기록(실패 종류 — CLI subtype·턴 수, 본문 없음): 시작한 호출 기록을 error로 끝맺음 */
 export async function logAiError(ai: AiReq, feature: string, e: unknown): Promise<string> {

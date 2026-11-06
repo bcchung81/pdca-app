@@ -2,9 +2,11 @@
 
 import { Check, ChevronDown, ChevronUp, Copy, Ellipsis } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { getCardSelectPreview, runCardAssist, runCardChat } from "../../app/(app)/cards/actions";
+import { clearCardAiResults, getCardSelectPreview, runCardAssist, runCardChat } from "../../app/(app)/cards/actions";
 import { type CardMaterial, finishCardMaterialUpload, listCardMaterials, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
-import { ASK_CLIP, type AssistTurn, CHAT_MODE, type TurnMode, askLines, assistKey, chatHistory, fromChatMessages, legacyChatKey, modeLabel, patchTurn, pushTurn, readTurns, threadMarkdown, turnHeadline, turnMarkdown } from "../../lib/ai/assist-thread.ts";
+import { ASK_CLIP, type AssistTurn, CHAT_MODE, type TurnMode, askLines, assistKey, chatHistory, fromChatMessages, legacyChatKey, mergeServerTurns, modeLabel, patchTurn, pushTurn, readTurns, sameTurns, threadMarkdown, turnHeadline, turnMarkdown } from "../../lib/ai/assist-thread.ts";
+import { ASSIST_FEATURES, type JobResultRow } from "../../lib/ai/jobs.ts";
+import { fetchAiResults, trackAiJob, useAiJobs } from "../workspace/ai-jobs";
 import { CHAT_LIMITS } from "../../lib/ai/chat.ts";
 import { assistProgress } from "../../lib/ai/progress.ts";
 import { ASSIST_TEXT_MAX, ATTACH_ACCEPT, ATTACH_LABEL, type VerifiedSuggestion, WRITER_MODES, type WriterMode, isAttachableName } from "../../lib/ai/writer.ts";
@@ -78,15 +80,21 @@ function saveTurns(uid: string, turns: AssistTurn[]) {
   }
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT, { detail: uid }));
 }
-/** 저장된 기록을 고쳐 씀(옆 창이 닫힌 뒤 끝난 요청도 기록에 남게 — 화면 상태가 아니라 저장 공간 기준) */
+/** 저장된 기록을 고쳐 씀(옆 창이 닫힌 뒤 끝난 요청도 기록에 남게 — 화면 상태가 아니라 저장 공간 기준). 바뀐 것이 없으면 다시 쓰지 않음 */
 function updateTurns(uid: string, f: (ts: AssistTurn[]) => AssistTurn[]) {
-  saveTurns(uid, f(loadTurns(uid)));
+  const before = loadTurns(uid);
+  const after = f(before);
+  if (!sameTurns(before, after)) saveTurns(uid, after);
 }
+/** 결과 표의 행 → 대화 차례(모양을 확인한 것만 — 서버 결과도 브라우저 기록과 같은 검사, 오래된 것 먼저) */
+const serverTurns = (rows: JobResultRow[]) => readTurns(rows.map((r) => r.result.data).reverse());
 
 /**
  * 카드 AI 작성지원(담당자 작성지원 지침 09) — Claude 대화처럼 요청(오른쪽 말풍선) → 답(읽기 본문)을 차례로 쌓아 보여 줍니다.
  * 요청 종류 5가지(구조화 제안·카드 반영 버튼)와 「질문」(자유 대화 — 앞의 요청·답을 이어서 물음, 점검결과도 봄)이 한 흐름입니다.
- * 결과는 제안이고, 반영 버튼은 편집 권한이 있을 때만 씁니다. 기록은 이 브라우저 탭에만(sessionStorage, 최근 12건).
+ * 결과는 제안이고, 반영 버튼은 편집 권한이 있을 때만 씁니다. 기록은 이 브라우저 탭(sessionStorage, 최근 12건)에 두고,
+ * 요청은 백그라운드 작업이라(2026-11-06 — 서버 액션은 시작만, 차례마다 requestId) 다른 화면에 갔다 와도 진행 줄이 이어지고, 답은 본인만 읽는 서버 결과(7일)로
+ * 다른 PC·닫은 탭에서도 다시 채웁니다(lib/ai/assist-thread.ts mergeServerTurns).
  */
 export function AiAssist(props: {
   uid: string;
@@ -139,6 +147,38 @@ export function AiAssist(props: {
     setTurns(ts);
     return ts;
   }, [uid]);
+  // 이 카드의 AI 작성지원·질문 작업(진행 중·최근 끝난 것 — 머리띠와 같은 저장소, components/workspace/ai-jobs.ts)
+  const allJobs = useAiJobs();
+  const cardJobs = allJobs.filter((j) => j.card?.uid === uid && (j.kind === "assist" || j.kind === "chat"));
+  const jobsKey = cardJobs.map((j) => `${j.id}:${j.state}`).join(",");
+  // 결과를 받으러 간 작업 id(같은 결과를 두 번 받지 않게)
+  const fetching = useRef(new Set<number>());
+  // 열 때 서버 결과(최근 7일·본인)로 이 탭 기록을 채움 — 다른 PC·닫은 탭에서 받은 답도 같은 차례로(같은 requestId는 한 번만)
+  useEffect(() => {
+    let live = true;
+    void fetchAiResults({ card: uid, features: ASSIST_FEATURES }).then((rows) => {
+      if (live && rows.length) updateTurns(uid, (ts) => mergeServerTurns(ts, serverTurns(rows)));
+    });
+    return () => {
+      live = false;
+    };
+  }, [uid]);
+  // 작업 상태가 바뀌면: 다른 곳에서 보낸 진행 중 작업은 쓰는 중 차례로, 끝난 작업은 결과를 받아 그 차례를 채움(이 창이 닫혀 있던 동안 끝난 것도)
+  useEffect(() => {
+    const local = loadTurns(uid);
+    const done = local.filter((t) => t.status === "pending" && t.requestId && !fetching.current.has(t.requestId) && cardJobs.some((j) => j.id === t.requestId && j.state !== "running")).map((t) => t.requestId!);
+    updateTurns(uid, (ts) => mergeServerTurns(ts, [], cardJobs));
+    if (!done.length) return;
+    for (const id of done) fetching.current.add(id);
+    void fetchAiResults({ ids: done }).then((rows) => {
+      const filled = serverTurns(rows);
+      const last = local.findLast((t) => t.requestId && filled.some((f) => f.requestId === t.requestId));
+      if (last) focus.current = { id: last.id, at: filled.find((f) => f.requestId === last.requestId)?.status === "ok" ? "start" : "end", smooth: true };
+      updateTurns(uid, (ts) => mergeServerTurns(ts, filled, cardJobs));
+    });
+    // 작업 상태(jobsKey)가 바뀔 때만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, jobsKey]);
   useEffect(() => {
     // 브라우저 저장 공간(sessionStorage)에서 이 카드 기록을 불러옴 — 서버 렌더에는 없는 값이라 붙은 뒤에 읽음. 열면 마지막 답의 첫머리부터 보임
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -240,13 +280,16 @@ export function AiAssist(props: {
     let patch: Partial<AssistTurn>;
     try {
       const card = props.getCard?.();
+      // 서버는 시작만 하고 작업 id를 돌려줌 — 답은 작업이 끝나면 위 효과가 받아 이 차례를 채움(다른 화면에 가도 서버는 끝까지 씀)
       const r = await runCardChat(uid, q, history, card ? JSON.stringify(card) : null, [...off]);
-      patch = r.ok ? { status: "ok", answer: r.answer, model: r.model, sources: r.sources, skipped: r.skipped, doneAt: new Date().toISOString() } : { status: "error", message: r.message };
+      patch = r.ok ? { requestId: r.requestId } : { status: "error", message: r.message };
     } catch {
       patch = { status: "error", message: "AI 요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요." };
     }
-    focus.current = { id: turn.id, at: patch.status === "ok" ? "start" : "end", smooth: true };
+    if (patch.status === "error") focus.current = { id: turn.id, at: "end", smooth: true };
+    // 차례에 작업 id를 먼저 적고 저장소에 알림(작업 목록이 먼저 오면 다른 곳의 작업으로 보지 않게)
     updateTurns(uid, (ts) => patchTurn(ts, turn.id, patch));
+    if (patch.requestId) trackAiJob(patch.requestId, "chat", { uid });
   };
 
   const submit = async (noteText: string) => {
@@ -277,13 +320,20 @@ export function AiAssist(props: {
     setNote("");
     let patch: Partial<AssistTurn>;
     try {
+      // started = 백그라운드 작업 시작(결과는 작업이 끝나면 위 효과가 받음), ok = AI 없이 바로 낸 결과(보완 점검 미흡 0건)
       const r = await runCardAssist({ status: "idle" }, fd);
-      patch = r.status === "ok" ? { status: "ok", mode: r.mode, result: r.result, model: r.model, sources: r.sources, skipped: r.skipped, doneAt: new Date().toISOString() } : { status: "error", message: r.status === "error" ? r.message : "요청하지 못했습니다." };
+      patch =
+        r.status === "started"
+          ? { requestId: r.requestId }
+          : r.status === "ok"
+            ? { status: "ok", mode: r.mode, result: r.result, model: r.model, sources: r.sources, skipped: r.skipped, doneAt: new Date().toISOString() }
+            : { status: "error", message: r.status === "error" ? r.message : "요청하지 못했습니다." };
     } catch {
       patch = { status: "error", message: "AI 요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요." };
     }
-    focus.current = { id: turn.id, at: patch.status === "ok" ? "start" : "end", smooth: true };
+    if (patch.status) focus.current = { id: turn.id, at: patch.status === "ok" ? "start" : "end", smooth: true };
     updateTurns(uid, (ts) => patchTurn(ts, turn.id, patch));
+    if (patch.requestId) trackAiJob(patch.requestId, "assist", { uid });
   };
 
   const apply = (t: AssistTurn, i: number, s: VerifiedSuggestion) => {
@@ -371,7 +421,21 @@ export function AiAssist(props: {
                   <button type="button" role="menuitem" onClick={() => { download(); close(); }} title="이 대화를 마크다운 문서로 내려받기" className="px-3 py-1.5 text-left text-xs text-ink hover:bg-thead">
                     .md 내려받기
                   </button>
-                  <button type="button" role="menuitem" disabled={pending} onClick={() => { saveTurns(uid, []); close(); }} title="이 카드의 AI 작성지원 기록 지우기(이 브라우저 탭)" className="px-3 py-1.5 text-left text-xs text-ink hover:bg-thead disabled:cursor-not-allowed disabled:text-muted">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={pending}
+                    onClick={() => {
+                      // 이 탭 기록과 서버 결과(본인 것) 함께 — 서버 결과를 남기면 다음에 열 때 다시 채워짐
+                      saveTurns(uid, []);
+                      void clearCardAiResults(uid).then((r) => {
+                        if (!r.ok && r.message) setErr(r.message);
+                      });
+                      close();
+                    }}
+                    title="이 카드의 AI 작성지원 기록 지우기(이 브라우저 탭 + 서버에 남은 내 답)"
+                    className="px-3 py-1.5 text-left text-xs text-ink hover:bg-thead disabled:cursor-not-allowed disabled:text-muted"
+                  >
                     기록 지우기
                   </button>
                 </>

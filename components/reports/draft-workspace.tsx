@@ -28,7 +28,7 @@ import { PICK_HIGHLIGHT_CSS } from "../cards/pick-highlight.ts";
 import { FrameworkGallery } from "./framework-gallery";
 import { OutlineNotes } from "./outline-notes";
 import { type OutlineData, OutlinePanel, partName, rowOf, useOutlineEdit } from "./outline-panel";
-import { type AltsRequest, OutlineAlts, startAlts } from "./outline-alts";
+import { type AltsRequest, OutlineAlts, reopenAlts, startAlts } from "./outline-alts";
 import { T } from "../ui/kit";
 import { ShapePicker } from "./shape-picker";
 import { type DomHwpxItem, useDomHwpx } from "./dom-hwpx-download";
@@ -420,7 +420,7 @@ export function DraftWorkspace(
   };
 
   // 요청 칸 「구성안대로 집필」·「자료 반영 고치기」: 고친(저장 안 한) 구성안이 있으면 먼저 저장하고 승인하고 집필(구성안 패널의 「승인하고 집필」과 같음) — 지금 고른 근거·요청 글을 함께
-  const planDraft = async (o: { pick: DraftPick; request?: string }) => {
+  const planDraft = async (o: { pick: DraftPick; request?: string; revise?: boolean }) => {
     if (ed.dirty) {
       const saved = await saveReportOutline(props.uid, { edit: ed.edit });
       if (!saved.ok) return saved;
@@ -634,6 +634,15 @@ export function DraftWorkspace(
                 active={side === "ai" && (sheetOpen || !narrow)}
                 outlineRun={{ busy: ed.busy, at: ed.busyAt, msg: ed.msg, frame: ed.busyFrame, part: Boolean(ed.redoKey) }}
                 onAlts={(cands, request, sources) => openAlts(cands, request, { sources, confirm: outline && (ed.view ?? outline.view).human > 0 ? `구성안에 담당자가 고르거나 더한 블록 ${(ed.view ?? outline.view).human}개가 있습니다. 고른 안으로 바꾸면 고친 내용은 사라집니다. 계속할까요?` : null })}
+                onOpenAlts={(id) =>
+                  // 다른 화면에 가 있는 동안 끝난 여러 안: 결과(본인만 — 작업 결과 표)를 받아 비교 창으로. 덮을지 묻는 글은 지금 구성안으로 셈
+                  setAlts(
+                    reopenAlts(id, {
+                      confirmOf: (part) => (part ? ed.partWarning(part) : outline && (ed.view ?? outline.view).human > 0 ? `구성안에 담당자가 고르거나 더한 블록 ${(ed.view ?? outline.view).human}개가 있습니다. 고른 안으로 바꾸면 고친 내용은 사라집니다. 계속할까요?` : null),
+                      progress: { title: "여러 안 불러오는 중", expect: { min: 1, max: 10 }, sources: [] },
+                    }),
+                  )
+                }
                 outlineSources={outline?.outline.sources ?? null}
                 prior={props.prior}
                 mg={props.mg}

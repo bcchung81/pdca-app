@@ -599,6 +599,16 @@ R5a 코어를 저장하고 고치는 뒷단입니다(화면 `/reports/business/<
 - **지운 것**: `lib/reports/draft-stage.ts`(+시험)·`DraftRail`·`DraftMeta`·`derive.ts draftMetaOf`, `app/(app)/reports/cards/[uid]/report-card-check.tsx`, 「AI 초안 | 점검 결과」 탭, 구성안 패널의 접기 상태(`useOutlineEdit` `open`). 조회는 `load.ts`가 `report_draft_edits`(최근 80줄)·`outline_approved_at`을 더 읽음, 대화 재료는 `derive.ts threadOf`
 - e2e: `run.mjs`는 「AI 초안」 영역 + 머리 상태 「구성안부터」(점검 결과 탭 없음), `ui.mjs`는 빈 대화의 「구성안 없이 바로 만들기」 → 답 「구성안 없이 초안을 썼어요」를 기다림
 
+### 2026-11-06 AI 요청 백그라운드 작업(사용자 결정 — 1단계 경평 초안)
+
+사용자 요구: 「과제원장/경평초안에서 ai 요청 시 다른 화면으로 이동해도 해당 화면의 답변결과가 나올 때까지 백그라운드에서 유지」. 공통 틀·라우트·표는 `docs/design/ai-assist.md` 「AI 요청 백그라운드 작업」, 표·RLS는 `docs/design/auth-db.md`.
+
+- **백그라운드로 바꾼 것**: 구성안 만들기(`runReportOutline` — 주요사업·경영관리, 작업 종류 `outline`) · 다른 짜임 여러 안(`runOutlineAlternatives` — `alts`, 묶음 첫 행에만) · 경영관리 절 다시 짜기(`regenerateMgPart` — `part`) · 승인하고 집필·구성안대로 집필·자료 반영 고치기(`approveReportOutline` → `writeDraft` — `plan`·`revise`, 쓰는 방법은 같고 이름만 다름 — 요청 칸 「고치기」가 `revise: true`를 보냄) · 바로 만들기(`runReportSectionDraft` — `draft`). 시작(서버 액션)은 `prepareDraft`(권한·잠금·고른 자료 검사·근거 모으기)까지 하고 `beginJob`(`draft-prepare.ts` — 같은 카드의 경평 초안 작업이 돌면 거절 → 1분 5회·동시 2건 → running 행) → `launchReportJob`(after)으로 넘기고 `{ ok, message: 시작 알림, requestId }`. 본문(`writeDraftWork`·`writeMgDraftWork`·구성안·절·여러 안)은 예전 그대로이고 저장도 `saveDraftRow`(시작 때 읽은 `updated_at` 조건) 그대로, 1차 먼저 저장(`onFirst`)·`FIX_DEADLINE_MS`·경영관리 분량 채움도 같음. after 안에서는 `refresh`(revalidatePath)를 부르지 않음
+- **그대로 동기**: 블록 고치기·추진성과 고치기·블록 질문·모양 바꾸기 미리보기(`previewBlockShapes`·`applyBlockShape`)·구성안 저장·판면 줄이기·여러 안 고르기(`adoptOutlineAlternative`)
+- **화면**: 단추 처리(`draft-compose.tsx doSend`·`outline-panel.tsx run`·`outline-alts.tsx startAlts`)는 `settleAiJob`(`components/workspace/ai-jobs.ts`)으로 시작 → 작업 끝까지 기다려 예전과 같은 `{ ok, message }`(끝맺음 글은 작업 결과)를 받음. 대화(`DraftCompose`)는 이 화면에서 지금 보낸 요청(`live`)이 없으면 이 카드의 서버 작업 기록 최신 1건으로: 진행 중이면 말풍선(종류) + 진행 줄(시작 시각 = running 행 `created_at`, 근거 목록은 비움 — `remoteDraftProgress`, 지어내지 않음), 떠난 사이 실패했으면 이유 + 닫기, 여러 안이 다 됐으면 「여러 안 보기」(결과 표의 견본·만들 때 요청·근거·절로 비교 창을 다시 엶 — `reopenAlts`, 덮을지 묻는 글은 지금 구성안으로 셈) + 닫기. 진행 중이면 보내기·답 단추가 막히고(서버도 막음), 이 카드 작업이 끝나면 `router.refresh`(다른 화면·다른 PC에서 시작한 것도). 한 번 본 실패·여러 안은 다시 안 띄움(sessionStorage `ai-jobs-seen`)
+- **여러 안 창**: 도는 동안 닫지 않는 것은 그대로. 창을 연 채 다른 화면으로 가면 서버가 끝까지 만들고 결과(견본)는 본인만 읽는 결과 표에 7일 — 돌아오면 대화의 「여러 안 보기」. 고를 때 버전 조건(만들 때 읽은 초안 행 버전)은 그대로라 그사이 구성안이 바뀌었으면 거절
+- e2e: `ui.mjs`는 화면 글(「구성안 없이 초안을 썼어요」)을 기다리므로 그대로 — 끝을 본 화면이 `router.refresh`로 서버 기록을 다시 그림. `run.mjs`의 경평 초안 사례는 시작 전 거절(다른 부서·남의 자료)이라 그대로
+
 ## CLAUDE.md에서 옮긴 상세 (2026-10-17)
 
 CLAUDE.md를 40KB 이하로 줄이면서 옮긴 날짜별 결정 배경·실측·이력·긴 근거입니다. 문장은 원문 그대로이고, 줄 앞 **[…]**는 CLAUDE.md 원래 줄의 머리말입니다(같은 줄의 빠진 문장만 모았음).

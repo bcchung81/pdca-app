@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { runCardComments } from "../../../app/(app)/cards/actions";
+import { type CommentJobData, runCardComments } from "../../../app/(app)/cards/actions";
+import { fetchAiResults, trackAiJob, waitAiJob } from "../../workspace/ai-jobs";
 import type { VerifiedEdit } from "../../../lib/ai/comments.ts";
 import { type CommentBatch, type TaggedEdit, editTargets, mergeEdits, toggleComment } from "../../../lib/cards/patch.ts";
 import type { LooseJson } from "../../../lib/loose-json.ts";
@@ -12,6 +13,8 @@ import type { LooseJson } from "../../../lib/loose-json.ts";
  *  보냄(5초 안에 되돌리기) → AI 처리 중(모은 코멘트를 한 번에) → 반영됨·답변·반영 안 함·충돌.
  * AI 편집은 보낼 때 카드 기준이고, 기다리는 동안 사용자가 고친 묶음은 덮지 않습니다(lib/cards/patch.ts).
  * 코멘트 목록은 이 브라우저 탭에만 둡니다(sessionStorage) — 카드 수정 기록은 평소처럼 수정 이력에 남습니다.
+ * 2026-11-06부터 AI 처리는 백그라운드 작업(서버 액션은 시작만 — requestId를 코멘트에 둠): 처리 중에 다른 화면에 갔다 와도 이 탭에서 다시 열면
+ * 작업 끝을 기다려 결과(본인만 읽는 서버 결과 — 보낼 때 카드 포함)를 지금 카드에 같은 규칙으로 합칩니다.
  */
 
 export type NoteKind = "edit" | "ask" | "keep";
@@ -37,6 +40,8 @@ export interface ReviewNote extends ReviewTarget {
   conflicts?: string[];
   batchId?: string;
   error?: string;
+  /** 처리 중인 백그라운드 작업 id(다른 화면에 갔다 와도 이어 받음) */
+  requestId?: number;
 }
 
 export interface ToastSpec {
@@ -57,8 +62,8 @@ function load(uid: string): ReviewNote[] {
   try {
     const raw = sessionStorage.getItem(storeKey(uid));
     const list = raw ? (JSON.parse(raw) as ReviewNote[]) : [];
-    // 창을 닫는 사이 끊긴 요청은 다시 보내기로
-    return list.map((n) => (TRANSIENT.includes(n.status) ? { ...n, status: "error", error: "창을 닫아 결과를 받지 못했습니다. 다시 보내 주세요." } : n));
+    // 서버 작업으로 넘어간 코멘트(처리 중 + 작업 id)는 이어 받고, 보내기 전에 창을 닫아 끊긴 것은 다시 보내기로
+    return list.map((n) => (TRANSIENT.includes(n.status) && !(n.status === "sending" && n.requestId) ? { ...n, status: "error", error: "창을 닫아 결과를 받지 못했습니다. 다시 보내 주세요." } : n));
   } catch {
     return [];
   }
@@ -86,6 +91,8 @@ export function useCardReview(opts: {
   const inFlight = useRef(false);
   const alive = useRef(true);
   const loaded = useRef(false);
+  // 이 화면이 기다리는 작업 id(다시 열어 이어 받을 때 두 번 합치지 않게)
+  const resumed = useRef(new Set<number>());
 
   const commit = useCallback((next: ReviewNote[]) => {
     notesRef.current = next;
@@ -110,30 +117,22 @@ export function useCardReview(opts: {
     };
   }, [opts.uid, commit]);
 
-  const sendBatch = useCallback(async (queued: ReviewNote[]): Promise<void> => {
-    const ids = new Set(queued.map((n) => n.id));
-    update((n) => (ids.has(n.id) ? { ...n, status: "sending", error: undefined } : n));
-    const o = optsRef.current;
-    const snapshot = structuredClone(o.getCard());
-    const keeps = notesRef.current.filter((n) => n.kind === "keep" && n.status === "kept" && n.path).map((n) => ({ path: n.path!, quote: n.quote }));
-    const payload = JSON.stringify({
-      card: snapshot,
-      comments: queued.map((n) => ({ id: n.id, kind: n.kind, path: n.path, paths: n.paths, quote: n.quote, text: n.text })),
-      keeps,
-    });
-    let res: Awaited<ReturnType<typeof runCardComments>>;
-    try {
-      res = await runCardComments(o.uid, payload);
-    } catch {
-      res = { ok: false, message: "AI에 보내지 못했습니다(연결이 끊겼습니다). 다시 보내 주세요." };
-    }
-    if (!alive.current) return;
-    if (!res.ok) {
-      const message = res.message;
-      update((n) => (ids.has(n.id) ? { ...n, status: "error", error: message } : n));
+  /** 작업 하나가 끝나길 기다려 결과를 지금 카드에 합침(보낸 화면이든, 다른 화면에 갔다 와 다시 연 화면이든). 화면이 사라지면 그만둠(다시 열면 이어 받음) */
+  const finishBatch = useCallback(async (ids: Set<string>, requestId: number): Promise<void> => {
+    const fail = (message: string) => {
+      update((n) => (ids.has(n.id) ? { ...n, status: "error", error: message, requestId: undefined } : n));
       optsRef.current.toast({ text: message, tone: "warn", ms: 6000 });
-      return;
-    }
+    };
+    const job = await waitAiJob(requestId);
+    if (!alive.current) return;
+    if (job.state !== "ok") return fail(job.message || "AI가 코멘트를 처리하지 못했습니다. 다시 보내 주세요.");
+    const [row] = await fetchAiResults({ ids: [requestId] });
+    if (!alive.current) return;
+    const data = row?.result.data as CommentJobData | undefined;
+    if (!data || !Array.isArray(data.comments)) return fail("AI 처리 결과를 찾지 못했습니다(7일이 지났거나 지움). 다시 보내 주세요.");
+    // 합치기 기준 = 서버가 쓴 「보낼 때 카드」(이 화면 메모리에 없어도 같음)
+    const snapshot = data.card as LooseJson;
+    const res = { comments: data.comments };
     const batchId = newId();
     const tagged: TaggedEdit[] = res.comments.flatMap((c) => c.edits.map((e) => ({ commentId: c.id, path: e.path, op: e.op, lines: e.lines })));
     let applied: Record<string, string[]> = {};
@@ -149,13 +148,13 @@ export function useCardReview(opts: {
     const byId = new Map(res.comments.map((c) => [c.id, c]));
     update((n) => {
       const c = byId.get(n.id);
-      if (!c) return n;
-      if (c.outcome !== "edited") return { ...n, status: c.outcome, reply: c.reply, edits: [], batchId };
+      if (!c) return ids.has(n.id) ? { ...n, status: "error", error: "AI가 이 코멘트를 돌려주지 않았습니다. 다시 보내 주세요.", requestId: undefined } : n;
+      if (c.outcome !== "edited") return { ...n, status: c.outcome, reply: c.reply, edits: [], batchId, requestId: undefined };
       const a = applied[n.id] ?? [];
       const cf = conflicts[n.id] ?? [];
       const status: NoteStatus = a.length ? (cf.length ? "partial" : "applied") : cf.length ? "conflict" : "declined";
       const reply = status === "declined" ? `${c.reply} (바뀐 글이 없어 반영하지 않았습니다.)`.trim() : c.reply;
-      return { ...n, status, reply, edits: c.edits, conflicts: cf, batchId };
+      return { ...n, status, reply, edits: c.edits, conflicts: cf, batchId, requestId: undefined };
     });
     const done = res.comments;
     const nApplied = done.filter((c) => applied[c.id]?.length).length;
@@ -165,6 +164,47 @@ export function useCardReview(opts: {
     optsRef.current.toast({ text: `AI가 코멘트 ${done.length}개를 처리했습니다${parts.length ? ` — ${parts.join(" · ")}` : ""}.`, ms: 5000 });
   }, [update]);
 
+  const sendBatch = useCallback(async (queued: ReviewNote[]): Promise<void> => {
+    const ids = new Set(queued.map((n) => n.id));
+    update((n) => (ids.has(n.id) ? { ...n, status: "sending", error: undefined } : n));
+    const o = optsRef.current;
+    const snapshot = structuredClone(o.getCard());
+    const keeps = notesRef.current.filter((n) => n.kind === "keep" && n.status === "kept" && n.path).map((n) => ({ path: n.path!, quote: n.quote }));
+    const payload = JSON.stringify({
+      card: snapshot,
+      comments: queued.map((n) => ({ id: n.id, kind: n.kind, path: n.path, paths: n.paths, quote: n.quote, text: n.text })),
+      keeps,
+    });
+    let res: Awaited<ReturnType<typeof runCardComments>>;
+    try {
+      // 서버는 시작만 하고 작업 id를 돌려줌(AI 처리는 응답 뒤 — 다른 화면에 가도 끝까지 돎)
+      res = await runCardComments(o.uid, payload);
+    } catch {
+      res = { ok: false, message: "AI에 보내지 못했습니다(연결이 끊겼습니다). 다시 보내 주세요." };
+    }
+    if (!res.ok) {
+      const message = res.message;
+      if (!alive.current) return;
+      update((n) => (ids.has(n.id) ? { ...n, status: "error", error: message } : n));
+      optsRef.current.toast({ text: message, tone: "warn", ms: 6000 });
+      return;
+    }
+    const requestId = res.requestId;
+    trackAiJob(requestId, "comment", { uid: o.uid });
+    // 작업 id를 코멘트에 남김(이 탭 기록 — 다시 열면 이어 받음). 화면이 사라졌으면 저장 공간만 고침
+    if (alive.current) update((n) => (ids.has(n.id) ? { ...n, requestId } : n));
+    else
+      try {
+        const key = storeKey(o.uid);
+        const list = JSON.parse(sessionStorage.getItem(key) ?? "[]") as ReviewNote[];
+        sessionStorage.setItem(key, JSON.stringify(list.map((n) => (ids.has(n.id) ? { ...n, requestId } : n))));
+      } catch {
+        // 저장 공간이 없으면 다음에 열 때 끊긴 것으로
+      }
+    resumed.current.add(requestId);
+    await finishBatch(ids, requestId);
+  }, [update, finishBatch]);
+
   /** 보낼 차례인 코멘트를 한 번에(최대 12개) — 처리하는 동안 쌓인 코멘트는 이어서 다음 묶음으로 */
   const dispatch = useCallback(async (): Promise<void> => {
     if (inFlight.current) return;
@@ -172,6 +212,8 @@ export function useCardReview(opts: {
     try {
       for (;;) {
         if (!alive.current) return;
+        // 처리 중인 묶음(다시 열어 이어 받는 것 포함)이 있으면 그것이 끝난 뒤에(같은 카드 코멘트 작업은 한 번에 하나 — 서버도 막음)
+        if (notesRef.current.some((n) => n.status === "sending")) return;
         const queued = notesRef.current.filter((n) => n.status === "queued").slice(0, MAX_BATCH);
         if (!queued.length) return;
         await sendBatch(queued);
@@ -180,6 +222,16 @@ export function useCardReview(opts: {
       inFlight.current = false;
     }
   }, [sendBatch]);
+
+  // 다른 화면에 갔다 와 다시 연 화면: 처리 중이던 묶음(작업 id가 남은 코멘트)의 끝을 기다려 이어 받고, 끝나면 쌓인 코멘트를 보냄
+  useEffect(() => {
+    const groups = new Map<number, Set<string>>();
+    for (const n of notesRef.current) if (n.status === "sending" && n.requestId && !resumed.current.has(n.requestId)) groups.set(n.requestId, (groups.get(n.requestId) ?? new Set<string>()).add(n.id));
+    for (const [rid, ids] of groups) {
+      resumed.current.add(rid);
+      void finishBatch(ids, rid).then(() => dispatch());
+    }
+  }, [finishBatch, dispatch]);
 
   /** 보냄 상태 코멘트를 모두 넘김(마지막 코멘트 뒤 5초) */
   const release = useCallback(() => {
