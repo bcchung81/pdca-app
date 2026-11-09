@@ -271,7 +271,9 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-11-09 로드맵 표(choose 절 「표 모양」 roadmap 줄·schema.md block.variant roadmap — 경평 초안 프레임워크 확장 계획 P1)로 report-block@d2171506 → 93dd1e7e (report-draft@016145c9 → 2b837142, report-outline@c9f41da2 → 2aeb0f83). 경영관리 판은 그대로
   // 2026-11-09 P3·P6 프롬프트(style.md 「문체 보강」 절·stories.md ⑫⑨③⑮ 보강·blocks.md choose·inputs.md·process.md)로 report-block@93dd1e7e → a0c5a31b. 경영관리 판은 그대로 불변
   // 2026-11-09 판면 채움 규칙을 문체 보강 절(블록 고치기와 공유)에서 빼 report-draft 전용 process.md로 옮김(재실호출에서 「빌 때는 블록 추가 전 보강 먼저」가 빈 판면 2→5장 — 95% 이상 채움으로 고침)으로 report-block@a0c5a31b → f69220ba. 이 뒤로 채움 규칙은 블록 고치기 판을 바꾸지 않음
-  assert.equal(bp.version, "report-block@f69220ba", "주요사업 블록 고치기 판은 분량 채움 보강으로는 바뀌지 않음");
+  // 2026-11-09 단계·시기 모양 4종(경평 초안 프레임워크 확장 계획 P4 — blocks.md choose 「단계·시기 모양」 절·schema.md block.variant·block.cells.focus 한 문장, stories.md ⑮ 예방 조치 steps:layers)으로
+  // report-block@f69220ba → 54a1569d (report-draft@1c6d6412 → 7abe1602, report-outline@a41ef526 → 936b980a). 경영관리 판은 그대로
+  assert.equal(bp.version, "report-block@54a1569d", "주요사업 블록 고치기 판은 분량 채움 보강으로는 바뀌지 않음");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {

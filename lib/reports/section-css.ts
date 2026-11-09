@@ -190,6 +190,38 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-proc__b{padding:2px ${BX}px}
 .kca-dg-doc .k-proc__r{border-top:var(--k-hair) solid var(--k-g4);text-align:center;font-weight:700;padding:1px 3px}
 
+/* ───────────── 단계·시기 모양(2026-11-09 — 경평 초안 프레임워크 확장 계획 P4). 크기는 fit.ts FUNNEL·LAYER_MM·ROADMAP_MARK_PAD_MM와 같은 값 ───────────── */
+/* 부분 강조(칸 focus — blocks.ts cellFocus): 머리 진하게·칸 옅은 바탕. 글 굵기·크기·테두리는 바꾸지 않음(판면 어림 그대로) */
+.kca-dg-doc ol.k-proc > li.k-focus .k-proc__h,.kca-dg-doc .k-tl__item.k-focus .k-tl__h,.kca-dg-doc ol.k-zig > li.k-focus .k-zig__h b{background:var(--k-g4);color:#fff}
+.kca-dg-doc ol.k-proc > li.k-focus .k-proc__b,.kca-dg-doc .k-tl__item.k-focus .k-tl__b,.kca-dg-doc ol.k-zig > li.k-focus .k-zig__b{background:var(--k-g1)}
+.kca-dg-doc ol.k-dots__items > li.k-focus .k-dots__yr{background:var(--k-g4);color:#fff;border-color:var(--k-g4)}
+/* 진행 상태(timeline:status): 머리 뒤 표지(머리 글꼴 그대로 + 좌우 2px·테두리), 예정 칸은 옅은 머리·점선 칸(계획) */
+.kca-dg-doc .k-st{display:inline-block;padding:0 2px;border:var(--k-hair) solid currentColor;border-radius:2pt;line-height:1.1}
+.kca-dg-doc .k-tl__item.k-st--plan .k-tl__h{background:var(--k-g1);color:var(--k-g5)}
+.kca-dg-doc .k-tl__item.k-st--plan .k-tl__b{border-style:dashed}
+/* 깔때기(steps:funnel): 단계마다 가운데 맞춘 띠(폭은 style — 아래로 갈수록 좁음, 옆은 비스듬히) | 집계 기준 칸(note) */
+.kca-dg-doc ol.k-fun{list-style:none;margin:3px 0 0;padding:0}
+.kca-dg-doc ol.k-fun > li{padding:0;display:grid;grid-template-columns:minmax(0,1fr);align-items:center;margin-top:0.8mm}
+.kca-dg-doc ol.k-fun > li:first-child{margin-top:0}
+.kca-dg-doc ol.k-fun > li::before{content:none}
+.kca-dg-doc ol.k-fun--note > li{grid-template-columns:minmax(0,1fr) var(--k-fun-note);column-gap:2mm}
+.kca-dg-doc .k-fun__band{margin:0 auto;padding:1px 10px;background:var(--k-g2);text-align:center;clip-path:polygon(0 0,100% 0,calc(100% - 7px) 100%,7px 100%)}
+.kca-dg-doc .k-fun__band.k-focus{background:var(--k-g4);color:#fff}
+.kca-dg-doc .k-fun__h{display:block;font:700 ${F.box}pt/1.5 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
+.kca-dg-doc .k-fun__n{border-left:var(--k-thick) solid var(--k-g3);padding-left:4px}
+/* 다층 차단(steps:layers): 층마다 층 표지 칸(14mm) | 층 이름 칸(30mm — 이름이 있을 때 k-lay--named) | 불릿·결과 줄 */
+.kca-dg-doc ol.k-lay{list-style:none;margin:3px 0 0;padding:0;border:var(--k-thick) solid var(--k-g4)}
+.kca-dg-doc ol.k-lay > li{padding:0;display:grid;grid-template-columns:14mm minmax(0,1fr);border-top:var(--k-hair) solid var(--k-g4)}
+.kca-dg-doc ol.k-lay--named > li{grid-template-columns:14mm 30mm minmax(0,1fr)}
+.kca-dg-doc ol.k-lay > li:first-child{border-top:0}
+.kca-dg-doc ol.k-lay > li::before{content:none}
+.kca-dg-doc .k-lay__m{display:flex;align-items:center;justify-content:center;text-align:center;padding:1px 4px;background:var(--k-g4);color:#fff;font:700 var(--k-fs-label)/1.45 var(--k-f-label);letter-spacing:var(--k-ls-label)}
+.kca-dg-doc .k-lay__b{padding:2px 4px}
+.kca-dg-doc .k-lay__h{display:flex;align-items:center;padding:2px 4px;background:var(--k-g1);border-right:var(--k-hair) solid var(--k-g3);font:700 ${F.box}pt/1.5 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
+.kca-dg-doc .k-lay__r{font-weight:700}
+.kca-dg-doc ol.k-lay > li.k-focus .k-lay__m{background:var(--k-g5)}
+.kca-dg-doc ol.k-lay > li.k-focus .k-lay__b{background:var(--k-g1)}
+
 /* ───────────── before_after 표 ───────────── */
 .kca-dg-doc table.k-ba{width:100%;border-collapse:separate;border-spacing:0}
 .kca-dg-doc table.k-ba th,.kca-dg-doc table.k-ba td{padding:2px 5px;vertical-align:middle}

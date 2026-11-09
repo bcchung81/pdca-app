@@ -2,7 +2,7 @@
 // 칸 폭·여백·글꼴은 lib/reports/section-css.ts(2025 최종본 실측)와 같은 값입니다. CSS를 바꾸면 여기 SLOT·높이 상수도 함께 바꿉니다.
 // 쓰임: ① 요청 글의 「판면 예산」(칸마다 한 줄 글자 수·쪽 줄 수) ② 초안 뒤 높이 어림 → 넘치면 경고·맞추기 요청.
 
-import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, ROADMAP_PLAN, figureMm, isChevronTable, isGridTable, isPanelCompare, ladderGroups, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
+import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, ROADMAP_PLAN, figureMm, isChevronTable, isGridTable, isPanelCompare, ladderGroups, layerMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { type LayoutBlock, type LayoutGroup, PAIR_GAP_MM, cleanSpan, containerOf, layoutGroups } from "./layout.ts";
 import { MGMT_TRACK } from "../tracks/index.ts";
 import { REPORT_STYLE } from "./section-css.ts";
@@ -286,6 +286,21 @@ function roadmapHeadsMm(b: Pick<Block, "variant"> & Partial<Pick<Block, "items" 
   return { text: items.slice(1).map((x, k) => (marked[k] ? `${x} ${ROADMAP_PLAN}` : x)), extra: marked.map((m) => (m ? ROADMAP_MARK_PAD_MM : 0)) };
 }
 
+/**
+ * 깔때기(steps:funnel — 2026-11-09 P4, section-css .k-fun): 오른쪽 집계 기준 칸(어느 칸이든 note가 있을 때만) 폭 비율 · 띠 자리와 그 칸 사이(mm) ·
+ * 마지막 띠 폭 비율(첫 띠 = 띠 자리 전부, 사이는 고르게 줄어듦) · 띠 안 여백 좌우(px — 비스듬한 옆 7px 포함) · 집계 기준 칸 왼쪽 선 + 안 여백(px) · 띠 사이(mm)
+ */
+export const FUNNEL = { noteRatio: 0.34, gapMm: 2, minRatio: 0.6, padPx: 10, notePadPx: 5, rowGapMm: 0.8 } as const;
+/** 깔때기 폭(mm): 집계 기준 칸(없으면 0)·띠 자리(area)·단계마다 띠 폭 — 그리기(section-html)·판면 어림이 같이 씀 */
+export function funnelMm(b: Pick<Block, "cells">, width: number): { note: number; area: number; bands: number[] } {
+  const note = b.cells.some((c) => c.note) ? width * FUNNEL.noteRatio : 0;
+  const area = width - (note ? note + FUNNEL.gapMm : 0);
+  const n = b.cells.length;
+  return { note, area, bands: b.cells.map((_, i) => area * (n > 1 ? 1 - (i / (n - 1)) * (1 - FUNNEL.minRatio) : 1)) };
+}
+/** 다층 차단(steps:layers — 2026-11-09 P4, section-css .k-lay): 왼쪽 층 표지 칸 · 층 이름 칸(어느 층이든 이름이 있을 때만) 폭(mm) — 나머지가 조치 불릿·결과 줄 칸 */
+export const LAYER_MM = { mark: 14, head: 30 } as const;
+
 /** 추진실적 열 표의 왼쪽 행 머리 열(행 머리가 하나라도 있을 때) */
 export const resultRowHeadMm = (width: number) => tableRowHeadMm(width - TABLE_SHAPE_MM.result);
 
@@ -335,6 +350,18 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
       if (b.variant === "zigzag") {
         const cell = (width - 7 - pad(6)) / 2;
         return { body: cell - pad(8) - INDENT_MM, head: cell - 12, note: cell - pad(8) };
+      }
+      // 깔때기: 칸 글은 가장 좁은(마지막) 띠 안 — 높이 어림은 단계마다 제 띠 폭(funnelMm), note = 오른쪽 집계 기준 칸
+      if (b.variant === "funnel") {
+        const g = funnelMm(b, width);
+        const band = g.bands[g.bands.length - 1] - pad(2 * FUNNEL.padPx);
+        return { body: band, head: band, note: g.note - pad(FUNNEL.notePadPx) };
+      }
+      // 다층 차단: 층 표지 칸 | 층 이름 칸(head) | 조치 불릿·결과 줄 칸(body·note), 칸 안 여백 좌우 4px
+      if (b.variant === "layers") {
+        const head = b.cells.some((c) => c.head) ? LAYER_MM.head : 0;
+        const body = width - LAYER_MM.mark - head - pad(8);
+        return { body: body - INDENT_MM, head: head - pad(8), note: body };
       }
       const cell = width / n;
       return { body: cell - BOX_PAD_MM - INDENT_MM, head: cell - pad(12) - 5, note: cell - pad(6) };
@@ -545,10 +572,28 @@ export function blockHeight(b: Block, width: number, centerExtra = 0, mg = false
         // ㄹ자: 위 줄 = 1·4단계, 아래 줄 = 2·3단계
         return row([b.cells[0], b.cells[3]].filter(Boolean)) + row([b.cells[1], b.cells[2]].filter(Boolean)) + 5 + 2.4;
       }
+      if (b.variant === "funnel") {
+        // 깔때기(section-css .k-fun): 단계마다 [띠(머리 돋움 11pt + 수치 문단, 안 여백 위아래 1px) | 집계 기준 칸(본문 문단)] 중 큰 것 + 띠 사이, 위 여백 3px
+        const g = funnelMm(b, width);
+        const rows = b.cells.map((c, i) => {
+          const w = g.bands[i] - 2 * FUNNEL.padPx * PX;
+          const band = lineCount(c.head, w, 11, true) * HEAD11_MM + c.bullets.reduce((n, x) => n + bodyLines(x, w), 0) * L + 2 * PX;
+          return Math.max(band, c.note ? bodyLines(c.note, s.note) * L : 0);
+        });
+        return blockTitleMm(b.title, width, mg) + rows.reduce((a, x) => a + x, 0) + FUNNEL.rowGapMm * Math.max(0, rows.length - 1) + 3 * PX;
+      }
+      if (b.variant === "layers") {
+        // 다층 차단(section-css .k-lay): 층마다 [층 표지(맑은 고딕 10.4pt) | 층 이름(돋움 11pt) | 불릿 + 결과 줄] 중 큰 것 + 안 여백 위아래 2px, 굵은 테두리 1.2mm
+        const TH = 10.4 * 1.45 * PT;
+        return blockTitleMm(b.title, width, mg) + b.cells.reduce((n, c, i) => n + Math.max(lineCount(layerMark(c, i), LAYER_MM.mark - 8 * PX, 10.4, true) * TH, c.head ? lineCount(c.head, s.head, 11, true) * HEAD11_MM : 0, lines(c.bullets, s.body) * L + (c.note ? bodyLines(c.note, s.note) * L : 0)) + 4 * PX, 0) + 1.2;
+      }
       return blockTitleMm(b.title, width, mg) + heads(11) + max(b.cells.map(cellBody)) + (notes ? notes + 0.8 : 0) + 2.6;
     case "timeline":
       // 연혁 점 칸 글은 문단 p(자간 맞춤 없음)
       if (b.variant === "dots") return 4.6 + 5.6 + max(b.cells.map((c) => c.bullets.reduce((n, x) => n + bodyLines(x, s.body), 0) * L + (c.note ? 5.2 : 0))) + 2.6;
+      // 진행 상태(status — 2026-11-09 P4): 칸 머리 뒤 상태 표지(머리와 같은 글꼴 + 좌우 안 여백·테두리 — 로드맵 「계획」 표지와 같은 모양 ROADMAP_MARK_PAD_MM)까지 한 머리 글
+      if (b.variant === "status")
+        return blockTitleMm(b.title, width, mg) + max(b.cells.map((c) => lineCount(c.tag ? `${c.head} ${c.tag}` : c.head, s.head - (c.tag ? ROADMAP_MARK_PAD_MM : 0), 11, true))) * HEAD11_MM + max(b.cells.map((c) => cellBody(c) + (c.note ? lineCount(c.note, s.note) * L + 0.3 : 0))) + 1.8;
       return blockTitleMm(b.title, width, mg) + heads(11) + max(b.cells.map((c) => cellBody(c) + (c.note ? lineCount(c.note, s.note) * L + 0.3 : 0))) + 1.8;
     case "compare":
       if (isPanelCompare(b)) {
@@ -1044,8 +1089,9 @@ export function fitReport(spec: { sub: { title: string; markers?: string[]; chip
 // ---------------------------------------------------------------------------
 // 빈 상자(2026-10-15 후속 5): 나란한 상자는 가장 긴 칸이 높이를 정해 짧은 칸 아래가 빔 — 초안 G 64건 실측 상자 채움 72~75%·상자당 불릿 1.0~1.4개
 
-/** 나란한 상자 도식 — 카드·단계·연도 흐름(chevron)·전후 패널(panels·diag)·PDCA(연혁 점·표·막대·수치 띠는 아님) */
-export const isBoxBlock = (b: Pick<Block, "kind" | "variant">) => ["cards", "steps", "pdca"].includes(b.kind) || (b.kind === "timeline" && b.variant !== "dots") || isPanelCompare(b);
+/** 나란한 상자 도식 — 카드·단계·연도 흐름(chevron·status)·전후 패널(panels·diag)·PDCA(연혁 점·표·막대·수치 띠는 아님, 세로로 쌓는 깔때기·다층 차단도 아님 — 2026-11-09) */
+export const isBoxBlock = (b: Pick<Block, "kind" | "variant">) =>
+  ["cards", "pdca"].includes(b.kind) || (b.kind === "steps" && b.variant !== "funnel" && b.variant !== "layers") || (b.kind === "timeline" && b.variant !== "dots") || isPanelCompare(b);
 
 export interface HollowBox {
   /** 어디(「라벨 n번째 칸」·전후 패널은 「라벨 왼쪽/오른쪽 패널」 — 라벨 없는 블록은 블록 종류) */
@@ -1156,6 +1202,20 @@ export function capacityLines(): string[] {
 }
 
 /**
+ * 단계·시기 모양(2026-11-09 P4)의 보통 칸(견본 그림·판면 어림 — canonicalBlock): 논리모형은 뒤에서 n칸(투입 … 영향 — 결과·영향 칸이 강조돼 보임), 깔때기는 탐지부터
+ * n단계(집계 기준 칸이 서게 note 자리표시 — 글은 canonicalBlock이 칸 폭으로 채움), 다층 차단은 층 2~4(표지는 「N차」), 진행 상태는 완료 … 진행 · 예정. 그 밖 모양은 null(예전 칸 그대로)
+ */
+function shapedCells(kind: Block["kind"], variant: string, n: number): Block["cells"] | null {
+  const mk = (head: string, tag = "", note = "") => ({ head, tag, bullets: [] as string[], note });
+  const k = Math.max(3, Math.min(5, n));
+  if (kind === "steps" && variant === "logic") return ["투입", "활동", "산출", "결과", "영향"].slice(5 - k).map((h) => mk(h));
+  if (kind === "steps" && variant === "funnel") return ["탐지", "확인", "조치", "환수", "재발 방지"].slice(0, k).map((h) => mk(h, "", "집계 기준"));
+  if (kind === "steps" && variant === "layers") return Array.from({ length: Math.max(2, Math.min(4, n)) }, () => mk("층 이름"));
+  if (kind === "timeline" && variant === "status") return Array.from({ length: n }, (_, i) => mk(`${i + 1}단계`, i < n - 2 ? "완료" : i === n - 2 ? "진행" : "예정"));
+  return null;
+}
+
+/**
  * 칸을 채운 보통 모양의 블록(구성안 판면 어림용 — lib/reports/composition.ts). n = 칸·행·줄·막대 수(종류마다 뜻이 다름),
  * 칸 불릿 2개 × 약 1.4줄(칸 채우기 규칙), 인용 1.6줄, 수치 띠 뜻 1.8줄, 전후 비교 행마다 1.5줄 — blockCosts와 같은 채움.
  * mg = 경영관리 높이 어림(2026-10-29): 칸 불릿 하나를 그 칸 폭의 mgBulletLines줄로 채움(불릿 수는 그대로, mgBulletCell이 아닌 인용·목소리·막대 표는 그대로). lines를 주면 lines가 앞섬
@@ -1249,11 +1309,13 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => (lines ? fill(sl.body, lines) : bl ? fill(sl.body, per(sl.body, 1)) : "12,345건")) })) };
     }
     default: {
-      // cards·steps·timeline·hub: 칸마다 불릿 2개 × 약 1.4줄(단계·시기는 결과 줄)
-      const b = { ...base, cells: cells(kind === "hub" ? Math.max(3, count) : Math.max(2, count)) };
+      // cards·steps·timeline·hub: 칸마다 불릿 2개 × 약 1.4줄(단계·시기는 결과 줄). 깔때기는 단계마다 수치 한 줄, 다층 차단은 넓은 층 행이라 불릿 하나 × 약 1.4줄(2단 라벨 표와 같은 채움)
+      const k = kind === "hub" ? Math.max(3, count) : Math.max(2, count);
+      const b = { ...base, cells: shapedCells(kind, variant, k) ?? cells(k) };
       const sl = slotOf(b, inner(b));
       const note = ["steps", "timeline"].includes(kind) ? fill(sl.note) : "";
-      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))], note })) };
+      const one = kind === "steps" && variant === "funnel" ? 1 : kind === "steps" && variant === "layers" ? per(sl.body, 1.4) : 0;
+      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : one ? [fill(sl.body, one)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))], note })) };
     }
   }
 }

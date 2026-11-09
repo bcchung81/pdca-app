@@ -40,7 +40,9 @@ export interface BlockCell {
   tag: string;
   bullets: string[];
   note: string;
-  /** 이 칸을 강조(전체 중 이 과제 범위 — steps·timeline 칸). 없음 = 강조 안 함. 그리기는 아직 안 씀(경평 초안 프레임워크 확장 계획 P4) */
+  /**
+   * 이 칸을 강조(전체 중 이 과제 범위 — steps·timeline 칸). 없음 = 강조 안 함. 그리기는 cellFocus(2026-11-09 P4 — 논리모형 steps:logic은 이 값을 보지 않고 칸 머리로 정함)
+   */
   focus?: boolean;
 }
 
@@ -113,8 +115,10 @@ export const VARIANTS: Partial<Record<BlockKind, readonly string[]>> = {
   cards: ["plus", "arrow", "plain", "vs"],
   // diag = 진단 ▶ 처방 짝(2026-10-13 — panels와 같은 두 패널, 꼬리표만 「현황·문제」 ▶ 「추진방향」)
   compare: ["table", "panels", "diag"],
-  steps: ["row", "zigzag"],
-  timeline: ["chevron", "dots"],
+  // 단계·시기 모양(2026-11-09 — 경평 초안 프레임워크 확장 계획 P4, 주요사업만 — frameworks.ts BIZ_ONLY_SHAPES): logic = 논리모형(투입 → 활동 → 산출 → 결과 → 영향 — 결과·영향 칸은 코드가 강조, cellFocus),
+  // funnel = 깔때기(단계마다 폭이 줄어드는 띠 + 오른쪽 집계 기준 칸), layers = 다층 차단(1차 ~ n차 세로 층), status = 진행 상태(칸 tag를 완료·진행·예정으로 — statusTag)
+  steps: ["row", "zigzag", "logic", "funnel", "layers"],
+  timeline: ["chevron", "dots", "status"],
   // 표 모양(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 「블록 어휘 수준」 표): 빈 글 = 수치·구분표(예전 그대로), result = 오른쪽 「추진실적」 칸(머리만 어둡게 — 2026-10-29),
   // bars = 값 칸 옆 가로 막대(길이는 코드가 셈 — tableBars), chevron = 열 머리가 단계 화살표, ladder = 2단 라벨(큰 라벨 안 하위 라벨 + 내용),
   // roadmap = 다년 로드맵(2026-11-09 — ⑲ 로드맵형, 쉐브론 머리 + 올해 열 강조·뒤 열 「계획」 표지 — roadmapCols가 열 머리 연도로 정함)
@@ -155,6 +159,41 @@ export function roadmapCols(items: string[], year?: number): { now: number; plan
 /** 로드맵 열 머리 「계획」 표지를 붙이는가: 계획 열이고 머리에 「계획」이 이미 없을 때(그리기·어림·한글·원고가 같이 씀) */
 export const ROADMAP_PLAN = "계획";
 export const roadmapPlanMark = (head: string, plan: boolean) => plan && !head.includes(ROADMAP_PLAN);
+
+/** 논리모형 칸 머리 중 강조할 것(결과·영향 — 성과·효과·Outcome·Impact 포함)과 뺄 것(산출·Output — 「산출 결과」도 산출) */
+const LOGIC_FOCUS = /결과|영향|성과|효과|outcome|impact/i;
+const LOGIC_OUTPUT = /산출|output/i;
+
+/**
+ * 칸마다 강조하는가(그리기 — section-html이 씀, 2026-11-09 P4 부분 강조). steps·timeline만 보고 그 밖 종류는 모두 false.
+ *  · 논리모형(steps:logic): 코드가 칸 머리(tag + head)로 정함 — 결과·영향(성과·효과·Outcome·Impact) 칸, 산출(Output)이 든 머리는 뺌. AI·저장된 focus는 보지 않음
+ *  · 그 밖 steps·timeline: 칸의 focus === true(AI가 근거로 고른 이 과제 범위 한 곳 — schema.md block.cells.focus)
+ */
+export function cellFocus(b: Pick<Block, "kind" | "variant" | "cells">): boolean[] {
+  if (b.kind === "steps" && b.variant === "logic")
+    return b.cells.map((c) => {
+      const h = `${c.tag} ${c.head}`;
+      return LOGIC_FOCUS.test(h) && !LOGIC_OUTPUT.test(h);
+    });
+  return b.cells.map((c) => (b.kind === "steps" || b.kind === "timeline") && c.focus === true);
+}
+
+/** 진행 상태 표지(timeline:status 칸 tag — 이 셋 또는 빈 글). 「예정」 칸 글·숫자는 계획(그리기는 옅은 머리·점선 칸 + 「예정」 표지) */
+export const STATUS_TAGS = ["완료", "진행", "예정"] as const;
+/** 칸 tag → 진행 상태(결정론, 모르면 빈 글): 예정·계획을 먼저 봄(「완료 예정」·「진행 예정」은 예정), 그다음 완료·종료·달성, 진행·추진 중·운영 중·시행 중 */
+export function statusTag(raw: string): string {
+  const s = raw.replace(/\s/g, "");
+  if (/예정|계획/.test(s)) return "예정";
+  if (/완료|완수|종료|달성/.test(s)) return "완료";
+  if (/진행|추진중|운영중|시행중/.test(s)) return "진행";
+  return "";
+}
+
+/** 다층 차단(steps:layers) 층 표지: 칸 tag가 있으면 그것, 없으면 「N차」(그리기·판면 어림·원고·한글이 같이 씀) */
+export const layerMark = (c: Pick<BlockCell, "tag">, i: number) => c.tag.trim() || `${i + 1}차`;
+
+/** 깔때기(steps:funnel) 단계 수치: 칸 머리·불릿에 숫자나 자리표시(【확인: …】)가 있어야 함(집계 기간 note의 숫자는 세지 않음) */
+const FUNNEL_NUM = /\d|【확인:/;
 
 /** 두 패널로 그리는 전후 비교(panels·diag — 같은 마크업·같은 판면 어림, 꼬리표만 다름) */
 export const isPanelCompare = (b: Pick<Block, "kind" | "variant">) => b.kind === "compare" && (b.variant === "panels" || b.variant === "diag");
@@ -350,6 +389,15 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       x.items = list(b.items, 6, 30);
       x.cells = x.items.length >= 3 ? tableRows(b.cells, x.items.length - 1, isChevronTable(x) ? 120 : 60) : [];
     }
+    // 단계·시기 모양(2026-11-09 P4). 논리모형: 3~5칸, 강조는 코드가 칸 머리로 정하므로 AI의 focus는 버림(cellFocus), 칸이 모자라면 단계 흐름.
+    // 깔때기: 3~5단계이고 단계마다 수치(또는 【확인: …】)가 있어야 — 아니면 단계 흐름. 다층 차단: 4층까지. 진행 상태: 칸 tag를 완료·진행·예정 또는 빈 글로(statusTag)
+    if (kind === "steps" && x.variant === "logic") {
+      x.cells = x.cells.map((c) => ({ head: c.head, tag: c.tag, bullets: c.bullets, note: c.note }));
+      if (x.cells.length < 3) x.variant = "row";
+    } else if (kind === "steps" && x.variant === "funnel") {
+      if (x.cells.length < 3 || !x.cells.every((c) => FUNNEL_NUM.test([c.head, ...c.bullets].join(" ")))) x.variant = "row";
+    } else if (kind === "steps" && x.variant === "layers") x.cells = x.cells.slice(0, 4);
+    else if (kind === "timeline" && x.variant === "status") x.cells = x.cells.map((c) => ({ ...c, tag: statusTag(c.tag) }));
     // 전략체계도: items = 왼쪽 층 이름(목표·전략·과제·지표 — 지표마다 달라 자유, 4개까지·짧게)
     if (kind === "strategy") x.items = list(b.items, 4, 20);
     // PDCA 순환은 4칸일 때만(칸이 모자라거나 남으면 단계 흐름 — 환류 띠는 뺌)

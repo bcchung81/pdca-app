@@ -43,7 +43,7 @@ fact 사실 · figure 수치 · quote 원문 인용(정부·CEO·현장·평가�
 블록 종류(블록 사전)
 
 <!-- @block.variant -->
-모양: cards=plus|arrow|plain|vs(2칸), compare=table|panels|diag(현황·문제 ▶ 추진방향 짝), steps=row|zigzag, timeline=chevron|dots, table=빈 글(구분·수치 표)|result(추진실적 열)|bars(값 옆 막대)|chevron(쉐브론 머리)|ladder(2단 라벨)|roadmap(로드맵 — 여러 해 단계 계획과 올해 단계가 근거에 있을 때만) — 도식 고르기의 「표 모양」 근거 조건대로, 그 밖은 빈 글
+모양: cards=plus|arrow|plain|vs(2칸), compare=table|panels|diag(현황·문제 ▶ 추진방향 짝), steps=row|zigzag|logic(논리모형 — 투입 → 활동 → 산출 → 결과 → 영향 3~5칸)|funnel(깔때기 — 단계마다 따로 센 수치가 근거에 있을 때만, 3~5단계)|layers(다층 차단 — 1차 ~ 4차 층), timeline=chevron|dots|status(진행 상태 — 단계마다 완료·진행·예정이 근거에 있을 때만), table=빈 글(구분·수치 표)|result(추진실적 열)|bars(값 옆 막대)|chevron(쉐브론 머리)|ladder(2단 라벨)|roadmap(로드맵 — 여러 해 단계 계획과 올해 단계가 근거에 있을 때만) — 도식 고르기의 「표 모양」 근거 조건대로, 그 밖은 빈 글
 
 <!-- @block.label -->
 왼쪽 라벨 = 이야기 단계 이름(10자 안팎). 전폭 블록은 빈 글

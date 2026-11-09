@@ -62,6 +62,11 @@ const SAMPLES: Record<string, Block> = {
   "steps:zigzag": block({ kind: "steps", variant: "zigzag", cells: [cell("1단계 진단", ["진단 글"]), cell("설계", ["설계 글"], { note: "설계 결과" }), cell("실행", ["실행 글"]), cell("환류", ["환류 글"])] }),
   "timeline:chevron": block({ kind: "timeline", variant: "chevron", cells: [cell("’24년", ["착수"]), cell("’25년", ["확산"], { note: "당해 성과" })] }),
   "timeline:dots": block({ kind: "timeline", variant: "dots", cells: [cell("2023", ["시작 글"]), cell("2024", ["중간 글"], { note: "전환점" }), cell("2025", ["올해 글"])] }),
+  // 단계·시기 모양 4종(2026-11-09 P4 — 옛 렌더러는 단계 흐름·연도 흐름 모양으로, 층 표지·상태 표지는 칸 제목 글로)
+  "steps:logic": block({ kind: "steps", variant: "logic", cells: [cell("활동", ["교육 12회"]), cell("산출", ["수료 300명"]), cell("결과", ["합격률 상승"], { note: "62% → 71%" }), cell("영향", ["현장 사고 감소"])] }),
+  "steps:funnel": block({ kind: "steps", variant: "funnel", cells: [cell("탐지", ["의심 신호 1,240건"], { note: "’26.1~6월" }), cell("확인", ["불법 확인 310건"]), cell("조치", ["시정 명령 120건"], { note: "전국 무선국" })] }),
+  "steps:layers": block({ kind: "steps", variant: "layers", cells: [cell("사전 예방", ["정기 점검"]), cell("현장 차단", ["작업 중지"], { tag: "2차 차단", note: "중지 14건" }), cell("재발 방지", ["제도 개선"])] }),
+  "timeline:status": block({ kind: "timeline", variant: "status", cells: [cell("’25 설계", ["체계 설계"], { tag: "완료" }), cell("’26 시범", ["3개 지역"], { tag: "진행", focus: true }), cell("’27 확산", ["전국 적용"], { tag: "예정", note: "목표 17개 시도" })] }),
   "hub:2": block({ kind: "hub", cells: [cell("KCA", ["총괄", "조정"]), cell("기관 A", ["자료 제공", "검증"]), cell("기관 B", ["현장 지원"])], figures: [fig("logo", "해양경찰청･KCA･KOMSA 기관 로고", "center", "M")] }),
   "hub:list": block({ kind: "hub", cells: [cell("KCA", ["총괄"]), cell("기관 A", ["자료"]), cell("기관 B", ["현장"]), cell("기관 C", ["홍보"])] }),
   voices: block({ kind: "voices", title: "목소리 제목", cells: [cell("현장 검사관", ["위험해요"]), cell("", ["빨라졌어요"]), cell("주민", ["좋아요"])] }),
@@ -317,8 +322,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // (REPORT_STYLE.titleMark — 소제목 글꼴·바깥 여백 6px 0 0·내어쓰기 1.2em·바탕 없음)을 더함. 띠 규칙은 그대로 — 이 세 줄을 뺀 글이 옛 고정값 1bdb720e…과 같음을 확인
 // 2026-11-09 로드맵 표(table:roadmap — 경평 초안 프레임워크 확장 계획 P1)로(fb80a6e5… → 7f287ee3…): .k-tbl--chev td 규칙 바로 뒤에 주석 한 줄 + .k-road 규칙 네 줄을 더함.
 // 그 밖 규칙은 그대로 — 이 다섯 줄을 뺀 글이 옛 고정값 fb80a6e5…과 같음을 확인
+// 2026-11-09 단계·시기 모양 4종·부분 강조(경평 초안 프레임워크 확장 계획 P4)로(7f287ee3… → b5dfe056…): .k-proc__r 규칙 바로 뒤에 빈 줄 + 주석·규칙 블록(부분 강조·진행 상태·깔때기·다층 차단)을 더함.
+// 그 밖 규칙은 그대로 — 더한 블록을 뺀 글이 옛 고정값 7f287ee3…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "7f287ee36a46116c92c07420b15ffafac0843256737ff0e652cb0e271f333d51");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "b5dfe0562bc8fd6119d720a572cd0b2a47a3b9e4090ac1545e3ee6d836e0e92d");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {

@@ -5,8 +5,8 @@
 import { fitTextLines } from "./fit-dom.ts";
 import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
-import { type Block, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, figureMm, isChevronTable, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
-import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
+import { type Block, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, cellFocus, figureMm, isChevronTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
+import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, funnelMm, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
 import { NUM_SRC, type RepeatMarks, UNIT_SRC, figureSpans, repeatMarks } from "./repeat-figures.ts";
 import { type Diagram, type LadderRow, type MiniChart, type ReportSectionSpec, numberTokens } from "./section.ts";
@@ -204,7 +204,19 @@ interface DiagramPaths {
   headOk?: boolean[];
 }
 
-function diagramHtml(d: Diagram, u: Marks, label = "", pp?: DiagramPaths): string {
+/**
+ * v3 블록 칸 표시(2026-11-09 P4 — 옛 도식 모양으로 그리는 steps·timeline만): focus = 칸마다 강조(blocks.ts cellFocus — 머리 진하게·칸 옅은 바탕),
+ * status = 진행 상태 흐름(timeline:status)의 칸 표지(완료·진행·예정·빈 글 — 진행 칸이 「지금」, 예정 칸은 옅은 머리·점선 칸 + 표지). 없으면 예전 출력 그대로
+ */
+interface CellMarks {
+  focus?: boolean[];
+  status?: string[];
+}
+
+/** 강조 칸 class(없으면 빈 글 — 예전 출력 그대로) */
+const focusCls = (on: boolean | undefined) => (on ? " k-focus" : "");
+
+function diagramHtml(d: Diagram, u: Marks, label = "", pp?: DiagramPaths, cm: CellMarks = {}): string {
   const at = (rest: string) => (pp ? `${pp.block}.${rest}` : undefined);
   const title = d.title ? titleHtml(d.title, u, at("title")) : "";
   switch (d.type) {
@@ -214,14 +226,18 @@ function diagramHtml(d: Diagram, u: Marks, label = "", pp?: DiagramPaths): strin
         .join("")}</tbody></table>`;
     case "process_flow":
       return `${title}<ol class="k-proc" style="grid-template-columns:repeat(${d.steps.length},1fr)">${d.steps
-        .map((s, i) => `<li><div class="k-proc__h"><span class="k-num">${i + 1}</span>${tx(s.title, u, pp?.headOk?.[i] ? at(`cells.${i}.head`) : undefined)}</div><div class="k-proc__b">${ul(s.bullets, u, at(`cells.${i}.bullets`))}</div>${s.note ? `<div class="k-proc__r">${tx(s.note, u, at(`cells.${i}.note`))}</div>` : ""}</li>`)
+        .map((s, i) => `<li${cm.focus?.[i] ? ' class="k-focus"' : ""}><div class="k-proc__h"><span class="k-num">${i + 1}</span>${tx(s.title, u, pp?.headOk?.[i] ? at(`cells.${i}.head`) : undefined)}</div><div class="k-proc__b">${ul(s.bullets, u, at(`cells.${i}.bullets`))}</div>${s.note ? `<div class="k-proc__r">${tx(s.note, u, at(`cells.${i}.note`))}</div>` : ""}</li>`)
         .join("")}</ol>`;
     case "timeline": {
       const cols = d.steps.map(() => "1fr").join(JOIN_GAP);
-      return `${title}<ol class="k-tl" style="grid-template-columns:${cols}">${d.steps
+      // 진행 상태(cm.status): 「지금」은 진행 칸(마지막 칸이 아님), 예정 칸은 k-st--plan, 머리 뒤 상태 표지 — 표지 글은 편집 칸 밖(코드가 정리한 값)
+      const st = cm.status;
+      const now = (i: number) => (st ? st[i] === "진행" : i === d.steps.length - 1);
+      const mark = (i: number) => (st?.[i] ? ` <span class="k-st">${st[i]}</span>` : "");
+      return `${title}<ol class="k-tl${st ? " k-tl--st" : ""}" style="grid-template-columns:${cols}">${d.steps
         .map(
           (s, i) =>
-            `${i ? `<li class="k-tl__sep" aria-hidden="true">${CHEVRON}</li>` : ""}<li class="k-tl__item"${i === d.steps.length - 1 ? ' aria-current="step"' : ""}><div class="k-tl__h">${tx(s.title, u, at(`cells.${i}.head`))}${i === d.steps.length - 1 ? '<span class="sr">(당해연도)</span>' : ""}</div><div class="k-tl__b">${ul(s.bullets, u, at(`cells.${i}.bullets`))}${s.note ? `<p><b>${tx(s.note, u, at(`cells.${i}.note`))}</b></p>` : ""}</div></li>`,
+            `${i ? `<li class="k-tl__sep" aria-hidden="true">${CHEVRON}</li>` : ""}<li class="k-tl__item${st?.[i] === "예정" ? " k-st--plan" : ""}${focusCls(cm.focus?.[i])}"${now(i) ? ' aria-current="step"' : ""}><div class="k-tl__h">${tx(s.title, u, at(`cells.${i}.head`))}${mark(i)}${!st && i === d.steps.length - 1 ? '<span class="sr">(당해연도)</span>' : ""}</div><div class="k-tl__b">${ul(s.bullets, u, at(`cells.${i}.bullets`))}${s.note ? `<p><b>${tx(s.note, u, at(`cells.${i}.note`))}</b></p>` : ""}</div></li>`,
         )
         .join("")}</ol>`;
     }
@@ -395,27 +411,56 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
         return `${title}<div class="k-panels"${center ? ` style="grid-template-columns:minmax(0,1fr) ${figureMm(center).w + 4}mm minmax(0,1fr)"` : ""}>${side(false)}${mid}${side(true)}</div>`;
       }
       return diagramHtml({ type: "before_after", title: b.title, rows: b.rows, steps: [], actions: [] }, u, "", bp ? { block: bp } : undefined);
-    case "steps":
+    case "steps": {
+      // 칸 강조(2026-11-09 P4 — 논리모형은 결과·영향 칸을 코드가, 그 밖은 AI가 고른 focus)
+      const focus = cellFocus(b);
       if (b.variant === "zigzag" && b.cells.length === 4) {
         const area = ["1/1", "3/1", "3/3", "1/3"];
         // 칸 제목 앞 「Step N」·「N단계」는 단계 칩과 겹치므로 뗌
-        const li = b.cells.map((c, i) => `<li style="grid-area:${area[i]}"><div class="k-zig__h"><b>${i + 1}단계</b><span>${tx(c.head.replace(/^(Step\s?\d+|\d단계)\s*/, ""), u, at(`cells.${i}.head`), undefined, c.head)}</span></div><div class="k-zig__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}${c.note ? `<p class="k-zig__r">${tx(c.note, u, at(`cells.${i}.note`))}</p>` : ""}</div></li>`);
+        const li = b.cells.map((c, i) => `<li${focus[i] ? ' class="k-focus"' : ""} style="grid-area:${area[i]}"><div class="k-zig__h"><b>${i + 1}단계</b><span>${tx(c.head.replace(/^(Step\s?\d+|\d단계)\s*/, ""), u, at(`cells.${i}.head`), undefined, c.head)}</span></div><div class="k-zig__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}${c.note ? `<p class="k-zig__r">${tx(c.note, u, at(`cells.${i}.note`))}</p>` : ""}</div></li>`);
         return `${title}<ol class="k-zig">${li.join("")}<li aria-hidden="true" class="k-zig__arr" style="grid-area:2/1">▼</li><li aria-hidden="true" class="k-zig__arr" style="grid-area:3/2">▶</li><li aria-hidden="true" class="k-zig__arr" style="grid-area:2/3">▲</li></ol>`;
       }
+      if (b.variant === "funnel") {
+        // 깔때기(2026-11-09 P4): 단계마다 [가운데 맞춘 띠(아래로 갈수록 좁음 — fit.ts funnelMm과 같은 폭) | 집계 기준 칸(note — 어느 칸이든 있을 때만)]
+        const g = funnelMm(b, w);
+        const pct = (x: number, of: number) => ((x / of) * 100).toFixed(2);
+        const li = b.cells.map(
+          (c, i) =>
+            `<li><div class="k-fun__band${focusCls(focus[i])}" style="width:${pct(g.bands[i], g.area)}%"><b class="k-fun__h">${tx(c.head, u, at(`cells.${i}.head`))}</b>${c.bullets.map((x, k) => `<p>${tx(x, u, at(`cells.${i}.bullets.${k}`))}</p>`).join("")}</div>${g.note ? `<p class="k-fun__n">${c.note ? tx(c.note, u, at(`cells.${i}.note`)) : ""}</p>` : ""}</li>`,
+        );
+        return `${title}<ol class="k-fun${g.note ? " k-fun--note" : ""}"${g.note ? ` style="--k-fun-note:${pct(g.note, w)}%"` : ""}>${li.join("")}</ol>`;
+      }
+      if (b.variant === "layers") {
+        // 다층 차단(2026-11-09 P4): 층마다 [층 표지(tag, 없으면 「N차」) | 층 이름(어느 층이든 있을 때만 — fit.ts LAYER_MM) | 불릿 · 결과 줄] 세로로 쌓음
+        const named = b.cells.some((c) => c.head);
+        const li = b.cells.map(
+          (c, i) =>
+            `<li${focus[i] ? ' class="k-focus"' : ""}><span class="k-lay__m">${c.tag.trim() ? tx(c.tag, u, at(`cells.${i}.tag`)) : esc(layerMark(c, i))}</span>${named ? `<span class="k-lay__h">${tx(c.head, u, at(`cells.${i}.head`))}</span>` : ""}<div class="k-lay__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}${c.note ? `<p class="k-lay__r">${tx(c.note, u, at(`cells.${i}.note`))}</p>` : ""}</div></li>`,
+        );
+        return `${title}<ol class="k-lay${named ? " k-lay--named" : ""}">${li.join("")}</ol>`;
+      }
       // 단계 번호 칩이 차례를 보이므로 칸 제목 앞 「Step N」·「N단계」는 뗌
-      // 칸 제목은 tag를 이어 붙이지 않고 head만 그릴 때만 고치기 표지(이어 붙인 제목은 어느 칸을 고칠지 모호함)
+      // 칸 제목은 tag를 이어 붙이지 않고 head만 그릴 때만 고치기 표지(이어 붙인 제목은 어느 칸을 고칠지 모호함). 논리모형(logic)도 같은 단계 흐름 그림 + 칸 강조
       return diagramHtml(
         { type: "process_flow", title: b.title, rows: [], steps: b.cells.map((c) => ({ title: [c.tag.replace(/^(Step\s?\d+|\d단계)$/, ""), c.head.replace(/^(Step\s?\d+|\d단계)\s*/, "")].filter(Boolean).join(" "), bullets: c.bullets, note: c.note })), actions: [] },
         u,
         "",
         bp ? { block: bp, headOk: b.cells.map((c) => !c.tag.replace(/^(Step\s?\d+|\d단계)$/, "") && !/^(Step\s?\d+|\d단계)\s*/.test(c.head)) } : undefined,
+        { focus },
       );
-    case "timeline":
+    }
+    case "timeline": {
+      const focus = cellFocus(b);
       if (b.variant === "dots")
         return `${title}<div class="k-dots"><ol class="k-dots__items" style="grid-template-columns:repeat(${b.cells.length},1fr)">${b.cells
-          .map((c, i) => `<li${i === b.cells.length - 1 ? ' aria-current="step"' : ""}><span class="k-dots__yr">${tx(c.head, u, at(`cells.${i}.head`))}</span><span class="k-dots__dot" aria-hidden="true"></span>${c.bullets.map((x, k) => `<p class="k-dots__t">${tx(x, u, at(`cells.${i}.bullets.${k}`))}</p>`).join("")}${c.note ? `<span class="k-dots__n">${tx(c.note, u, at(`cells.${i}.note`))}</span>` : ""}</li>`)
+          .map((c, i) => `<li${i === b.cells.length - 1 ? ' aria-current="step"' : ""}${focus[i] ? ' class="k-focus"' : ""}><span class="k-dots__yr">${tx(c.head, u, at(`cells.${i}.head`))}</span><span class="k-dots__dot" aria-hidden="true"></span>${c.bullets.map((x, k) => `<p class="k-dots__t">${tx(x, u, at(`cells.${i}.bullets.${k}`))}</p>`).join("")}${c.note ? `<span class="k-dots__n">${tx(c.note, u, at(`cells.${i}.note`))}</span>` : ""}</li>`)
           .join("")}</ol></div>`;
-      return diagramHtml({ type: "timeline", title: b.title, rows: [], steps: b.cells.map((c) => ({ title: c.head, bullets: c.bullets, note: c.note })), actions: [] }, u, "", bp ? { block: bp } : undefined);
+      // 진행 상태(status — 2026-11-09 P4): 같은 연도 흐름 그림 + 칸 표지(정리된 tag — blocks.ts statusTag)
+      return diagramHtml({ type: "timeline", title: b.title, rows: [], steps: b.cells.map((c) => ({ title: c.head, bullets: c.bullets, note: c.note })), actions: [] }, u, "", bp ? { block: bp } : undefined, {
+        focus,
+        ...(b.variant === "status" ? { status: b.cells.map((c) => c.tag) } : {}),
+      });
+    }
     case "hub": {
       const [center, ...nodes] = b.cells;
       const node = (c: Block["cells"][number], i: number) => `<section class="k-hub__node"><h6 class="k-hub__name">${tx(c.head, u, at(`cells.${i}.head`))}</h6><p class="k-hub__role">${tx(c.bullets.join(" / "), u, at(`cells.${i}.bullets`), " / ")}</p></section>`;

@@ -14,7 +14,7 @@ import { BORDER_WIDTH_MM } from "../hwp/hwp5.ts";
 import { type HwpxInput, hwpxFiles } from "../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, Bullet, Cell, CharPr, HwpDoc, Inline, LineType, PageDef, Para, ParaPr, Table } from "../hwp/model.ts";
 import { writeHwpxPackage } from "../hwpx/postprocess.ts";
-import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, blockTexts, figureMm, isChevronTable, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, blockTexts, figureMm, isChevronTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
 import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableColsMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
 import { fontName } from "./report-fonts.ts";
@@ -592,11 +592,12 @@ class SectionWriter extends Writer {
         return [...title, this.host(this.beforeAfter(b.rows, w))];
       case "steps":
         if (b.variant === "zigzag" && b.cells.length === 4) return [...title, this.host(this.zigzag(b.cells, w), px(3))];
+        // 논리모형·깔때기·다층 차단(2026-11-09 P4 — 화면 DOM 변환이 기본이라 이 옛 렌더러는 단계 흐름 모양으로만): 다층 차단은 칸 제목 앞에 층 표지(layerMark)
         return [
           ...title,
           this.host(
             this.processFlow(
-              b.cells.map((c) => ({ title: [c.tag.replace(/^(Step\s?\d+|\d단계)$/, ""), c.head.replace(STEP_LEAD, "")].filter(Boolean).join(" "), bullets: c.bullets, note: c.note })),
+              b.cells.map((c, i) => ({ title: (b.variant === "layers" ? [layerMark(c, i), c.head] : [c.tag.replace(/^(Step\s?\d+|\d단계)$/, ""), c.head.replace(STEP_LEAD, "")]).filter(Boolean).join(" "), bullets: c.bullets, note: c.note })),
               w,
             ),
             px(3),
@@ -604,7 +605,8 @@ class SectionWriter extends Writer {
         ];
       case "timeline":
         if (b.variant === "dots") return [...title, this.host(this.dots(b.cells, w), px(3))];
-        return [...title, this.host(this.chevronTimeline(b.cells.map((c) => ({ title: c.head, bullets: c.bullets, note: c.note })), w), px(3))];
+        // 진행 상태(2026-11-09 P4): 연도 흐름 모양 + 칸 제목 뒤 「(완료)」·「(진행)」·「(예정)」
+        return [...title, this.host(this.chevronTimeline(b.cells.map((c) => ({ title: b.variant === "status" && c.tag ? `${c.head} (${c.tag})` : c.head, bullets: c.bullets, note: c.note })), w), px(3))];
       case "hub":
         return [...title, ...this.hub(b, w)];
       case "voices":

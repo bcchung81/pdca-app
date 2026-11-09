@@ -136,7 +136,7 @@ export const FRAMEWORKS: Framework[] = [
     story: "위험관리·안전형",
     no: "⑮",
     fit: "위험 요인을 진단해 예방 조치·상시 점검으로 사고·피해를 줄인 과제 — 위험 진단 → 예방 → 점검 → 무사고·저감 성과",
-    blocks: [{ kind: "cards", variant: "plus", label: "위험 요인" }, { kind: "steps", variant: "row", label: "예방 조치" }, { kind: "table", label: "상시 점검" }, { kind: "compare", variant: "table", label: "저감 성과" }],
+    blocks: [{ kind: "cards", variant: "plus", label: "위험 요인" }, { kind: "steps", variant: "layers", label: "예방 조치" }, { kind: "table", label: "상시 점검" }, { kind: "compare", variant: "table", label: "저감 성과" }],
     example: "2025 예시 없음(2026-11-04 추가)",
   },
   {
@@ -210,12 +210,17 @@ export const SHAPES: ShapeInfo[] = [
   { code: "compare:diag", kind: "compare", variant: "diag", name: "진단 ▶ 처방 짝", group: "base", use: "현황·문제 ➀➁ ▶ 추진방향 ➊➋ — 문제마다 방향 한 짝(소항목을 여는 자리)" },
   { code: "steps:row", kind: "steps", variant: "row", name: "단계 흐름", group: "base", use: "순서가 있는 실행 3~5단계" },
   { code: "steps:zigzag", kind: "steps", variant: "zigzag", name: "ㄹ자 단계", group: "base", use: "의견 → 한계 → 방향 → 해결 4단계" },
+  // 단계·시기 모양 4종(2026-11-09 — 경평 초안 프레임워크 확장 계획 P4, 주요사업만 — BIZ_ONLY_SHAPES)
+  { code: "steps:logic", kind: "steps", variant: "logic", name: "논리모형 흐름", group: "base", use: "투입 → 활동 → 산출 → 결과 → 영향 3~5칸 — 결과·영향 칸은 앱이 강조" },
+  { code: "steps:funnel", kind: "steps", variant: "funnel", name: "깔때기", group: "base", use: "탐지 → 확인 → 조치 → 환수처럼 단계마다 줄어드는 수치 3~5단계(단계마다 수치 + 집계 기간·모집단)" },
+  { code: "steps:layers", kind: "steps", variant: "layers", name: "다층 차단", group: "base", use: "1차 ~ 4차로 겹겹이 막는 세로 층(예방 → 차단 → 재발 방지)" },
   { code: "cards:plus", kind: "cards", variant: "plus", name: "칸 도식(✚)", group: "base", use: "함께 봐야 할 요소 3칸(현황·문제 셋)" },
   { code: "cards:arrow", kind: "cards", variant: "arrow", name: "칸 도식(▶)", group: "base", use: "이어지는 요소 3칸" },
   { code: "cards:plain", kind: "cards", variant: "plain", name: "칸 도식", group: "base", use: "나란한 요소 2~4칸" },
   { code: "cards:vs", kind: "cards", variant: "vs", name: "대비 2칸(VS)", group: "base", use: "두 입장·두 방식 맞세우기" },
   { code: "timeline:chevron", kind: "timeline", variant: "chevron", name: "연도 흐름", group: "base", use: "’24 → ’25 → ’26 단계(마지막이 올해)" },
   { code: "timeline:dots", kind: "timeline", variant: "dots", name: "연혁 점", group: "base", use: "해마다 쌓은 연혁·누적 수치" },
+  { code: "timeline:status", kind: "timeline", variant: "status", name: "진행 상태 흐름", group: "base", use: "단계마다 완료·진행·예정 표지(예정 칸의 수치는 계획)" },
   { code: "stats", kind: "stats", variant: "", name: "핵심 수치 띠", group: "base", use: "추진성과 상자 — 칸마다 「성과 문장(시점 수치)」 굵은 불릿 2~4줄(2026-10-28 2025 추진성과 행 모양)" },
   { code: "table", kind: "table", variant: "", name: "수치 표", group: "base", use: "행·열 머리가 모두 있는 수치" },
   // 표 모양 4종(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 docs/analysis/2025-경영관리-경영실적보고서-분석.md 「블록 어휘 수준」)
@@ -264,10 +269,10 @@ export const shapeOf = (code: string) => SHAPES.find((s) => s.code === code) ?? 
  */
 export const BIZ_RETIRED_SHAPES: readonly string[] = ["stats"];
 /**
- * 주요사업에서만 쓰는 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 P1): 로드맵 표 — 경영관리 프롬프트·판(해시)을 바꾸지 않으려고 경영관리 모양 목록
+ * 주요사업에서만 쓰는 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 P1 로드맵 표 · P4 논리모형·깔때기·다층 차단·진행 상태) — 경영관리 프롬프트·판(해시)을 바꾸지 않으려고 경영관리 모양 목록
  * (블록 고치기 요청 글 shapeMenuText·화면 「다른 모양으로」 shapeMenu·구성안 도식 목록 shapeChoices·경영관리 틀 갤러리)에서는 뺌
  */
-export const BIZ_ONLY_SHAPES: readonly string[] = ["table:roadmap"];
+export const BIZ_ONLY_SHAPES: readonly string[] = ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status"];
 export const BIZ_RETIRED_WHY = "주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다(2025 최종본에 없음) — 수치는 단계 칸 결과 줄·표 결과 열·추진성과에 씁니다";
 
 /** 전폭으로 그리는 종류(라벨이 있어도 사다리 행이 아님 — 렌더러 section-html의 FULL_KINDS와 같음) */
@@ -307,6 +312,9 @@ export function cellRange(kind: BlockKind, variant = ""): { min: number; max: nu
   // 표 모양: 추진실적 열 표·쉐브론 머리 표·로드맵 표는 1~4행(렌더러·blocks.ts cleanBlocks와 같은 범위), 2단 라벨 표는 2~6행
   if (kind === "table" && (variant === "result" || variant === "chevron" || variant === "roadmap")) return { min: 1, max: 4 };
   if (kind === "steps" && variant === "zigzag") return { min: 4, max: 4 };
+  // 논리모형·깔때기는 3~5칸(모자라면 정리가 단계 흐름으로 바꿈 — blocks.ts cleanBlocks), 다층 차단은 2~4층
+  if (kind === "steps" && (variant === "logic" || variant === "funnel")) return { min: 3, max: 5 };
+  if (kind === "steps" && variant === "layers") return { min: 2, max: 4 };
   const [min, max] = CELL_RANGE[kind] ?? [1, 1];
   return { min, max };
 }
@@ -324,6 +332,8 @@ export function defaultCells(kind: BlockKind, variant = ""): number {
   // 로드맵 표: 추진내용·산출·기대 효과 3행
   if (kind === "table" && variant === "roadmap") return 3;
   if (kind === "table" && variant === "ladder") return 4;
+  // 논리모형·깔때기: 4칸(활동 → 산출 → 결과 → 영향 · 탐지 → 확인 → 조치 → 환수)
+  if (kind === "steps" && (variant === "logic" || variant === "funnel")) return 4;
   return clampCells(kind, variant, typical[kind] ?? 1);
 }
 

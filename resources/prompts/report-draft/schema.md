@@ -35,7 +35,7 @@
 블록 머리(없으면 빈 문자열). define은 탭 글(「…란?」「왜 …?」), case는 사례 제목. 전후 비교(compare)·표(table)·칸 도식의 머리는 「무엇을」(대상 명사)이 든 한 줄로 쓰고, 라벨·표 머리(기존·개선·As-Is·To-Be)가 이미 전후를 말하면 빈 문자열로 둡니다. 「A → B」는 양쪽이 같은 대상을 가리킬 때만 씁니다(고정형 OTA → 이동형 OTA) — 대상이 다른 두 말을 화살표로만 잇거나(✗ 사후 확인 → AI 사전예방 전환) 화살표 뒤에 「전환」을 겹쳐 쓰지 않고, 대상을 넣어 풉니다(✓ (대상) 점검을 사후 확인에서 AI 사전예방으로)
 
 <!-- @block.variant -->
-모양: cards=plus|arrow|plain|vs(2칸), compare=table|panels|diag(현황·문제 ▶ 추진방향 짝), steps=row|zigzag, timeline=chevron|dots, table=빈 문자열(구분·수치 표)|result(추진실적 열)|bars(값 옆 막대)|chevron(쉐브론 머리)|ladder(2단 라벨)|roadmap(로드맵 — 열 = 단계·연도, 여러 해 단계 계획과 올해 단계가 근거에 있을 때만, 올해 뒤 열은 계획이라 실적처럼 쓰지 않음) — 도식 고르기의 「표 모양」대로 칸을 채움, 그 밖은 빈 문자열
+모양: cards=plus|arrow|plain|vs(2칸), compare=table|panels|diag(현황·문제 ▶ 추진방향 짝), steps=row|zigzag|logic(논리모형 — 투입 → 활동 → 산출 → 결과 → 영향 3~5칸)|funnel(깔때기 — 단계마다 수치 + note 집계 기간·모집단, 3~5단계)|layers(다층 차단 — 1차 ~ 4차 층), timeline=chevron|dots|status(진행 상태 — 칸 tag에 완료·진행·예정, 예정 칸은 계획이라 실적처럼 쓰지 않음), table=빈 문자열(구분·수치 표)|result(추진실적 열)|bars(값 옆 막대)|chevron(쉐브론 머리)|ladder(2단 라벨)|roadmap(로드맵 — 열 = 단계·연도, 여러 해 단계 계획과 올해 단계가 근거에 있을 때만, 올해 뒤 열은 계획이라 실적처럼 쓰지 않음) — 도식 고르기의 「표 모양」대로 칸을 채움, 그 밖은 빈 문자열
 
 <!-- @block.text -->
 banner·band·define·subhead 본문, strategy의 목표 띠·pdca의 환류 띠 한 줄(그 밖은 빈 문자열)
@@ -47,7 +47,7 @@ bullets의 불릿·case의 「라벨 | 내용」 줄, define의 칩 흐름, comp
 cards·steps·timeline·hub·voices·quotes·stats·qa·table·strategy·pdca의 칸(stats는 bullets[0]=성과 문장, head=그 문장의 핵심 수치 — 앱이 「성과 문장(^{시점}수치)」 추진성과 불릿 한 줄로 이음 · qa는 head=질문, bullets=답 1~2개 · table은 head=행 머리, bullets=값을 열 순서대로 값 열 수만큼 · strategy는 열마다 head=전략목표, bullets=실행과제, note=성과지표 · pdca는 4칸, tag=단계 표지(비우면 P·D·C·A), head=단계 이름): head=칸 제목(시기·단계·기관·화자), tag=칩(기관명·Step·연도 등, 없으면 빈 문자열), bullets=칸 불릿(voices·quotes는 [원문 인용]), note=결과 줄·출처(quotes는 시점·출처, stats는 그 수치의 시점 한 마디 — 필수, 전후 비교 값은 head에 「164명 → 126명」). 그 밖은 빈 배열
 
 <!-- @block.cells.focus -->
-선택. 칸 하나를 강조할 때만 true(전체 단계·연도 중 이 과제가 맡은 범위 한 곳 — steps·timeline 칸). 근거가 그 범위를 말할 때만 쓰고, 보통은 생략합니다
+선택. 칸 하나를 강조할 때만 true(전체 단계·연도 중 이 과제가 맡은 범위 한 곳 — steps·timeline 칸). 근거가 그 범위를 말할 때만 쓰고, 보통은 생략합니다. steps:logic은 앱이 결과·영향 칸을 강조하므로 쓰지 않습니다
 
 <!-- @block.rows -->
 compare의 행: key=구분(짧게), before=기존, after=개선(diag는 before=현황·문제, after=그 문제의 추진방향 — 행마다 한 짝). 그 밖은 빈 배열

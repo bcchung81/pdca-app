@@ -3,7 +3,7 @@
 // 묶는 규칙은 HTML 렌더러(section-html.ts)와 같은 함수를 씀: 라벨·단 띠·가로 반씩 = layoutGroups, 막대 없는 표 칸·2단 라벨 = ladderGroups,
 // 전후 비교 패널 = isPanelCompare. 경영관리 마커 옮기기(지적개선을 카드 지적 행과 겹치는 절 대주제에)는 section-html.ts mgBody와 같은 짜임.
 
-import { type Block, type BlockCell, FIGURE_LABEL, type Figure, ROADMAP_PLAN, blockTexts, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_LABEL, type Figure, ROADMAP_PLAN, blockTexts, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { layoutGroups } from "./layout.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 
@@ -68,9 +68,15 @@ function body(b: Block, warnings: string[]): string[] {
       return [...title, ...cellLines(b.cells.slice(0, 4), (c, i) => `[${t(pdcaMark(c.tag, i))}] `), ...(b.text ? [bullet(`↺ ${b.text}`)] : [])];
     }
     case "steps":
-      // 단계 번호가 차례를 보이므로 칸 제목 앞 「Step N」·「N단계」는 뗌(렌더러와 같음)
+      // 깔때기(2026-11-09 P4): 단계 | 수치 | 집계 기준(note) 표 — 띠 폭은 한글 원고에서 뺌
+      if (b.variant === "funnel") return [...caption(b.title), ...table([["단계", "수치", "집계 기준"], ...b.cells.map((c) => [c.head, c.bullets.join(" / "), c.note])])];
+      // 다층 차단: 칸 머리 앞 층 표지 「[1차] 」(렌더러와 같은 layerMark)
+      if (b.variant === "layers") return [...title, ...cellLines(b.cells, (c, i) => `[${t(layerMark(c, i))}] `)];
+      // 단계 번호가 차례를 보이므로 칸 제목 앞 「Step N」·「N단계」는 뗌(렌더러와 같음). 논리모형도 같은 단계 목록(강조는 한글 원고에서 뺌)
       return [...title, ...cellLines(b.cells.map((c) => ({ ...c, head: c.head.replace(STEP_LEAD, ""), tag: c.tag.replace(/^(Step\s?\d+|\d단계)$/, "") })), (c, i) => `${i + 1}단계 ${c.tag ? `[${t(c.tag)}] ` : ""}`)];
     case "timeline":
+      // 진행 상태(2026-11-09 P4): 칸 머리 뒤 「(완료)」·「(진행)」·「(예정)」(정리된 tag — 예정 칸 글·숫자는 계획)
+      if (b.variant === "status") return [...title, ...cellLines(b.cells.map((c) => ({ ...c, head: c.tag ? `${c.head} (${c.tag})` : c.head })), () => "")];
       return [...title, ...cellLines(b.cells, () => "")];
     case "hub": {
       const [center, ...nodes] = b.cells;
