@@ -49,7 +49,7 @@ export const FRAMEWORKS: Framework[] = [
     story: "이슈→해결책형",
     no: "③",
     fit: "정책·주파수·제도·이해관계 조정",
-    blocks: [{ kind: "bullets", label: "중요성" }, { kind: "timeline", variant: "chevron", label: "로드맵" }, { kind: "subhead" }, { kind: "cards", variant: "vs", label: "핵심이슈" }, { kind: "cards", variant: "plain", label: "해결책 마련" }],
+    blocks: [{ kind: "bullets", label: "중요성" }, { kind: "timeline", variant: "chevron", label: "로드맵" }, { kind: "subhead" }, { kind: "cards", variant: "vs", label: "핵심이슈" }, { kind: "cards", variant: "plain", label: "해결책 마련" }, { kind: "table", variant: "ladder", label: "제도 개편" }],
     example: "2025 2-2 가. 6G 주파수",
   },
   {
@@ -92,7 +92,7 @@ export const FRAMEWORKS: Framework[] = [
     story: "기존→개선형",
     no: "⑨",
     fit: "기존 방식·제도의 한계를 고쳐 바꾼 과제 — 한계 → 개선 노력 → 달라진 결과",
-    blocks: [{ kind: "cards", variant: "arrow", label: "개선 경과" }, { kind: "compare", variant: "panels", label: "기존→개선" }, { kind: "steps", variant: "row", label: "추진내용" }],
+    blocks: [{ kind: "cards", variant: "arrow", label: "개선 경과" }, { kind: "compare", variant: "panels", label: "기존→개선" }, { kind: "steps", variant: "row", label: "추진내용" }, { kind: "table", variant: "result", label: "확인된 변화" }],
     example: "2025 2-1 나. 국가자격 품질 제고",
   },
   {
@@ -114,7 +114,7 @@ export const FRAMEWORKS: Framework[] = [
     story: "AX 전환형",
     no: "⑫",
     fit: "AI·자동화로 업무 절차를 바꾼 과제 — 기존 절차 → 전환 → 사람·AI 역할 분담 → 단축 성과",
-    blocks: [{ kind: "cards", variant: "arrow", label: "전환 배경" }, { kind: "compare", variant: "panels", label: "기존→AI 전환" }, { kind: "table", label: "역할 분담" }, { kind: "steps", variant: "row", label: "확산" }],
+    blocks: [{ kind: "cards", variant: "arrow", label: "전환 배경" }, { kind: "compare", variant: "panels", label: "기존→AI 전환" }, { kind: "table", label: "도입 전 기준선" }, { kind: "table", label: "역할 분담" }, { kind: "steps", variant: "row", label: "확산" }, { kind: "table", variant: "result", label: "성과 측정" }],
     example: "타기관 2025 — 한국지능정보사회진흥원 지능화 확산(B+)·KEIT R&D시스템(B0)",
   },
   // ⑬~⑯은 2026-11-04 사용자 승인으로 더함 — KCA 2025 최종본에서 확인한 예시 소항목이 없어 예시는 「2025 예시 없음」
@@ -274,7 +274,7 @@ export const BIZ_RETIRED_WHY = "주요사업 초안은 따로 떨어진 수치 �
 export const FULL_WIDTH_KINDS: readonly BlockKind[] = ["band", "banner", "quotes", "subhead", "case"];
 
 /** 라벨 후보(2025 공통 라벨 — 추진배경 15·추진방향 8·주요이슈 5 + 라벨 사다리 6종) */
-export const LABEL_SUGGESTIONS = ["추진배경", "현황 및 문제점", "추진방향", "추진내용", "추진노력", "추진실적", "주요이슈"] as const;
+export const LABEL_SUGGESTIONS = ["추진배경", "현황 및 문제점", "추진방향", "추진내용", "추진노력", "추진실적", "주요이슈", "장애와 대응"] as const;
 
 // ---------------------------------------------------------------------------
 // 칸 수 범위

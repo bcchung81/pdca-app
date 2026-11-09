@@ -20,6 +20,8 @@ KCA 경영평가 성과관리 웹앱에서 12월 경영실적보고서(주요사
 # 판단 기준
 {{> report-draft/style.md#style}}
 
+{{> report-draft/style.md#style-add}}
+
 {{> report-draft/blocks.md#blocks}}
 
 {{> report-draft/blocks.md#figures}}
