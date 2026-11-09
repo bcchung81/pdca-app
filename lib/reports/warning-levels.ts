@@ -20,6 +20,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "제목 폭": "block", // 소항목 제목이 한 줄(판면 폭 170mm)을 넘음 — 2025 소항목 제목은 모두 한 줄, 자동 고치기 사유(lib/reports/title-checks.ts, 2026-10-28)
   "값 충돌": "block", // 경영관리: 구성안이 근거에서 찾은 같은 항목의 다른 값 중 쓰지 않을 값이 초안 블록에 남음 — 사실 어긋남(lib/reports/mg-consistency.ts conflictWarnings, 2026-10-30)
   "로드맵 계획": "block", // 로드맵 표(table:roadmap)의 계획 열 수치가 추진성과·결과 줄에 실적처럼 다시 나옴(lib/reports/branch-checks.ts roadmapPlanWarning, 2026-11-09 P2 C3)
+  "비율 차": "block", // 「A%에서 B%로 C% 증가」처럼 두 비율의 차를 %로 씀 — %p여야 함(lib/reports/writing-checks.ts percentPointWarning, 2026-11-09 P6 C6)
   // ── info: 문장·표현·짜임
   문장: "info",
   문체: "info",
@@ -57,6 +58,10 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "목소리–해법": "info",
   "번호 일치": "info", // ⑰ 개요 칸 번호·키워드 ↔ 뒤 갈래 행, ④ 말풍선 ↔ 해법 행, ① 단계 이름 ↔ 세부 실적 이름(lib/reports/branch-checks.ts numberLinkWarnings, 2026-11-09 P2 C1)
   "갈래 수": "info", // ⑱ 원인 칸 수·조치 표 행 수·추진성과 갈래 수가 다름(lib/reports/branch-checks.ts branchCountWarning, 2026-11-09 P2 C2)
+  "제목 수치": "info", // 소항목·블록 제목의 수치가 본문·추진성과에 한 번도 안 나옴(lib/reports/writing-checks.ts titleFigureWarning, 2026-11-09 P6 C4)
+  "비교 기준": "info", // 수치는 있는데 비교 기준(전년·기존·목표·대비·→ 등)이 없는 추진성과 줄이 둘 이상(lib/reports/writing-checks.ts compareBaseWarning, 2026-11-09 P6 C5)
+  "과장 낱말": "info", // 최초·최고·역대·유일·근절·제로·무재해·전무가 근거 글에 없음(lib/reports/writing-checks.ts hypeWordWarning, 2026-11-09 P6 C7)
+  "AI 기준선": "info", // AI 성과 줄(AX 전환형이면 수치 있는 추진성과 줄 전부)에 기준선이 없음(lib/reports/writing-checks.ts aiBaselineWarning, 2026-11-09 P6 C8)
   "성과 축": "info",
   틀: "info",
   "표기 없는 상자": "info", // 상자형 도식에 라벨·제목·칸 머리·칩이 하나도 없음(맨 상자 — lib/reports/title-checks.ts bareBoxWarnings, 2026-10-28)
