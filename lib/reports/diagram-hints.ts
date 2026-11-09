@@ -6,7 +6,7 @@
 // 「기존·개선·→」 3번이면 전후 비교 → 카드 59장 전부, 1·2순위 47장. 지금은 한 줄에 전(기존·현행·수기…)과 후(개선·전환·→…)가 함께 있는 줄만 셈(13/59).
 // 요청 글 「도식 고르기」(resources/prompts/report-draft/request.md diagram.*)에 넣고, 검증은 한 소항목 안 같은 도식 반복·과제만의 요소 없음을 봅니다.
 
-import { type Block, VARIANTS } from "./blocks.ts";
+import { BRANCH_REPEAT_STORIES, type Block, VARIANTS } from "./blocks.ts";
 
 export interface DiagramHint {
   /** 블록 이름(kind 또는 kind:모양) */
@@ -36,6 +36,11 @@ export interface HintOptions {
   track?: "mg";
   /** 신호를 볼 추가 글(예: 2025 같은 평가내용 절) — 경영관리일 때만 합쳐 봄, 글마다 HINT_TEXT_MAX까지 */
   extraTexts?: string[];
+  /**
+   * 주요사업 표 모양 신호(table:result·bars·chevron·ladder, 2026-11-09)를 볼 글 — 이 카드 글(+ 이 과제에 연결한 첨부)만, 전년 절은 뺌(전년 글 신호가 후보를 켜면 전년복제가 생김).
+   * 없으면 fullText. 경영관리는 안 씀(경영관리는 2025 같은 평가내용 글 신호를 따로 봄)
+   */
+  cardText?: string;
 }
 
 const uniq = (xs: string[]) => [...new Set(xs)];
@@ -74,6 +79,33 @@ const PIECE_SPLIT = /\n|<br\s*\/?>/i;
 
 /** 협업 낱말이 든 조각에서 나온 기관(같은 조각에 협업 낱말이 없는 데이터 출처 기관은 뺌, 카드 개요 칸의 「협약 예산」 체크박스 조각은 협업 낱말로 안 봄) */
 export const collabOrgNames = (text: string) => orgNames(text.split(PIECE_SPLIT).filter((p) => COLLAB_WORD.test(p.replace(/협약\s?예산/g, ""))).join("\n"));
+
+/** 막대 표 신호 줄: 한 줄에 연도 둘 이상 + 같은 단위 수치 둘 이상(’25년 13명 → ’26년 14명) */
+const barsLine = (body: string) =>
+  body.split("\n").find((l) => {
+    const ms = [...l.matchAll(YEAR_NUM)];
+    const units = new Map<string, number>();
+    for (const m of ms) units.set(m[3], (units.get(m[3]) ?? 0) + 1);
+    return new Set(ms.map((m) => m[1]).filter((y) => +y >= 18 && +y <= 30)).size >= 2 && [...units.values()].some((n) => n >= 2);
+  });
+/** 쉐브론 머리 신호 줄: 한 줄에 단계 머리 낱말 칸이 셋 이상(짧은 칸만) */
+const chevronLine = (body: string) => body.split("\n").find((l) => new Set(l.split(/[|▶→]/).map((x) => x.trim()).filter((x) => x && x.length <= 20 && STAGE_HEAD.test(x))).size >= 3);
+/** 2단 라벨 신호: 번호 소제목 아래 하위 번호(①-1·①-2 …) */
+const ladderNumbers = (body: string) => new Set(body.match(/[①-⑳]\s?-\s?\d/g) ?? []);
+/** 추진실적 열 표 신호: 표 머리 칸의 결과 낱말(결과·성과·실적·효과) */
+const RESULT_HEAD = /(?:추진\s?)?(?:결과|성과|실적)|효과/;
+/** 카드 글의 표(`…table.rows.R.C.lines.N | 글` 경로 줄)마다 머리 행(첫 행) 칸 글 */
+function tableHeads(body: string): string[][] {
+  const tabs = new Map<string, Map<number, string>>();
+  for (const l of body.split("\n")) {
+    const m = l.match(/^(.*\.table)\.rows\.0\.(\d+)\.lines\.\d+ \| (.*)$/);
+    if (!m) continue;
+    const row = tabs.get(m[1]) ?? new Map<number, string>();
+    tabs.set(m[1], row);
+    row.set(+m[2], `${row.get(+m[2]) ?? ""} ${m[3]}`.trim());
+  }
+  return [...tabs.values()].map((r) => [...r.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]));
+}
 
 /** 글 → 도식 후보(이 과제만의 요소 먼저, 갈래 안에서는 신호가 강한 순) */
 export function diagramHints(fullText: string, extras: HintExtras = {}, opts: HintOptions = {}): DiagramHint[] {
@@ -173,20 +205,24 @@ export function diagramHints(fullText: string, extras: HintExtras = {}, opts: Hi
     const resultCol = mgBody.split("\n").some((l) => /^\s*추진\s?실적\s*$/.test(l) || (/\|\s*추진\s?실적\s*$/.test(l) && !/구\s?분|추진\s?(?:내용|배경|방향|절차)|주요\s?(?:내용|활동)|경영현안/.test(l)));
     const resultNums = new Set(body.split("\n").filter((l) => /^outcome\.quantitative/.test(l)).flatMap((l) => l.match(UNIT) ?? [])).size;
     if (resultCol && resultNums >= 2) push("table:result", `2025 같은 평가내용의 「추진실적」 열 + 이 카드 정량 성과 수치 ${resultNums}개 — 추진실적 열 표`, 3);
-    // 막대 표: 이 카드 글(2025 글은 빼고 — 넣으면 43장 중 38장) 한 줄에 연도 둘 이상 + 같은 단위 수치 둘 이상(’25년 13명 → ’26년 14명)
-    const pair = body.split("\n").find((l) => {
-      const ms = [...l.matchAll(YEAR_NUM)];
-      const units = new Map<string, number>();
-      for (const m of ms) units.set(m[3], (units.get(m[3]) ?? 0) + 1);
-      return new Set(ms.map((m) => m[1]).filter((y) => +y >= 18 && +y <= 30)).size >= 2 && [...units.values()].some((n) => n >= 2);
-    });
-    if (pair) push("table:bars", `한 줄에 연도별 같은 단위 수치(${pair.replace(/^[^|\n]*\|\s*/, "").slice(0, 30)}…) — 값 옆 막대 표`, 3);
-    // 쉐브론 머리: 한 줄에 단계 머리 낱말 칸이 셋 이상(「구분 | 현황 | 개선방향 | 적용 결과」·「추진 배경 | 협의 과정 | … 신설」 — 짧은 칸만)
-    const chev = mgBody.split("\n").find((l) => new Set(l.split(/[|▶→]/).map((x) => x.trim()).filter((x) => x && x.length <= 20 && STAGE_HEAD.test(x))).size >= 3);
+    // 막대 표: 이 카드 글(2025 글은 빼고 — 넣으면 43장 중 38장). 쉐브론 머리·2단 라벨은 2025 같은 평가내용 글까지 봄(신호 식은 barsLine·chevronLine·ladderNumbers)
+    const bars = barsLine(body);
+    if (bars) push("table:bars", `한 줄에 연도별 같은 단위 수치(${bars.replace(/^[^|\n]*\|\s*/, "").slice(0, 30)}…) — 값 옆 막대 표`, 3);
+    const chev = chevronLine(mgBody);
     if (chev) push("table:chevron", `단계 머리 칸이 셋 이상인 줄(${chev.slice(0, 30)}…) — 쉐브론 머리 표`, 3.5);
-    // 2단 라벨: 번호 소제목 아래 하위 번호(①-1·①-2 …)가 둘 이상
-    const subNo = new Set(mgBody.match(/[①-⑳]\s?-\s?\d/g) ?? []);
-    if (subNo.size >= 2) push("table:ladder", `하위 번호 ${[...subNo].slice(0, 4).join("·")} — 2단 라벨 표`, 3);
+    const ladder = ladderNumbers(mgBody);
+    if (ladder.size >= 2) push("table:ladder", `하위 번호 ${[...ladder].slice(0, 4).join("·")} — 2단 라벨 표`, 3);
+  } else {
+    // 주요사업 표 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 D1): 이 카드 글(전년 절 제외)의 신호만, 모두 기본 도식
+    const cardBody = (opts.cardText ?? text).slice(0, HINT_TEXT_MAX).split("\n").filter((l) => !/^##\s|categoriesText/.test(l)).join("\n");
+    const resultHead = tableHeads(cardBody).find((h) => h.length >= 3 && h.some((x) => x.length <= 12 && RESULT_HEAD.test(x)));
+    if (resultHead) push("table:result", `표 머리에 결과 칸(${resultHead.join(" | ").slice(0, 30)}…) — 추진실적(결과) 열 표`, 3);
+    const bars = barsLine(cardBody);
+    if (bars) push("table:bars", `한 줄에 연도별 같은 단위 수치(${bars.replace(/^[^|\n]*\|\s*/, "").slice(0, 30)}…) — 값 옆 막대 표`, 3);
+    const chev = chevronLine(cardBody);
+    if (chev) push("table:chevron", `단계 머리 칸이 셋 이상인 줄(${chev.slice(0, 30)}…) — 쉐브론 머리 표`, 3.5);
+    const ladder = ladderNumbers(cardBody);
+    if (ladder.size >= 2) push("table:ladder", `하위 번호 ${[...ladder].slice(0, 4).join("·")} — 2단 라벨 표`, 3);
   }
 
   // 같은 종류는 가장 강한 신호 하나만, 과제만의 요소 먼저
@@ -202,10 +238,32 @@ export function kindUsage(signatures: string[]): Array<[string, number]> {
   return [...n].sort((a, b) => b[1] - a[1]);
 }
 
-/** 한 소항목 안에서 같은 도식(kind)을 두 번 이상 쓴 것(불릿·소제목·막대 제외 — 막대는 여러 개가 2025 관행) */
-export function repeatedKinds(blocks: Block[]): string[] {
+/**
+ * 갈래 반복 틀(blocks.ts BRANCH_REPEAT_STORIES)이면 서로 다른 갈래 라벨 행에 하나씩 쓴 같은 모양(keyOf가 같은 블록)의 반복을 뺌 — 첫 갈래의 것만 남김.
+ * 같은 갈래(같은 라벨) 안 반복, 라벨 없는 블록, 다른 틀(story 없음 포함)은 그대로
+ */
+function dropBranchRepeats<T extends { label?: string }>(blocks: T[], keyOf: (b: T) => string, story?: string): T[] {
+  if (!story || !BRANCH_REPEAT_STORIES.includes(story)) return blocks;
+  const seen = new Map<string, Set<string>>();
+  return blocks.filter((b) => {
+    const label = b.label?.trim();
+    if (!label) return true;
+    const k = keyOf(b);
+    const labels = seen.get(k);
+    if (!labels) {
+      seen.set(k, new Set([label]));
+      return true;
+    }
+    const isNewBranch = !labels.has(label);
+    labels.add(label);
+    return !isNewBranch;
+  });
+}
+
+/** 한 소항목 안에서 같은 도식(kind)을 두 번 이상 쓴 것(불릿·소제목·막대 제외 — 막대는 여러 개가 2025 관행). story = 이 소항목의 이야기 틀(갈래 반복 틀이면 갈래 간 반복은 뺌) */
+export function repeatedKinds(blocks: Block[], story?: string): string[] {
   const n = new Map<string, number>();
-  for (const b of blocks) if (!["bullets", "subhead", "chart"].includes(b.kind)) n.set(b.kind, (n.get(b.kind) ?? 0) + 1);
+  for (const b of dropBranchRepeats(blocks, (x) => x.kind, story)) if (!["bullets", "subhead", "chart"].includes(b.kind)) n.set(b.kind, (n.get(b.kind) ?? 0) + 1);
   return [...n].filter(([, c]) => c > 1).map(([k]) => k);
 }
 
@@ -231,8 +289,8 @@ export function shapeVariety(blocks: Array<{ kind: string; variant: string }>): 
 export const BIZ_VARIETY = { from: 3, min: 3 } as const;
 
 /** 주요사업 다양성 경고 한 줄(구성안·초안 공용 — 같은 kind 반복은 repeatedKinds가 따로 봄), 맞으면 null */
-export function bizVarietyIssue(blocks: Array<{ kind: string; variant: string }>): string | null {
-  const v = shapeVariety(blocks);
+export function bizVarietyIssue(blocks: Array<{ kind: string; variant: string; label?: string }>, story?: string): string | null {
+  const v = shapeVariety(dropBranchRepeats(blocks, shapeKeyOf, story));
   if (v.counted < BIZ_VARIETY.from || v.distinct >= BIZ_VARIETY.min) return null;
   return `짜임: 시각 블록 ${v.counted}개의 모양이 ${v.distinct}가지뿐입니다 — 서로 다른 모양 ${BIZ_VARIETY.min}가지 이상으로(후보에 없어도 내용 모양에 맞는 사전의 다른 도식·모양).`;
 }

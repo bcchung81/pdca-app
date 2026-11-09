@@ -385,8 +385,31 @@ test("신호 result: 2025 글의 오른쪽 「추진실적」 칸 + 카드 정�
   assert.ok(kinds(card, "가. 절\n추진실적\n∙ 내용").includes("table:result"), "혼자 선 「추진실적」 줄");
   assert.ok(!kinds(card, "구분 | 추진내용 | 추진실적").includes("table:result"), "보통 구분표 머리");
   assert.ok(!kinds("outcome.quantitative.0 | ∙ 20건 완료", "보안성 | 추진실적").includes("table:result"), "정량 성과 수치가 하나뿐");
-  assert.ok(!diagramHints(card + "\n보안성 | 추진실적").some((h) => h.kind.startsWith("table:")), "주요사업은 표 모양 신호 없음");
+  assert.ok(!diagramHints(card + "\n보안성 | 추진실적").some((h) => h.kind.startsWith("table:")), "주요사업은 2025 글 신호(혼자 선 「추진실적」)로는 안 켜짐");
 });
+
+// 주요사업 표 모양 신호(2026-11-09, 경평 초안 프레임워크 확장 계획 D1): 이 카드 글(전년 절 제외) 신호만. 실측(운영 카드 56장): result 8장 · bars 14장 · chevron 0장 · ladder 0장
+const biz = (text: string, cardText?: string) => diagramHints(text, {}, cardText === undefined ? {} : { cardText }).map((h) => h.kind);
+const tableLines = (head: string[]) => head.map((h, i) => `do.lines.2.table.rows.0.${i}.lines.0 | ${h}`).join("\n");
+
+test("주요사업 신호 result: 카드 표 머리에 결과·성과·실적·효과 칸이 있을 때(머리 칸 3개 이상)", () => {
+  assert.ok(biz(tableLines(["구분", "개선 내용", "추진 결과"])).includes("table:result"));
+  assert.ok(biz(tableLines(["구분", "개선 내용", "기대효과"])).includes("table:result"));
+  assert.ok(!biz(tableLines(["구분", "개선 전", "개선 후"])).includes("table:result"), "결과 칸 없음");
+  assert.ok(!biz(tableLines(["내용", "성과"])).includes("table:result"), "머리 칸 2개");
+  assert.ok(!biz("보안성 | 추진실적").includes("table:result"), "표 경로가 아닌 줄");
+});
+
+test("주요사업 신호 bars·chevron·ladder: 카드 글만 봄 — cardText를 주면 전년 절이 든 fullText의 신호는 무시", () => {
+  const prior = "’25년 13명 → ’26년 14명";
+  assert.ok(biz(prior).includes("table:bars"), "cardText가 없으면 fullText");
+  assert.ok(!biz(prior, "x").includes("table:bars"), "전년 절 글만에서는 안 켜짐");
+  assert.ok(biz(`x\n${prior}`, `outcome.quantitative.0 | ∙ ${prior}`).includes("table:bars"));
+  assert.ok(biz("구분 | 현황 | 개선방향 | 적용 결과").includes("table:chevron"));
+  assert.ok(biz("① 관리 ①-1 점검체계 ①-2 교육").includes("table:ladder"));
+  assert.ok(!biz("① 관리 ①-1 점검체계").includes("table:ladder"), "하위 번호 하나");
+});
+
 
 test("신호 bars: 카드 한 줄에 연도 둘 + 같은 단위 수치 둘(2025 글은 안 봄)", () => {
   assert.ok(kinds("outcome.quantitative.0 | ∙ ’25년 13명 → ’26년 14명").includes("table:bars"));
@@ -425,6 +448,19 @@ test("bizVarietyIssue(주요사업): 시각 블록 3개 이상인데 모양이 3
   assert.match(bizVarietyIssue(["chart", "chart", "chart", "bullets"].map(sh)) ?? "", /^짜임: 시각 블록 3개의 모양이 1가지뿐/);
   assert.equal(bizVarietyIssue(["compare", "stats", "bullets"].map(sh)), null, "0.5쪽 소항목(시각 블록 2개)");
   assert.equal(bizVarietyIssue(["compare", "stats", "quotes"].map(sh)), null);
+});
+
+test("bizVarietyIssue(갈래 반복 틀): 서로 다른 갈래 라벨 행에 하나씩 쓴 같은 모양 반복은 한 번으로 셈, 같은 갈래 안·다른 틀은 그대로", () => {
+  const lab = (kind: string, label: string) => ({ kind, variant: "", label });
+  const rows = [lab("cards", "가"), lab("cards", "나"), lab("cards", "다"), lab("bullets", "다")];
+  assert.match(bizVarietyIssue(rows) ?? "", /시각 블록 3개의 모양이 1가지뿐/, "틀을 안 주면 예전 그대로");
+  assert.match(bizVarietyIssue(rows, "기존→개선형") ?? "", /시각 블록 3개의 모양이 1가지뿐/, "갈래 반복 틀이 아님");
+  assert.equal(bizVarietyIssue(rows, "대상별 맞춤형"), null, "시각 블록이 1개로 셈 — 3개 미만이라 경고 없음");
+  const more = [...rows, lab("steps", "가"), lab("steps", "나"), lab("compare", "가")];
+  assert.equal(bizVarietyIssue(more, "핵심키워드 연결형"), null, "cards·steps·compare 3가지");
+  const same = [lab("cards", "가"), lab("cards", "가"), lab("cards", "가")];
+  assert.match(bizVarietyIssue(same, "문제·원인별 해결형") ?? "", /1가지뿐/, "같은 갈래 안 반복은 그대로");
+  assert.match(bizVarietyIssue([lab("cards", ""), lab("cards", ""), lab("cards", "")], "대상별 맞춤형") ?? "", /1가지뿐/, "라벨 없는 블록은 갈래가 아님");
 });
 
 test("mgVarietyIssues(경영관리): 한 절에 같은 표 모양 둘이면 한 줄(다른 표 모양은 함께 써도 됨), 카드 전체 모양이 절반 이하면 한 줄", () => {

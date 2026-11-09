@@ -1,6 +1,6 @@
 // 경평 초안 블록 「모양 바꾸기」 규칙(순수, 2026-10-12 사용자 요구 「이야기 틀·개별 수정안이 요청에 따라 다양한 프레임워크로」 — 블록 층).
 // 블록 고치기(lib/reports/block-edit.ts)가 요청에 따라 블록 종류·모양(kind·variant)을 바꿀 때 코드가 정하는 것:
-//  - 이 트랙에서 쓸 수 있는 모양인지(짜임 사전 SHAPES — 표 모양 4종 table:result·bars·chevron·ladder와 핵심 수치 띠(2026-10-28)는 경영관리만)
+//  - 이 트랙에서 쓸 수 있는 모양인지(짜임 사전 SHAPES — 핵심 수치 띠(2026-10-28)는 경영관리만, 표 모양 4종은 2026-11-09부터 두 트랙 공용)
 //  - 이 과제만의 요소(인용·말풍선·정의·우수사례·협업·막대)는 근거 조건이 있을 때만(구성안이 있으면 shapeAvailability, 없으면 집필 때의 도식 후보 — 집필과 같은 기준)
 //  - 바꿔 넣을 때 원래 블록의 내용 아닌 필드(배치 등 — 나중에 생길 필드 포함)는 그대로 둠(withContent)
 //  - 판면(주요사업)·분량(경영관리) 어림 차이
@@ -14,10 +14,10 @@ import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, type EvidenceSo
 import type { ReportSectionSpec } from "./section.ts";
 
 /**
- * 경영관리 초안에서만 쓰는 모양 — 표 모양 4종(2025 경영관리 보고서 빈출, 주요사업 프롬프트에는 안 보임 — report-draft/blocks.md 머리 설명)
- * + 주요사업 새 초안에서 고르지 않는 모양(핵심 수치 띠 — frameworks.ts BIZ_RETIRED_SHAPES, 2026-10-28)
+ * 경영관리 초안에서만 쓰는 모양 = 주요사업 새 초안에서 고르지 않는 모양(핵심 수치 띠 — frameworks.ts BIZ_RETIRED_SHAPES, 2026-10-28).
+ * 표 모양 4종(table:result·bars·chevron·ladder)은 2026-11-09 두 트랙 공용으로 열림(경평 초안 프레임워크 확장 계획 D1)
  */
-export const MG_ONLY_SHAPES: readonly string[] = [...SHAPES.filter((s) => s.kind === "table" && s.variant !== "").map((s) => s.code), ...BIZ_RETIRED_SHAPES];
+export const MG_ONLY_SHAPES: readonly string[] = [...BIZ_RETIRED_SHAPES];
 
 /** 모양 바꾸기 규칙: 트랙 + 이 과제만의 요소 종류별 근거 조건 */
 export interface ShapeRules {
@@ -53,7 +53,6 @@ export function shapeAllowed(before: Pick<Block, "kind" | "variant">, kind: stri
   const info = shapeOf(code);
   if (!info) return { ok: false, why: `모르는 모양(${code})입니다` };
   if (!rules.mg && BIZ_RETIRED_SHAPES.includes(code)) return { ok: false, why: `「${info.name}」 — ${BIZ_RETIRED_WHY}` };
-  if (!rules.mg && MG_ONLY_SHAPES.includes(code)) return { ok: false, why: `「${info.name}」은 경영관리 보고서 표 모양이라 주요사업 초안에서는 쓰지 않습니다` };
   if (isOwnKind(info.kind) && info.kind !== before.kind) {
     const a = rules.avail[info.kind];
     if (!a?.ok) return { ok: false, why: `「${info.name}」은 이 과제만의 요소라 근거가 있어야 씁니다 — ${a?.why || "근거 재료가 없음"}` };

@@ -146,6 +146,16 @@ test("repeatedKinds: chart·bullets·subhead는 여러 번 써도 빼고, cards�
   assert.deepEqual(repeatedKinds([blk("chart"), blk("chart"), blk("bullets"), blk("bullets")]), [], "chart·bullets 반복은 알리지 않음");
 });
 
+test("repeatedKinds(갈래 반복 틀): 서로 다른 갈래 라벨 행의 같은 도식은 알리지 않음, 같은 갈래 안 반복·다른 틀은 그대로", () => {
+  const branch = [blk("cards", { label: "가" }), blk("cards", { label: "나" }), blk("cards", { label: "다" }), blk("steps", { label: "가" })];
+  assert.deepEqual(repeatedKinds(branch), ["cards"], "틀을 안 주면 예전 그대로");
+  assert.deepEqual(repeatedKinds(branch, "기존→개선형"), ["cards"]);
+  for (const story of ["핵심키워드 연결형", "문제·원인별 해결형", "대상별 맞춤형"]) assert.deepEqual(repeatedKinds(branch, story), [], story);
+  const sameBranch = [blk("cards", { label: "가" }), blk("cards", { label: "가" }), blk("cards", { label: "나" })];
+  assert.deepEqual(repeatedKinds(sameBranch, "대상별 맞춤형"), ["cards"], "같은 갈래 안 반복");
+  assert.deepEqual(repeatedKinds([blk("cards"), blk("cards")], "대상별 맞춤형"), ["cards"], "라벨 없는 블록");
+});
+
 test("긴 글(30만 자)도 빨리 끝남 — 정규식 되돌림 방지", () => {
   const t1 = performance.now();
   diagramHints("가".repeat(300_000));

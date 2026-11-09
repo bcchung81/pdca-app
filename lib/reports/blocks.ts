@@ -27,12 +27,20 @@ export const STORIES = [...MAIN_STORIES, "섞음"] as const;
 export type Story = (typeof STORIES)[number];
 export const isMainStory = (s: unknown): s is MainStory => (MAIN_STORIES as readonly string[]).includes(String(s));
 
+/**
+ * 갈래 반복 틀(2026-11-09, 경평 초안 프레임워크 확장 계획 D2): 갈래(라벨 행)마다 같은 모양을 되풀이하는 것이 맞는 틀 — 자료(적용사례 12·29·36장)가 같은 갈래를 같은 모양으로 되풀이하는 일관성을 요구함.
+ * 이 틀에서는 서로 다른 갈래 라벨 행에 하나씩 쓴 같은 모양 반복을 다양성·같은 도식 반복 경고에서 뺌(diagram-hints.ts repeatedKinds·bizVarietyIssue). 틀 목록(MAIN_STORIES)에는 P1에서 더함 — 그 전에는 이름만 있음
+ */
+export const BRANCH_REPEAT_STORIES: readonly string[] = ["핵심키워드 연결형", "문제·원인별 해결형", "대상별 맞춤형"];
+
 /** 블록 칸(카드·단계·시기·기관·말풍선·인용 공용) */
 export interface BlockCell {
   head: string;
   tag: string;
   bullets: string[];
   note: string;
+  /** 이 칸을 강조(전체 중 이 과제 범위 — steps·timeline 칸). 없음 = 강조 안 함. 그리기는 아직 안 씀(경평 초안 프레임워크 확장 계획 P4) */
+  focus?: boolean;
 }
 
 /**
@@ -197,7 +205,13 @@ export function resultTimeText(s: string): string {
   return t[0] === "(" && t.at(-1) === ")" ? t : `(${t})`;
 }
 
-const Cell = z.object({ head: z.string(), tag: z.string(), bullets: z.array(z.string()), note: z.string() });
+/** focus의 schema.md 설명 절 — 주요사업 report-draft/schema.md에만 있음(경영관리 schema.md에는 없어 경영관리 답 스키마에는 focus를 안 넣음 — 경영관리 프롬프트·스키마 불변) */
+export const CELL_FOCUS_FIELD = "block.cells.focus";
+/** 칸 스키마. 설명 묶음을 주면 CELL_FOCUS_FIELD 절이 있을 때만 focus(선택)를 더하고, 묶음이 없으면(타입·검증용) 늘 더함 */
+const cellSchema = (desc?: Descriptions) => {
+  const base = { head: z.string(), tag: z.string(), bullets: z.array(z.string()), note: z.string() };
+  return !desc ? z.object({ ...base, focus: z.boolean().optional() }) : CELL_FOCUS_FIELD in desc ? z.object({ ...base, focus: described(z.boolean(), desc, CELL_FOCUS_FIELD).optional() }) : z.object(base);
+};
 
 /** AI 답 블록 한 개의 필드 — 설명(뜻·채우는 법)은 resources/prompts/report-draft/schema.md의 block.* 절 */
 export const BLOCK_OUT_FIELDS = ["kind", "label", "title", "variant", "text", "items", "cells", "rows", "series", "badge", "evidence", "figures"] as const;
@@ -212,7 +226,7 @@ export function blockOutSchema(desc?: Descriptions) {
     variant: d(z.string(), "variant"),
     text: d(z.string(), "text"),
     items: d(z.array(z.string()), "items"),
-    cells: d(z.array(Cell), "cells"),
+    cells: d(z.array(cellSchema(desc)), "cells"),
     rows: d(z.array(z.object({ key: z.string(), before: z.array(z.string()), after: z.array(z.string()) })), "rows"),
     series: d(z.array(z.object({ label: z.string(), value: z.string() })), "series"),
     badge: d(z.string(), "badge"),
@@ -247,7 +261,7 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
   const list = (a: unknown, max: number, len = 200) => (Array.isArray(a) ? a.map((x) => line(x, len)).filter(Boolean).slice(0, max) : []);
   const cells = (a: unknown, max: number) =>
     (Array.isArray(a) ? a : [])
-      .map((c: Json) => ({ head: line(c?.head, 60), tag: line(c?.tag, 20), bullets: list(c?.bullets, 5, 160), note: line(c?.note, 120) }))
+      .map((c: Json) => ({ head: line(c?.head, 60), tag: line(c?.tag, 20), bullets: list(c?.bullets, 5, 160), note: line(c?.note, 120), ...(c?.focus === true ? { focus: true } : {}) }))
       .filter((c) => c.head || c.bullets.length || c.note)
       .slice(0, max);
   // 수치 표 칸 값은 자리를 지켜야 하므로(빈 칸도 한 열) 거르지 않고 열 수에 맞춤

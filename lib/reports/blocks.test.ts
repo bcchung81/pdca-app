@@ -3,6 +3,8 @@ import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { type BlockOutput, FIGURE_MM, LOGO_MM, actualBars, pdcaMark, seriesLabel, blockBullets, blockSignature, cleanBlocks, figureMm, figuresOf, layoutHints, logoNames, visualCount } from "./blocks.ts";
 import { warningLevel } from "./warning-levels.ts";
+import { reportDraftPrompts, reportDraftPromptsMg } from "../prompts/sets.ts";
+import { blockOutSchema } from "./blocks.ts";
 
 const blk = (b: Omit<Partial<BlockOutput>, "kind"> & { kind: any }): BlockOutput => ({ label: "", title: "", variant: "", text: "", items: [], cells: [], rows: [], series: [], badge: "", evidence: "", figures: [], ...b }) as BlockOutput;
 const cell = (head: string, bullets: string[] = []) => ({ head, tag: "", bullets, note: "" });
@@ -278,4 +280,32 @@ test("pdcaMark: 칩이 두 글자 이하면 그대로, 비었거나 길면 P·D�
   assert.equal(pdcaMark("Step 1", 0), "P");
   assert.equal(pdcaMark("①", 2), "①");
   assert.equal(pdcaMark("계획", 0), "계획");
+});
+
+// ---------------------------------------------------------------------------
+// 칸 강조 필드 cells[].focus(2026-11-09, 경평 초안 프레임워크 확장 계획 P0 — 그리기는 P4)
+
+test("cells[].focus: 참인 칸만 남기고, 없거나 거짓·참 아닌 값이면 필드가 아예 없음(옛 답·저장된 초안과 같은 모양)", () => {
+  const raw = [blk({ kind: "steps", cells: [{ ...cell("1단계", ["a"]), focus: true }, { ...cell("2단계", ["b"]), focus: false }, cell("3단계", ["c"]), { ...cell("4단계", ["d"]), focus: "true" }] as any })];
+  const { blocks } = cleanBlocks(raw, line, () => true);
+  assert.deepEqual(blocks[0].cells.map((c) => "focus" in c), [true, false, false, false]);
+  assert.equal(blocks[0].cells[0].focus, true);
+  const old = cleanBlocks([blk({ kind: "steps", cells: [cell("1단계", ["a"]), cell("2단계", ["b"])] })], line, () => true).blocks[0];
+  assert.ok(old.cells.every((c) => !("focus" in c)), "focus가 없는 답은 JSON에도 focus 키가 없음 — 출력 바이트 불변");
+});
+
+test("blockOutSchema: focus는 선택(없는 칸도 통과) — 주요사업 설명 묶음에는 설명이 붙고, 경영관리 묶음에는 필드 자체가 없음", () => {
+  const base = { head: "h", tag: "", bullets: [], note: "" };
+  const parse = (schema: ReturnType<typeof blockOutSchema>, cells: unknown[]) => schema.safeParse({ ...blk({ kind: "steps" }), cells }).success;
+  const bare = blockOutSchema();
+  assert.ok(parse(bare, [base]));
+  assert.ok(parse(bare, [{ ...base, focus: true }]));
+  assert.ok(!parse(bare, [{ ...base, focus: "yes" }]));
+  const biz = blockOutSchema(reportDraftPrompts().prompts.schema);
+  assert.ok(parse(biz, [base]), "focus 없는 옛 답");
+  const cellProps = (schema: ReturnType<typeof blockOutSchema>) => Object.keys((schema.shape.cells.element as any).shape);
+  assert.deepEqual(cellProps(biz), ["head", "tag", "bullets", "note", "focus"]);
+  assert.match(String((biz.shape.cells.element as any).shape.focus.unwrap().description), /칸 하나를 강조/);
+  const mg = blockOutSchema(reportDraftPromptsMg().prompts.schema);
+  assert.deepEqual(cellProps(mg), ["head", "tag", "bullets", "note"], "경영관리 답 스키마는 그대로");
 });

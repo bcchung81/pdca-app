@@ -8,7 +8,7 @@ import { z } from "zod";
 import { cardOutline } from "../ai/writer.ts";
 import { flattenHtmlTables } from "../knowledge/rich-text.ts";
 import { inspectionCardText } from "../ai/inspect.ts";
-import { BLOCK_OUT_FIELDS, type Block, STORIES, actualBars, blockBullets, blockOutSchema, blockNumberTexts, blockSignature, blockTexts, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
+import { BLOCK_OUT_FIELDS, type Block, CELL_FOCUS_FIELD, STORIES, actualBars, blockBullets, blockOutSchema, blockNumberTexts, blockSignature, blockTexts, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PAGE_MM, blockAreaMm, blockCosts, capacityLines, fitReport, guardFigureText, guardFigures, hollowWarning, subTitleMax } from "./fit.ts";
@@ -318,7 +318,7 @@ export const REQUEST_SECTIONS = [
 ] as const;
 /** schema.md에 있어야 하는 절(AI 답 필드 경로) */
 export const SECTION_OUT_FIELDS = ["title", "story", "blocks", "results", "resultCards", "resultChart", "resultBand", "caption"] as const;
-export const SCHEMA_FIELDS = [...SECTION_OUT_FIELDS, ...BLOCK_OUT_FIELDS.map((k) => `block.${k}`)];
+export const SCHEMA_FIELDS = [...SECTION_OUT_FIELDS, ...BLOCK_OUT_FIELDS.map((k) => `block.${k}`), CELL_FOCUS_FIELD];
 
 /** 경평 초안 프롬프트 파일에 있어야 하는 절 */
 export const REPORT_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...REQUEST_SECTIONS, ...KB_SECTIONS], schema: SCHEMA_FIELDS };
@@ -495,10 +495,12 @@ export function sectionHints(card: Json, prior: PriorPick[], files: ReportFile[]
     series,
     survey: lens.filter((x) => x.group === "survey").map((x) => x.text),
   };
-  const all = diagramHints(hintSource(card, prior, files), extras, opts);
+  // 주요사업 표 모양 신호는 전년 절을 뺀 카드·첨부 글로만(2026-11-09 — 전년 글 신호가 후보를 켜면 전년복제)
+  const o: HintOptions = opts?.track === "mg" ? opts : { ...opts, cardText: hintSource(card, [], files) };
+  const all = diagramHints(hintSource(card, prior, files), extras, o);
   if (!prior.length) return all;
   // diagramHints는 이 과제만의 요소를 먼저 두므로 이어 붙여도 순서 규칙이 같음
-  return [...diagramHints(hintSource(card, [], files), extras, opts).filter((h) => h.own), ...all.filter((h) => !h.own)];
+  return [...diagramHints(hintSource(card, [], files), extras, o).filter((h) => h.own), ...all.filter((h) => !h.own)];
 }
 
 /**
@@ -823,10 +825,10 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   if (!spec.results.length && !spec.resultCards?.length) warnings.push("추진성과 상자가 비었습니다.");
   if (clipped && spec.resultCards?.length) warnings.push(`문체: 추진성과 3칸 글 ${clipped}곳이 칸 한도(칩 12자·결과 줄 40자)를 넘어 잘렸습니다 — 잘린 뒤를 확인해 짧게 고쳐 주세요.`);
   warnings.push(...dropped);
-  const again = repeatedKinds(blocks);
+  const again = repeatedKinds(blocks, String(out.story ?? ""));
   if (again.length) warnings.push(`도식: 한 소항목에 같은 도식을 두 번 썼습니다(${again.join("·")}) — 다른 모양의 도식으로 바꿔 주세요.`);
   // 모양 다양성(2026-10-12): 경고만 — composeIssues(고치기 사유·점수)에는 넣지 않음
-  const variety = bizVarietyIssue(blocks);
+  const variety = bizVarietyIssue(blocks, String(out.story ?? ""));
   if (variety) warnings.push(variety);
   const ownIssues = composeIssues(blocks, own);
   warnings.push(...ownIssues.map((x) => `도식: ${x}`));

@@ -1,5 +1,5 @@
 // 경평 초안 블록 「모양 바꾸기」(lib/reports/block-shape.ts · block-edit.ts의 checkBlock·cleanShapeOptions·blockShapesPrompt) 테스트 — 2026-10-12.
-// 지키는 것: 트랙 밖 모양(경영관리 표 모양)·근거 없는 이 과제만의 요소로는 못 바꿈, 요청하지 않은 모양 바꾸기(정리가 칸 수로 바꾼 것) 거절,
+// 지키는 것: 트랙 밖 모양(수치 띠)·근거 없는 이 과제만의 요소로는 못 바꿈, 요청하지 않은 모양 바꾸기(정리가 칸 수로 바꾼 것) 거절,
 // 원래 블록의 내용 아닌 필드 보존, 대안 정리(지금 모양·겹친 모양 버림·최대 3·고른 모양 먼저), 높이 차이, 프롬프트 규칙 문구.
 
 import assert from "node:assert/strict";
@@ -53,14 +53,15 @@ test("shapeAllowed: 같은 모양은 늘 됨, 기본 도식(단계 흐름)은 �
   assert.deepEqual(shapeAllowed(cards, "steps", "row", BIZ), { ok: true });
 });
 
-test("shapeAllowed: 경영관리 표 모양 4종·핵심 수치 띠(2026-10-28)는 주요사업 초안에서 거절, 경영관리는 됨", () => {
-  assert.deepEqual([...MG_ONLY_SHAPES].sort(), ["stats", "table:bars", "table:chevron", "table:ladder", "table:result"]);
-  for (const code of MG_ONLY_SHAPES) {
-    const [kind, variant = ""] = code.split(":");
-    const r = shapeAllowed(cards, kind, variant, BIZ);
-    assert.equal(r.ok, false, code);
-    if (!r.ok) assert.match(r.why, kind === "stats" ? /핵심 수치 띠」 — 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다/ : /경영관리 보고서 표 모양/);
-    assert.deepEqual(shapeAllowed(cards, kind, variant, MG), { ok: true }, code);
+test("shapeAllowed: 핵심 수치 띠(2026-10-28)만 주요사업 초안에서 거절, 경영관리는 됨. 표 모양 4종은 두 트랙 공용(2026-11-09)", () => {
+  assert.deepEqual([...MG_ONLY_SHAPES], ["stats"]);
+  const r = shapeAllowed(cards, "stats", "", BIZ);
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.why, /핵심 수치 띠」 — 주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다/);
+  assert.deepEqual(shapeAllowed(cards, "stats", "", MG), { ok: true });
+  for (const v of ["result", "bars", "chevron", "ladder"]) {
+    assert.deepEqual(shapeAllowed(cards, "table", v, BIZ), { ok: true }, `table:${v} 주요사업`);
+    assert.deepEqual(shapeAllowed(cards, "table", v, MG), { ok: true }, `table:${v} 경영관리`);
   }
   // 저장된 주요사업 초안의 수치 띠는 같은 모양이라 그대로 고칠 수 있음
   assert.deepEqual(shapeAllowed(block({ kind: "stats", cells: [cell("720건", ["판독"]), cell("50건", ["신규"])] }), "stats", "", BIZ), { ok: true });
@@ -90,7 +91,7 @@ test("shapeRules: 구성안이 있으면 원문을 찾은 재료로(shapeAvailab
   assert.deepEqual(shapeAllowed(cards, "hub", "", fromHints), { ok: true });
 });
 
-test("shapeMenu: 주요사업은 경영관리 표 모양을 안 보임, 경영관리는 29가지 전부. 규칙이 없으면 이 과제만의 요소는 ok = null(요청 때 확인)", () => {
+test("shapeMenu: 주요사업은 수치 띠만 안 보임(표 모양 4종은 보임), 경영관리는 29가지 전부. 규칙이 없으면 이 과제만의 요소는 ok = null(요청 때 확인)", () => {
   const biz = shapeMenu(false, null);
   assert.equal(biz.length, SHAPES.length - MG_ONLY_SHAPES.length);
   assert.ok(biz.every((m) => !MG_ONLY_SHAPES.includes(m.code)));
@@ -145,11 +146,11 @@ test("verifyBlockEdit(rules 없음): 예전처럼 종류가 바뀌면 거절", (
   if (!r.ok) assert.match(r.message, /종류를 바꿨습니다/);
 });
 
-test("verifyBlockEdit(rules): 주요사업 초안에서 경영관리 표 모양(추진실적 열 표)으로 바꾸면 거절하고 이유를 알림", () => {
+test("verifyBlockEdit(rules): 추진실적 열 표(table:result)로 바꾸기는 두 트랙 모두 됨(2026-11-09 주요사업 개방)", () => {
   const out = outBlock({ kind: "table", variant: "result", label: "추진내용", cells: [cell("", ["현장 의견 모음"]), cell("", ["시범 운영"])], series: [{ label: "만족도", value: "97%" }] });
   const biz = verifyBlockEdit(cards, out, line, yes, BIZ);
-  assert.equal(biz.ok, false);
-  if (!biz.ok) assert.match(biz.message, /AI가 고른 모양을 쓸 수 없습니다 — 「추진실적 열 표」은 경영관리/);
+  assert.ok(biz.ok);
+  if (biz.ok) assert.deepEqual(biz.shape, { from: "cards:plain", to: "table:result" });
   const mg = verifyBlockEdit(cards, out, line, yes, MG);
   assert.ok(mg.ok);
   if (mg.ok) assert.deepEqual(mg.shape, { from: "cards:plain", to: "table:result" });
@@ -232,11 +233,12 @@ test("cleanShapeOptions: 고른 모양 안을 맨 앞으로, 없으면 알림. �
   assert.match(none.dropped[0], /고른 모양\(핵심 수치 띠\) 안이 없습니다/);
 });
 
-test("readBlockShapesRequest: 고른 모양이 지금 모양·트랙 밖·근거 없음·모르는 코드면 AI 전에 글로 거절, 비면 AI가 고름", () => {
+test("readBlockShapesRequest: 고른 모양이 지금 모양·트랙 밖(수치 띠)·근거 없음·모르는 코드면 AI 전에 글로 거절, 비면 AI가 고름", () => {
   assert.deepEqual(readBlockShapesRequest({ blockIndex: 1, request: "  " }, spec, BIZ), { blockIndex: 1, request: "", want: null });
   assert.deepEqual(readBlockShapesRequest({ blockIndex: 1, want: "steps:row", request: "단계가 보이게" }, spec, BIZ), { blockIndex: 1, request: "단계가 보이게", want: "steps:row" });
   assert.match(String(readBlockShapesRequest({ blockIndex: 1, want: "cards:plain" }, spec, BIZ)), /지금도 「칸 도식」 모양/);
-  assert.match(String(readBlockShapesRequest({ blockIndex: 1, want: "table:ladder" }, spec, BIZ)), /경영관리 보고서 표 모양/);
+  assert.match(String(readBlockShapesRequest({ blockIndex: 1, want: "stats" }, spec, BIZ)), /핵심 수치 띠/);
+  assert.deepEqual(readBlockShapesRequest({ blockIndex: 1, want: "table:ladder" }, spec, BIZ), { blockIndex: 1, request: "", want: "table:ladder" });
   assert.match(String(readBlockShapesRequest({ blockIndex: 1, want: "case" }, spec, BIZ)), /근거가 있어야/);
   assert.match(String(readBlockShapesRequest({ blockIndex: 1, want: "없음:모양" }, spec, BIZ)), /찾지 못했습니다/);
   assert.match(String(readBlockShapesRequest({ blockIndex: 9 }, spec, BIZ)), /블록을 찾지 못했습니다/);
@@ -268,7 +270,7 @@ test("shapeDelta: 경영관리는 높이 어림(mgSpecHeight)과 배정 쪽 × 2
 // ---------------------------------------------------------------------------
 // 요청 글·스키마·프롬프트 규칙
 
-test("blockShapesPrompt: 자리표시가 안 남고, 지금 모양·안 수·바꿀 수 있는 모양(한 줄 글자 수)·쓸 수 없는 모양이 들어감. 주요사업은 표 모양 4종을 안 적음", () => {
+test("blockShapesPrompt: 자리표시가 안 남고, 지금 모양·안 수·바꿀 수 있는 모양(한 줄 글자 수)·쓸 수 없는 모양이 들어감. 주요사업은 수치 띠를 안 적고 표 모양 4종은 적음", () => {
   const text = blockShapesPrompt(reportBlockPrompts().prompts, spec, { blockIndex: 1, request: "", want: null }, { card: "카드 글", extra: "" }, BIZ);
   assert.doesNotMatch(text, /\{\{/);
   assert.match(text, /이번 요청 — 다른 모양으로/);
@@ -276,6 +278,7 @@ test("blockShapesPrompt: 자리표시가 안 남고, 지금 모양·안 수·바
   assert.match(text, /steps:row 단계 흐름\(2~5개 · 한 줄 약 \d+자\)/);
   assert.match(text, /쓸 수 없는 모양\(근거 없음 — 고르지 않음\): .*quotes 인용 상자/);
   for (const code of MG_ONLY_SHAPES) assert.ok(!text.includes(code), code);
+  for (const code of ["table:result", "table:bars", "table:chevron", "table:ladder"]) assert.ok(text.includes(code), code);
   assert.match(text, /원하는 모양: 정하지 않음/);
   assert.match(text, /「지금 블록\(JSON\)」/);
 });
@@ -283,7 +286,7 @@ test("blockShapesPrompt: 자리표시가 안 남고, 지금 모양·안 수·바
 test("blockShapesPrompt(경영관리): 표 모양 4종이 바꿀 수 있는 모양에 들어가고, 고른 모양은 첫 안으로", () => {
   const text = blockShapesPrompt(reportBlockPromptsMg().prompts, mgSpec, { blockIndex: 1, request: "추진실적을 오른쪽에", want: "table:result" }, { card: "", extra: "" }, MG);
   assert.doesNotMatch(text, /\{\{/);
-  for (const code of MG_ONLY_SHAPES) assert.ok(text.includes(code), code);
+  for (const code of ["table:result", "table:bars", "table:chevron", "table:ladder", ...MG_ONLY_SHAPES]) assert.ok(text.includes(code), code);
   assert.match(text, /원하는 모양: table:result 추진실적 열 표 — 첫 안은 반드시 이 모양/);
   assert.match(text, /다른 모양 1~3안/);
   assert.match(text, /덧붙인 요청: 추진실적을 오른쪽에/);
@@ -293,7 +296,8 @@ test("blockEditPrompt: 규칙을 주면 고치기 요청에 「모양 바꾸기�
   const req: BlockEditRequest = { blockIndex: 1, kind: "edit", request: "단계도로 바꿔 줘", quote: "" };
   const withRules = blockEditPrompt(reportBlockPrompts().prompts, spec, req, { card: "", extra: "" }, BIZ);
   assert.match(withRules, /모양 바꾸기\(요청이 모양을 말할 때만 — 아니면 지금 모양 그대로\): 바꿀 수 있는 모양 .*steps:row/);
-  assert.doesNotMatch(withRules, /table:result/);
+  assert.match(withRules, /table:result/);
+  assert.doesNotMatch(withRules, /stats 핵심 수치 띠/);
   const without = blockEditPrompt(reportBlockPrompts().prompts, spec, req, { card: "", extra: "" });
   assert.match(without, /없음 — 이 요청은 모양을 바꾸지 않음/);
 });

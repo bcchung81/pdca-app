@@ -267,7 +267,8 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   }
   // 2026-10-29 공용 문체 report-draft/style.md 불릿 길이 문장(주요사업 칸 글 한도 = 2025 불릿 기준)으로 판 바뀜(@afffeff8 → @d2197db2 — 분량 채움 보강 때문이 아님)
   // 2026-11-02 올해 계량 실적 출처를 원장으로(부서 입력 절 actuals.kpiInput 삭제·「부서 입력」 문구를 원장 기준으로 — report-draft·report-draft-mg request·inputs, report-block request 근거 머리, lib/reports/actuals.ts ledgerFigure)로 판 바뀜(@d2197db2 → @adad9d19 — 근거 머리 「계량 실적 입력」 뺌, 분량 채움 보강 때문이 아님)
-  assert.equal(bp.version, "report-block@adad9d19", "주요사업 블록 고치기 판은 분량 채움 보강으로 바뀌지 않음");
+  // 2026-11-09 표 모양 4종 개방(choose 절 「표 모양」·schema.md block.variant·block.cells.focus)으로 report-block@adad9d19 → d2171506 (report-draft@4d0202b7 → 016145c9, report-outline@e1c2c23f → c9f41da2). 경영관리 판은 그대로
+  assert.equal(bp.version, "report-block@d2171506", "주요사업 블록 고치기 판은 분량 채움 보강으로는 바뀌지 않음");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {

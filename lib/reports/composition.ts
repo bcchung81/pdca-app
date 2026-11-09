@@ -753,7 +753,7 @@ export function compositionIssues(c: Composition, module: number, head: HeadMode
     if (missing.length) out.unshift(`틀: 고른 「${c.story}」의 ${missing.map((k) => shapeName(k, "")).join("·")}이(가) 구성안에 없습니다 — ${missing.map((k) => (avail[k].ok ? `${shapeName(k, "")}는 도식 목록에서 더할 수 있음` : avail[k].why.split(" — ")[0])).join(" · ")}. 근거 자료(설문·민원·보도 원문 등)를 첨부하고 다시 만들면 들어갈 수 있습니다.`);
   }
   // 모양 다양성(2026-10-12 — 경고만): 시각 블록 3개 이상이면 서로 다른 모양 3가지 이상
-  const variety = bizVarietyIssue(c.blocks);
+  const variety = bizVarietyIssue(c.blocks, c.story);
   if (variety) out.push(variety);
   const need = c.materials.filter((m) => m.kind === "need");
   if (need.length) out.push(`자료 필요 ${need.length}건: ${need.map((m) => m.text).join(" · ")}`);
