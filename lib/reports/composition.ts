@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
-import { BLOCK_KINDS, type Block, type BlockKind, FIGURE_KINDS, FIGURE_LABEL, FIGURE_POS, FIGURE_SIZES, type Figure, MAIN_STORIES, type MainStory, STORIES, type Story, VARIANTS, cleanFigures, isGridTable, isPanelCompare } from "./blocks.ts";
+import { BLOCK_KINDS, type Block, type BlockKind, FIGURE_KINDS, FIGURE_LABEL, FIGURE_POS, FIGURE_SIZES, type Figure, MAIN_STORIES, MG_BLOCK_KINDS, type MainStory, STORIES, type Story, VARIANTS, cleanFigures, isGridTable, isPanelCompare } from "./blocks.ts";
 import { FIT_BAND, type HeadMode, PAGE_MM, blockAreaMm, blockWidth, bodyLayout, bulletLines, canonicalBlock, figuresWidth, fitReport, guardFigureText, hangulPerLine, isBoxBlock, mgBulletCell, slotOf, stageHeadMm, statsLine } from "./fit.ts";
 import { BIZ_TRACK } from "../tracks/index.ts";
 import { type BlockLayout, type BlockSpan, LAYOUT_LABEL, dropLoneSpans, layoutFields, layoutGroups } from "./layout.ts";
@@ -408,9 +408,12 @@ export function cleanMaterials(raw: CompositionOutput["materials"] | undefined, 
   return { materials, warnings };
 }
 
-/** AI 구성안 블록 하나 정리(구성안 공용): 모르는 종류면 null, 모양·칸 수·그림·대안 정리, 재료표에 없는 번호는 뗌. mg = 경영관리(칸 수 범위 — frameworks.ts cellRange) */
+/**
+ * AI 구성안 블록 하나 정리(구성안 공용): 모르는 종류면 null, 모양·칸 수·그림·대안 정리, 재료표에 없는 번호는 뗌. mg = 경영관리(칸 수 범위 — frameworks.ts cellRange,
+ * 주요사업 전용 종류(행렬·재편 매핑도 — 2026-11-10 P5)는 모르는 종류로 봄 — 경영관리 답 스키마에는 없음)
+ */
 export function cleanPlanBlock(b: CompositionOutput["blocks"][number] | undefined, ids: Set<string>, mg = false): PlanBlock | null {
-  if (!b || !BLOCK_KINDS.includes(b.kind)) return null;
+  if (!b || !(mg ? (MG_BLOCK_KINDS as readonly string[]) : BLOCK_KINDS).includes(b.kind)) return null;
   const variant = variantOf(b.kind, b.variant);
   return {
     kind: b.kind,
@@ -421,7 +424,7 @@ export function cleanPlanBlock(b: CompositionOutput["blocks"][number] | undefine
     materials: (Array.isArray(b.materials) ? b.materials : []).map(String).filter((x) => ids.has(x)),
     figures: cleanFigures(b.kind, b.figures, cleanLine),
     ai: { kind: b.kind, variant },
-    alts: cleanAlts(b.kind, variant, (b as { alts?: unknown }).alts),
+    alts: cleanAlts(b.kind, variant, (b as { alts?: unknown }).alts, mg),
     // 배치: ladder·빈 글·목록 밖·이 종류에 뜻 없는 값은 지움(짝 없는 가로 반씩은 목록 정리 뒤 dropLoneSpans)
     ...layoutFields({ kind: b.kind, layout: (b as { layout?: unknown }).layout, span: (b as { span?: unknown }).span }),
   };
@@ -433,13 +436,13 @@ const variantOf = (kind: BlockKind, v: unknown) => {
   return vs ? (vs.includes(String(v)) ? String(v) : vs[0]) : "";
 };
 
-/** AI 대안 모양 정리: 모르는 종류·처음 모양과 같은 것·겹침 버림, 2개까지 */
-function cleanAlts(kind: BlockKind, variant: string, raw: unknown): PlanAlt[] {
+/** AI 대안 모양 정리: 모르는 종류(경영관리는 주요사업 전용 종류도)·처음 모양과 같은 것·겹침 버림, 2개까지 */
+function cleanAlts(kind: BlockKind, variant: string, raw: unknown, mg = false): PlanAlt[] {
   if (!Array.isArray(raw)) return [];
   const seen = new Set([`${kind}:${variant}`]);
   const out: PlanAlt[] = [];
   for (const a of raw as Json[]) {
-    if (!BLOCK_KINDS.includes(a?.kind)) continue;
+    if (!(mg ? (MG_BLOCK_KINDS as readonly string[]) : BLOCK_KINDS).includes(a?.kind)) continue;
     const v = variantOf(a.kind, a.variant);
     const key = `${a.kind}:${v}`;
     if (seen.has(key)) continue;
@@ -505,10 +508,10 @@ export function blockBudgets(c: Composition, module: number, head: HeadMode = "a
 }
 
 /** 칸을 줄여도 도식 모양이 남는 최소 칸 수(단계·칸·시기 3, 협업 가운데 + 2곳, 전후 비교 2행, 수치 띠 2, 인용·말풍선·불릿 1 — 0.5쪽 구성안이 인용 2칸·불릿 2줄로 예산을 넘던 것, 평가 라운드 K) */
-const CELL_FLOOR: Partial<Record<BlockKind, number>> = { cards: 3, steps: 3, timeline: 3, hub: 3, compare: 2, stats: 2, case: 2, quotes: 1, voices: 1, bullets: 1, qa: 1, table: 2, strategy: 2, pdca: 4 };
+const CELL_FLOOR: Partial<Record<BlockKind, number>> = { cards: 3, steps: 3, timeline: 3, hub: 3, compare: 2, stats: 2, case: 2, quotes: 1, voices: 1, bullets: 1, qa: 1, table: 2, strategy: 2, pdca: 4, matrix: 2, remap: 2 };
 
-/** 집필 블록의 칸 수(구성안 PlanBlock.cells와 같은 셈: 전후 비교는 행, 불릿·우수사례는 줄, 막대는 막대 수) */
-const cellCount = (b: Block) => (b.kind === "compare" ? b.rows.length : b.kind === "bullets" || b.kind === "case" ? b.items.length : b.kind === "chart" ? b.series.length : b.cells.length);
+/** 집필 블록의 칸 수(구성안 PlanBlock.cells와 같은 셈: 전후 비교·재편 매핑도는 행, 불릿·우수사례는 줄, 막대는 막대 수, 행렬은 갈래 열) */
+const cellCount = (b: Block) => (b.kind === "compare" || b.kind === "remap" ? b.rows.length : b.kind === "bullets" || b.kind === "case" ? b.items.length : b.kind === "chart" ? b.series.length : b.cells.length);
 
 /** 구성안 블록 수 상한(불릿·띠 포함) — 0.5쪽 3개, 1쪽 6개(구성안 어림이 블록 영역에 드는 보통 수, 1-가 시험 7블록 = 280/255mm) */
 export const planBlockCap = (module: number) => (module <= 0.5 ? 3 : Math.round(module * 6));
@@ -563,7 +566,7 @@ export interface BlockLimit {
 }
 
 /** 칸 글이 있는 블록 종류(칸마다 줄 수로 높이가 정해짐) */
-const CELL_TEXT = new Set<BlockKind>(["cards", "steps", "timeline", "hub", "quotes", "voices", "stats", "compare", "qa", "table", "strategy", "pdca"]);
+const CELL_TEXT = new Set<BlockKind>(["cards", "steps", "timeline", "hub", "quotes", "voices", "stats", "compare", "qa", "table", "strategy", "pdca", "matrix", "remap"]);
 
 /**
  * 블록마다 글 한도(구현 계획 2단계 보완): 높이 예산(mm)은 AI가 셈하지 못해 첫 초안이 128%였음(평가 라운드 J) → 예산에 드는 최대 줄 수를
@@ -700,8 +703,8 @@ export function planLimitIssues(c: Composition, blocks: Block[], module: number,
 /** 초안 블록에서 가장 긴 칸의 줄 수(칸 불릿마다 실제 칸 폭으로 셈 — bodyLayout, 글자 단위·자간 맞춤 반영) */
 function longestCellLines(b: Block): number {
   const slot = slotOf(b, blockWidth(b) - figuresWidth(b));
-  // 수치 표는 값 칸 하나하나가 한 칸(한 행의 값들은 옆으로 나란함 — 추진실적 열·2단 라벨 표는 행마다 불릿 칸), 수치 띠는 칸마다 이은 한 줄(fit.ts statsLine)
-  const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
+  // 수치 표·행렬은 값 칸 하나하나가 한 칸(한 행의 값들은 옆으로 나란함 — 추진실적 열·2단 라벨 표는 행마다 불릿 칸), 수치 띠는 칸마다 이은 한 줄(fit.ts statsLine), 재편 매핑도는 TO-BE 설명
+  const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : b.kind === "remap" ? b.rows.map((r) => r.after) : isGridTable(b) || b.kind === "matrix" ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
   return Math.max(0, ...cellLines.map((xs) => xs.reduce((n, x) => n + bodyLayout(x, slot.body).lines, 0)));
 }
 
@@ -792,6 +795,8 @@ const TEXT_KINDS = new Set<BlockKind>(["band", "banner", "subhead"]);
 function editAvailability(c: Composition): Record<BlockKind, Availability> {
   const avail = shapeAvailability(c);
   if (!c.mg) for (const kind of BLOCK_KINDS) if (BIZ_RETIRED_SHAPES.includes(kind)) avail[kind] = { ok: false, why: BIZ_RETIRED_WHY };
+  // 경영관리는 주요사업 전용 종류(행렬·재편 매핑도 — 2026-11-10 P5, BIZ_ONLY_SHAPES의 종류 코드)를 고르지 않음
+  if (c.mg) for (const kind of BLOCK_KINDS) if (BIZ_ONLY_SHAPES.includes(kind)) avail[kind] = { ok: false, why: "주요사업 초안에서만 씁니다" };
   return avail;
 }
 

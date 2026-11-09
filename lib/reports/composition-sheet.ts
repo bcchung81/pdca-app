@@ -43,7 +43,7 @@ function figsHtml(figs: Figure[]): string {
 }
 
 function bodyHtml(b: Composition["blocks"][number], budget: number): string {
-  const unit = b.kind === "compare" ? "행" : b.kind === "bullets" || b.kind === "case" ? "줄" : b.kind === "chart" ? "막대" : "칸";
+  const unit = b.kind === "compare" || b.kind === "remap" ? "행" : b.kind === "bullets" || b.kind === "case" ? "줄" : b.kind === "chart" ? "막대" : "칸";
   const kind = `<p class="cs-kind">${esc(shapeName(b.kind, b.variant))}<span> · ${unit} ${b.cells}${budget ? ` · 약 ${Math.round(budget)}mm` : ""}</span></p>`;
   const purpose = b.purpose ? `<p class="cs-purpose">${esc(b.purpose)}</p>` : "";
   return `<div class="cs-body"><div class="cs-text">${kind}${purpose}</div>${figsHtml(b.figures ?? [])}</div>`;

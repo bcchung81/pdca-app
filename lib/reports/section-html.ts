@@ -5,8 +5,8 @@
 import { fitTextLines } from "./fit-dom.ts";
 import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
-import { type Block, FIGURE_LABEL, type Figure, type FigurePos, PDCA_RING, ROADMAP_PLAN, caseLabel, cellFocus, figureMm, isChevronTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
-import { SHAPE_GAP_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, funnelMm, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
+import { type Block, FIGURE_LABEL, type Figure, type FigurePos, MATRIX_LEAD, MATRIX_NO, PDCA_RING, ROADMAP_PLAN, caseLabel, cellFocus, figureMm, isChevronTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, matrixCorner, matrixRows, pdcaMark, remapLinks, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
+import { MATRIX_MM, SHAPE_GAP_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, funnelMm, ownResult, remapMm, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
 import { NUM_SRC, type RepeatMarks, UNIT_SRC, figureSpans, repeatMarks } from "./repeat-figures.ts";
 import { type Diagram, type LadderRow, type MiniChart, type ReportSectionSpec, numberTokens } from "./section.ts";
@@ -363,6 +363,43 @@ function ladderTableHtml(b: Block, u: Marks, at: At, w: number): string {
   return `<table class="k-tbl k-tbl--lad"><colgroup><col style="width:${big}%">${sub ? `<col style="width:${subW}%">` : ""}<col></colgroup><tbody>${rows.join("")}</tbody></table>`;
 }
 
+/**
+ * 갈래 × 단계 행렬(matrix — 2026-11-10 P5): 수치 표(k-tbl)와 같은 칸에 머리 줄 = 구석 머리 + 갈래 열(「① 갈래 이름」 — 번호는 코드가 붙이고 AI가 적은 앞 번호는 걷음),
+ * 행마다 단계 머리(items[1..]) + 칸 값 불릿 한 줄(빈 칸은 빈 칸). 열 폭 = 행 머리 MATRIX_MM.rowHead + 갈래 열 고르게(fit.ts slotOf와 같은 값)
+ */
+function matrixHtml(b: Block, u: Marks, at: At, w: number): string {
+  const head = ((MATRIX_MM.rowHead / w) * 100).toFixed(2);
+  const corner = b.items[0]?.trim() ? tx(b.items[0], u, at("items.0")) : esc(matrixCorner(b));
+  const th = b.cells.map((c, i) => `<th scope="col">${MATRIX_NO[i] ?? ""} ${tx(c.head.replace(MATRIX_LEAD, ""), u, at(`cells.${i}.head`), undefined, c.head)}</th>`).join("");
+  const rows = matrixRows(b)
+    .map((r, k) => `<tr><th scope="row">${tx(r, u, at(`items.${k + 1}`))}</th>${b.cells.map((c, i) => `<td>${c.bullets[k] ? `<ul><li>${tx(c.bullets[k], u, at(`cells.${i}.bullets.${k}`))}</li></ul>` : ""}</td>`).join("")}</tr>`)
+    .join("");
+  return `<table class="k-tbl k-mx"><colgroup><col style="width:${head}%">${b.cells.map(() => "<col>").join("")}</colgroup><thead><tr><th scope="col">${corner}</th>${th}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/**
+ * 재편 매핑도(remap — 2026-11-10 P5): 머리 줄(AS-IS · TO-BE 칩 — 가운데 칸은 비움) + [왼쪽 AS-IS 상자 열 | 가운데 선(SVG) | 오른쪽 TO-BE 상자 열(이름 + 설명 불릿)].
+ * 열마다 상자 자리가 같은 높이(grid 1fr — section-css .k-remap__col)라 선 끝은 자리 가운데(i + 0.5) ÷ 상자 수 — SVG는 0~100 좌표를 칸 크기로 늘려 그림(preserveAspectRatio none, 선 굵기는 그대로).
+ * 선 그림은 글이 없는 SVG라 「한글 내려받기(화면 그대로)」에서 그림으로 옮겨짐(dom-hwpx extract). AS-IS 이름은 한 TO-BE에만 나오면 그 자리로 고치기 표지(여러 곳에 나온 이름은 고치면 선이 갈라져 표지 없음).
+ * 열 폭은 fit.ts remapMm과 같은 값
+ */
+function remapHtml(b: Block, u: Marks, at: At, w: number): string {
+  const { from, links } = remapLinks(b.rows);
+  const g = remapMm(w);
+  const pct = (x: number) => ((x / w) * 100).toFixed(2);
+  const where = (name: string) => b.rows.flatMap((r, j) => r.before.map((x, k) => (x.trim() === name ? `rows.${j}.before.${k}` : ""))).filter(Boolean);
+  const left = from.map((x) => {
+    const only = where(x);
+    return `<li><div class="k-remap__box">${only.length === 1 ? tx(x, u, at(only[0])) : txt(x, u)}</div></li>`;
+  });
+  const right = b.rows.map((r, j) => `<li><div class="k-remap__box k-remap__box--to"><p class="k-remap__key">${tx(r.key, u, at(`rows.${j}.key`))}</p>${ul(r.after, u, at(`rows.${j}.after`))}</div></li>`);
+  const y = (i: number, n: number) => (((i + 0.5) / n) * 100).toFixed(2);
+  const lines = links.map(([i, j]) => `<path d="M0 ${y(i, from.length)} L100 ${y(j, b.rows.length)}"/>`).join("");
+  const svg = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><g fill="none" stroke="#7e7f7e" stroke-width="1" vector-effect="non-scaling-stroke">${lines}</g></svg>`;
+  const col = (xs: string[], cls: string) => `<ol class="k-remap__col${cls}" style="grid-template-rows:repeat(${xs.length},minmax(0,1fr))">${xs.join("")}</ol>`;
+  return `<div class="k-remap" style="grid-template-columns:${pct(g.from)}% ${pct(g.link)}% minmax(0,1fr)"><div class="k-remap__hd"><span class="k-tag">AS-IS</span></div><div class="k-remap__hd"></div><div class="k-remap__hd"><span class="k-tag k-tag--dark">TO-BE</span></div>${col(left, "")}<div class="k-remap__lines">${svg}</div>${col(right, " k-remap__col--to")}</div>`;
+}
+
 /** 수치 띠 불릿 목록(칸마다 한 불릿 — 빈 칸은 뺌). 시점 위첨자는 덧글 칸 글(「기준」을 뺀 표시 — 고치기는 원래 덧글) */
 function statsUl(b: Block, u: Marks, at: At): string {
   const li = b.cells.map((c, i) => {
@@ -603,6 +640,10 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
       // 수치 띠 = 추진성과 불릿(2026-10-28 — 2025 추진성과 행): 칸마다 「[칩] 성과 문장(^{시점}수치, 덧글)」 한 불릿(fit.ts statsParts — 어림·한글과 같은 글).
       // 상자(굵은 테두리 + 진회색 라벨 칸)는 놓인 자리가 정함(blocksBody statsBox — 사다리 행 안이면 행 라벨 칸이 라벨)
       return `${title}${statsUl(b, u, at)}`;
+    case "matrix":
+      return `${title}${matrixHtml(b, u, at, w)}`;
+    case "remap":
+      return `${title}${remapHtml(b, u, at, w)}`;
   }
 }
 

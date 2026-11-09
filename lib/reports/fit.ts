@@ -2,7 +2,7 @@
 // 칸 폭·여백·글꼴은 lib/reports/section-css.ts(2025 최종본 실측)와 같은 값입니다. CSS를 바꾸면 여기 SLOT·높이 상수도 함께 바꿉니다.
 // 쓰임: ① 요청 글의 「판면 예산」(칸마다 한 줄 글자 수·쪽 줄 수) ② 초안 뒤 높이 어림 → 넘치면 경고·맞추기 요청.
 
-import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, ROADMAP_PLAN, caseLabel, figureMm, isChevronTable, isGridTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
+import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, MATRIX_LEAD, MATRIX_NO, ROADMAP_PLAN, caseLabel, figureMm, isChevronTable, isGridTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, matrixCorner, matrixRows, remapLinks, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { type LayoutBlock, type LayoutGroup, PAIR_GAP_MM, cleanSpan, containerOf, layoutGroups } from "./layout.ts";
 import { MGMT_TRACK } from "../tracks/index.ts";
 import { REPORT_STYLE } from "./section-css.ts";
@@ -305,6 +305,18 @@ export const LAYER_MM = { mark: 14, head: 30 } as const;
  * 협업 수렴형 기관 칸 사이(.k-hubc__nodes) · 협업 가로형 같은 쪽 기관 사이(.k-hub--row 사이 칸) · 2단 라벨 흐름 표 묶음 사이 ▼ 줄(tr.k-lad__arr)
  */
 export const SHAPE_GAP_MM = { pdcaRing: 5, hubArrow: 5, hubNodes: 3, ladderArrow: 4 } as const;
+/** 갈래 × 단계 행렬(matrix — 2026-11-10 P5, section-css table.k-mx): 왼쪽 행(단계) 머리 열 폭(mm) — 나머지를 갈래 열이 고르게 나눔 */
+export const MATRIX_MM = { rowHead: 20 } as const;
+/**
+ * 재편 매핑도(remap — 2026-11-10 P5, section-css .k-remap): 가운데 선 칸 폭(mm) · 왼쪽 AS-IS 열 비율(선 칸을 뺀 폭의) · 상자를 감싼 자리의 위아래 여백(mm, 한 쪽) ·
+ * 상자 안 여백 좌우·위아래(px) · 머리 줄(AS-IS · TO-BE 칩 — 칩 8pt/1.35 + 테두리 + 아래 1mm)
+ */
+export const REMAP = { linkMm: 14, fromRatio: 0.36, slotPadMm: 0.8, padXPx: 5, padYPx: 2, headMm: 8 * 1.35 * PT + 0.4 + 1 } as const;
+/** 재편 매핑도 열 폭(mm): 왼쪽 AS-IS 열 · 가운데 선 칸 · 오른쪽 TO-BE 열 — 그리기(section-html)·판면 어림이 같이 씀 */
+export function remapMm(width: number): { from: number; link: number; to: number } {
+  const from = (width - REMAP.linkMm) * REMAP.fromRatio;
+  return { from, link: REMAP.linkMm, to: width - REMAP.linkMm - from };
+}
 
 /** 추진실적 열 표의 왼쪽 행 머리 열(행 머리가 하나라도 있을 때) */
 export const resultRowHeadMm = (width: number) => tableRowHeadMm(width - TABLE_SHAPE_MM.result);
@@ -339,6 +351,17 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
       // 표 열: (폭 − 층 이름 열) ÷ 열 수, 칸 안 여백 좌우 3px
       const col = (width - (b.items?.length ? STRAT_TIER_MM : 0)) / n;
       return { body: col - pad(6) - INDENT_MM, head: col - pad(6), note: col - pad(6) };
+    }
+    case "matrix": {
+      // 행렬(2026-11-10 P5): 행 머리 열(MATRIX_MM.rowHead) + 갈래 열 n개를 고르게 — body = 칸 값 불릿, head = 갈래 머리, note = 행 머리. 칸 안 여백 좌우 4px
+      const col = (width - MATRIX_MM.rowHead) / n;
+      return { body: col - pad(8) - INDENT_MM, head: col - pad(8), note: MATRIX_MM.rowHead - pad(8) };
+    }
+    case "remap": {
+      // 재편 매핑도(2026-11-10 P5): body = TO-BE 설명 불릿, head = TO-BE 이름(돋움 11pt), note = AS-IS 이름 상자 — 상자 안 여백 좌우 REMAP.padXPx·가는 테두리
+      const g = remapMm(width);
+      const box = (w: number) => w - pad(2 * REMAP.padXPx) - 0.34;
+      return { body: box(g.to) - INDENT_MM, head: box(g.to), note: box(g.from) };
     }
     case "pdca": {
       // 4칸·5칸은 한 줄, 6칸은 세 칸씩 두 줄 고리(2026-11-09 P4 — blocks.ts PDCA_RING)
@@ -757,6 +780,22 @@ export function blockHeight(b: Block, width: number, centerExtra = 0, mg = false
     case "stats":
       // 불릿 목록 모양(사다리 칸 안 — 상자 모양은 statsBoxMm): 칸마다 「성과 문장(시점 수치)」 한 불릿
       return blockTitleMm(b.title, width, mg) + lines(statsLines(b), s.body) * L + 0.5;
+    case "matrix": {
+      // 행렬(2026-11-10 P5, section-css table.k-mx — 수치 표 k-tbl과 같은 칸): 머리 줄(구석 + 「① 갈래」 맑은 고딕 10.4pt) + 행마다 [행 머리(돋움 10.4pt) | 칸 값 불릿] 중 큰 것 + 칸 여백 2px, 위 굵은 선·아래 선 1.2mm
+      const TH = 10.4 * 1.45 * PT;
+      const head = max([lineCount(matrixCorner(b), s.note, 10.4, true), ...b.cells.map((c, i) => lineCount(`${MATRIX_NO[i] ?? ""} ${c.head.replace(MATRIX_LEAD, "")}`, s.head, 10.4, true))]) * TH + 2 * PX;
+      const body = matrixRows(b).reduce((n, r, k) => n + Math.max(lineCount(r, s.note, 10.4, true) * TH, max(b.cells.map((c) => (c.bullets[k] ? lines([c.bullets[k]], s.body) * L : 0)))) + 2 * PX, 0);
+      return blockTitleMm(b.title, width, mg) + head + body + 1.2;
+    }
+    case "remap": {
+      // 재편 매핑도(2026-11-10 P5, section-css .k-remap): 머리 줄 + 두 열 중 높은 쪽 — 열마다 상자 자리가 같은 높이(grid 1fr)라 「상자 수 × 가장 높은 상자 자리」.
+      // AS-IS 상자 = 이름(돋움 11pt 굵게, 가운데), TO-BE 상자 = 이름(돋움 11pt 굵게) + 설명 불릿. 상자 안 여백 위아래 REMAP.padYPx·가는 테두리, 자리 위아래 REMAP.slotPadMm, 위 여백 3px
+      const { from } = remapLinks(b.rows);
+      const box = 2 * REMAP.padYPx * PX + 0.34 + 2 * REMAP.slotPadMm;
+      const left = from.length * (max(from.map((x) => lineCount(x, s.note, 11, true))) * HEAD11_MM + box);
+      const right = b.rows.length * (max(b.rows.map((r) => lineCount(r.key, s.head, 11, true) * HEAD11_MM + lines(r.after, s.body) * L)) + box);
+      return blockTitleMm(b.title, width, mg) + REMAP.headMm + Math.max(left, right) + 3 * PX;
+    }
   }
 }
 
@@ -1073,7 +1112,8 @@ export function fitReport(spec: { sub: { title: string; markers?: string[]; chip
   };
   const noteWraps = (b: Block, width: number, where: string) => {
     const s = slotOf(b, width);
-    if (["cards", "steps", "timeline", "quotes", "strategy", "pdca"].includes(b.kind)) for (const c of b.cells) for (const x of c.bullets) check(x, s.body, where);
+    if (["cards", "steps", "timeline", "quotes", "strategy", "pdca", "matrix"].includes(b.kind)) for (const c of b.cells) for (const x of c.bullets) check(x, s.body, where);
+    if (b.kind === "remap") for (const r of b.rows) for (const x of r.after) check(x, s.body, where);
     if (b.kind === "hub") for (const c of b.cells.slice(1)) for (const x of c.bullets) check(x, s.note, where);
     if (b.kind === "compare") for (const r of b.rows) for (const x of [...r.before, ...r.after]) check(x, s.body, where);
     if (b.kind === "bullets" || b.kind === "case") for (const x of b.items) check(x, s.body, where);
@@ -1345,6 +1385,19 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       const b = { ...base, text: "가".repeat(30), cells: cells(Math.max(4, Math.min(6, count))) };
       const sl = slotOf(b, inner(b));
       return { ...b, cells: b.cells.map((c) => ({ ...c, head: "계획수립", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))] })) };
+    }
+    case "matrix": {
+      // 행렬(2026-11-10 P5): 단계 행 셋(현황·추진내용·성과) × 갈래 열 n(2~4) — 칸마다 값 한 명제(약 1.4줄)
+      const b = { ...base, items: ["구분", "현황", "추진내용", "성과"], cells: Array.from({ length: Math.max(2, Math.min(4, count)) }, () => ({ head: "갈래", tag: "", bullets: ["", "", ""], note: "" })) };
+      const sl = slotOf(b, inner(b));
+      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => fill(sl.body, lines ?? per(sl.body, 1.4))) })) };
+    }
+    case "remap": {
+      // 재편 매핑도(2026-11-10 P5): TO-BE n행(1~5), 행마다 AS-IS 둘(이웃 행과 하나를 나눠 가짐 — 왼쪽 상자 n + 1) + 설명 불릿 하나(약 1.4줄)
+      const k = Math.max(1, Math.min(5, count));
+      const b = { ...base, rows: Array.from({ length: k }, (_, j) => ({ key: "새 분류", before: [`기존 ${j + 1}`, `기존 ${j + 2}`], after: [] as string[] })) };
+      const sl = slotOf(b, inner(b));
+      return { ...b, rows: b.rows.map((r) => ({ ...r, after: [fill(sl.body, lines ?? per(sl.body, 1.4))] })) };
     }
     case "table": {
       // 추진실적 열 표: 행(구분 + 추진내용 불릿 2개 × 약 1.2줄) 1~4개 + 오른쪽 「뜻 수치」 줄 2개·시점 줄

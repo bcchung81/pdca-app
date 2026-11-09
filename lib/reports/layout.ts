@@ -29,8 +29,8 @@ export const LAYOUT_USE: Record<"" | BlockLayout | BlockSpan, string> = {
 
 /** 라벨이 있어도 늘 전폭인 종류(띠·메시지 띠·인용 상자·소제목·우수사례 — 렌더러 FULL_KINDS) */
 export const FULL_KINDS: ReadonlySet<string> = new Set<BlockKind>(["band", "banner", "quotes", "subhead", "case"]);
-/** 반 폭으로 두지 않는 종류: 판을 가로지르는 띠·소제목, 행 오른쪽에 붙는 막대 */
-const NO_HALF: ReadonlySet<string> = new Set<BlockKind>(["band", "banner", "subhead", "chart"]);
+/** 반 폭으로 두지 않는 종류: 판을 가로지르는 띠·소제목, 행 오른쪽에 붙는 막대, 넓어야 읽히는 행렬·재편 매핑도(2026-11-10 P5 — 반 폭 약 73mm에 갈래 열·선이 들지 않음) */
+const NO_HALF: ReadonlySet<string> = new Set<BlockKind>(["band", "banner", "subhead", "chart", "matrix", "remap"]);
 /** 가로 반씩으로 둘 수 있는 종류인지(화면 고르기) */
 export const canHalf = (kind: string) => !NO_HALF.has(kind);
 /** 가로 반씩 두 블록 사이(mm — section-css .k-pair column-gap과 같은 값) */

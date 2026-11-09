@@ -275,7 +275,10 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // report-block@f69220ba → 54a1569d (report-draft@1c6d6412 → 7abe1602, report-outline@a41ef526 → 936b980a). 경영관리 판은 그대로
   // 2026-11-09 모양 변형 뒤 절반(경평 초안 프레임워크 확장 계획 P4 — blocks.md choose 「사례·협업·순환 모양」 절·머리 설명, schema.md block.variant case·hub·cascade)으로
   // report-block@54a1569d → 2827a7a0 (report-draft@7abe1602 → 1a8f7c57, report-outline@936b980a → 6ede8df9). 경영관리 판은 그대로(report-draft-mg@de6df39a·report-outline-mg@c2c704f7·report-block-mg@06b73818)
-  assert.equal(bp.version, "report-block@2827a7a0", "주요사업 블록 고치기 판은 분량 채움 보강으로는 바뀌지 않음");
+  // 2026-11-10 새 도식 종류 2개(경평 초안 프레임워크 확장 계획 P5 — blocks.md choose 「matrix·remap」 두 줄·머리 설명, report-draft/schema.md·report-outline/schema.md block.variant 한 구절 —
+  // 경영관리가 끼우는 block.kind·items·cells·rows 절은 그대로)으로 report-block@2827a7a0 → 7a0c8bda (report-draft@1a8f7c57 → 8d01238c, report-outline@6ede8df9 → ebf8c467).
+  // 경영관리 판은 그대로(report-draft-mg@de6df39a·report-outline-mg@c2c704f7·report-block-mg@06b73818 — 아래 시험), 경영관리 답 스키마 종류 목록도 그대로(blocks.ts MG_BLOCK_KINDS)
+  assert.equal(bp.version, "report-block@7a0c8bda", "주요사업 블록 고치기 판은 분량 채움 보강으로는 바뀌지 않음");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {

@@ -184,7 +184,7 @@ export function exampleItems(rows: ChunkRow[], unit: string): ExampleItem[] {
 // 요청 글(report-outline*/request.md frame.* · alt.*)
 
 /** 칸 단위 이름 */
-const unitOf = (kind: string) => (kind === "compare" || kind === "table" ? "행" : kind === "bullets" || kind === "case" ? "줄" : kind === "chart" ? "막대" : kind === "qa" ? "쌍" : kind === "strategy" ? "열" : "칸");
+const unitOf = (kind: string) => (kind === "compare" || kind === "table" || kind === "remap" ? "행" : kind === "bullets" || kind === "case" ? "줄" : kind === "chart" ? "막대" : kind === "qa" ? "쌍" : kind === "strategy" || kind === "matrix" ? "열" : "칸");
 
 /** 패턴 블록 한 줄 글: 「[추진배경] 칸 도식(✚)(cards:plus) 3칸 · 단 띠」 */
 export function patternBlockText(b: PatternBlock): string {

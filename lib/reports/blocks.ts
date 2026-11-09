@@ -11,7 +11,14 @@ import type { LooseJson } from "../loose-json.ts";
 type Json = LooseJson;
 
 // strategy(전략체계도)·pdca(P·D·C·A 순환)는 2026-10-09 — 경영관리 평가내용 첫 「전략수립」 대주제·PDCA 체계 도식(분석 §8.3·§8.7)을 표·칸 4행으로 흉내 내던 것
-export const BLOCK_KINDS = ["bullets", "cards", "compare", "steps", "timeline", "hub", "voices", "define", "band", "banner", "quotes", "case", "chart", "subhead", "stats", "qa", "table", "strategy", "pdca"] as const;
+/** 경영관리가 쓰는 블록 종류(두 트랙 공용 19종) — 경영관리 답 스키마(blockOutSchema·mg-outline.ts)의 종류 목록이라 늘리지 않음(경영관리 프롬프트·답 스키마 불변) */
+export const MG_BLOCK_KINDS = ["bullets", "cards", "compare", "steps", "timeline", "hub", "voices", "define", "band", "banner", "quotes", "case", "chart", "subhead", "stats", "qa", "table", "strategy", "pdca"] as const;
+/**
+ * 블록 종류 전체 = 공용 19종 + 주요사업 전용 2종(2026-11-10 — 경평 초안 프레임워크 확장 계획 P5, frameworks.ts BIZ_ONLY_SHAPES):
+ * matrix = 갈래 × 단계 행렬(열 = 갈래 2~4, 행 = 단계 2~4 — 필드는 수치 표처럼 items·cells, matrixRows), remap = 재편 매핑도(AS-IS 분류 ↔ TO-BE 분류 다대다 선 — rows, remapLinks).
+ * 새 필드 없이 기존 답 필드를 다시 써서 공용 답 스키마 필드는 그대로
+ */
+export const BLOCK_KINDS = [...MG_BLOCK_KINDS, "matrix", "remap"] as const;
 export type BlockKind = (typeof BLOCK_KINDS)[number];
 
 /**
@@ -243,6 +250,38 @@ export const PDCA_RING: ReadonlyArray<readonly [number, number]> = [
   [1, 0],
 ];
 
+/**
+ * 갈래 × 단계 행렬(matrix — 2026-11-10 P5)의 행: items[0] = 구석 머리(빈 글이면 그리기가 「구분」), items[1..] = 행(단계) 머리 —
+ * 열(갈래)은 cells(head 갈래 이름, bullets[k] = 행 k의 칸 값 한 명제 — 자리를 지켜 빈 칸은 빈 글). 그리기·판면 어림·원고·한글이 같이 씀
+ */
+export const matrixRows = (b: Pick<Block, "items">) => b.items.slice(1);
+/** 행렬 구석 머리(비면 「구분」) */
+export const matrixCorner = (b: Pick<Block, "items">) => b.items[0]?.trim() || "구분";
+/** 행렬 열 머리 앞 갈래 번호(①~④ — 코드가 붙임, AI가 앞에 적은 동그라미 번호는 걷음) */
+export const MATRIX_NO = "①②③④";
+export const MATRIX_LEAD = /^\s*[①-⑳❶-❿➀-➓]\s*/;
+
+/**
+ * 재편 매핑도(remap — 2026-11-10 P5): rows[j] = TO-BE 분류 하나(key 이름, before = 그 TO-BE로 모인 AS-IS 분류 이름들 — 여러 TO-BE에 같은 이름이 나오면 다대다, after = TO-BE 설명 1~2줄).
+ * 왼쪽 열(from) = before에 나온 AS-IS 이름을 처음 나온 순서로 한 번씩, 선(links) = [AS-IS 순번, TO-BE 순번]. 이름은 앞뒤 공백만 걷고 글자가 같아야 같은 분류
+ */
+export function remapLinks(rows: Block["rows"]): { from: string[]; links: Array<[number, number]> } {
+  const from: string[] = [];
+  const links: Array<[number, number]> = [];
+  rows.forEach((r, j) => {
+    for (const raw of r.before) {
+      const name = raw.trim();
+      if (!name) continue;
+      let i = from.indexOf(name);
+      if (i < 0) i = from.push(name) - 1;
+      if (!links.some(([a, b]) => a === i && b === j)) links.push([i, j]);
+    }
+  });
+  return { from, links };
+}
+/** 재편 매핑도 왼쪽 AS-IS 상자 수 상한(넘는 이름은 정리가 뺌 — 판면·선이 엉키지 않게) */
+export const REMAP_FROM_MAX = 6;
+
 /** 우수사례 줄 「라벨 | 내용」(라벨 8자까지) — 상자·STEP 흐름·인용 화자가 같이 씀. 라벨이 없으면 null */
 export function caseLabel(x: string): { label: string; text: string } | null {
   const m = /^([^|:：]{1,8}?)\s*[|:：]\s+(.+)$/.exec(x);
@@ -325,11 +364,14 @@ const cellSchema = (desc?: Descriptions) => {
 /** AI 답 블록 한 개의 필드 — 설명(뜻·채우는 법)은 resources/prompts/report-draft/schema.md의 block.* 절 */
 export const BLOCK_OUT_FIELDS = ["kind", "label", "title", "variant", "text", "items", "cells", "rows", "series", "badge", "evidence", "figures"] as const;
 
-/** 블록 스키마. desc(schema.md 절)를 주면 모델에 보내는 설명을 붙이고, 없으면 구조만(타입·검증용) */
+/**
+ * 블록 스키마. desc(schema.md 절)를 주면 모델에 보내는 설명을 붙이고, 없으면 구조만(타입·검증용).
+ * 종류 목록: 설명이 없거나 주요사업 설명(CELL_FOCUS_FIELD 절이 있음 — cellSchema와 같은 판별)이면 BLOCK_KINDS 전체, 경영관리 설명이면 MG_BLOCK_KINDS(경영관리 답 스키마 불변 — 2026-11-10 P5)
+ */
 export function blockOutSchema(desc?: Descriptions) {
   const d = <T extends z.ZodType>(s: T, key: (typeof BLOCK_OUT_FIELDS)[number]) => described(s, desc, `block.${key}`);
   return z.object({
-    kind: d(z.enum(BLOCK_KINDS), "kind"),
+    kind: d(z.enum(!desc || CELL_FOCUS_FIELD in desc ? BLOCK_KINDS : MG_BLOCK_KINDS), "kind"),
     label: d(z.string(), "label"),
     title: d(z.string(), "title"),
     variant: d(z.string(), "variant"),
@@ -363,7 +405,8 @@ export interface BlockClean {
  * opts.biz(주요사업 집필 검증만 — section.ts verifySection): 핵심 수치 띠를 뺌(2026-10-28 — 주요사업 새 초안은 수치 띠를 쓰지 않음, frameworks.ts BIZ_RETIRED_SHAPES.
  * 예전 2026-10-15부터는 올해 실적 칸이 2개 미만인 띠만 뺐음). 경영관리·블록 고치기는 주지 않음 — 경영관리 수치 띠는 절을 닫는 추진성과라 빼면 「성과로 닫지 않은 절」이 생기고,
  * 블록 고치기는 저장된 초안의 띠를 그대로 고침(모양 바꾸기로 새 띠를 만드는 것은 block-shape.ts shapeAllowed가 막음).
- * opts.mg(경영관리 집필·블록 고치기 — mg-draft.ts·block-edit.ts checkBlock): PDCA 순환을 4칸까지만(주요사업은 6칸까지 — 2026-11-09 P4, 경영관리는 예전 그대로)
+ * opts.mg(경영관리 집필·블록 고치기 — mg-draft.ts·block-edit.ts checkBlock): PDCA 순환을 4칸까지만(주요사업은 6칸까지 — 2026-11-09 P4, 경영관리는 예전 그대로).
+ * 주요사업 전용 종류(2026-11-10 P5)도 경영관리면 기존 표로 되돌림 — 행렬(matrix)은 쉐브론 머리 표(table:chevron — 행 = 갈래, 열 머리 = 단계), 재편 매핑도(remap)는 전후 비교 표(compare:table)
  */
 export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number) => string, found: (s: string) => boolean, opts: { biz?: boolean; mg?: boolean } = {}): BlockClean {
   const dropped: string[] = [];
@@ -419,6 +462,34 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       // 쉐브론 머리 표(chevron)·로드맵(roadmap)은 값 칸이 단계별 내용이라 조금 길게(120자)
       x.items = list(b.items, 6, 30);
       x.cells = x.items.length >= 3 ? tableRows(b.cells, x.items.length - 1, isChevronTable(x) ? 120 : 60) : [];
+    } else if (kind === "matrix") {
+      // 갈래 × 단계 행렬(2026-11-10 P5): items = [구석 머리(빈 글도 자리를 지킴), 행(단계) 머리 2~4], cells = 열(갈래) 4개까지(head 갈래 이름, bullets = 행 순서대로 칸 값 160자 — 수치 표처럼 빈 칸도 자리를 지킴).
+      // 구석 머리를 빼고 행 머리만 적은 답(items 수 = 열마다 값 수)은 모두 행 머리로 봄
+      const raw = Array.isArray(b.items) ? b.items.map((s: unknown) => line(s, 30)) : [];
+      const vals = Math.max(0, ...(Array.isArray(b.cells) ? b.cells : []).map((c: Json) => (Array.isArray(c?.bullets) ? c.bullets.length : 0)));
+      const noCorner = raw.length >= 2 && raw.length === vals;
+      const rows = (noCorner ? raw : raw.slice(1)).filter(Boolean).slice(0, 4);
+      x.items = [noCorner ? "" : (raw[0] ?? ""), ...rows];
+      x.cells = tableRows(b.cells, rows.length, 160).slice(0, 4);
+      x.rows = [];
+      // 경영관리: 쉐브론 머리 표로(행 = 갈래, 열 머리 = 단계 — 같은 칸, 값은 쉐브론 표 칸 길이 120자)
+      if (opts.mg) Object.assign(x, { kind: "table", variant: "chevron", items: [matrixCorner(x), ...rows], cells: x.cells.map((c) => ({ ...c, bullets: c.bullets.map((v) => line(v, 120)) })) });
+    } else if (kind === "remap") {
+      // 재편 매핑도(2026-11-10 P5): 행 = TO-BE(key 이름 필수, before = 모인 AS-IS 이름 30자, after = 설명 2줄까지). 왼쪽 AS-IS 이름은 처음 나온 순서로 REMAP_FROM_MAX개까지(넘는 이름은 뺌)
+      const seen = new Set<string>();
+      const take = (s: string) => {
+        if (!seen.has(s) && seen.size >= REMAP_FROM_MAX) return false;
+        seen.add(s);
+        return true;
+      };
+      x.rows = x.rows
+        .filter((r) => r.key)
+        .map((r) => ({ key: r.key, before: [...new Set(r.before.map((s) => line(s, 30)).filter(Boolean))].filter(take), after: r.after.slice(0, 2) }))
+        .filter((r) => r.before.length);
+      x.items = [];
+      x.cells = [];
+      // 선이 둘 미만(1 → 1뿐)이거나 경영관리면 전후 비교 표(구분 = TO-BE · 기존 = AS-IS · 개선 = 설명)
+      if (opts.mg || remapLinks(x.rows).links.length < 2) Object.assign(x, { kind: "compare", variant: "table" });
     }
     // 단계·시기 모양(2026-11-09 P4). 논리모형: 3~5칸, 강조는 코드가 칸 머리로 정하므로 AI의 focus는 버림(cellFocus), 칸이 모자라면 단계 흐름.
     // 깔때기: 3~5단계이고 단계마다 수치(또는 【확인: …】)가 있어야 — 아니면 단계 흐름. 다층 차단: 4층까지. 진행 상태: 칸 tag를 완료·진행·예정 또는 빈 글로(statusTag)
@@ -555,6 +626,11 @@ function enough(b: Block): boolean {
     case "banner":
     case "subhead":
       return Boolean(b.text);
+    case "matrix":
+      // 행(단계) 2개 이상 × 열(갈래) 2개 이상
+      return b.items.length >= 3 && b.cells.length >= 2;
+    case "remap":
+      return remapLinks(b.rows).links.length >= 2;
   }
 }
 
@@ -586,6 +662,8 @@ export function blockNumberTexts(b: Block): string[] {
 export function blockBullets(b: Block): string[] {
   if (b.kind === "quotes" || b.kind === "voices") return [];
   if (b.kind === "table") return isGridTable(b) ? [] : b.cells.flatMap((c) => c.bullets);
+  // 행렬: 칸 값(문장)만 — items는 행 머리(2026-11-10 P5)
+  if (b.kind === "matrix") return b.cells.flatMap((c) => c.bullets).filter(Boolean);
   return [...b.items, ...b.cells.flatMap((c) => c.bullets)];
 }
 

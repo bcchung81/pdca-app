@@ -48,7 +48,7 @@ const HU = 7200 / 25.4;
 const mm = (v: number) => Math.round(v * HU);
 const four = [cell("가 칸", ["가1 글", "가2 **강조** 글"], { tag: "T1", note: "가 덧글" }), cell("나 칸", ["나1 글"]), cell("다 칸", ["다1 글"], { note: "다 덧글" }), cell("라 칸", ["라1 글"])];
 
-/** 블록 19종 × 모양 전부(variant 목록의 모든 값) + 그림 자리 조합 */
+/** 블록 21종 × 모양 전부(variant 목록의 모든 값) + 그림 자리 조합 */
 const SAMPLES: Record<string, Block> = {
   bullets: block({ kind: "bullets", title: "불릿 제목", items: ["첫째 불릿 【확인: ’26년 검사 건수】 예정", "무선국 ^{’25년}100국 → ^{’26년}200국", "굵게 **핵심** 글"], figures: [fig("photo", "설악산 현장 측정 차량", "right", "M"), fig("illust", "왼쪽 삽화", "left", "S")] }),
   "cards:plus": block({ kind: "cards", variant: "plus", title: "카드 제목", cells: four.slice(0, 3) }),
@@ -98,6 +98,9 @@ const SAMPLES: Record<string, Block> = {
   "table:ladder": block({ kind: "table", variant: "ladder", cells: [cell("큰 라벨", ["가"], { tag: "하위1" }), cell("", ["나"], { tag: "하위2" }), cell("다른", ["다"], { tag: "하위3" })] }),
   strategy: block({ kind: "strategy", text: "목표 띠 글", items: ["목표", "전략", "과제", "지표"], cells: [cell("전략A", ["과제1"], { tag: "S1", note: "지표1" }), cell("전략B", ["과제2"], { note: "지표2" }), cell("전략C", ["과제3"])] }),
   pdca: block({ kind: "pdca", text: "환류 글", cells: four }),
+  // 새 도식 종류(2026-11-10 P5 — 옛 렌더러는 수치 표로: 행렬은 화면과 같은 방향 「구석 | ① 갈래…」, 재편 매핑도는 「AS-IS | TO-BE | 재편 내용」)
+  matrix: block({ kind: "matrix", title: "갈래별 추진", items: ["구분", "현황", "추진내용", "성과"], cells: [cell("① 전파 관리", ["혼신 민원 증가", "측정망 확충", "민원 30% 감소"]), cell("방송 품질", ["음영 지역", "", "음영 120곳 해소"]), cell("시험 인증", ["대기 길어짐", "온라인 접수", "처리 기간 단축"])] }),
+  remap: block({ kind: "remap", title: "조직 재편", rows: [{ key: "전파진흥본부", before: ["전파관리팀", "전파정책팀"], after: ["전파 업무 일원화"] }, { key: "방송통신본부", before: ["전파정책팀", "방송팀"], after: ["방송·통신 융합 대응", "현장 지원"] }] }),
 };
 
 /** 같은 블록을 라벨 사다리 행(150mm 칸)과 전폭(170mm) 두 자리에 */
@@ -204,9 +207,9 @@ function checkWidths(name: string, doc: HwpDoc) {
 
 // ───────────────────────── 시험
 
-test("블록 19종 × 모양 전부(라벨 사다리 칸·전폭): 예외 없이 변환 → validateHwpx 통과 → 다시 읽힘 · 화면 글 보존 · 최상위 표 170mm", async () => {
+test("블록 21종 × 모양 전부(라벨 사다리 칸·전폭): 예외 없이 변환 → validateHwpx 통과 → 다시 읽힘 · 화면 글 보존 · 최상위 표 170mm", async () => {
   const kinds = new Set(Object.keys(SAMPLES).map((k) => k.split(":")[0]));
-  assert.deepEqual([...kinds].sort(), [...BLOCK_KINDS].sort(), "19종 모두");
+  assert.deepEqual([...kinds].sort(), [...BLOCK_KINDS].sort(), "21종 모두");
   for (const [kind, vs] of Object.entries(VARIANTS)) for (const v of vs ?? []) assert.ok(Object.values(SAMPLES).some((b) => b.kind === kind && b.variant === v), `${kind}:${v} 표본 없음`);
   for (const [name, b] of Object.entries(SAMPLES)) {
     const spec = makeSpec(placed(b));
@@ -334,8 +337,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 그 밖 규칙은 그대로 — 더한 블록을 뺀 글이 옛 고정값 7f287ee3…과 같음을 확인
 // 2026-11-09 모양 변형 뒤 절반(경평 초안 프레임워크 확장 계획 P4 — PDCA 5·6칸·우수사례 STEP 흐름·인용형·협업 수렴형·2단 라벨 흐름 표)으로(b5dfe056… → 8e01d8e6…): .k-lay 강조 규칙 바로 뒤에
 // 주석·규칙 블록을 더함. 그 밖 규칙은 그대로 — 더한 블록을 뺀 글이 옛 고정값 b5dfe056…과 같음을 확인
+// 2026-11-10 새 도식 종류 2개(경평 초안 프레임워크 확장 계획 P5 — 행렬 table.k-mx·재편 매핑도 .k-remap)로(8e01d8e6… → 4118e33e…): 2단 라벨 흐름 표 ▼ 규칙 바로 뒤에
+// 빈 줄 + 주석·규칙 블록을 더함. 그 밖 규칙은 그대로 — 더한 블록을 뺀 글이 옛 고정값 8e01d8e6…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "8e01d8e6e4e77f944a4bf8d55bf8c8374da1b40554d43b320c1b11effbc44c5a");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "4118e33ed90d9400154a8cedfb530ec9dffb2f5aae46d46377e96ec36aab17d2");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {

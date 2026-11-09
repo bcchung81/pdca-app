@@ -105,8 +105,8 @@ function around(blocks: Block[], i: number): string {
 }
 
 /** 칸 글이 있는 블록(칸마다 줄 한도를 셈) — 구성안 글 한도(composition.ts blockLimits)와 같은 목록 */
-const CELL_TEXT = new Set<Block["kind"]>(["cards", "steps", "timeline", "hub", "quotes", "voices", "stats", "compare", "qa", "table", "strategy", "pdca"]);
-const cellCount = (b: Block) => (b.kind === "compare" ? b.rows.length : b.kind === "bullets" || b.kind === "case" ? b.items.length : b.kind === "chart" ? b.series.length : b.cells.length);
+const CELL_TEXT = new Set<Block["kind"]>(["cards", "steps", "timeline", "hub", "quotes", "voices", "stats", "compare", "qa", "table", "strategy", "pdca", "matrix", "remap"]);
+const cellCount = (b: Block) => (b.kind === "compare" || b.kind === "remap" ? b.rows.length : b.kind === "bullets" || b.kind === "case" ? b.items.length : b.kind === "chart" ? b.series.length : b.cells.length);
 
 /** 블록 글 한도(결정론): 칸 한 줄 글자 수 · 지금 줄 수(불릿 블록은 불릿 줄 합, 칸 블록은 가장 긴 칸) · 판면 여유 · 늘 수 있는 최대 줄 수 */
 export interface BlockRoom {
@@ -165,7 +165,7 @@ export function blockRoom(spec: ReportSectionSpec, index: number, share?: number
   }
   if (!CELL_TEXT.has(b.kind)) return null;
   const slot = slotOf(b, width);
-  const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : isGridTable(b) ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
+  const cellLines = b.kind === "compare" ? b.rows.flatMap((r) => [r.before, r.after]) : b.kind === "remap" ? b.rows.map((r) => r.after) : isGridTable(b) || b.kind === "matrix" ? b.cells.flatMap((x) => x.bullets.map((v) => [v])) : b.kind === "stats" ? b.cells.map((x) => [statsLine(x)]) : b.cells.map((x) => x.bullets);
   const now = Math.max(1, ...cellLines.map((xs) => xs.reduce((n, x) => n + bodyLayout(x, slot.body).lines, 0)));
   const perLine = hangulPerLine(slot.body);
   return { unit: "cell", perLine, now, max: grow(now, (l) => rowOf(cellCount(b), l)), slack, ...(spec.mg && mgBulletCell(b) ? { bullet: mgBulletLines(perLine) } : {}) };
@@ -190,7 +190,7 @@ export function roomText(r: BlockRoom | null): string {
 }
 
 /** 블록 내용 개수(칸·행·줄·막대 — 모양을 바꿀 때 새 모양의 칸 수 어림) */
-const contentCount = (b: Block) => Math.max(1, b.kind === "bullets" || b.kind === "case" ? b.items.length : b.kind === "compare" ? b.rows.length : b.kind === "chart" ? b.series.length : b.cells.length);
+const contentCount = (b: Block) => Math.max(1, b.kind === "bullets" || b.kind === "case" ? b.items.length : b.kind === "compare" || b.kind === "remap" ? b.rows.length : b.kind === "chart" ? b.series.length : b.cells.length);
 
 /**
  * 바꿀 수 있는 모양 목록(요청 글) — 모양마다 칸 수 범위와 새 모양의 칸 폭으로 센 「한 줄 약 N자」(지금 내용 개수를 그 모양 범위로 맞춘 보통 블록으로 blockRoom).

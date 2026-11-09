@@ -240,6 +240,22 @@ ${fontSpacingCss()}
 /* 2단 라벨 흐름 표(table:cascade): 큰 라벨 묶음 사이 ▼ 줄(4mm) */
 .kca-dg-doc table.k-tbl--lad tr.k-lad__arr td{height:4mm;padding:0;border-left:0;background:#fff;color:var(--k-g3);text-align:center;font:900 9pt/1 var(--k-f-label)}
 
+/* ───────────── 새 도식 종류(2026-11-10 — 경평 초안 프레임워크 확장 계획 P5). 크기는 fit.ts MATRIX_MM·REMAP와 같은 값 ───────────── */
+/* 갈래 × 단계 행렬(matrix): 수치 표(k-tbl) 칸 + 칸 값은 왼쪽 위 맞춤 불릿 */
+.kca-dg-doc table.k-mx td{text-align:left;vertical-align:top}
+/* 재편 매핑도(remap): 머리 줄(AS-IS · TO-BE 칩) + [AS-IS 상자 열 | 선 칸(SVG — 칸 크기로 늘림) | TO-BE 상자 열]. 열마다 상자 자리는 같은 높이(1fr — 선 끝이 자리 가운데), 상자는 자리 가운데 */
+.kca-dg-doc .k-remap{display:grid;grid-template-rows:auto minmax(0,1fr);margin-top:3px}
+.kca-dg-doc .k-remap__hd{text-align:center;padding-bottom:1mm;font:700 8pt/1.35 var(--k-f-dotum);color:var(--k-g4)}
+.kca-dg-doc .k-remap__hd .k-tag{margin-right:0}
+.kca-dg-doc ol.k-remap__col{list-style:none;margin:0;padding:0;display:grid}
+.kca-dg-doc ol.k-remap__col > li{padding:0.8mm 0;display:flex;align-items:center;min-width:0}
+.kca-dg-doc ol.k-remap__col > li::before{content:none}
+.kca-dg-doc .k-remap__box{width:100%;border:var(--k-hair) solid var(--k-g4);padding:2px 5px;background:var(--k-g1);text-align:center;font:700 ${F.box}pt/1.5 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
+.kca-dg-doc .k-remap__box--to{background:#fff;text-align:left;font:inherit;letter-spacing:inherit}
+.kca-dg-doc .k-remap__key{margin:0;font:700 ${F.box}pt/1.5 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
+.kca-dg-doc .k-remap__lines{position:relative;min-height:0}
+.kca-dg-doc .k-remap__lines > svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+
 /* ───────────── before_after 표 ───────────── */
 .kca-dg-doc table.k-ba{width:100%;border-collapse:separate;border-spacing:0}
 .kca-dg-doc table.k-ba th,.kca-dg-doc table.k-ba td{padding:2px 5px;vertical-align:middle}

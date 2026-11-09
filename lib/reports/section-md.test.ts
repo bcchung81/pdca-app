@@ -53,7 +53,7 @@ test("라벨 묶음: 이어진 같은 라벨은 □ 한 줄 아래, 라벨 없�
   assert.deepEqual(l.filter((x) => /^(□|ㅇ)/.test(x)), ["□ 추진배경", "ㅇ 가", "ㅇ 나", "□ 추진내용", "ㅇ 다", "ㅇ 라"]);
 });
 
-test("블록 19종: 모두 글을 잃지 않고 펼침(경고 없음)", () => {
+test("블록 21종: 모두 글을 잃지 않고 펼침(경고 없음)", () => {
   const four = [cell("가", ["가1"], { tag: "T1", note: "가노트" }), cell("나", ["나1"]), cell("다", ["다1"]), cell("라", ["라1"])];
   const cases: Record<string, Block> = {
     bullets: block({ kind: "bullets", title: "불릿 제목", items: ["첫째 불릿", "둘째 불릿"] }),
@@ -75,8 +75,11 @@ test("블록 19종: 모두 글을 잃지 않고 펼침(경고 없음)", () => {
     table: block({ kind: "table", variant: "", title: "수치 표", items: ["구분", "’25년", "’26년"], cells: [cell("건수", ["10", "20"]), cell("비용", ["3억", "4억"])] }),
     strategy: block({ kind: "strategy", text: "목표 띠 글", items: ["목표", "전략", "과제", "지표"], cells: [cell("전략A", ["과제1"], { tag: "S1", note: "지표1" }), cell("전략B", ["과제2"], { note: "지표2" })] }),
     pdca: block({ kind: "pdca", text: "환류 글", cells: four }),
+    // 새 도식 종류(2026-11-10 P5)
+    matrix: block({ kind: "matrix", title: "갈래별 추진", items: ["", "현황", "성과"], cells: [cell("① 관리", ["민원 증가", "민원 감소"]), cell("운영", ["대기 길어짐", ""])] }),
+    remap: block({ kind: "remap", rows: [{ key: "통합 분류", before: ["분류A", "분류B"], after: ["하나로 묶음"] }, { key: "새 분류", before: ["분류B"], after: [] }] }),
   };
-  assert.deepEqual(Object.keys(cases).sort(), [...BLOCK_KINDS].sort(), "19종 모두 시험함");
+  assert.deepEqual(Object.keys(cases).sort(), [...BLOCK_KINDS].sort(), "21종 모두 시험함");
   for (const [kind, b] of Object.entries(cases)) {
     const r = md([b]);
     assert.deepEqual(r.warnings, [], kind);
@@ -108,6 +111,9 @@ test("블록 19종: 모두 글을 잃지 않고 펼침(경고 없음)", () => {
   assert.ok(m("table").includes("| 구분 | ’25년 | ’26년 |") && m("table").includes("| 비용 | 3억 | 4억 |"));
   assert.ok(m("strategy").includes("ㅇ **목표** 목표 띠 글") && m("strategy").includes("| 전략 | [S1] 전략A | 전략B |") && m("strategy").includes("| 과제 | 과제1 | 과제2 |") && m("strategy").includes("| 지표 | 지표1 | 지표2 |"));
   assert.ok(m("pdca").includes("ㅇ **[T1] 가**") && m("pdca").includes("ㅇ **[A] 라**") && m("pdca").includes("ㅇ ↺ 환류 글"));
+  // 행렬: 화면과 같은 표(빈 구석 머리는 「구분」, 갈래 번호는 코드가 — AI가 적은 앞 번호는 걷고 다시 붙임, 빈 칸은 빈 칸), 재편 매핑도: 「TO-BE ← AS-IS·AS-IS」 줄 + 설명
+  assert.ok(m("matrix").includes("[ 갈래별 추진 ]") && m("matrix").includes("| 구분 | ① 관리 | ② 운영 |") && m("matrix").includes("| 성과 | 민원 감소 |   |"), m("matrix"));
+  assert.ok(m("remap").includes("ㅇ **통합 분류** ← 분류A·분류B") && m("remap").includes("- 하나로 묶음") && m("remap").includes("ㅇ **새 분류** ← 분류B"), m("remap"));
 });
 
 test("compare 패널(As-Is/To-Be·diag)은 2열 표, 번호·꼬리표는 렌더러와 같게", () => {

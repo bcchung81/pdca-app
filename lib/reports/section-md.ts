@@ -3,11 +3,11 @@
 // 묶는 규칙은 HTML 렌더러(section-html.ts)와 같은 함수를 씀: 라벨·단 띠·가로 반씩 = layoutGroups, 막대 없는 표 칸·2단 라벨 = ladderGroups,
 // 전후 비교 패널 = isPanelCompare. 경영관리 마커 옮기기(지적개선을 카드 지적 행과 겹치는 절 대주제에)는 section-html.ts mgBody와 같은 짜임.
 
-import { type Block, type BlockCell, FIGURE_LABEL, type Figure, ROADMAP_PLAN, blockTexts, caseLabel, isLadderTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_LABEL, type Figure, MATRIX_LEAD, MATRIX_NO, ROADMAP_PLAN, blockTexts, caseLabel, isLadderTable, isPanelCompare, ladderGroups, layerMark, matrixCorner, matrixRows, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { layoutGroups } from "./layout.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 
-const KNOWN_KINDS = new Set(["bullets", "cards", "compare", "steps", "timeline", "hub", "voices", "define", "band", "banner", "quotes", "case", "chart", "subhead", "stats", "qa", "table", "strategy", "pdca"]);
+const KNOWN_KINDS = new Set(["bullets", "cards", "compare", "steps", "timeline", "hub", "voices", "define", "band", "banner", "quotes", "case", "chart", "subhead", "stats", "qa", "table", "strategy", "pdca", "matrix", "remap"]);
 
 /** 글 한 줄: 줄바꿈 → 공백, 위첨자 ^{시점} → 시점 + 공백(한글 원고에는 위첨자가 없어 평문), 굵게 **…**·【확인: …】은 그대로 */
 const t = (s: unknown) =>
@@ -167,6 +167,12 @@ function body(b: Block, warnings: string[]): string[] {
       if (b.cells.some((c) => c.note)) rows.push([layer("비고"), ...b.cells.map((c) => c.note)]);
       return [...title, ...top, ...table(rows)];
     }
+    case "matrix":
+      // 행렬(2026-11-10 P5): 화면과 같은 표 — 머리 줄 = 구석 머리 + 「① 갈래」(번호는 렌더러와 같게 코드가 붙임), 행마다 단계 머리 + 칸 값
+      return [...caption(b.title), ...table([[matrixCorner(b), ...b.cells.map((c, i) => `${MATRIX_NO[i] ?? ""} ${c.head.replace(MATRIX_LEAD, "")}`.trim())], ...matrixRows(b).map((r, k) => [r, ...b.cells.map((c) => c.bullets[k] ?? "")])])];
+    case "remap":
+      // 재편 매핑도(2026-11-10 P5): 선을 글로 — TO-BE마다 「TO-BE ← AS-IS·AS-IS」 줄 + 설명(-)
+      return [...title, ...b.rows.flatMap((r) => [`ㅇ **${t(r.key)}** ← ${r.before.map(t).join("·")}`, ...r.after.map(sub)])];
     default:
       return unknownBlock(b as Block, warnings);
   }

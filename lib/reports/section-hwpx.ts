@@ -14,7 +14,7 @@ import { BORDER_WIDTH_MM } from "../hwp/hwp5.ts";
 import { type HwpxInput, hwpxFiles } from "../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, Bullet, Cell, CharPr, HwpDoc, Inline, LineType, PageDef, Para, ParaPr, Table } from "../hwp/model.ts";
 import { writeHwpxPackage } from "../hwpx/postprocess.ts";
-import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, blockTexts, caseLabel, figureMm, isChevronTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, MATRIX_LEAD, MATRIX_NO, ROADMAP_PLAN, blockTexts, caseLabel, figureMm, isChevronTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, matrixCorner, matrixRows, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
 import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableColsMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
 import { fontName } from "./report-fonts.ts";
@@ -442,7 +442,7 @@ const MARKER_STYLE: Record<string, CS> = {
   AI: { face: "dotumB", pt: F.marker, color: WHITE, shade: G.g5 },
   신규: { face: "dotumB", pt: F.small, box: all({ pt: 1, color: G.ink }) },
 };
-const KNOWN_KINDS = new Set(["bullets", "cards", "compare", "steps", "timeline", "hub", "voices", "define", "band", "banner", "quotes", "case", "chart", "subhead", "stats", "qa", "table", "strategy", "pdca"]);
+const KNOWN_KINDS = new Set(["bullets", "cards", "compare", "steps", "timeline", "hub", "voices", "define", "band", "banner", "quotes", "case", "chart", "subhead", "stats", "qa", "table", "strategy", "pdca", "matrix", "remap"]);
 /** 글 앞 동그라미 번호(전후 비교 패널은 그리는 쪽이 번호를 붙임 — section-html.ts LEAD_NUM) */
 const LEAD_NUM = /^\s*[①-⑳❶-❿➀-➓]\s*/;
 const STEP_LEAD = /^(Step\s?\d+|\d단계)\s*/;
@@ -676,6 +676,16 @@ class SectionWriter extends Writer {
         return [...title, this.host(this.gridTable(b, w, wMm), px(3))];
       case "strategy":
         return [...title, this.host(this.strategy(b, w), px(3))];
+      // 행렬·재편 매핑도(2026-11-10 P5 — 화면 DOM 변환이 기본이라 이 옛 렌더러는 수치 표로): 행렬은 화면과 같은 방향(머리 줄 = 구석 + 「① 갈래」, 행 = 단계),
+      // 재편 매핑도는 선 대신 「AS-IS | TO-BE | 재편 내용」 표(행마다 그 TO-BE로 모인 AS-IS를 「·」로 이음)
+      case "matrix": {
+        const grid: Block = { ...b, kind: "table", variant: "", items: [matrixCorner(b), ...b.cells.map((c, i) => `${MATRIX_NO[i] ?? ""} ${c.head.replace(MATRIX_LEAD, "")}`.trim())], cells: matrixRows(b).map((r, k) => ({ head: r, tag: "", bullets: b.cells.map((c) => c.bullets[k] ?? ""), note: "" })) };
+        return [...title, this.host(this.gridTable(grid, w, wMm), px(3))];
+      }
+      case "remap": {
+        const grid: Block = { ...b, kind: "table", variant: "", items: ["AS-IS", "TO-BE", "재편 내용"], cells: b.rows.map((r) => ({ head: r.before.join("·"), tag: "", bullets: [r.key, r.after.join(" / ")], note: "" })) };
+        return [...title, this.host(this.gridTable(grid, w, wMm), px(3))];
+      }
       case "stats":
         // 수치 띠 = 추진성과 불릿(화면 section-html statsUl — 칸마다 「성과 문장(^{시점}수치)」). 상자는 놓인 자리가 정함(blocksBody)
         return [...title, ...this.statsUl(b)];

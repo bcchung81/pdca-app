@@ -235,6 +235,9 @@ export const SHAPES: ShapeInfo[] = [
   { code: "qa", kind: "qa", variant: "", name: "묻고 답하기", group: "base", use: "「왜·어떻게 …?」 질문과 답 1~3쌍" },
   { code: "strategy", kind: "strategy", variant: "", name: "전략체계도", group: "base", use: "목표 띠 → 전략 열 2~4 → 과제·지표(층 이름은 자유)" },
   { code: "pdca", kind: "pdca", variant: "", name: "PDCA 순환", group: "base", use: "계획 → 실행 → 점검 → 환류 4칸 + 환류 띠(단계 이름은 자유 — 주요사업은 5칸 한 줄·6칸 두 줄 고리도)" },
+  // 새 도식 종류 2개(2026-11-10 — 경평 초안 프레임워크 확장 계획 P5, 주요사업만 — BIZ_ONLY_SHAPES)
+  { code: "matrix", kind: "matrix", variant: "", name: "갈래 × 단계 행렬", group: "base", use: "열 = 갈래 ①~④ 2~4, 행 = 단계 2~4(현황 / 추진내용 / 성과) — 칸마다 그 갈래·단계의 한 명제" },
+  { code: "remap", kind: "remap", variant: "", name: "재편 매핑도", group: "base", use: "AS-IS 분류 ↔ TO-BE 분류를 선으로 이음(여럿이 하나로·하나가 여럿으로) — 조직·사업·분류 체계를 재편한 과제만" },
   { code: "quotes", kind: "quotes", variant: "", name: "인용 상자", group: "own", use: "정부·CEO·현장 원문 인용 1~2개" },
   { code: "voices", kind: "voices", variant: "", name: "현장 목소리", group: "own", use: "시민·기업의 말 말풍선" },
   { code: "define", kind: "define", variant: "", name: "용어 정의", group: "own", use: "「…란?」 설명 + 칩 흐름" },
@@ -276,11 +279,11 @@ export const shapeOf = (code: string) => SHAPES.find((s) => s.code === code) ?? 
  */
 export const BIZ_RETIRED_SHAPES: readonly string[] = ["stats"];
 /**
- * 주요사업에서만 쓰는 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 P1 로드맵 표 · P4 논리모형·깔때기·다층 차단·진행 상태·우수사례 STEP 흐름·인용·협업 가로형·수렴형·2단 라벨 흐름 표) —
- * 경영관리 프롬프트·판(해시)을 바꾸지 않으려고 경영관리 모양 목록
+ * 주요사업에서만 쓰는 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 P1 로드맵 표 · P4 논리모형·깔때기·다층 차단·진행 상태·우수사례 STEP 흐름·인용·협업 가로형·수렴형·2단 라벨 흐름 표
+ * · 2026-11-10 P5 새 종류 행렬·재편 매핑도 — 모양 없는 종류라 코드가 종류 이름) — 경영관리 프롬프트·판(해시)을 바꾸지 않으려고 경영관리 모양 목록
  * (블록 고치기 요청 글 shapeMenuText·화면 「다른 모양으로」 shapeMenu·구성안 도식 목록 shapeChoices·경영관리 틀 갤러리)에서는 뺌
  */
-export const BIZ_ONLY_SHAPES: readonly string[] = ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status", "case:steps", "case:quote", "hub:row", "hub:converge", "table:cascade"];
+export const BIZ_ONLY_SHAPES: readonly string[] = ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status", "case:steps", "case:quote", "hub:row", "hub:converge", "table:cascade", "matrix", "remap"];
 export const BIZ_RETIRED_WHY = "주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다(2025 최종본에 없음) — 수치는 단계 칸 결과 줄·표 결과 열·추진성과에 씁니다";
 
 /** 전폭으로 그리는 종류(라벨이 있어도 사다리 행이 아님 — 렌더러 section-html의 FULL_KINDS와 같음) */
@@ -314,6 +317,9 @@ const CELL_RANGE: Record<BlockKind, readonly [number, number]> = {
   strategy: [2, 4],
   // PDCA 순환: 4칸, 주요사업은 5칸 한 줄·6칸 두 줄 고리까지(2026-11-09 P4 — 경영관리는 아래 cellRange mg가 4칸으로)
   pdca: [4, 6],
+  // 행렬은 갈래 열 2~4, 재편 매핑도는 TO-BE 행 1~5(2026-11-10 P5 — 행렬 단계 행 수는 칸 수가 아니라 머리 줄 items)
+  matrix: [2, 4],
+  remap: [1, 5],
 };
 
 /** 칸 수 범위. mg = 경영관리(PDCA 순환 4칸 그대로 — 경영관리 프롬프트·요청 글·구성안 칸 수 불변) */
@@ -342,7 +348,7 @@ export function clampCells(kind: BlockKind, variant: string, n: number, mg = fal
 
 /** 새로 넣거나 모양을 바꿀 때의 보통 칸 수 */
 export function defaultCells(kind: BlockKind, variant = ""): number {
-  const typical: Partial<Record<BlockKind, number>> = { bullets: 2, cards: 3, compare: 2, steps: 3, timeline: 3, hub: 3, voices: 2, quotes: 1, case: 2, chart: 2, stats: 3, qa: 2, table: 3, strategy: 3, pdca: 4 };
+  const typical: Partial<Record<BlockKind, number>> = { bullets: 2, cards: 3, compare: 2, steps: 3, timeline: 3, hub: 3, voices: 2, quotes: 1, case: 2, chart: 2, stats: 3, qa: 2, table: 3, strategy: 3, pdca: 4, matrix: 3, remap: 3 };
   if (kind === "table" && (variant === "result" || variant === "chevron")) return 2;
   // 로드맵 표: 추진내용·산출·기대 효과 3행
   if (kind === "table" && variant === "roadmap") return 3;

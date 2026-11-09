@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
-import { BLOCK_KINDS, FIGURE_KINDS, FIGURE_POS, FIGURE_SIZES, type BlockKind, VARIANTS } from "./blocks.ts";
+import { FIGURE_KINDS, FIGURE_POS, FIGURE_SIZES, type BlockKind, MG_BLOCK_KINDS, VARIANTS } from "./blocks.ts";
 import { type DiagramHint, type HintOptions, mgVarietyIssues } from "./diagram-hints.ts";
 import { COMPOSITION_LIMITS, type Composition, type CompositionEdit, FRAME_INPUT_SECTIONS, INSPECTION_INPUT_SECTIONS, MATERIAL_KINDS, type OutlineFile, PLAN_LAYOUTS, PLAN_SPANS, type PlanBlock, SPLIT_INPUT_SECTIONS, applyCompositionEdit, cleanMaterials, cleanPlanBlock, notNumberEvidence } from "./composition.ts";
 import { dropLoneSpans } from "./layout.ts";
@@ -231,14 +231,15 @@ export function mgOutlineOutSchema(desc?: Descriptions) {
   });
   const block = z.object({
     part: d(z.number(), "block.part"),
-    kind: d(z.enum(BLOCK_KINDS), "block.kind"),
+    // 종류는 두 트랙 공용 19종만(주요사업 전용 행렬·재편 매핑도 — 2026-11-10 P5 — 는 경영관리 답 스키마에 넣지 않음)
+    kind: d(z.enum(MG_BLOCK_KINDS), "block.kind"),
     variant: d(z.string(), "block.variant"),
     label: d(z.string(), "block.label"),
     purpose: d(z.string(), "block.purpose"),
     cells: d(z.number(), "block.cells"),
     materials: d(z.array(z.string()), "block.materials"),
     figures: d(z.array(z.object({ kind: z.enum(FIGURE_KINDS), desc: z.string(), pos: z.enum(FIGURE_POS), size: z.enum(FIGURE_SIZES) })), "block.figures"),
-    alts: d(z.array(z.object({ kind: z.enum(BLOCK_KINDS), variant: z.string(), why: z.string() })), "block.alts"),
+    alts: d(z.array(z.object({ kind: z.enum(MG_BLOCK_KINDS), variant: z.string(), why: z.string() })), "block.alts"),
     // 배치(라벨 사다리·전폭·단 띠)·폭(가로 반씩) — 2026-10-12, 주요사업 구성안과 같은 값(lib/reports/layout.ts)
     layout: d(z.enum(PLAN_LAYOUTS), "block.layout").optional(),
     span: d(z.enum(PLAN_SPANS), "block.span").optional(),

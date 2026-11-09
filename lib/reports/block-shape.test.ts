@@ -69,8 +69,8 @@ test("shapeAllowed: 핵심 수치 띠(2026-10-28)만 주요사업 초안에서 �
   assert.deepEqual(shapeAllowed(cards, "table", "", BIZ), { ok: true });
 });
 
-test("shapeAllowed: 로드맵 표·단계·시기 모양 4종·사례·협업·표 모양 5종(2026-11-09 P1·P4)은 주요사업만 — 경영관리는 거절(경영관리 프롬프트·판 불변)", () => {
-  assert.deepEqual([...BIZ_ONLY_SHAPES], ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status", "case:steps", "case:quote", "hub:row", "hub:converge", "table:cascade"]);
+test("shapeAllowed: 로드맵 표·단계·시기 모양 4종·사례·협업·표 모양 5종(2026-11-09 P1·P4)·새 종류 행렬·재편 매핑도(2026-11-10 P5)는 주요사업만 — 경영관리는 거절(경영관리 프롬프트·판 불변)", () => {
+  assert.deepEqual([...BIZ_ONLY_SHAPES], ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status", "case:steps", "case:quote", "hub:row", "hub:converge", "table:cascade", "matrix", "remap"]);
   assert.deepEqual(shapeAllowed(cards, "table", "roadmap", BIZ), { ok: true });
   const r = shapeAllowed(cards, "table", "roadmap", MG);
   assert.equal(r.ok, false);
