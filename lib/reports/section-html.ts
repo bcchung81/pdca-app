@@ -5,7 +5,7 @@
 import { fitTextLines } from "./fit-dom.ts";
 import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
-import { type Block, FIGURE_LABEL, type Figure, type FigurePos, figureMm, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, tableBars } from "./blocks.ts";
+import { type Block, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, figureMm, isChevronTable, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
 import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
 import { NUM_SRC, type RepeatMarks, UNIT_SRC, figureSpans, repeatMarks } from "./repeat-figures.ts";
@@ -468,15 +468,25 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
       // 수치 표(2025 복원지수·등급·로드맵·점검 비교 표): 머리 줄 = items(첫째 = 행 머리 열), 행마다 head = 행 머리·bullets = 값 열
       // 열 폭은 판면 어림과 같은 함수(fit.ts tableColsMm — 글 길이를 따름). 쉐브론 머리(chevron)는 값 열 머리를 단계 화살표로, 막대 표(bars)는 값 옆에 막대(tableBars — 같은 행·같은 단위끼리)
       const cols = tableColsMm(b, w).map((x) => ((x / w) * 100).toFixed(2));
-      const chev = b.variant === "chevron";
-      const cls = chev ? "k-tbl k-tbl--chev" : b.variant === "bars" ? "k-tbl k-tbl--bars" : "k-tbl";
-      const th = (x: string, i: number) => (chev && i > 0 ? `<th scope="col" class="k-chev${i === b.items.length - 1 ? " k-chev--last" : ""}"><span>${tx(x, u, at(`items.${i}`))}</span></th>` : `<th scope="col">${tx(x, u, at(`items.${i}`))}</th>`);
+      // 로드맵(roadmap — 2026-11-09): 쉐브론 머리 + 올해 열(머리 진하게·칸 옅은 바탕)·그 뒤 열(머리 밝게 + 「계획」 표지). 열은 코드가 머리 연도로 정함(blocks.ts roadmapCols — 판면 어림과 같은 판정)
+      const road = b.variant === "roadmap" ? roadmapCols(b.items, b.year) : null;
+      const chev = isChevronTable(b);
+      const cls = road ? "k-tbl k-tbl--chev k-tbl--road" : chev ? "k-tbl k-tbl--chev" : b.variant === "bars" ? "k-tbl k-tbl--bars" : "k-tbl";
+      const roadTh = (x: string, i: number) => {
+        const k = i - 1;
+        const mod = road!.now === k ? " k-road--now" : road!.plan[k] ? " k-road--plan" : "";
+        const mark = roadmapPlanMark(x, road!.plan[k]) ? ` <span class="k-road__plan">${ROADMAP_PLAN}</span>` : "";
+        return `<th scope="col" class="k-chev${mod}"><span><span>${tx(x, u, at(`items.${i}`))}${mark}</span></span></th>`;
+      };
+      const th = (x: string, i: number) =>
+        road && i > 0 ? roadTh(x, i) : chev && i > 0 ? `<th scope="col" class="k-chev${i === b.items.length - 1 ? " k-chev--last" : ""}"><span>${tx(x, u, at(`items.${i}`))}</span></th>` : `<th scope="col">${tx(x, u, at(`items.${i}`))}</th>`;
       const row = (c: Block["cells"][number], i: number) => {
         const bars = b.variant === "bars" ? tableBars(c.bullets, b.items) : [];
         return c.bullets
           .map((x, k) => {
             const v = x ? tx(x, u, at(`cells.${i}.bullets.${k}`)) : "";
             const w = bars[k];
+            if (road?.now === k) return `<td class="k-road__now">${v}</td>`;
             return w == null ? `<td>${v}</td>` : `<td><span class="k-barc"><span class="k-barc__v">${v}</span><span class="k-barc__t" aria-hidden="true"><span class="k-barc__b" style="width:${w}%"></span></span></span></td>`;
           })
           .join("");

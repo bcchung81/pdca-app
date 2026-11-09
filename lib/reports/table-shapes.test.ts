@@ -27,11 +27,11 @@ const clean = (...xs: BlockOutput[]) => cleanBlocks(xs, line, () => true).blocks
 // ---------------------------------------------------------------------------
 // 모양 목록·짜임 사전
 
-test("VARIANTS.table: 첫째는 빈 글(예전 표 그대로) + result·bars·chevron·ladder, 모양 코드·이름·칸 범위", () => {
-  assert.deepEqual(VARIANTS.table, ["", "result", "bars", "chevron", "ladder"]);
+test("VARIANTS.table: 첫째는 빈 글(예전 표 그대로) + result·bars·chevron·ladder + roadmap(2026-11-09), 모양 코드·이름·칸 범위", () => {
+  assert.deepEqual(VARIANTS.table, ["", "result", "bars", "chevron", "ladder", "roadmap"]);
   assert.equal(shapeCode("table", ""), "table", "기본 표는 예전처럼 kind만");
   assert.equal(blockSignature([blk("table"), blk("table", { variant: "bars" })]), "table → table:bars");
-  for (const v of ["result", "bars", "chevron", "ladder"]) {
+  for (const v of ["result", "bars", "chevron", "ladder", "roadmap"]) {
     const s = SHAPES.find((x) => x.code === `table:${v}`);
     assert.ok(s, v);
     assert.equal(s!.group, "base", "기본 도식(근거 조건 없음)");

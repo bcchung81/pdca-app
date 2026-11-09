@@ -12,7 +12,7 @@ import { BLOCK_KINDS, type Block, type BlockKind, FIGURE_KINDS, FIGURE_LABEL, FI
 import { FIT_BAND, type HeadMode, PAGE_MM, blockAreaMm, blockWidth, bodyLayout, bulletLines, canonicalBlock, figuresWidth, fitReport, guardFigureText, hangulPerLine, isBoxBlock, mgBulletCell, slotOf, stageHeadMm, statsLine } from "./fit.ts";
 import { BIZ_TRACK } from "../tracks/index.ts";
 import { type BlockLayout, type BlockSpan, LAYOUT_LABEL, dropLoneSpans, layoutFields, layoutGroups } from "./layout.ts";
-import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeCode, shapeName, storyLabel } from "./frameworks.ts";
+import { type Availability, BIZ_ONLY_SHAPES, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, SHAPES, clampCells, defaultCells, frameworkOf, matchName, shapeAvailability, shapeCode, shapeName, storyLabel } from "./frameworks.ts";
 import { bizVarietyIssue, isOwnKind } from "./diagram-hints.ts";
 import { type ReportFile, type SiblingCard, type SiblingLayout, cleanLine, numberTokens, quoteFoundIn, readSection, sourceKey } from "./section.ts";
 import type { MgOutlineMeta } from "./mg-types.ts";
@@ -937,7 +937,8 @@ export function shapeChoices(c: Composition, e: CompositionEdit, target: { pos: 
   const avail = editAvailability(c);
   const base = compositionFit(applyCompositionEdit(c, e).composition, module, head).total;
   const cur = e.blocks[target.pos];
-  return SHAPES.map((sh) => {
+  // 경영관리 구성안에는 주요사업 전용 모양(로드맵 표)을 보이지 않음
+  return SHAPES.filter((sh) => !(c.mg && BIZ_ONLY_SHAPES.includes(sh.code))).map((sh) => {
     const cells = target.mode === "change" && cur && cur.kind === sh.kind ? clampCells(sh.kind, sh.variant, cur.cells) : defaultCells(sh.kind, sh.variant);
     const one: BlockEdit =
       target.mode === "change" && cur

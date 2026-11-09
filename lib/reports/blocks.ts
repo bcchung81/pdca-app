@@ -99,6 +99,11 @@ export interface Block {
   layout?: BlockLayout;
   /** 폭(내용 아닌 필드): half = 다음 블록과 가로 반씩. 없으면 그릇 폭 전부 */
   span?: BlockSpan;
+  /**
+   * 보고서 연도(내용 아닌 필드 — 로드맵 표 table:roadmap에만, 코드가 넣음: 집필·다시 점검 때 초안 연도 — section.ts verifySection·recheckSection).
+   * 올해 열 판정(roadmapCols)이 열 머리 연도와 견주는 값. AI 답 필드가 아님. 없으면 연도 없이 판정(roadmapCols 규칙)
+   */
+  year?: number;
 }
 
 /** kind별 모양 — 목록 밖이면 첫째 */
@@ -110,9 +115,45 @@ export const VARIANTS: Partial<Record<BlockKind, readonly string[]>> = {
   steps: ["row", "zigzag"],
   timeline: ["chevron", "dots"],
   // 표 모양(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 「블록 어휘 수준」 표): 빈 글 = 수치·구분표(예전 그대로), result = 오른쪽 「추진실적」 칸(머리만 어둡게 — 2026-10-29),
-  // bars = 값 칸 옆 가로 막대(길이는 코드가 셈 — tableBars), chevron = 열 머리가 단계 화살표, ladder = 2단 라벨(큰 라벨 안 하위 라벨 + 내용)
-  table: ["", "result", "bars", "chevron", "ladder"],
+  // bars = 값 칸 옆 가로 막대(길이는 코드가 셈 — tableBars), chevron = 열 머리가 단계 화살표, ladder = 2단 라벨(큰 라벨 안 하위 라벨 + 내용),
+  // roadmap = 다년 로드맵(2026-11-09 — ⑲ 로드맵형, 쉐브론 머리 + 올해 열 강조·뒤 열 「계획」 표지 — roadmapCols가 열 머리 연도로 정함)
+  table: ["", "result", "bars", "chevron", "ladder", "roadmap"],
 };
+
+/** 열 머리가 단계 화살표인 표(쉐브론 머리·로드맵) — 그리기·판면 어림·한글이 같은 화살표 머리를 씀 */
+export const isChevronTable = (b: Pick<Block, "kind" | "variant">) => b.kind === "table" && (b.variant === "chevron" || b.variant === "roadmap");
+
+/** 열 머리의 연도(두 자리): ’26·'26 · 2026 · 26년, 「’25~’27」처럼 물결·줄표로 이은 두 연도는 그 사이 해까지. 올해·금년은 now로 */
+function headYears(head: string): { years: number[]; now: boolean } {
+  const re = /[’'‘](\d{2})(?!\d)|(?<!\d)20(\d{2})(?!\d)|(?<![\d.])(\d{2})\s?년/g;
+  const hits = [...head.matchAll(re)].map((m) => ({ y: Number(m[1] ?? m[2] ?? m[3]), at: m.index, end: m.index + m[0].length }));
+  const years = new Set(hits.map((h) => h.y));
+  hits.forEach((h, i) => {
+    const next = hits[i + 1];
+    if (next && next.y > h.y && /^\s*[~∼\-–]\s*$/.test(head.slice(h.end, next.at))) for (let y = h.y + 1; y < next.y; y++) years.add(y);
+  });
+  return { years: [...years], now: /올해|금년/.test(head) };
+}
+
+/**
+ * 로드맵 표(table:roadmap)의 올해 열·「계획」 열(결정론 — AI가 정하지 않음). 값 열 순번 k = items[k + 1](items[0]은 행 머리 열).
+ *  · 올해 열(now) = 머리에 「올해·금년」이 있거나 머리 연도가 보고서 연도(year)와 같은 첫 열
+ *  · 머리에 연도·올해가 하나도 없으면 마지막 열이 올해(연도 흐름 timeline:chevron의 「마지막이 올해」와 같은 규칙)
+ *  · 계획 열(plan) = 올해 열 뒤의 열 전부. 올해 열이 없으면(머리 연도가 보고서 연도와 안 맞음) 머리 연도가 모두 보고서 연도보다 뒤인 열만
+ *  · 보고서 연도를 모르는데(year 없음) 머리에 연도만 있으면 어느 열도 정하지 않음(now −1 — 강조·표지 없음)
+ */
+export function roadmapCols(items: string[], year?: number): { now: number; plan: boolean[] } {
+  const heads = items.slice(1).map(headYears);
+  const yy = year ? year % 100 : null;
+  let now = heads.findIndex((h) => h.now || (yy !== null && h.years.includes(yy)));
+  if (now < 0 && !heads.some((h) => h.now || h.years.length)) now = heads.length - 1;
+  const plan = heads.map((h, k) => (now >= 0 ? k > now : yy !== null && h.years.length > 0 && Math.min(...h.years) > yy));
+  return { now, plan };
+}
+
+/** 로드맵 열 머리 「계획」 표지를 붙이는가: 계획 열이고 머리에 「계획」이 이미 없을 때(그리기·어림·한글·원고가 같이 씀) */
+export const ROADMAP_PLAN = "계획";
+export const roadmapPlanMark = (head: string, plan: boolean) => plan && !head.includes(ROADMAP_PLAN);
 
 /** 두 패널로 그리는 전후 비교(panels·diag — 같은 마크업·같은 판면 어림, 꼬리표만 다름) */
 export const isPanelCompare = (b: Pick<Block, "kind" | "variant">) => b.kind === "compare" && (b.variant === "panels" || b.variant === "diag");
@@ -304,9 +345,9 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       x.items = [];
       x.cells = cells(b.cells, 12).filter((c) => c.bullets.length).slice(0, 6);
     } else if (kind === "table") {
-      // 쉐브론 머리 표(chevron)는 값 칸이 단계별 내용이라 조금 길게(120자)
+      // 쉐브론 머리 표(chevron)·로드맵(roadmap)은 값 칸이 단계별 내용이라 조금 길게(120자)
       x.items = list(b.items, 6, 30);
-      x.cells = x.items.length >= 3 ? tableRows(b.cells, x.items.length - 1, x.variant === "chevron" ? 120 : 60) : [];
+      x.cells = x.items.length >= 3 ? tableRows(b.cells, x.items.length - 1, isChevronTable(x) ? 120 : 60) : [];
     }
     // 전략체계도: items = 왼쪽 층 이름(목표·전략·과제·지표 — 지표마다 달라 자유, 4개까지·짧게)
     if (kind === "strategy") x.items = list(b.items, 4, 20);
@@ -400,7 +441,7 @@ function enough(b: Block): boolean {
     case "table":
       if (b.variant === "result") return b.cells.length >= 1 && (b.series.length > 0 || Boolean(b.text) || resultPerRow(b));
       if (b.variant === "ladder") return b.cells.length >= 2;
-      if (b.variant === "chevron") return b.items.length >= 3 && b.cells.length >= 1;
+      if (isChevronTable(b)) return b.items.length >= 3 && b.cells.length >= 1;
       return b.items.length >= 3 && b.cells.length >= 2;
     case "compare":
       return b.rows.length >= 1;

@@ -17,7 +17,7 @@ import { isOwnKind } from "./diagram-hints.ts";
 import { canonicalJson } from "../cards/fixed.ts";
 import { PAGE_MM, blockWidth, bodyLayout, canonicalBlock, figuresWidth, fitReport, hangulPerLine, mgBulletCell, mgBulletLines, resultWidth, slotOf, statsLine } from "./fit.ts";
 import { dropLoneSpans } from "./layout.ts";
-import { SHAPES, cellRange, clampCells, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
+import { BIZ_ONLY_SHAPES, SHAPES, cellRange, clampCells, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
 import type { ReportSectionSpec } from "./section.ts";
 
 /** 요청 종류: 고치기(블록을 다시 씀) · 질문(답만, 초안은 그대로) */
@@ -194,7 +194,7 @@ const contentCount = (b: Block) => Math.max(1, b.kind === "bullets" || b.kind ==
 
 /**
  * 바꿀 수 있는 모양 목록(요청 글) — 모양마다 칸 수 범위와 새 모양의 칸 폭으로 센 「한 줄 약 N자」(지금 내용 개수를 그 모양 범위로 맞춘 보통 블록으로 blockRoom).
- * 경영관리 전용 표 모양은 주요사업이면 아예 적지 않음(주요사업 프롬프트에 안 보이게). 근거가 없는 이 과제만의 요소는 「쓸 수 없는 모양」에 이유와 함께
+ * 경영관리 전용 모양(핵심 수치 띠)은 주요사업이면, 주요사업 전용 모양(로드맵 표 — BIZ_ONLY_SHAPES)은 경영관리면 아예 적지 않음(그 트랙 프롬프트에 안 보이게). 근거가 없는 이 과제만의 요소는 「쓸 수 없는 모양」에 이유와 함께
  */
 export function shapeMenuText(spec: ReportSectionSpec, index: number, rules: ShapeRules): { shapes: string; blocked: string } {
   const b = spec.blocks?.[index];
@@ -203,7 +203,7 @@ export function shapeMenuText(spec: ReportSectionSpec, index: number, rules: Sha
   const ok: string[] = [];
   const no: string[] = [];
   for (const s of SHAPES) {
-    if (s.code === cur || (!rules.mg && MG_ONLY_SHAPES.includes(s.code))) continue;
+    if (s.code === cur || (!rules.mg && MG_ONLY_SHAPES.includes(s.code)) || (rules.mg && BIZ_ONLY_SHAPES.includes(s.code))) continue;
     const a = shapeAllowed(b, s.kind, s.variant, rules);
     if (!a.ok) {
       if (isOwnKind(s.kind)) no.push(`${s.code} ${s.name}(${a.why.split(" — ").slice(1).join(" — ") || a.why})`);

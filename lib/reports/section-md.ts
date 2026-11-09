@@ -3,7 +3,7 @@
 // 묶는 규칙은 HTML 렌더러(section-html.ts)와 같은 함수를 씀: 라벨·단 띠·가로 반씩 = layoutGroups, 막대 없는 표 칸·2단 라벨 = ladderGroups,
 // 전후 비교 패널 = isPanelCompare. 경영관리 마커 옮기기(지적개선을 카드 지적 행과 겹치는 절 대주제에)는 section-html.ts mgBody와 같은 짜임.
 
-import { type Block, type BlockCell, FIGURE_LABEL, type Figure, blockTexts, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_LABEL, type Figure, ROADMAP_PLAN, blockTexts, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { layoutGroups } from "./layout.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 
@@ -128,6 +128,12 @@ function body(b: Block, warnings: string[]): string[] {
           for (let i = g.start; i < g.start + g.rows; i++) rows.push([i === g.start ? g.head : "〃", ...(subCol ? [b.cells[i].tag] : []), b.cells[i].bullets.join(" / ")]);
         }
         return [...caption(b.title), ...table([["구분", ...(subCol ? ["세부"] : []), "내용"], ...rows])];
+      }
+      // 로드맵: 화면의 올해 열 강조·「계획」 표지를 글로 — 올해 열 머리 뒤 「(올해)」(머리에 올해·금년이 이미 있으면 안 붙임), 계획 열 머리 뒤 「(계획)」(화면과 같은 판정 roadmapCols·roadmapPlanMark)
+      if (b.variant === "roadmap") {
+        const road = roadmapCols(b.items, b.year);
+        const heads = b.items.map((x, i) => (i === 0 ? x : road.now === i - 1 && !/올해|금년/.test(x) ? `${x} (올해)` : roadmapPlanMark(x, road.plan[i - 1]) ? `${x} (${ROADMAP_PLAN})` : x));
+        return [...caption(b.title), ...table([heads, ...b.cells.map((c) => [c.head, ...c.bullets])])];
       }
       // 기본·막대·쉐브론: 머리 줄 = items, 행마다 head + 값 열(막대 길이·쉐브론 모양은 한글 원고에서 뺌)
       return [...caption(b.title), ...table([b.items, ...b.cells.map((c) => [c.head, ...c.bullets])])];

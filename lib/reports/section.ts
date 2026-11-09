@@ -761,6 +761,11 @@ export interface SectionCheck {
   droppedShapes: Array<{ kind: string; variant: string }>;
 }
 
+/** 로드맵 표(table:roadmap)에 보고서 연도를 넣음(blocks.ts Block.year — 올해 열·「계획」 열 판정 roadmapCols가 씀, AI가 정하지 않음). 연도가 없으면 그대로 */
+function stampRoadmapYear(blocks: Block[], year?: number): void {
+  if (year) for (const b of blocks) if (b.kind === "table" && b.variant === "roadmap") b.year = year;
+}
+
 /**
  * AI 답 정리 + 숫자 대조(v3 블록 목록). extraText: 초안에 넣은 첨부 자료·전년 절 글(그 숫자·인용도 근거).
  * siblings: 같은 주요사업 형제 초안의 짜임 — 서명이 같으면 경고.
@@ -773,6 +778,7 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   // 인용·말풍선·우수사례·정의는 근거(카드 글 + 첨부·전년 절 글 + 평가 근거)에서 원문을 찾은 것만 — 지어낸 글을 막음
   const hay = evidenceKey(card, extraText, quoteOnly);
   const { blocks, dropped, droppedShapes } = cleanBlocks(out.blocks ?? [], cleanLine, (q) => quoteFoundIn(hay, q), { biz: true });
+  stampRoadmapYear(blocks, year);
   placeBlocks?.(blocks);
   // 추진성과 3칸 글자 한도(칩 12·결과 줄 40·큰 수치 60 — schema.md resultCards) — 넘치면 자리표시·괄호를 깨지 않게 자르고 알림
   let clipped = 0;
@@ -976,6 +982,11 @@ export function resultExtras(out: Pick<SectionOutput, "resultChart" | "resultBan
 export function recheckSection(spec: ReportSectionSpec, card: Json, extraText = "", year?: number, today?: string): { spec: ReportSectionSpec; unknownNumbers: string[]; warnings: string[] } {
   const known = knownNumbers(card, extraText);
   const next: ReportSectionSpec = { ...spec };
+  // 모양 바꾸기·블록 고치기로 새로 생긴 로드맵 표에도 보고서 연도(올해 열 판정)를 넣음 — 로드맵이 없으면 spec 그대로
+  if (year && spec.blocks?.some((b) => b.kind === "table" && b.variant === "roadmap" && b.year !== year)) {
+    next.blocks = spec.blocks.map((b) => ({ ...b }));
+    stampRoadmapYear(next.blocks, year);
+  }
   const unknownNumbers = unknownNumbersIn(stripNeeds(sectionText(next, true)), (t) => known.has(numKey(t)) || known.has(numKey(t).replace(/(%|배)$/, "")));
   const warnings: string[] = [];
   const fit = fitReport(next);

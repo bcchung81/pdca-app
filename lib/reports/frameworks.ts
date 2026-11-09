@@ -193,6 +193,8 @@ export const SHAPES: ShapeInfo[] = [
   { code: "table:bars", kind: "table", variant: "bars", name: "막대 든 수치 표", group: "base", use: "값 옆 가로 막대(’25 → ’26 — 같은 행·같은 단위끼리, 길이는 앱이 셈)" },
   { code: "table:chevron", kind: "table", variant: "chevron", name: "쉐브론 머리 표", group: "base", use: "열 머리가 단계 화살표(현황 ▶ 개선방향 ▶ 적용 결과)" },
   { code: "table:ladder", kind: "table", variant: "ladder", name: "2단 라벨 표", group: "base", use: "큰 라벨(① 관리) 안 하위 라벨(①-1·①-2) + 내용" },
+  // 로드맵 표(2026-11-09 — ⑲ 로드맵형, 주요사업만 — BIZ_ONLY_SHAPES)
+  { code: "table:roadmap", kind: "table", variant: "roadmap", name: "로드맵 표", group: "base", use: "열 = 단계·연도(Step), 행 = 추진내용·산출·기대 효과 — 올해 열은 앱이 열 머리 연도로 강조, 뒤 열은 「계획」" },
   { code: "qa", kind: "qa", variant: "", name: "묻고 답하기", group: "base", use: "「왜·어떻게 …?」 질문과 답 1~3쌍" },
   { code: "strategy", kind: "strategy", variant: "", name: "전략체계도", group: "base", use: "목표 띠 → 전략 열 2~4 → 과제·지표(층 이름은 자유)" },
   { code: "pdca", kind: "pdca", variant: "", name: "PDCA 순환", group: "base", use: "계획 → 실행 → 점검 → 환류 4칸 + 환류 띠(단계 이름은 자유)" },
@@ -231,6 +233,11 @@ export const shapeOf = (code: string) => SHAPES.find((s) => s.code === code) ?? 
  * 경영관리는 절을 닫는 「추진성과」 행이라 그대로 씀. 이미 저장된 초안의 띠는 렌더러·한글 변환·판면 어림이 예전처럼 그림(데이터 이전 없음)
  */
 export const BIZ_RETIRED_SHAPES: readonly string[] = ["stats"];
+/**
+ * 주요사업에서만 쓰는 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 P1): 로드맵 표 — 경영관리 프롬프트·판(해시)을 바꾸지 않으려고 경영관리 모양 목록
+ * (블록 고치기 요청 글 shapeMenuText·화면 「다른 모양으로」 shapeMenu·구성안 도식 목록 shapeChoices·경영관리 틀 갤러리)에서는 뺌
+ */
+export const BIZ_ONLY_SHAPES: readonly string[] = ["table:roadmap"];
 export const BIZ_RETIRED_WHY = "주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다(2025 최종본에 없음) — 수치는 단계 칸 결과 줄·표 결과 열·추진성과에 씁니다";
 
 /** 전폭으로 그리는 종류(라벨이 있어도 사다리 행이 아님 — 렌더러 section-html의 FULL_KINDS와 같음) */
@@ -267,8 +274,8 @@ const CELL_RANGE: Record<BlockKind, readonly [number, number]> = {
 
 export function cellRange(kind: BlockKind, variant = ""): { min: number; max: number } {
   if (kind === "cards" && variant === "vs") return { min: 2, max: 2 };
-  // 표 모양: 추진실적 열 표·쉐브론 머리 표는 1~4행(렌더러·blocks.ts cleanBlocks와 같은 범위), 2단 라벨 표는 2~6행
-  if (kind === "table" && (variant === "result" || variant === "chevron")) return { min: 1, max: 4 };
+  // 표 모양: 추진실적 열 표·쉐브론 머리 표·로드맵 표는 1~4행(렌더러·blocks.ts cleanBlocks와 같은 범위), 2단 라벨 표는 2~6행
+  if (kind === "table" && (variant === "result" || variant === "chevron" || variant === "roadmap")) return { min: 1, max: 4 };
   if (kind === "steps" && variant === "zigzag") return { min: 4, max: 4 };
   const [min, max] = CELL_RANGE[kind] ?? [1, 1];
   return { min, max };
@@ -284,6 +291,8 @@ export function clampCells(kind: BlockKind, variant: string, n: number): number 
 export function defaultCells(kind: BlockKind, variant = ""): number {
   const typical: Partial<Record<BlockKind, number>> = { bullets: 2, cards: 3, compare: 2, steps: 3, timeline: 3, hub: 3, voices: 2, quotes: 1, case: 2, chart: 2, stats: 3, qa: 2, table: 3, strategy: 3, pdca: 4 };
   if (kind === "table" && (variant === "result" || variant === "chevron")) return 2;
+  // 로드맵 표: 추진내용·산출·기대 효과 3행
+  if (kind === "table" && variant === "roadmap") return 3;
   if (kind === "table" && variant === "ladder") return 4;
   return clampCells(kind, variant, typical[kind] ?? 1);
 }

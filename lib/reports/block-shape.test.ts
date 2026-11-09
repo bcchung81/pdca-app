@@ -10,7 +10,7 @@ import { type BlockEditRequest, SHAPE_OPTIONS_MAX, blockEditPrompt, blockShapesP
 import { CONTENT_FIELDS, MG_ONLY_SHAPES, draftHeight, shapeAllowed, shapeDelta, shapeMenu, shapeRules, withContent } from "./block-shape.ts";
 import type { Block, BlockOutput } from "./blocks.ts";
 import { OWN_KINDS } from "./diagram-hints.ts";
-import { SHAPES } from "./frameworks.ts";
+import { BIZ_ONLY_SHAPES, SHAPES } from "./frameworks.ts";
 import type { ReportSectionSpec } from "./section.ts";
 
 const block = (b: Partial<Block> & Pick<Block, "kind">): Block => ({ label: "", title: "", variant: "", text: "", items: [], cells: [], rows: [], series: [], badge: "", ...b });
@@ -69,6 +69,14 @@ test("shapeAllowed: 핵심 수치 띠(2026-10-28)만 주요사업 초안에서 �
   assert.deepEqual(shapeAllowed(cards, "table", "", BIZ), { ok: true });
 });
 
+test("shapeAllowed: 로드맵 표(2026-11-09)는 주요사업만 — 경영관리는 거절(경영관리 프롬프트·판 불변)", () => {
+  assert.deepEqual([...BIZ_ONLY_SHAPES], ["table:roadmap"]);
+  assert.deepEqual(shapeAllowed(cards, "table", "roadmap", BIZ), { ok: true });
+  const r = shapeAllowed(cards, "table", "roadmap", MG);
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.why, /로드맵 표」은 주요사업 초안에서만/);
+});
+
 test("shapeAllowed: 근거가 없는 이 과제만의 요소로는 못 바꿈(이유 글), 원래 그 종류면 됨", () => {
   for (const kind of OWN_KINDS) {
     const r = shapeAllowed(cards, kind, "", BIZ);
@@ -91,11 +99,14 @@ test("shapeRules: 구성안이 있으면 원문을 찾은 재료로(shapeAvailab
   assert.deepEqual(shapeAllowed(cards, "hub", "", fromHints), { ok: true });
 });
 
-test("shapeMenu: 주요사업은 수치 띠만 안 보임(표 모양 4종은 보임), 경영관리는 29가지 전부. 규칙이 없으면 이 과제만의 요소는 ok = null(요청 때 확인)", () => {
+test("shapeMenu: 주요사업은 수치 띠만 안 보임(표 모양 4종·로드맵 표는 보임), 경영관리는 로드맵 표만 뺀 29가지. 규칙이 없으면 이 과제만의 요소는 ok = null(요청 때 확인)", () => {
   const biz = shapeMenu(false, null);
   assert.equal(biz.length, SHAPES.length - MG_ONLY_SHAPES.length);
   assert.ok(biz.every((m) => !MG_ONLY_SHAPES.includes(m.code)));
-  assert.equal(shapeMenu(true, MG).length, SHAPES.length);
+  assert.ok(biz.some((m) => m.code === "table:roadmap"));
+  const mg = shapeMenu(true, MG);
+  assert.equal(mg.length, SHAPES.length - BIZ_ONLY_SHAPES.length);
+  assert.ok(mg.every((m) => !BIZ_ONLY_SHAPES.includes(m.code)));
   assert.equal(biz.find((m) => m.code === "quotes")?.ok, null);
   assert.equal(biz.find((m) => m.code === "steps:row")?.ok, true);
   assert.equal(shapeMenu(false, BIZ).find((m) => m.code === "quotes")?.ok, false);
@@ -278,15 +289,16 @@ test("blockShapesPrompt: 자리표시가 안 남고, 지금 모양·안 수·바
   assert.match(text, /steps:row 단계 흐름\(2~5개 · 한 줄 약 \d+자\)/);
   assert.match(text, /쓸 수 없는 모양\(근거 없음 — 고르지 않음\): .*quotes 인용 상자/);
   for (const code of MG_ONLY_SHAPES) assert.ok(!text.includes(code), code);
-  for (const code of ["table:result", "table:bars", "table:chevron", "table:ladder"]) assert.ok(text.includes(code), code);
+  for (const code of ["table:result", "table:bars", "table:chevron", "table:ladder", "table:roadmap"]) assert.ok(text.includes(code), code);
   assert.match(text, /원하는 모양: 정하지 않음/);
   assert.match(text, /「지금 블록\(JSON\)」/);
 });
 
-test("blockShapesPrompt(경영관리): 표 모양 4종이 바꿀 수 있는 모양에 들어가고, 고른 모양은 첫 안으로", () => {
+test("blockShapesPrompt(경영관리): 표 모양 4종이 바꿀 수 있는 모양에 들어가고(로드맵 표는 안 들어감), 고른 모양은 첫 안으로", () => {
   const text = blockShapesPrompt(reportBlockPromptsMg().prompts, mgSpec, { blockIndex: 1, request: "추진실적을 오른쪽에", want: "table:result" }, { card: "", extra: "" }, MG);
   assert.doesNotMatch(text, /\{\{/);
   for (const code of ["table:result", "table:bars", "table:chevron", "table:ladder", ...MG_ONLY_SHAPES]) assert.ok(text.includes(code), code);
+  for (const code of BIZ_ONLY_SHAPES) assert.ok(!text.includes(code), `경영관리 요청 글에 ${code} 없음`);
   assert.match(text, /원하는 모양: table:result 추진실적 열 표 — 첫 안은 반드시 이 모양/);
   assert.match(text, /다른 모양 1~3안/);
   assert.match(text, /덧붙인 요청: 추진실적을 오른쪽에/);

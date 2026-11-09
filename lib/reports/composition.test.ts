@@ -465,11 +465,15 @@ test("applyCompositionEdit: 순서·빼기·이야기 틀(목록 안만)·추진
 // ---------------------------------------------------------------------------
 // shapeChoices
 
-test("shapeChoices: 30개 모두 돌아오고, 근거 없는 이 과제만의 요소는 ok false, 지금 모양과 같은 모양은 deltaMm 0, 칸을 더 쓰는 모양은 deltaMm > 0, add 모드는 블록이 하나 느는 판면이라 deltaMm > 0", () => {
+test("shapeChoices: 31개 모두 돌아오고(로드맵 표 2026-11-09 — 경영관리 구성안은 로드맵 표를 뺀 30개), 근거 없는 이 과제만의 요소는 ok false, 지금 모양과 같은 모양은 deltaMm 0, 칸을 더 쓰는 모양은 deltaMm > 0, add 모드는 블록이 하나 느는 판면이라 deltaMm > 0", () => {
   const c = baseComposition({ blocks: [planBlock({ kind: "bullets", cells: 2, label: "A" })] });
   const e = editOf(c);
   const change = shapeChoices(c, e, { pos: 0, mode: "change" }, 1);
-  assert.equal(change.length, 30);
+  assert.equal(change.length, 31);
+  assert.ok(change.some((x) => x.code === "table:roadmap"));
+  const mgChange = shapeChoices({ ...c, mg: { parts: [] } as any }, e, { pos: 0, mode: "change" }, 1);
+  assert.equal(mgChange.length, 30);
+  assert.ok(!mgChange.some((x) => x.code === "table:roadmap"), "경영관리 구성안 도식 목록에는 로드맵 표 없음");
   const quotesChoice = change.find((x) => x.code === "quotes")!;
   assert.equal(quotesChoice.ok, false, "재료도 AI 추천도 없는 이 과제만의 요소");
   const sameChoice = change.find((x) => x.kind === "bullets")!;

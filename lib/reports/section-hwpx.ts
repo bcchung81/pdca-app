@@ -14,7 +14,7 @@ import { BORDER_WIDTH_MM } from "../hwp/hwp5.ts";
 import { type HwpxInput, hwpxFiles } from "../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, Bullet, Cell, CharPr, HwpDoc, Inline, LineType, PageDef, Para, ParaPr, Table } from "../hwp/model.ts";
 import { writeHwpxPackage } from "../hwpx/postprocess.ts";
-import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, blockTexts, figureMm, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, tableBars } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, blockTexts, figureMm, isChevronTable, isPanelCompare, ladderGroups, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
 import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableColsMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
 import { fontName } from "./report-fonts.ts";
@@ -1072,20 +1072,25 @@ class SectionWriter extends Writer {
     return this.table(colW, cells.flatMap(() => [lineH(), lineH()]), out, { outline: HAIR });
   }
 
-  /** 수치 표(기본·막대·쉐브론): 머리 줄 = items(첫째 = 행 머리 열), 열 폭은 판면 어림·화면과 같은 함수(fit.ts tableColsMm — 값 열은 그 비율로, 합 = 표 폭) */
+  /** 수치 표(기본·막대·쉐브론·로드맵): 머리 줄 = items(첫째 = 행 머리 열), 열 폭은 판면 어림·화면과 같은 함수(fit.ts tableColsMm — 값 열은 그 비율로, 합 = 표 폭) */
   gridTable(b: Block, w: number, wMm: number): Table {
     const [head, ...vals] = tableColsMm(b, wMm);
     const nv = Math.max(1, b.items.length - 1);
     const colW = this.cols(w, [mm(head), ...vals.map((fr) => ({ fr }))]);
-    const chev = b.variant === "chevron";
+    const chev = isChevronTable(b);
     const bars = b.variant === "bars";
+    // 로드맵(화면 section-html과 같은 판정 roadmapCols): 올해 열 머리 진하게·칸 옅은 바탕, 계획 열 머리 밝게(검은 글) + 「계획」
+    const road = b.variant === "roadmap" ? roadmapCols(b.items, b.year) : null;
     const cells: TCell[] = b.items.map((x, i): TCell => {
-      const dark = chev && i > 0;
+      const plan = Boolean(road && i > 0 && road.plan[i - 1]);
+      const dark = chev && i > 0 && !plan;
+      const fill = !dark ? G.g2 : road ? (road.now === i - 1 ? G.g5 : G.g4) : i === b.items.length - 1 ? G.g5 : G.g4;
+      const text = plan && roadmapPlanMark(x, true) ? `${x} ${ROADMAP_PLAN}` : x;
       return {
         r: 0,
         c: i,
-        paras: [this.p(x, dark ? { ...LABEL, color: WHITE } : LABEL, { align: "CENTER", line: pct(LH.tbl) })],
-        box: { t: THICK, b: HAIR, l: i ? { pt: ST.line.hair, color: G.g0 } : undefined, fill: dark ? (i === b.items.length - 1 ? G.g5 : G.g4) : G.g2 },
+        paras: [this.p(text, dark ? { ...LABEL, color: WHITE } : LABEL, { align: "CENTER", line: pct(LH.tbl) })],
+        box: { t: THICK, b: HAIR, l: i ? { pt: ST.line.hair, color: G.g0 } : undefined, fill },
         m: [px(4), px(4), px(1), px(1)],
       };
     });
@@ -1099,7 +1104,7 @@ class SectionWriter extends Writer {
         const cw = inner(colW[k + 1], [px(4), px(4), px(1), px(1)]);
         const len = lens[k];
         const paras = len == null ? (x ? [this.p(x, BODY, { align: chev ? "LEFT" : "CENTER", chars: true })] : [this.empty()]) : [this.barCell(x, len, cw)];
-        cells.push({ r: i + 1, c: k + 1, paras, box: { b: bottom, l: HAIR3 }, va: chev ? "TOP" : "CENTER", m: [px(4), px(4), px(1), px(1)] });
+        cells.push({ r: i + 1, c: k + 1, paras, box: { b: bottom, l: HAIR3, ...(road?.now === k ? { fill: G.g1 } : {}) }, va: chev ? "TOP" : "CENTER", m: [px(4), px(4), px(1), px(1)] });
       }
     });
     return this.table(colW, [lineH(F.label), ...b.cells.map(() => lineH())], cells);

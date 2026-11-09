@@ -344,7 +344,7 @@ function splitTask(sub: string): { no: string; name: string } {
 
 /**
  * 대상사업 머리 지도 줄(결정론): items[start]부터 다음 대상사업 첫 소항목(heads all) 앞까지를 실행과제(목차 subsection)로 묶음 — 조판 순서, 중복 없이.
- * 번호·이름은 초안(spec.task)이 있으면 그것, 없으면 목차 실행과제 글. 소항목은 초안의 「표지. 제목」(sub.mark·sub.title), 초안이 없으면 항목 이름
+ * 번호·이름은 초안(spec.task)이 있으면 그것, 없으면 목차 실행과제 글. 소항목은 초안의 「표지. [칩] 제목」(sub.mark·sub.chip·sub.title — 칩은 있을 때만), 초안이 없으면 항목 이름
  */
 export function bizMapRows(items: BusinessItem[], heads: HeadMode[], start: number): BizMapRow[] {
   const rows: BizMapRow[] = [];
@@ -362,7 +362,8 @@ export function bizMapRows(items: BusinessItem[], heads: HeadMode[], start: numb
       row.no = it.spec.task.no.trim();
       row.name = plainText(it.spec.task.title).trim();
     }
-    const sub = it.spec ? `${it.spec.sub.mark}. ${plainText(it.spec.sub.title).trim()}` : it.title.trim();
+    // 소항목 제목 앞 갈래 칩(sub.chip — 화면 제목과 같은 「[값] 」, fit.ts chipTitle)이 있으면 지도 줄에도 함께(실행과제 단위 하이퍼링크 — 2026-11-09). 칩이 없으면 예전 글 그대로
+    const sub = it.spec ? `${it.spec.sub.mark}. ${chipTitle(plainText(it.spec.sub.title).trim(), it.spec.sub.chip?.trim() || undefined)}` : it.title.trim();
     if (sub && !row.subs.includes(sub)) row.subs.push(sub);
   }
   return rows;

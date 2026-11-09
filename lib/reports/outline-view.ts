@@ -11,7 +11,7 @@ import { isOwnKind } from "./diagram-hints.ts";
 import { compositionSheetHtml, mgSheetHtml } from "./composition-sheet.ts";
 import { type Composition, blockBudgets, compositionFit, compositionIssues } from "./composition.ts";
 import { type HeadMode, canonicalBlock } from "./fit.ts";
-import { FRAMEWORKS, FULL_WIDTH_KINDS, SHAPES, type ShapeGroup, cellRange, defaultCells, shapeAvailability, shapeCode, shapeName } from "./frameworks.ts";
+import { BIZ_ONLY_SHAPES, FRAMEWORKS, FULL_WIDTH_KINDS, SHAPES, type ShapeGroup, cellRange, defaultCells, shapeAvailability, shapeCode, shapeName } from "./frameworks.ts";
 import { MG_FRAMEWORKS } from "./frameworks-mg.ts";
 import { FRAMEWORK_PATTERNS, patternSource } from "./framework-patterns.ts";
 import { patternBlockText } from "./framework-pick.ts";
@@ -139,6 +139,8 @@ export function outlineCatalog(mg = false): OutlineCatalog {
     const base = outlineCatalog();
     catalogMgCache ??= {
       ...base,
+      // 주요사업 전용 모양(로드맵 표 — BIZ_ONLY_SHAPES)은 경영관리 도식 목록에서 뺌
+      shapes: base.shapes.filter((s) => !BIZ_ONLY_SHAPES.includes(s.code)),
       frameworks: MG_FRAMEWORKS.map((f) => ({
         story: f.story,
         no: f.no,

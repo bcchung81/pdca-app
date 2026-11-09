@@ -427,6 +427,22 @@ test("머리 지도 줄: 대상사업 안 실행과제를 조판 순서·중복 
   assert.equal(bizMapLine(rows[0]), "1-1 스마트 검사 체계 가. 소항목 1-가 · 나. 소항목 1-나 · 다. 소항목 1-다");
 });
 
+// 2026-11-09 경평 초안 프레임워크 확장 계획 P1(실행과제 단위 하이퍼링크): 소항목 제목 앞 갈래 칩이 있으면 지도 줄에도 같은 「[값] 」
+test("머리 지도 줄: 소항목 제목 앞 갈래 칩(sub.chip)이 있으면 「표지. [칩] 제목」(화면 제목과 같은 말), 칩이 없거나 빈 글이면 예전 「표지. 제목」 그대로", () => {
+  const chip = (taskNo: string, c?: string) => {
+    const sp = mkSpec(taskNo, { total: 100 });
+    return { ...sp, sub: { ...sp.sub, ...(c !== undefined ? { chip: c } : {}) } };
+  };
+  const items = [mkItem("1-가", "A", "1-1. 스마트 검사", 0.5, chip("1-가", "국내")), mkItem("1-나", "A", "1-1. 스마트 검사", 0.5, chip("1-나")), mkItem("1-다", "A", "1-1. 스마트 검사", 0.5, chip("1-다", ""))];
+  const rows = bizMapRows(items, headModes(items), 0);
+  assert.deepEqual(rows[0].subs, ["가. [국내] 소항목 1-가", "나. 소항목 1-나", "다. 소항목 1-다"]);
+  assert.equal(bizMapLine(rows[0]), "1-1 스마트 검사 체계 가. [국내] 소항목 1-가 · 나. 소항목 1-나 · 다. 소항목 1-다");
+  assert.match(bizMapHtml(rows), /<span class="bz-map__subs">가\. \[국내\] 소항목 1-가 · 나\. 소항목 1-나/);
+  // 칩이 줄 글에 들면 높이 어림(bizMapMm)도 같은 글로 셈 — 칩 없는 지도와 같거나 큼
+  const bare = bizMapRows([mkItem("1-가", "A", "1-1. 스마트 검사", 0.5, chip("1-가"))], ["all"], 0);
+  assert.ok(bizMapMm(bizMapRows([items[0]], ["all"], 0)) >= bizMapMm(bare));
+});
+
 test("머리 지도 HTML: 머리 「추진개요」 + 실행과제 줄, 모든 글 이스케이프, 줄이 없으면 빈 글", () => {
   const html = bizMapHtml([{ no: "1-1", name: "A&B <과제>", subs: ['가. "제목"', "나. 둘"] }]);
   assert.equal(html, '<div class="bz-map"><p class="bz-map__h">추진개요</p><ul><li><b class="bz-map__no">1-1</b> A&amp;B &lt;과제&gt; <span class="bz-map__subs">가. &quot;제목&quot; · 나. 둘</span></li></ul></div>');

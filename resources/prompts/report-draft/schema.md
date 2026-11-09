@@ -35,7 +35,7 @@
 블록 머리(없으면 빈 문자열). define은 탭 글(「…란?」「왜 …?」), case는 사례 제목. 전후 비교(compare)·표(table)·칸 도식의 머리는 「무엇을」(대상 명사)이 든 한 줄로 쓰고, 라벨·표 머리(기존·개선·As-Is·To-Be)가 이미 전후를 말하면 빈 문자열로 둡니다. 「A → B」는 양쪽이 같은 대상을 가리킬 때만 씁니다(고정형 OTA → 이동형 OTA) — 대상이 다른 두 말을 화살표로만 잇거나(✗ 사후 확인 → AI 사전예방 전환) 화살표 뒤에 「전환」을 겹쳐 쓰지 않고, 대상을 넣어 풉니다(✓ (대상) 점검을 사후 확인에서 AI 사전예방으로)
 
 <!-- @block.variant -->
-모양: cards=plus|arrow|plain|vs(2칸), compare=table|panels|diag(현황·문제 ▶ 추진방향 짝), steps=row|zigzag, timeline=chevron|dots, table=빈 문자열(구분·수치 표)|result(추진실적 열)|bars(값 옆 막대)|chevron(쉐브론 머리)|ladder(2단 라벨 — 도식 고르기의 「표 모양」대로 칸을 채움), 그 밖은 빈 문자열
+모양: cards=plus|arrow|plain|vs(2칸), compare=table|panels|diag(현황·문제 ▶ 추진방향 짝), steps=row|zigzag, timeline=chevron|dots, table=빈 문자열(구분·수치 표)|result(추진실적 열)|bars(값 옆 막대)|chevron(쉐브론 머리)|ladder(2단 라벨)|roadmap(로드맵 — 열 = 단계·연도, 여러 해 단계 계획과 올해 단계가 근거에 있을 때만, 올해 뒤 열은 계획이라 실적처럼 쓰지 않음) — 도식 고르기의 「표 모양」대로 칸을 채움, 그 밖은 빈 문자열
 
 <!-- @block.text -->
 banner·band·define·subhead 본문, strategy의 목표 띠·pdca의 환류 띠 한 줄(그 밖은 빈 문자열)

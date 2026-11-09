@@ -81,6 +81,7 @@ const SAMPLES: Record<string, Block> = {
   "table:result": block({ kind: "table", variant: "result", cells: [cell("가", ["내용1"]), cell("나", ["내용2", "내용3"])], series: [{ label: "검사 건수", value: "1,240건" }], text: "목표 초과" }),
   "table:bars": block({ kind: "table", variant: "bars", items: ["구분", "’24", "’25", "’26"], cells: [cell("건수", ["10건", "20건", "40건"]), cell("비율", ["50%", "글자", "100%"])] }),
   "table:chevron": block({ kind: "table", variant: "chevron", items: ["구분", "1단계", "2단계", "3단계"], cells: [cell("내용", ["진단 내용", "설계 내용", "실행 내용"])] }),
+  "table:roadmap": block({ kind: "table", variant: "roadmap", year: 2026, items: ["구분", "Step 1(’25)", "Step 2(’26)", "Step 3(’27)"], cells: [cell("추진내용", ["기반 마련", "확산", "고도화"]), cell("기대 효과", ["", "적용 확대", "전면 적용"])] }),
   "table:ladder": block({ kind: "table", variant: "ladder", cells: [cell("큰 라벨", ["가"], { tag: "하위1" }), cell("", ["나"], { tag: "하위2" }), cell("다른", ["다"], { tag: "하위3" })] }),
   strategy: block({ kind: "strategy", text: "목표 띠 글", items: ["목표", "전략", "과제", "지표"], cells: [cell("전략A", ["과제1"], { tag: "S1", note: "지표1" }), cell("전략B", ["과제2"], { note: "지표2" }), cell("전략C", ["과제3"])] }),
   pdca: block({ kind: "pdca", text: "환류 글", cells: four }),
@@ -314,8 +315,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 연회색 바탕(g2)·왼쪽 정렬을 이어 붙이고 margin 4px 0 0 → 0(뒤 「.k-frame :where(p){margin:0}」에 져 화면은 늘 0이던 값) — 이 두 줄을 옛 한 줄로 되돌린 글이 옛 고정값 a62585f4…과 같음을 확인
 // 2026-11-03 경영관리 블록 위 제목을 프레임워크 「□ 소제목」 줄로(1bdb720e… → fb80a6e5…): .k-dg-title 띠 규칙 바로 뒤에 주석 한 줄 + .k-dg-title--mg 규칙 두 줄
 // (REPORT_STYLE.titleMark — 소제목 글꼴·바깥 여백 6px 0 0·내어쓰기 1.2em·바탕 없음)을 더함. 띠 규칙은 그대로 — 이 세 줄을 뺀 글이 옛 고정값 1bdb720e…과 같음을 확인
+// 2026-11-09 로드맵 표(table:roadmap — 경평 초안 프레임워크 확장 계획 P1)로(fb80a6e5… → 7f287ee3…): .k-tbl--chev td 규칙 바로 뒤에 주석 한 줄 + .k-road 규칙 네 줄을 더함.
+// 그 밖 규칙은 그대로 — 이 다섯 줄을 뺀 글이 옛 고정값 fb80a6e5…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "fb80a6e5bf263652da12a9cfcd42841e7e4352a0264ea304d0b76b9846990ec0");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "7f287ee36a46116c92c07420b15ffafac0843256737ff0e652cb0e271f333d51");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {

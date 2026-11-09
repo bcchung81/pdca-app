@@ -488,6 +488,11 @@ ${fontSpacingCss()}
   clip-path:polygon(0 0,calc(100% - 2.5mm) 0,100% 50%,calc(100% - 2.5mm) 100%,0 100%,2.5mm 50%)}
 .kca-dg-doc .k-chev--last > span{background:var(--k-g5)}
 .kca-dg-doc table.k-tbl--chev td{text-align:left;vertical-align:top}
+/* 로드맵 표(2026-11-09 — ⑲ 로드맵형): 쉐브론 머리 그대로 + 올해 열(머리 진하게·칸 옅은 바탕)·뒤 열(머리 밝게 + 「계획」 표지 — 폭은 fit.ts ROADMAP_MARK_PAD_MM). 글 굵기·크기는 바꾸지 않음(판면 어림 그대로) */
+.kca-dg-doc .k-road--now > span{background:var(--k-g5)}
+.kca-dg-doc .k-road--plan > span{background:var(--k-g2);color:var(--k-ink)}
+.kca-dg-doc .k-road__plan{display:inline-block;padding:0 2px;border:var(--k-hair) solid currentColor;border-radius:2pt;line-height:1.1}
+.kca-dg-doc table.k-tbl--road td.k-road__now{background:var(--k-g1)}
 .kca-dg-doc table.k-tbl--lad th.k-lad__g{background:var(--k-g2);border-right:var(--k-hair) solid var(--k-g4)}
 .kca-dg-doc table.k-tbl--lad th.k-lad__s{background:var(--k-g1);text-align:left;border-right:var(--k-hair) solid var(--k-g3)}
 /* 배치(2026-10-12 — lib/reports/layout.ts): 단 띠 = 어두운 단 이름 탭 + 판을 가로지르는 아래 선(높이는 fit.ts stageHeadMm), 가로 반씩 = 두 칸 나란히(사이는 layout.ts PAIR_GAP_MM) */

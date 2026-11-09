@@ -12,9 +12,9 @@ import { outlineCatalog, outlineView, shapeTable } from "./outline-view.ts";
 // ---------------------------------------------------------------------------
 // shapeTable
 
-test("shapeTable: 30줄(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 2026-10-13), full = FULL_WIDTH_KINDS, unit이 종류대로(compare·table 행, bullets·case 줄, chart 막대, qa 쌍, 그 밖 칸)", () => {
+test("shapeTable: 31줄(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 2026-10-13, 로드맵 표는 2026-11-09), full = FULL_WIDTH_KINDS, unit이 종류대로(compare·table 행, bullets·case 줄, chart 막대, qa 쌍, 그 밖 칸)", () => {
   const rows = shapeTable();
-  assert.equal(rows.length, 30);
+  assert.equal(rows.length, 31);
   for (const r of rows) assert.equal(r.full, FULL_WIDTH_KINDS.includes(r.kind), r.code);
   const byCode = Object.fromEntries(rows.map((r) => [r.code, r]));
   assert.equal(byCode["compare:table"].unit, "행");
@@ -29,9 +29,12 @@ test("shapeTable: 30줄(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 
 // ---------------------------------------------------------------------------
 // outlineCatalog
 
-test("outlineCatalog: shapes 30개·frameworks 17개(16종 + 섞음 — ⑨~⑪은 2026-10-10, ⑫는 2026-10-13, ⑬~⑯은 2026-11-04), 섞음을 뺀 틀과 모든 모양의 html이 kca-dg-doc을 담고 비지 않음, css에 REPORT_CSS, 캐시", () => {
+test("outlineCatalog: shapes 31개(경영관리는 로드맵 표를 뺀 30개)·frameworks 17개(16종 + 섞음 — ⑨~⑪은 2026-10-10, ⑫는 2026-10-13, ⑬~⑯은 2026-11-04), 섞음을 뺀 틀과 모든 모양의 html이 kca-dg-doc을 담고 비지 않음, css에 REPORT_CSS, 캐시", () => {
   const cat = outlineCatalog();
-  assert.equal(cat.shapes.length, 30);
+  assert.equal(cat.shapes.length, 31);
+  const mgShapes = outlineCatalog(true).shapes;
+  assert.equal(mgShapes.length, 30);
+  assert.ok(!mgShapes.some((x) => x.code === "table:roadmap"));
   assert.equal(cat.frameworks.length, 17);
   for (const s of cat.shapes) {
     assert.ok(s.html.length > 0, s.code);

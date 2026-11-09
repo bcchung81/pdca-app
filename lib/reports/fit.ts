@@ -2,7 +2,7 @@
 // 칸 폭·여백·글꼴은 lib/reports/section-css.ts(2025 최종본 실측)와 같은 값입니다. CSS를 바꾸면 여기 SLOT·높이 상수도 함께 바꿉니다.
 // 쓰임: ① 요청 글의 「판면 예산」(칸마다 한 줄 글자 수·쪽 줄 수) ② 초안 뒤 높이 어림 → 넘치면 경고·맞추기 요청.
 
-import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, figureMm, isGridTable, isPanelCompare, ladderGroups, resultHeads, resultPerRow, resultTimeText } from "./blocks.ts";
+import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, ROADMAP_PLAN, figureMm, isChevronTable, isGridTable, isPanelCompare, ladderGroups, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { type LayoutBlock, type LayoutGroup, PAIR_GAP_MM, cleanSpan, containerOf, layoutGroups } from "./layout.ts";
 import { MGMT_TRACK } from "../tracks/index.ts";
 import { REPORT_STYLE } from "./section-css.ts";
@@ -226,8 +226,9 @@ export const TABLE_COL = { headMin: 18, headCap: 0.4, valueMinChars: 4, slack: 1
  * ③ 값 열 = 남은 폭을 자연 폭(최소 valueMin)에 비례해 나눔 — 열 최소에 못 미치는 열은 최소로 묶고 나머지를 다시 비례 배분. 값이 모두 짧으면 모두 최소 → 균등
  * 열 수 = 머리 줄(items)이 있으면 items − 1, 없으면 첫 행 칸 수(slotOf가 items 없이 부를 때)
  */
-export function tableColsMm(b: Pick<Block, "variant" | "cells"> & Partial<Pick<Block, "items">>, width: number): number[] {
+export function tableColsMm(b: Pick<Block, "variant" | "cells"> & Partial<Pick<Block, "items" | "year">>, width: number): number[] {
   const items = b.items ?? [];
+  const road = roadmapHeadsMm(b);
   const nv = Math.max(1, items.length ? items.length - 1 : (b.cells[0]?.bullets.length ?? 2));
   const pad = 8 * PX;
   const mmOf = (s: string | undefined, pt: number, dotum: boolean, label: boolean) => (s?.trim() ? textEm(s.trim(), dotum, label) * pt * PT : 0);
@@ -241,7 +242,7 @@ export function tableColsMm(b: Pick<Block, "variant" | "cells"> & Partial<Pick<B
   // ③ 값 열: 머리 줄 글(쉐브론은 화살표 안 여백)·칸 글(막대 표는 막대 칸) 중 긴 것
   const rest = Math.max(0, width - head);
   const need = Array.from({ length: nv }, (_, k) => {
-    const th = mmOf(items[k + 1], LABEL_PT, true, true) + (b.variant === "chevron" ? TABLE_SHAPE_MM.chevronPad : pad);
+    const th = mmOf(road.text[k] ?? items[k + 1], LABEL_PT, true, true) + road.extra[k] + (b.variant === "chevron" || b.variant === "roadmap" ? TABLE_SHAPE_MM.chevronPad : pad);
     const td = longest(b.cells.map((c) => c.bullets[k]), BODY_PT, false, false) + pad + bar;
     return Math.max(valueMin, Math.max(th, td) + TABLE_COL.slack);
   });
@@ -271,6 +272,20 @@ export function tableColsMm(b: Pick<Block, "variant" | "cells"> & Partial<Pick<B
  * 큰 수치(15pt)를 세로로 쌓던 칸을 「뜻 수치」 본문 크기 줄로 바꿔 넓을 까닭이 없어짐 — 32mm = 사다리 칸 150mm의 21%·전폭 170mm의 19%
  */
 export const TABLE_SHAPE_MM = { result: 32, bar: 14, barGap: 1.5, ladderBig: 24, ladderSub: 30, chevronPad: 7 } as const;
+/** 로드맵 표 「계획」 표지(section-css .k-road__plan — 머리 글 뒤 빈칸 + 좌우 안 여백 2px씩·테두리)의 글 밖 폭(mm) */
+export const ROADMAP_MARK_PAD_MM = 4 * PX + 0.2;
+/**
+ * 로드맵 표(table:roadmap) 값 열 머리의 그려지는 글(「계획」 표지가 붙으면 「머리 계획」)과 표지 글 밖 폭 — 그리기(section-html)와 같은 판정(roadmapCols·roadmapPlanMark).
+ * 로드맵이 아니면 빈 배열(예전 셈 그대로)
+ */
+function roadmapHeadsMm(b: Pick<Block, "variant"> & Partial<Pick<Block, "items" | "year">>): { text: string[]; extra: number[] } {
+  const items = b.items ?? [];
+  if (b.variant !== "roadmap") return { text: [], extra: items.slice(1).map(() => 0) };
+  const { plan } = roadmapCols(items, b.year);
+  const marked = items.slice(1).map((x, k) => roadmapPlanMark(x, plan[k]));
+  return { text: items.slice(1).map((x, k) => (marked[k] ? `${x} ${ROADMAP_PLAN}` : x)), extra: marked.map((m) => (m ? ROADMAP_MARK_PAD_MM : 0)) };
+}
+
 /** 추진실적 열 표의 왼쪽 행 머리 열(행 머리가 하나라도 있을 때) */
 export const resultRowHeadMm = (width: number) => tableRowHeadMm(width - TABLE_SHAPE_MM.result);
 
@@ -384,7 +399,7 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
       const [rowHead, ...vals] = tableColsMm(b, width);
       const cell = (width - rowHead) / vals.length;
       if (b.variant === "bars") return { body: cell - pad(8) - TABLE_SHAPE_MM.bar - TABLE_SHAPE_MM.barGap, head: cell - pad(8), note: rowHead - pad(8) };
-      if (b.variant === "chevron") return { body: cell - pad(8), head: cell - TABLE_SHAPE_MM.chevronPad, note: rowHead - pad(8) };
+      if (isChevronTable(b)) return { body: cell - pad(8), head: cell - TABLE_SHAPE_MM.chevronPad, note: rowHead - pad(8) };
       return { body: cell - pad(8), head: cell - pad(8), note: rowHead - pad(8) };
     }
     default:
@@ -604,12 +619,14 @@ export function blockHeight(b: Block, width: number, centerExtra = 0, mg = false
           return n + Math.max(rows, lineCount(g.head, s.head, 10.4, true) * TH + 2 * PX);
         }, 0) + 1.2;
       }
-      // 열마다 폭(tableColsMm — 그리기와 같은 값). 쉐브론 머리: 화살표 칸 위아래 여백 1px씩 더(section-css .k-chev)
+      // 열마다 폭(tableColsMm — 그리기와 같은 값). 쉐브론 머리(로드맵 포함): 화살표 칸 위아래 여백 1px씩 더(section-css .k-chev), 로드맵 계획 열은 「계획」 표지까지 한 머리 글
       const cols = tableColsMm(b, width);
       const colAt = (k: number) => cols[k + 1] ?? cols.at(-1)!;
-      const headW = (k: number) => colAt(k) - (b.variant === "chevron" ? TABLE_SHAPE_MM.chevronPad : 8 * PX);
+      const chev = isChevronTable(b);
+      const road = roadmapHeadsMm(b);
+      const headW = (k: number) => colAt(k) - (chev ? TABLE_SHAPE_MM.chevronPad : 8 * PX) - (road.extra[k] ?? 0);
       const bodyW = (k: number) => colAt(k) - 8 * PX - (b.variant === "bars" ? TABLE_SHAPE_MM.bar + TABLE_SHAPE_MM.barGap : 0);
-      const head = max([lineCount(b.items[0] ?? "", s.note, 10.4, true), ...b.items.slice(1).map((x, k) => lineCount(x, headW(k), 10.4, true))]) * TH + 2 * PX + (b.variant === "chevron" ? 2 * PX : 0);
+      const head = max([lineCount(b.items[0] ?? "", s.note, 10.4, true), ...b.items.slice(1).map((x, k) => lineCount(road.text[k] ?? x, headW(k), 10.4, true))]) * TH + 2 * PX + (chev ? 2 * PX : 0);
       const body = b.cells.reduce((n, c) => n + Math.max(lineCount(c.head, s.note, 10.4, true) * TH, max(c.bullets.map((x, k) => bodyLines(x, bodyW(k)) * L))) + 2 * PX, 0);
       return blockTitleMm(b.title, width, mg) + head + body + 1.2;
     }
@@ -1217,6 +1234,12 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       // 쉐브론 머리 표: 단계 머리 3개 + 행마다 단계별 내용(약 1.5줄)
       if (variant === "chevron") {
         const b = { ...base, items: ["구분", "현황", "개선방향", "적용 결과"], cells: Array.from({ length: Math.min(4, count) }, () => ({ head: "행 머리", tag: "", bullets: ["", "", ""], note: "" })) };
+        const sl = slotOf(b, inner(b));
+        return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => fill(sl.body, lines ?? per(sl.body, 1.5))) })) };
+      }
+      // 로드맵 표: 단계·연도 머리 3개(가운데가 올해 — 연도 없이도 정해지게 「올해」, 마지막은 「계획」 표지) + 추진내용·산출·기대 효과 행마다 단계별 내용(약 1.5줄)
+      if (variant === "roadmap") {
+        const b = { ...base, items: ["구분", "Step 1(’25)", "Step 2(올해)", "Step 3(’27)"], cells: Array.from({ length: Math.min(4, count) }, (_, i) => ({ head: ["추진내용", "산출", "기대 효과", "추진체계"][i], tag: "", bullets: ["", "", ""], note: "" })) };
         const sl = slotOf(b, inner(b));
         return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: c.bullets.map(() => fill(sl.body, lines ?? per(sl.body, 1.5))) })) };
       }

@@ -10,7 +10,7 @@ import type { Block, BlockKind } from "./blocks.ts";
 import { mgSpecHeight } from "./business-layout.ts";
 import { OWN_KINDS, type DiagramHint, isOwnKind } from "./diagram-hints.ts";
 import { PAGE_MM, fitReport } from "./fit.ts";
-import { type Availability, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, type EvidenceSource, SHAPES, type ShapeGroup, shapeAvailability, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
+import { type Availability, BIZ_ONLY_SHAPES, BIZ_RETIRED_SHAPES, BIZ_RETIRED_WHY, type EvidenceSource, SHAPES, type ShapeGroup, shapeAvailability, shapeCode, shapeName, shapeOf } from "./frameworks.ts";
 import type { ReportSectionSpec } from "./section.ts";
 
 /**
@@ -53,6 +53,7 @@ export function shapeAllowed(before: Pick<Block, "kind" | "variant">, kind: stri
   const info = shapeOf(code);
   if (!info) return { ok: false, why: `모르는 모양(${code})입니다` };
   if (!rules.mg && BIZ_RETIRED_SHAPES.includes(code)) return { ok: false, why: `「${info.name}」 — ${BIZ_RETIRED_WHY}` };
+  if (rules.mg && BIZ_ONLY_SHAPES.includes(code)) return { ok: false, why: `「${info.name}」은 주요사업 초안에서만 씁니다` };
   if (isOwnKind(info.kind) && info.kind !== before.kind) {
     const a = rules.avail[info.kind];
     if (!a?.ok) return { ok: false, why: `「${info.name}」은 이 과제만의 요소라 근거가 있어야 씁니다 — ${a?.why || "근거 재료가 없음"}` };
@@ -101,9 +102,9 @@ export interface ShapeMenuItem {
   why: string;
 }
 
-/** 이 트랙에서 고를 수 있는 모양 목록(경영관리 전용 표 모양·핵심 수치 띠는 경영관리만). rules가 없으면 이 과제만의 요소는 ok = null */
+/** 이 트랙에서 고를 수 있는 모양 목록(핵심 수치 띠는 경영관리만, 로드맵 표는 주요사업만 — BIZ_ONLY_SHAPES). rules가 없으면 이 과제만의 요소는 ok = null */
 export function shapeMenu(mg: boolean, rules: ShapeRules | null): ShapeMenuItem[] {
-  return SHAPES.filter((s) => mg || !MG_ONLY_SHAPES.includes(s.code)).map((s) => {
+  return SHAPES.filter((s) => (mg ? !BIZ_ONLY_SHAPES.includes(s.code) : !MG_ONLY_SHAPES.includes(s.code))).map((s) => {
     if (!isOwnKind(s.kind)) return { code: s.code, name: s.name, group: s.group, use: s.use, ok: true, why: "" };
     const a = rules?.avail[s.kind];
     return { code: s.code, name: s.name, group: s.group, use: s.use, ok: a ? a.ok : null, why: a?.why ?? "근거는 요청 때 확인" };
