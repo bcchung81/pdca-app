@@ -1,4 +1,4 @@
-// 경평 초안 「짜임 사전」(순수): 2025 최종본·주요사업 프레임워크 분석에서 뽑은 이야기 틀 16종(⑬~⑯은 2026-11-04) + 섞음(resources/prompts/report-draft/stories.md)과
+// 경평 초안 「짜임 사전」(순수): 2025 최종본·주요사업 프레임워크 분석에서 뽑은 이야기 틀 20종(⑬~⑯은 2026-11-04, ⑰~⑳은 2026-11-09) + 섞음(resources/prompts/report-draft/stories.md)과
 // 도식(블록 모양) 30가지(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 2026-10-13)(블록 사전 report-draft/blocks.md · 도식 카탈로그 docs/analysis/diagram-catalog-2025.html — 전략체계도·PDCA 순환은 2026-10-09)를
 // 담당자가 구성안에서 골라 쓰게 한 데이터(2026-09-28 사용자 결정 「분석한 프레임워크 중 선택 · AI 추천 도식을 골라 수정」).
 // 쓰는 곳: 구성안 화면의 틀 갤러리·블록 도식 고르기(견본 그림은 서버가 lib/reports/section-html.ts로 그림), 서버의 편집 검증(칸 범위·근거 조건).
@@ -20,7 +20,7 @@ export interface FrameworkBlock {
 
 export interface Framework {
   story: Story;
-  /** 틀 번호(①~⑯, 섞음은 빈 글) */
+  /** 틀 번호(①~⑳, 섞음은 빈 글) */
   no: string;
   /** 어울리는 과제 한 줄 */
   fit: string;
@@ -145,6 +145,36 @@ export const FRAMEWORKS: Framework[] = [
     fit: "데이터를 모아 분석한 결과를 정책·기준·배분 결정에 반영한 과제(⑪은 현장 문제를 조사해 맞춤 대응, 이 틀은 쌓은 데이터가 의사결정을 바꾼 경로)",
     blocks: [{ kind: "cards", variant: "plain", label: "데이터 현황" }, { kind: "table", label: "분석 결과" }, { kind: "steps", variant: "row", label: "정책 반영" }, { kind: "compare", variant: "table", label: "반영 효과" }],
     example: "2025 예시 없음(2026-11-04 추가)",
+  },
+  // ⑰~⑳은 2026-11-09 성과관리팀 교육 자료(주요사업 Do 파트 작성교육·적용사례)의 분류표에서 더함(경평 초안 프레임워크 확장 계획 P1) — KCA 2025 예시 없음.
+  // ⑰·⑱·⑳은 갈래 반복 틀(blocks.ts BRANCH_REPEAT_STORIES — 갈래 행끼리 같은 모양 반복 허용)
+  {
+    story: "핵심키워드 연결형",
+    no: "⑰",
+    fit: "추진과제·키워드 2~4갈래로 실행한 과제 — 첫 칸 도식의 번호(❶❷❸)가 아래 갈래 행 라벨로 이어짐(⑩은 갈래 넷 이상을 표 하나로, 이 틀은 갈래마다 한 행씩 펼침)",
+    blocks: [{ kind: "cards", variant: "plain", label: "추진과제" }, { kind: "steps", variant: "row", label: "❶ 키워드" }, { kind: "steps", variant: "row", label: "❷ 키워드" }, { kind: "steps", variant: "row", label: "❸ 키워드" }],
+    example: "2025 예시 없음(2026-11-09 추가)",
+  },
+  {
+    story: "문제·원인별 해결형",
+    no: "⑱",
+    fit: "문제의 원인이 둘 이상이고 원인마다 조치가 다른 과제 — 원인 ①②③ → 원인별 조치 → 조치 실적(③은 이해관계·제도 쟁점의 조정, ⑪은 조사·진단으로 찾은 문제의 맞춤 대응)",
+    blocks: [{ kind: "cards", variant: "plus", label: "문제·원인" }, { kind: "table", variant: "chevron", label: "원인별 조치" }, { kind: "table", variant: "result", label: "조치 실적" }],
+    example: "2025 예시 없음(2026-11-09 추가)",
+  },
+  {
+    story: "로드맵형",
+    no: "⑲",
+    fit: "다년 계획 중 올해 단계를 완료한 과제 — 전체 로드맵 → 올해 추진 → 올해 실적(①은 이미 지나온 연구→개발→확산 경과, ⑧은 해마다 쌓은 연혁, 이 틀은 앞으로의 단계 중 올해 자리)",
+    blocks: [{ kind: "table", variant: "roadmap", label: "전체 로드맵" }, { kind: "steps", variant: "row", label: "올해 추진" }, { kind: "table", variant: "result", label: "올해 실적" }],
+    example: "2025 예시 없음(2026-11-09 추가)",
+  },
+  {
+    story: "대상별 맞춤형",
+    no: "⑳",
+    fit: "수혜 대상(기업 규모·지역·취약계층 등)마다 지원을 달리한 과제 — 대상별 제약 → 맞춤 지원 → 대상별 변화(⑦은 한 과제의 여러 가치, 이 틀은 여러 대상)",
+    blocks: [{ kind: "cards", variant: "plain", label: "대상별 제약" }, { kind: "table", variant: "ladder", label: "맞춤 지원" }, { kind: "table", variant: "bars", label: "대상별 변화" }],
+    example: "2025 예시 없음(2026-11-09 추가)",
   },
   // 섞음을 고르면 AI가 주 틀 하나 + 보조 틀 하나를 고름(2026-10-09 — 구성안 답에는 섞음이 없음, report-outline/request.md story.mix)
   { story: "섞음", no: "", fit: "두 틀을 함께 — AI가 뼈대 틀 하나와 한 행만 빌려 올 보조 틀 하나를 고름", blocks: [], example: "" },

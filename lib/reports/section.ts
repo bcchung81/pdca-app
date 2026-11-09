@@ -26,6 +26,7 @@ import { type PriorPick, priorLabel } from "./prior.ts";
 import type { MgDraftMeta } from "./mg-types.ts";
 import type { LooseJson } from "../loose-json.ts";
 import { textShapeWarnings } from "./text-shape.ts";
+import { type StoryHint, storyHints } from "./story-hints.ts";
 import { calcExplained } from "./number-calc.ts";
 import { arrowTitleWarnings, bareBoxWarnings, subTitleIssues } from "./title-checks.ts";
 
@@ -476,6 +477,15 @@ export function sectionPrompt(
  * 도식·틀 후보의 신호를 볼 글: 카드 + 전년 절 + 숫자 근거로 인정하는 첨부만(이 과제에 연결하지 않은 보고서 자료의 다른 과제 내용이 도식·틀로 새지 않게)
  */
 export const hintSource = (card: Json, prior: PriorPick[], files: ReportFile[]) => [inspectionCardText(card), ...prior.map((x) => x.section.text), ...files.filter((f) => f.numberEvidence !== false).map((f) => f.text)].join("\n");
+
+/**
+ * 이야기 틀 후보(story-hints.ts)의 신호 — 전년 절을 뺀 카드 본문(cardOutline — AX 연계 붙임은 뺌) + 숫자 근거로 인정하는 첨부와, 전년 절 없이 만든 도식 후보 종류만 봄
+ * (2026-11-09 P1-2: 전년 절 글이 연도 흐름·전후 비교 후보를 켜 ①·⑧·⑨로 끌고, AX 붙임 글이 AI가 곁가지인 카드도 ⑫로 열었음). 요청 글에 싣는 도식 후보는 지금처럼 전년 절까지 봄(sectionHints)
+ */
+export function storyHintsOf(card: Json, files: ReportFile[], lens: LensRef[], actuals: YearActuals, year: number, siblingStories: string[] = []): StoryHint[] {
+  const text = [cardOutline(card), ...files.filter((f) => f.numberEvidence !== false).map((f) => f.text)].join("\n");
+  return storyHints(sectionHints(card, [], files, lens, actuals, year), text, siblingStories);
+}
 
 /**
  * 도식 후보(요청 글과 검증이 같은 값을 씀): 카드·전년 절·첨부 글의 신호 + '25 평가위원 지적 원문(인용 상자) + 같은 지표의 시점별 값(막대 —

@@ -46,8 +46,8 @@ export function firstBlockStats(firsts: string[]): { firstBlocks: Record<string,
   return { firstBlocks: sorted(m), bulletsShare: round3((m.get("bullets") ?? 0) / firsts.length) };
 }
 
-/** 표 모양 4종(2026-10-12에 더한 table 모양) */
-export const NEW_TABLE_SHAPES = ["table:result", "table:bars", "table:chevron", "table:ladder"] as const;
+/** 표 모양 4종(2026-10-12에 더한 table 모양) + 로드맵 표(2026-11-09 — 주요사업 ⑲ 로드맵형) */
+export const NEW_TABLE_SHAPES = ["table:result", "table:bars", "table:chevron", "table:ladder", "table:roadmap"] as const;
 
 export interface ShapeCardStat {
   id: string;

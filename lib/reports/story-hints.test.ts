@@ -4,14 +4,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { diagramHints } from "./diagram-hints.ts";
 import { MAIN_STORIES, storyHints, storyHintsPrompt } from "./story-hints.ts";
+import { BRANCH_REPEAT_STORIES } from "./blocks.ts";
 import { frameworkOf } from "./frameworks.ts";
-import { hintSource, sectionHints } from "./section.ts";
+import { hintSource, sectionHints, storyHintsOf } from "./section.ts";
 
 const hintsOf = (text: string, siblings: string[] = []) => storyHints(diagramHints(text), text, siblings);
 const top = (text: string, siblings: string[] = []) => hintsOf(text, siblings)[0]?.story;
 
-test("MAIN_STORIES: 섞음을 뺀 16종(⑬~⑯은 2026-11-04)이고 틀 사전(FRAMEWORKS)에 모두 있음", () => {
-  assert.equal(MAIN_STORIES.length, 16);
+test("MAIN_STORIES: 섞음을 뺀 20종(⑬~⑯은 2026-11-04, ⑰~⑳은 2026-11-09)이고 틀 사전(FRAMEWORKS)에 모두 있음, 갈래 반복 틀은 목록 안의 이름", () => {
+  assert.equal(MAIN_STORIES.length, 20);
+  for (const s of BRANCH_REPEAT_STORIES) assert.ok((MAIN_STORIES as readonly string[]).includes(s), s);
   assert.ok(!(MAIN_STORIES as readonly string[]).includes("섞음"));
   for (const s of MAIN_STORIES) assert.ok(frameworkOf(s)?.blocks.length, s);
 });
@@ -27,6 +29,7 @@ test("현장 목소리형: 말풍선 원문이 있으면 1순위, 민원·불안
   const wordsOnly = hintsOf("국민 불안이 컸다. 민원 120건을 처리했다.").find((h) => h.story === "현장 목소리형");
   assert.ok(wordsOnly);
   assert.match(wordsOnly!.why, /원문은 아직 없음/);
+  assert.equal(hintsOf("민원·간담회·건의·애로·고충을 의견수렴으로 모았다").find((h) => h.story === "현장 목소리형")?.score, 2, "원문이 없으면 낱말이 많아도 2점까지(말풍선을 지어낼 틈을 막음)");
   assert.ok(!hintsOf("올해 민원 120건을 처리했다.").some((h) => h.story === "현장 목소리형"));
 });
 
@@ -66,13 +69,23 @@ test("연구 → 개발 → 확산 단계 → 단계 전개형", () => {
   assert.equal(top("’24년 연구, ’25년 개발·시범, ’26년 전국 확산. 1단계 수집 2단계 학습 3단계 판독"), "단계 전개형");
 });
 
-test("⑨ 기존과 개선이 한 줄에 든 글 → 기존→개선형, '25 지적은 문 신호가 아니라 약한 신호(지적만 있으면 후보 아님)", () => {
+// '25 지적 신호는 2026-11-09 P1-2에서 뺌 — 운영 56장 중 53장에 걸려 변별력 없이 ⑨의 바닥 점수만 올렸음(예전 시험은 「지적이 있으면 이유에 적음」을 봤음)
+test("⑨ 기존과 개선이 한 줄에 든 글 → 기존→개선형, '25 지적은 신호가 아님(지적만 있으면 후보 아님 · 지적이 있어도 점수·이유 그대로)", () => {
   assert.equal(top("기존 수기 입력 방식을 개선해 자동 연계로 전환했다"), "기존→개선형");
   const critOnly = storyHints(diagramHints("검사 업무를 추진했다.", { critiques: ["검사 체계 보완 필요"] }), "검사 업무를 추진했다.");
   assert.ok(!critOnly.some((h) => h.story === "기존→개선형"));
   const both = "기존 수기 입력 방식을 개선해 자동 연계로 전환했다";
   const withCrit = storyHints(diagramHints(both, { critiques: ["검사 체계 보완 필요"] }), both).find((h) => h.story === "기존→개선형")!;
-  assert.match(withCrit.why, /지적을 고친 과제/);
+  const without = hintsOf(both).find((h) => h.story === "기존→개선형")!;
+  assert.equal(withCrit.score, without.score);
+  assert.doesNotMatch(withCrit.why, /지적/);
+});
+
+test("⑨ 새 문 신호: 「기존」과 「수치 → 수치」 표기가 다른 줄에 있어도 후보(2026-11-09)", () => {
+  const h = hintsOf("do.lines.0 | 기존 방식의 한계를 점검했다\ndo.lines.1 | 처리 기간 10일 → 3일").find((x) => x.story === "기존→개선형");
+  assert.ok(h);
+  assert.match(h!.why, /수치 → 수치/);
+  assert.ok(!hintsOf("do.lines.0 | 처리 기간 10일 → 3일").some((x) => x.story === "기존→개선형"), "「기존」 낱말 없이 수치 화살표만이면 아님");
 });
 
 test("⑩ 추진내용 갈래 표지(do.lines의 「∙ (…)」) 4개 이상 → 구분표 중심형, 3개면 후보 아님(문 신호 없음)", () => {
@@ -87,17 +100,20 @@ test("⑪ 현황분석·조사·진단 낱말 3종 이상 → 현황분석→대
   assert.ok(!hintsOf("실태조사와 현장조사를 했다").some((h) => h.story === "현황분석→대응형"));
 });
 
+// 2026-11-09 P1-2부터 ⑫ 문 신호는 제목·계획·추진내용 줄(title·plan.lines·do.lines)에 AI 낱말이 1개 이상 있어야 함 — 그래서 이 시험의 글은 추진내용 칸 경로(do.lines.0 | )를 붙임(낱말 판정은 예전 그대로)
+const doLine = (t: string) => `do.lines.0 | ${t}`;
 test("⑫ AI·자동화 낱말 서로 다른 것 2개 이상 + 업무 절차 변화 낱말 2개 이상 → AX 전환형, 어느 한쪽이 모자라면 후보 아님(2026-10-13)", () => {
-  assert.equal(top("AI 자동 판독으로 육안 확인 없이 검사하고, 반복 확인은 자동화해 소요 시간을 단축했다"), "AX 전환형");
-  const ax = hintsOf("인공지능 챗봇으로 상담 프로세스를 바꿔 처리 시간을 줄였다").find((h) => h.story === "AX 전환형")!;
+  assert.equal(top(doLine("AI 자동 판독으로 육안 확인 없이 검사하고, 반복 확인은 자동화해 소요 시간을 단축했다")), "AX 전환형");
+  const ax = hintsOf(doLine("인공지능 챗봇으로 상담 프로세스를 바꿔 처리 시간을 줄였다")).find((h) => h.story === "AX 전환형")!;
   assert.match(ax.why, /AI·자동화 낱말/);
   assert.match(ax.opener, /\[전환 배경\] 칸 도식\(▶\)/, "여는 블록 = ▶ 칸 도식");
-  assert.ok(!hintsOf("AI 안테나 판독을 확대했다. AI 판독 결과를 공유했다").some((h) => h.story === "AX 전환형"), "AI 한 낱말만 되풀이");
-  assert.ok(!hintsOf("AIoT 센서 설치를 자동화했다").some((h) => h.story === "AX 전환형"), "AIoT의 AI는 세지 않음 — 자동화 하나뿐");
-  assert.ok(!hintsOf("실태조사와 현장조사로 혼간섭 원인을 진단했다").some((h) => h.story === "AX 전환형"), "AI 낱말 없음");
-  assert.ok(!hintsOf("AI 서비스 확산과 인공지능 산업 성장에 대비해 주파수를 공급했다").some((h) => h.story === "AX 전환형"), "AI가 배경일 뿐 — 업무 절차 변화 낱말 없음");
-  const weak = hintsOf("AI 판독과 자동화로 소요 시간을 단축했다").find((h) => h.story === "AX 전환형")!;
-  const strong = hintsOf("AI 판독과 자동화로 육안 확인·수작업을 없애 프로세스를 바꾸고 소요 시간을 단축했다").find((h) => h.story === "AX 전환형")!;
+  assert.ok(!hintsOf(doLine("AI 안테나 판독을 확대했다. AI 판독 결과를 공유했다")).some((h) => h.story === "AX 전환형"), "AI 한 낱말만 되풀이");
+  assert.ok(!hintsOf(doLine("AIoT 센서 설치를 자동화했다")).some((h) => h.story === "AX 전환형"), "AIoT의 AI는 세지 않음 — 자동화 하나뿐");
+  assert.ok(!hintsOf(doLine("실태조사와 현장조사로 혼간섭 원인을 진단했다")).some((h) => h.story === "AX 전환형"), "AI 낱말 없음");
+  assert.ok(!hintsOf(doLine("AI 서비스 확산과 인공지능 산업 성장에 대비해 주파수를 공급했다")).some((h) => h.story === "AX 전환형"), "AI가 배경일 뿐 — 업무 절차 변화 낱말 없음");
+  assert.ok(!hintsOf("check.items.0 | AI 자동 판독으로 육안 확인 없이 소요 시간을 단축했다").some((h) => h.story === "AX 전환형"), "AI 낱말이 제목·계획·추진내용 줄에 없음");
+  const weak = hintsOf(doLine("AI 판독과 자동화로 소요 시간을 단축했다")).find((h) => h.story === "AX 전환형")!;
+  const strong = hintsOf(doLine("AI 판독과 자동화로 육안 확인·수작업을 없애 프로세스를 바꾸고 소요 시간을 단축했다")).find((h) => h.story === "AX 전환형")!;
   assert.equal(strong.score - weak.score, 2, "절차 변화 낱말 4개 이상이면 2점 더(뚜렷한 전환 과제가 다른 틀에 밀리지 않게)");
 });
 
@@ -152,4 +168,69 @@ test("'25 실사 질의로만 뜬 Q&A 후보는 왜-어떻게형 신호가 아�
   assert.ok(!fromSurvey.some((h) => h.story === "왜-어떻게형"));
   const asked = "왜 연습기가 필요한가? 어떻게 쓰는가?";
   assert.ok(storyHints(diagramHints(asked), asked).some((h) => h.story === "왜-어떻게형"));
+});
+
+// ---------------------------------------------------------------------------
+// P1-2 틀 신호 보정(2026-11-09, docs/plan/경평초안-프레임워크-확장-계획.md P1-2 완료 기준 2)
+
+const NO_ACTUALS = { today: "", kpi: [], monthly: [] };
+/** 시험 카드(주요사업 — 기관 자료 아님): 추진내용 줄만 받음 */
+const cardOf = (lines: string[], extra: Record<string, unknown> = {}) => ({ taskNo: "1-가", title: "시험 과제", do: { lines }, ...extra });
+const storiesOf = (hs: { story: string }[]) => hs.map((h) => h.story);
+
+test("P1-2: 전년 절에만 있는 연도 흐름·전후 비교로는 ①·⑧·⑨ 후보가 아님(storyHintsOf는 전년 절을 안 봄 — 요청 글의 도식 후보는 전년 절까지 봄)", () => {
+  const card = cardOf(["전파 점검 업무를 추진했다"]);
+  const prior = [{ section: { key: "rpt25/k", business: "BZ-1", taskNo: "1-가", mark: "가", title: "전년 절", taskTitle: "", targetName: "", page: null, text: "’22년 자격 신설, ’23년 제도 정비, ’24년 연구, ’25년 개발. 기존 수기 방식을 자동 연계로 개선했다" }, score: 0.3 }];
+  const withPrior = sectionHints(card, prior, [], [], NO_ACTUALS, 2026).map((h) => h.kind);
+  assert.ok(withPrior.includes("timeline:dots") && withPrior.includes("compare:panels"), "요청 글의 도식 후보는 전년 절 신호를 그대로 봄");
+  assert.ok(storiesOf(storyHints(sectionHints(card, prior, [], [], NO_ACTUALS, 2026), hintSource(card, prior, []))).some((s) => ["연혁·연도 사다리형", "기존→개선형"].includes(s)), "예전 입력(전년 절 포함)이면 후보가 됐음");
+  const now = storiesOf(storyHintsOf(card, [], [], NO_ACTUALS, 2026));
+  for (const s of ["단계 전개형", "연혁·연도 사다리형", "기존→개선형"]) assert.ok(!now.includes(s), s);
+});
+
+test("P1-2: 칸 이름 「(장애 또는 리스크 요인)」·「(모니터링 및 해결 방안)」만으로는 ⑱이 아님, 원인·조치 낱말이 본문에 있으면 ⑱", () => {
+  assert.ok(!hintsOf("do.lines.0 | (장애 또는 리스크 요인) 예산 부족\ndo.lines.1 | (모니터링 및 해결 방안) 분기마다 조치").some((h) => h.story === "문제·원인별 해결형"));
+  assert.equal(top("do.lines.0 | 지연 원인은 장비 노후와 인력 부족 요인이었다\ndo.lines.1 | 원인별로 장비 교체 조치와 인력 보완 대응을 했다"), "문제·원인별 해결형");
+});
+
+test("P1-2: ☑ 중장기과제 표시만으로는 ⑲가 아님(보조 신호), 로드맵·N단계 낱말이 있으면 ⑲", () => {
+  assert.ok(!hintsOf("overview.cells.0 | ☑ 중장기과제 □ 신규과제\ndo.lines.0 | 전파 점검을 추진했다").some((h) => h.story === "로드맵형"));
+  const road = hintsOf("overview.cells.0 | ☑ 중장기과제\ndo.lines.0 | 3개년 로드맵에 따라 1단계 기반 구축을 마치고 2단계를 준비했다").find((h) => h.story === "로드맵형");
+  assert.ok(road);
+  assert.match(road!.why, /중장기과제/, "중장기과제는 문이 열린 뒤 보조 점수");
+});
+
+test("P1-2: AX 연계 붙임에만 AI 낱말이 있으면 ⑫가 아님, 추진내용에 있으면 ⑫", () => {
+  const ax = { axAttachments: [{ marker: "①", title: "AI 자동 판독 연계", purpose: "인공지능 자동화로 수작업 단축", sections: [{ heading: "내용", items: ["AI 자동 판독으로 육안 확인을 줄이고 처리 시간을 단축"] }] }] };
+  assert.ok(!storiesOf(storyHintsOf(cardOf(["전파 점검 업무를 추진했다"], ax), [], [], NO_ACTUALS, 2026)).includes("AX 전환형"));
+  assert.ok(storiesOf(storyHintsOf(cardOf(["AI 자동 판독과 자동화로 육안 확인·수작업을 줄여 처리 시간을 단축했다"], ax), [], [], NO_ACTUALS, 2026)).includes("AX 전환형"));
+});
+
+test("P1-2: 번호 갈래 ❶~❸ → ⑰ 핵심키워드 연결형, 점 갈래 「∙ (…)」 5갈래 → ⑩ 구분표 중심형, 번호 갈래 5개 → ⑩(⑰ 아님)", () => {
+  assert.equal(top(["❶ 데이터 연계 확대", "❷ 현장 점검 강화", "❸ 이용자 안내 개선"].map((t, i) => `do.lines.${i} | ${t}`).join("\n")), "핵심키워드 연결형");
+  assert.equal(top(["① (연계) 가", "② (점검) 나"].map((t, i) => `do.lines.${i} | ${t}`).join("\n")), "핵심키워드 연결형", "① (키워드) 표지도 번호 갈래");
+  const dots = hintsOf(Array.from({ length: 5 }, (_, i) => `do.lines.${i} | ∙ (갈래${i + 1}) 내용`).join("\n"));
+  assert.equal(dots[0]?.story, "구분표 중심형");
+  assert.match(dots[0].why, /갈래 5개 이상/);
+  const nums = hintsOf(["①", "②", "③", "④", "⑤"].map((m, i) => `do.lines.${i} | ${m} 내용`).join("\n"));
+  assert.equal(nums[0]?.story, "구분표 중심형");
+  assert.ok(!nums.some((h) => h.story === "핵심키워드 연결형"));
+  assert.ok(!hintsOf("check.items.0 | ❶ 가\ncheck.items.1 | ❷ 나").some((h) => h.story === "핵심키워드 연결형"), "추진내용 줄이 아니면 세지 않음");
+});
+
+test("P1-2: ⑬~⑯ 신호 — 시범·확산 · 재점검·환류 · 위험·예방 · 데이터·정책 반영 낱말", () => {
+  assert.equal(top("시범 운영 결과를 표준화해 전국으로 확산하고 정착시켰다"), "시범→확산형");
+  assert.equal(top("재점검 결과를 환류해 이행 점검과 개선 과제를 관리했다"), "환류 개선형");
+  assert.equal(top("위험 요인을 진단해 예방 조치와 안전 점검으로 사고를 줄였다"), "위험관리·안전형");
+  assert.equal(top("데이터 수집과 데이터 분석 결과를 정책 반영하고 기준 마련에 썼다"), "데이터 기반 의사결정형");
+});
+
+test("P1-2: ⑳ 수혜 대상 낱말 3종 이상 → 대상별 맞춤형, 1종이면 아님", () => {
+  assert.equal(top("중소기업·소상공인·취약계층마다 지원 방식을 달리했다"), "대상별 맞춤형");
+  assert.ok(!hintsOf("중소기업 지원을 넓혔다").some((h) => h.story === "대상별 맞춤형"));
+});
+
+test("P1-2: 점수가 같으면 기본형 ★(⑨ ⑱ ① ⑰ ⑩)을 먼저, 나머지는 틀 번호 순", () => {
+  const hs = hintsOf(["❶ 시범 운영", "❷ 표준화", "❸ 전국 확산"].map((t, i) => `do.lines.${i} | ${t}`).join("\n"));
+  assert.deepEqual(hs.slice(0, 2).map((h) => [h.story, h.score]), [["핵심키워드 연결형", 3], ["시범→확산형", 3]], "⑰(★)이 번호가 앞선 ⑬보다 먼저");
 });

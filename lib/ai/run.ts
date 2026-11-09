@@ -27,8 +27,8 @@ import { type FrameInput, framePrompt } from "../reports/framework-pick.ts";
 import type { Story } from "../reports/blocks.ts";
 import { frameworkOf, shapeCode, shapeName } from "../reports/frameworks.ts";
 import { type FitNeed, type FitReport, blockAreaMm, fitNeeded, fitReport } from "../reports/fit.ts";
-import { REPORT_HARNESS, type ReportFile, type ReportPrompts, type SectionCheck, type SectionContext, type SectionOutput, type SiblingLayout, cleanLine, fitPrompt, hintSource, moduleGuide, sectionHints, sectionOutputSchema, sectionPrompt, withPlanStory } from "../reports/section.ts";
-import { storyHints, storyHintsPrompt } from "../reports/story-hints.ts";
+import { REPORT_HARNESS, type ReportFile, type ReportPrompts, type SectionCheck, type SectionContext, type SectionOutput, type SiblingLayout, cleanLine, fitPrompt, moduleGuide, sectionOutputSchema, sectionPrompt, storyHintsOf, withPlanStory } from "../reports/section.ts";
+import { storyHintsPrompt } from "../reports/story-hints.ts";
 import { mgStoryHintsFor } from "../reports/story-hints-mg.ts";
 import { outlineInspectionPrompt } from "../reports/inspection-input.ts";
 import { type SplitSibling, splitHeadPrompt, splitSiblingsPrompt } from "../reports/split-axes.ts";
@@ -501,7 +501,7 @@ export function reportOutlineAsk(input: ReportOutlineInput): (files: ReportFile[
   const draft = reportDraftPrompts().prompts;
   const { prompts } = reportOutlinePrompts();
   // 담당자가 틀 갤러리에서 고른 이야기 틀(lib/reports/frameworks.ts) — 요청에 그 틀의 블록 순서를 적고 답의 틀은 코드가 그 틀로 덮음(withFixedStory — 스키마는 늘 문자열, 2026-10-12).
-  // 「섞음」을 고르면 16종 중 주 틀 + 보조 틀을 고르게 하고(story.mix), 고르지 않으면 앱이 뽑은 틀 후보(storyHints — lib/reports/story-hints.ts)를 붙임
+  // 「섞음」을 고르면 20종 중 주 틀 + 보조 틀을 고르게 하고(story.mix), 고르지 않으면 앱이 뽑은 틀 후보(storyHints — lib/reports/story-hints.ts)를 붙임
   const fw = input.story ? frameworkOf(input.story) : null;
   const storyText = (files: ReportFile[]) => {
     if (fw?.story === "섞음") return fillFrom(prompts, "request", "story.mix");
@@ -511,8 +511,8 @@ export function reportOutlineAsk(input: ReportOutlineInput): (files: ReportFile[
         fit: fw.fit,
         blocks: fw.blocks.map((b) => `${b.label ? `[${b.label}] ` : ""}${shapeName(b.kind, b.variant ?? "")}(${shapeCode(b.kind, b.variant ?? "")})`).join(" → "),
       });
-    const hints = sectionHints(input.card, input.prior ?? [], files, input.lens ?? [], input.actuals ?? yearActuals(input.card), input.year);
-    return storyHintsPrompt(prompts, storyHints(hints, hintSource(input.card, input.prior ?? [], files), (input.siblings ?? []).map((x) => x.story)));
+    // 틀 신호는 전년 절을 뺀 카드 본문·숫자 근거 첨부만(storyHintsOf — 2026-11-09 P1-2)
+    return storyHintsPrompt(prompts, storyHintsOf(input.card, files, input.lens ?? [], input.actuals ?? yearActuals(input.card), input.year, (input.siblings ?? []).map((x) => x.story)));
   };
   return (files: ReportFile[]) =>
     [

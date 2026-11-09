@@ -186,9 +186,9 @@ test("stories.md 여는 블록: 여는 블록 재료가 없다고 틀을 바꾸�
   assert.match(sec, /왜-어떻게형/);
 });
 
-test("BIZ_RETIRED_SHAPES(2026-10-28): 주요사업 이야기 틀 16종에는 핵심 수치 띠가 없고, 경영관리 틀은 그대로 추진성과 행에 씀", () => {
+test("BIZ_RETIRED_SHAPES(2026-10-28): 주요사업 이야기 틀 20종에는 핵심 수치 띠가 없고, 경영관리 틀은 그대로 추진성과 행에 씀", () => {
   assert.deepEqual([...BIZ_RETIRED_SHAPES], ["stats"]);
   for (const fw of FRAMEWORKS) assert.ok(!fw.blocks.some((b) => BIZ_RETIRED_SHAPES.includes(shapeCode(b.kind, b.variant ?? ""))), fw.story);
   assert.ok(MG_FRAMEWORKS.some((fw) => fw.blocks.some((b) => b.kind === "stats")));
-  assert.doesNotMatch(storiesMd.split("<!-- @stories -->")[1].split("\n").filter((l) => /^[①-⑯]/.test(l)).join("\n"), /stats/, "stories.md 틀 줄에도 없음");
+  assert.doesNotMatch(storiesMd.split("<!-- @stories -->")[1].split("\n").filter((l) => /^[①-⑳]/.test(l)).join("\n"), /stats/, "stories.md 틀 줄에도 없음");
 });

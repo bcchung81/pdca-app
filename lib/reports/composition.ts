@@ -177,7 +177,7 @@ export const PLAN_LAYOUTS = ["ladder", "full", "stage"] as const;
 export const PLAN_SPANS = ["", "half"] as const;
 
 /**
- * 구성안 AI 답 스키마. 이야기 틀(story·subStory)은 enum이 아니라 문자열로 받고 정리(cleanComposition — matchName)가 16종으로 맞춤(2026-10-12):
+ * 구성안 AI 답 스키마. 이야기 틀(story·subStory)은 enum이 아니라 문자열로 받고 정리(cleanComposition — matchName)가 20종으로 맞춤(2026-10-12):
  * enum·literal이면 가운뎃점 변형(･ㆍ)·띄어쓰기·「주 + 보조」 표기 하나로 답 전체 파싱이 실패함(같은 날 집필 story 버그와 같은 원인). 모르는 이름은 버림(빈 글).
  * 담당자가 틀을 고른 요청은 값을 코드가 그 틀로 덮음(withFixedStory). AI 답에 「섞음」은 없음(두 틀이 필요하면 주 틀 + 보조 틀 — 2026-10-09)
  */
@@ -271,7 +271,7 @@ export function cleanComposition(out: CompositionOutput, hayKey: string, known: 
   }
   if (retired) warnings.push(`구성: 핵심 수치 띠 ${retired}개를 뺐습니다 — ${BIZ_RETIRED_WHY}.`);
   dropLoneSpans(blocks);
-  // 이야기 틀은 문자열로 받아 16종으로 맞춤(가운뎃점 변형·띄어쓰기·「주 + 보조」 표기 — 모르면 빈 글)
+  // 이야기 틀은 문자열로 받아 20종으로 맞춤(가운뎃점 변형·띄어쓰기·「주 + 보조」 표기 — 모르면 빈 글)
   const story = matchName(out.story, MAIN_STORIES);
   const subStory = matchName(out.subStory, MAIN_STORIES);
   // 갈래 축·칩: 축은 사전 이름으로(모르면 버림), 칩은 표준 값이거나 근거 원문(hayKey)에 있는 낱말만

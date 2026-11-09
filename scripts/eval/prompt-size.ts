@@ -20,8 +20,8 @@ import { blockAreaMm } from "../../lib/reports/fit.ts";
 import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { pickPrior } from "../../lib/reports/prior.ts";
 import { loadPriorSections } from "../../lib/reports/prior-queries.ts";
-import { type SiblingCard, hintSource, moduleGuide, sectionContext, sectionHints, sectionPrompt } from "../../lib/reports/section.ts";
-import { storyHints, storyHintsPrompt } from "../../lib/reports/story-hints.ts";
+import { type SiblingCard, moduleGuide, sectionContext, sectionPrompt, storyHintsOf } from "../../lib/reports/section.ts";
+import { storyHintsPrompt } from "../../lib/reports/story-hints.ts";
 import { trackSpecOfUnit } from "../../lib/tracks/index.ts";
 
 /** 실제 토큰 ÷ 글자(0단계·CLI 실측) */
@@ -77,8 +77,7 @@ for (const card of cards ?? []) {
     const section = `${listText(rp, kb)}\n\n${sectionPrompt(rp, card.data, ctx, 2026, files, pickPrior(card.data, sections), [], lens, actuals)}`;
     const task = fillFrom(op, "request", "task", { module: ctx.module, moduleGuide: moduleGuide(rp, ctx.module), area: blockAreaMm(ctx.module, ctx.head), maxBlocks: planBlockCap(ctx.module) });
     // 구성안은 틀 고르기(앱이 뽑은 틀 후보 — 2026-10-09)도 붙음
-    const prior = pickPrior(card.data, sections);
-    const stories = storyHintsPrompt(op, storyHints(sectionHints(card.data, prior, files, lens, actuals, 2026), hintSource(card.data, prior, files)));
+    const stories = storyHintsPrompt(op, storyHintsOf(card.data, files, lens, actuals, 2026));
     row.report = sysR + sharedR + section.length;
     row.outline = sysO + sharedR + `${section}\n\n${task}\n\n${stories}`.length;
   }
