@@ -209,10 +209,10 @@ export function shapeMenuText(spec: ReportSectionSpec, index: number, rules: Sha
       if (isOwnKind(s.kind)) no.push(`${s.code} ${s.name}(${a.why.split(" — ").slice(1).join(" — ") || a.why})`);
       continue;
     }
-    const n = clampCells(s.kind, s.variant, contentCount(b));
+    const n = clampCells(s.kind, s.variant, contentCount(b), rules.mg);
     const probe: ReportSectionSpec = { ...spec, blocks: (spec.blocks ?? []).map((x, i) => (i === index ? canonicalBlock(s.kind, s.variant, n, b.label, b.figures) : x)) };
     const room = blockRoom(probe, index);
-    const { min, max } = cellRange(s.kind, s.variant);
+    const { min, max } = cellRange(s.kind, s.variant, rules.mg);
     ok.push(`${s.code} ${s.name}(${min === max ? min : `${min}~${max}`}개${room ? ` · 한 줄 약 ${room.perLine}자` : ""})`);
   }
   return { shapes: ok.join(" · ") || "없음", blocked: no.join(" · ") || "없음" };
@@ -269,7 +269,7 @@ export type ShapedCheck = { ok: true; block: Block; changed: number; dropped: st
  * 받은 블록은 원래 블록에서 시작해 내용 필드만 바꿈(withContent — 배치 등 내용 아닌 필드 보존). 라벨은 AI가 비우면 원래 라벨
  */
 export function checkBlock(before: Block, out: BlockOutput, line: (s: unknown, max?: number) => string, found: (s: string) => boolean, rules?: ShapeRules): ShapedCheck {
-  const clean = (o: BlockOutput) => cleanBlocks([o], line, found);
+  const clean = (o: BlockOutput) => cleanBlocks([o], line, found, { mg: rules?.mg });
   if (!rules) {
     // 표 모양은 칸 쓰임이 둘로 갈려(값 열 — 기본·막대·쉐브론 / 불릿 칸 — 추진실적 열·2단 라벨) AI가 모양을 빠뜨리거나 다른 갈래로 바꾸면 칸이 깨짐 — 그때는 원래 모양을 지킴(2026-10-12)
     const keepShape = before.kind === "table" && out?.kind === "table" && (!VARIANTS.table?.includes(String(out.variant)) || isGridTable({ kind: "table", variant: String(out.variant) }) !== isGridTable(before));

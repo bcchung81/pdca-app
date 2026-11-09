@@ -163,7 +163,7 @@ export function outlineDataOf(composition: Composition | null, draft: DraftRow |
       figures: FIGURE_KINDS.map((kind) => ({ kind, label: FIGURE_LABEL[kind] })),
       materials: Object.fromEntries(MATERIAL_KINDS.map((k) => [k, MATERIAL_LABEL[k]])),
       results: RESULT_SHAPES.map((key) => ({ key, label: RESULT_SHAPE_LABEL[key] })),
-      table: shapeTable(),
+      table: shapeTable(Boolean(composition.mg)),
       labels: [...LABEL_SUGGESTIONS],
       // 갈래 축 사전(이 트랙에서 쓰는 축 — lib/reports/split-axes.ts, 2026-10-13)
       axes: axesFor(composition.mg ? "mg" : "biz").map((a) => ({ name: a.name, def: a.def, values: a.values })),

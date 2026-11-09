@@ -228,16 +228,23 @@ export const SHAPES: ShapeInfo[] = [
   { code: "table:bars", kind: "table", variant: "bars", name: "막대 든 수치 표", group: "base", use: "값 옆 가로 막대(’25 → ’26 — 같은 행·같은 단위끼리, 길이는 앱이 셈)" },
   { code: "table:chevron", kind: "table", variant: "chevron", name: "쉐브론 머리 표", group: "base", use: "열 머리가 단계 화살표(현황 ▶ 개선방향 ▶ 적용 결과)" },
   { code: "table:ladder", kind: "table", variant: "ladder", name: "2단 라벨 표", group: "base", use: "큰 라벨(① 관리) 안 하위 라벨(①-1·①-2) + 내용" },
+  // 2단 라벨 흐름 표(2026-11-09 P4 — 주요사업만, BIZ_ONLY_SHAPES)
+  { code: "table:cascade", kind: "table", variant: "cascade", name: "2단 라벨 흐름 표(▼)", group: "base", use: "2단 라벨 표의 큰 라벨 묶음이 차례로 이어짐(현황 ▼ 조치 ▼ 성과) — 묶음 사이 ▼" },
   // 로드맵 표(2026-11-09 — ⑲ 로드맵형, 주요사업만 — BIZ_ONLY_SHAPES)
   { code: "table:roadmap", kind: "table", variant: "roadmap", name: "로드맵 표", group: "base", use: "열 = 단계·연도(Step), 행 = 추진내용·산출·기대 효과 — 올해 열은 앱이 열 머리 연도로 강조, 뒤 열은 「계획」" },
   { code: "qa", kind: "qa", variant: "", name: "묻고 답하기", group: "base", use: "「왜·어떻게 …?」 질문과 답 1~3쌍" },
   { code: "strategy", kind: "strategy", variant: "", name: "전략체계도", group: "base", use: "목표 띠 → 전략 열 2~4 → 과제·지표(층 이름은 자유)" },
-  { code: "pdca", kind: "pdca", variant: "", name: "PDCA 순환", group: "base", use: "계획 → 실행 → 점검 → 환류 4칸 + 환류 띠(단계 이름은 자유)" },
+  { code: "pdca", kind: "pdca", variant: "", name: "PDCA 순환", group: "base", use: "계획 → 실행 → 점검 → 환류 4칸 + 환류 띠(단계 이름은 자유 — 주요사업은 5칸 한 줄·6칸 두 줄 고리도)" },
   { code: "quotes", kind: "quotes", variant: "", name: "인용 상자", group: "own", use: "정부·CEO·현장 원문 인용 1~2개" },
   { code: "voices", kind: "voices", variant: "", name: "현장 목소리", group: "own", use: "시민·기업의 말 말풍선" },
   { code: "define", kind: "define", variant: "", name: "용어 정의", group: "own", use: "「…란?」 설명 + 칩 흐름" },
   { code: "case", kind: "case", variant: "", name: "우수사례", group: "own", use: "수상·선정·보도·공모전" },
+  // 우수사례·협업 구조 모양(2026-11-09 P4 — 주요사업만, BIZ_ONLY_SHAPES)
+  { code: "case:steps", kind: "case", variant: "steps", name: "우수사례(STEP 흐름)", group: "own", use: "사례 안 단계 2~4개를 STEP ▶ 흐름으로(줄마다 「단계 이름 | 내용」)" },
+  { code: "case:quote", kind: "case", variant: "quote", name: "우수사례(인용)", group: "own", use: "근거 원문 인용 한 줄 + 아래 결과 띠 1~2줄(인용은 원문 대조)" },
   { code: "hub", kind: "hub", variant: "", name: "협업 구조", group: "own", use: "주관 기관 + 참여 기관과 역할" },
+  { code: "hub:row", kind: "hub", variant: "row", name: "협업 구조(가로형)", group: "own", use: "정부 ─ KCA ─ 민간처럼 기관을 한 줄로(가운데가 주관 — 공동 결과는 가운데 칸 불릿)" },
+  { code: "hub:converge", kind: "hub", variant: "converge", name: "협업 구조(수렴형)", group: "own", use: "여러 기관·활동 → 아래 가운데 결과 칸으로 모임(공동 결과는 가운데 칸 불릿)" },
   { code: "chart", kind: "chart", variant: "", name: "막대", group: "own", use: "같은 지표의 시점별 수치(앞 행 오른쪽)" },
   { code: "bullets", kind: "bullets", variant: "", name: "불릿", group: "text", use: "도식으로 안 되는 배경 1~3줄" },
   { code: "banner", kind: "banner", variant: "", name: "메시지 띠", group: "text", use: "핵심 메시지 한 줄" },
@@ -269,10 +276,11 @@ export const shapeOf = (code: string) => SHAPES.find((s) => s.code === code) ?? 
  */
 export const BIZ_RETIRED_SHAPES: readonly string[] = ["stats"];
 /**
- * 주요사업에서만 쓰는 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 P1 로드맵 표 · P4 논리모형·깔때기·다층 차단·진행 상태) — 경영관리 프롬프트·판(해시)을 바꾸지 않으려고 경영관리 모양 목록
+ * 주요사업에서만 쓰는 모양(2026-11-09, 경평 초안 프레임워크 확장 계획 P1 로드맵 표 · P4 논리모형·깔때기·다층 차단·진행 상태·우수사례 STEP 흐름·인용·협업 가로형·수렴형·2단 라벨 흐름 표) —
+ * 경영관리 프롬프트·판(해시)을 바꾸지 않으려고 경영관리 모양 목록
  * (블록 고치기 요청 글 shapeMenuText·화면 「다른 모양으로」 shapeMenu·구성안 도식 목록 shapeChoices·경영관리 틀 갤러리)에서는 뺌
  */
-export const BIZ_ONLY_SHAPES: readonly string[] = ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status"];
+export const BIZ_ONLY_SHAPES: readonly string[] = ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status", "case:steps", "case:quote", "hub:row", "hub:converge", "table:cascade"];
 export const BIZ_RETIRED_WHY = "주요사업 초안은 따로 떨어진 수치 띠를 쓰지 않습니다(2025 최종본에 없음) — 수치는 단계 칸 결과 줄·표 결과 열·추진성과에 씁니다";
 
 /** 전폭으로 그리는 종류(라벨이 있어도 사다리 행이 아님 — 렌더러 section-html의 FULL_KINDS와 같음) */
@@ -304,10 +312,13 @@ const CELL_RANGE: Record<BlockKind, readonly [number, number]> = {
   qa: [1, 3],
   table: [2, 6],
   strategy: [2, 4],
-  pdca: [4, 4],
+  // PDCA 순환: 4칸, 주요사업은 5칸 한 줄·6칸 두 줄 고리까지(2026-11-09 P4 — 경영관리는 아래 cellRange mg가 4칸으로)
+  pdca: [4, 6],
 };
 
-export function cellRange(kind: BlockKind, variant = ""): { min: number; max: number } {
+/** 칸 수 범위. mg = 경영관리(PDCA 순환 4칸 그대로 — 경영관리 프롬프트·요청 글·구성안 칸 수 불변) */
+export function cellRange(kind: BlockKind, variant = "", mg = false): { min: number; max: number } {
+  if (kind === "pdca" && mg) return { min: 4, max: 4 };
   if (kind === "cards" && variant === "vs") return { min: 2, max: 2 };
   // 표 모양: 추진실적 열 표·쉐브론 머리 표·로드맵 표는 1~4행(렌더러·blocks.ts cleanBlocks와 같은 범위), 2단 라벨 표는 2~6행
   if (kind === "table" && (variant === "result" || variant === "chevron" || variant === "roadmap")) return { min: 1, max: 4 };
@@ -315,13 +326,17 @@ export function cellRange(kind: BlockKind, variant = ""): { min: number; max: nu
   // 논리모형·깔때기는 3~5칸(모자라면 정리가 단계 흐름으로 바꿈 — blocks.ts cleanBlocks), 다층 차단은 2~4층
   if (kind === "steps" && (variant === "logic" || variant === "funnel")) return { min: 3, max: 5 };
   if (kind === "steps" && variant === "layers") return { min: 2, max: 4 };
+  // 우수사례 STEP 흐름은 단계 2~4줄, 인용형은 인용 1줄 + 결과 띠 1~2줄, 협업 가로형·수렴형은 가운데 + 기관 2~4(정리 blocks.ts cleanBlocks가 칸을 5개까지 받음)
+  if (kind === "case" && variant === "steps") return { min: 2, max: 4 };
+  if (kind === "case" && variant === "quote") return { min: 2, max: 3 };
+  if (kind === "hub" && (variant === "row" || variant === "converge")) return { min: 3, max: 5 };
   const [min, max] = CELL_RANGE[kind] ?? [1, 1];
   return { min, max };
 }
 
-/** 범위 안으로 */
-export function clampCells(kind: BlockKind, variant: string, n: number): number {
-  const { min, max } = cellRange(kind, variant);
+/** 범위 안으로(mg — cellRange와 같음) */
+export function clampCells(kind: BlockKind, variant: string, n: number, mg = false): number {
+  const { min, max } = cellRange(kind, variant, mg);
   return Math.max(min, Math.min(max, Math.round(Number(n) || min)));
 }
 
@@ -331,7 +346,10 @@ export function defaultCells(kind: BlockKind, variant = ""): number {
   if (kind === "table" && (variant === "result" || variant === "chevron")) return 2;
   // 로드맵 표: 추진내용·산출·기대 효과 3행
   if (kind === "table" && variant === "roadmap") return 3;
-  if (kind === "table" && variant === "ladder") return 4;
+  if (kind === "table" && (variant === "ladder" || variant === "cascade")) return 4;
+  // 우수사례 STEP 흐름 3단계, 협업 수렴형은 가운데 + 기관 셋(가로형은 협업 구조와 같은 3 — 정부 ─ KCA ─ 민간)
+  if (kind === "case" && variant === "steps") return 3;
+  if (kind === "hub" && variant === "converge") return 4;
   // 논리모형·깔때기: 4칸(활동 → 산출 → 결과 → 영향 · 탐지 → 확인 → 조치 → 환수)
   if (kind === "steps" && (variant === "logic" || variant === "funnel")) return 4;
   return clampCells(kind, variant, typical[kind] ?? 1);

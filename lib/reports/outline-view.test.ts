@@ -5,16 +5,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BLOCK_KINDS } from "./blocks.ts";
 import { type Composition } from "./composition.ts";
-import { FULL_WIDTH_KINDS } from "./frameworks.ts";
+import { BIZ_ONLY_SHAPES, FULL_WIDTH_KINDS } from "./frameworks.ts";
 import { REPORT_CSS } from "./section-css.ts";
 import { outlineCatalog, outlineView, shapeTable } from "./outline-view.ts";
 
 // ---------------------------------------------------------------------------
 // shapeTable
 
-test("shapeTable: 35줄(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 2026-10-13, 로드맵 표·단계·시기 모양 4종은 2026-11-09), full = FULL_WIDTH_KINDS, unit이 종류대로(compare·table 행, bullets·case 줄, chart 막대, qa 쌍, 그 밖 칸)", () => {
+test("shapeTable: 40줄(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 2026-10-13, 로드맵 표·단계·시기 모양 4종·사례·협업·표 모양 5종은 2026-11-09), full = FULL_WIDTH_KINDS, unit이 종류대로(compare·table 행, bullets·case 줄, chart 막대, qa 쌍, 그 밖 칸)", () => {
   const rows = shapeTable();
-  assert.equal(rows.length, 35);
+  assert.equal(rows.length, 40);
   for (const r of rows) assert.equal(r.full, FULL_WIDTH_KINDS.includes(r.kind), r.code);
   const byCode = Object.fromEntries(rows.map((r) => [r.code, r]));
   assert.equal(byCode["compare:table"].unit, "행");
@@ -29,12 +29,12 @@ test("shapeTable: 35줄(표 모양 4종은 2026-10-12, 진단 ▶ 처방 짝은 
 // ---------------------------------------------------------------------------
 // outlineCatalog
 
-test("outlineCatalog: shapes 35개(경영관리는 주요사업 전용 5가지 — 로드맵 표·단계·시기 모양 4종 — 를 뺀 30개)·frameworks 21개(20종 + 섞음 — ⑨~⑪은 2026-10-10, ⑫는 2026-10-13, ⑬~⑯은 2026-11-04, ⑰~⑳은 2026-11-09), 섞음을 뺀 틀과 모든 모양의 html이 kca-dg-doc을 담고 비지 않음, css에 REPORT_CSS, 캐시", () => {
+test("outlineCatalog: shapes 40개(경영관리는 주요사업 전용 10가지 — 로드맵 표·단계·시기 모양 4종·사례·협업·표 모양 5종 — 를 뺀 30개)·frameworks 21개(20종 + 섞음 — ⑨~⑪은 2026-10-10, ⑫는 2026-10-13, ⑬~⑯은 2026-11-04, ⑰~⑳은 2026-11-09), 섞음을 뺀 틀과 모든 모양의 html이 kca-dg-doc을 담고 비지 않음, css에 REPORT_CSS, 캐시", () => {
   const cat = outlineCatalog();
-  assert.equal(cat.shapes.length, 35);
+  assert.equal(cat.shapes.length, 40);
   const mgShapes = outlineCatalog(true).shapes;
   assert.equal(mgShapes.length, 30);
-  assert.ok(!mgShapes.some((x) => ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status"].includes(x.code)));
+  assert.ok(!mgShapes.some((x) => BIZ_ONLY_SHAPES.includes(x.code)));
   assert.equal(cat.frameworks.length, 21);
   for (const s of cat.shapes) {
     assert.ok(s.html.length > 0, s.code);

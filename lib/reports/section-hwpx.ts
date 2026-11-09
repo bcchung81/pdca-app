@@ -14,7 +14,7 @@ import { BORDER_WIDTH_MM } from "../hwp/hwp5.ts";
 import { type HwpxInput, hwpxFiles } from "../hwp/hwpx-write.ts";
 import type { Align, Border, BorderFill, Bullet, Cell, CharPr, HwpDoc, Inline, LineType, PageDef, Para, ParaPr, Table } from "../hwp/model.ts";
 import { writeHwpxPackage } from "../hwpx/postprocess.ts";
-import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, blockTexts, figureMm, isChevronTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_GAP_MM, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, blockTexts, caseLabel, figureMm, isChevronTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
 import { PAGE_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, ownResult, resultBandMm, resultRowHeadMm, statsBoxLabel, statsLine, statsRow, tableColsMm, textEm } from "./fit.ts";
 import { PAIR_GAP_MM, layoutGroups } from "./layout.ts";
 import { fontName } from "./report-fonts.ts";
@@ -581,9 +581,19 @@ class SectionWriter extends Writer {
         return [...title, this.host(this.cardColumns(cells, w, join && cells.length > 1 ? JOIN.gapMm : 3, join, head), px(3))];
       }
       case "pdca": {
-        const cells = b.cells.slice(0, 4);
-        const t = this.cardColumns(cells, w, JOIN.gapMm, "▶", (c, i) => [this.run(pdcaMark(c.tag, i), { face: "label", pt: 8.5, bold: true, color: WHITE, shade: G.g4 }), this.run(" ", HEAD), ...this.rich(c.head, HEAD)]);
-        const out = [...title, this.host(t, px(3))];
+        // 주요사업 5·6칸(2026-11-09 P4 — 화면 DOM 변환이 기본이라 이 옛 렌더러는 단순하게): 5칸은 한 줄, 6칸은 위 줄 1 ▶ 2 ▶ 3 · 화살표 줄(▲ … ▼) · 아래 줄 6 ◀ 5 ◀ 4(화면 고리와 같은 자리)
+        const n = Math.min(6, b.cells.length);
+        const head = (c: BlockCell, i: number) => [this.run(pdcaMark(c.tag, i, n), { face: "label", pt: 8.5, bold: true, color: WHITE, shade: G.g4 }), this.run(" ", HEAD), ...this.rich(c.head, HEAD)];
+        const out = [...title];
+        if (n === 6) {
+          const arrows = this.table(
+            this.cols(w, [{ fr: 1 }, mm(JOIN.gapMm), { fr: 1 }, mm(JOIN.gapMm), { fr: 1 }]),
+            [lineH()],
+            ["▲", "", "", "", "▼"].map((ch, c): TCell => ({ r: 0, c, paras: ch ? [this.para({ align: "CENTER", line: pct(LH.zigArr) }, [this.run(ch, { face: "label", pt: 12, bold: true, color: G.g3 })], BODY)] : [], m: M0 })),
+          );
+          const bottom = [5, 4, 3].map((i) => b.cells[i]);
+          out.push(this.host(this.cardColumns(b.cells.slice(0, 3), w, JOIN.gapMm, "▶", head), px(3)), this.host(arrows), this.host(this.cardColumns(bottom, w, JOIN.gapMm, "◀", (c, k) => head(c, 5 - k))));
+        } else out.push(this.host(this.cardColumns(b.cells.slice(0, n), w, JOIN.gapMm, "▶", head), px(3)));
         if (b.text) out.push(this.host(this.table([w], [lineH(F.small)], [{ r: 0, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.pdcaFb) }, [this.run("↺ ", { ...HEAD, pt: F.small }), ...this.rich(b.text, { ...HEAD, pt: F.small })], HEAD)], box: all({ ...HAIR, type: "DASH" }), m: [px(6), px(6), px(2), px(2)] }]), mm(1.2)));
         return out;
       }
@@ -662,7 +672,7 @@ class SectionWriter extends Writer {
         return [...title, this.host(this.qa(b.cells, w), px(3))];
       case "table":
         if (b.variant === "result") return [...title, this.host(this.resultTable(b, w), px(3))];
-        if (b.variant === "ladder") return [...title, this.host(this.ladderTable(b, w), px(3))];
+        if (isLadderTable(b)) return [...title, this.host(this.ladderTable(b, w), px(3))];
         return [...title, this.host(this.gridTable(b, w, wMm), px(3))];
       case "strategy":
         return [...title, this.host(this.strategy(b, w), px(3))];
@@ -873,15 +883,58 @@ class SectionWriter extends Writer {
       ...(logos.length ? [this.logoRow(logos, inner(cw, [px(5), px(5), 0, px(2)]))] : []),
       ...this.ul(center.bullets),
     ];
+    const node = (c: BlockCell, col: number, r = 0): TCell => ({
+      r,
+      c: col,
+      box: all(HAIR),
+      m: [px(5), px(5), px(2), px(3)],
+      paras: [this.para({ align: "CENTER", line: pct(LH.hub), box: all(HAIR5, G.g0) }, this.rich(c.head, HEAD), HEAD), this.p(c.bullets.join(" / "), BODY, { align: "CENTER", chars: true })],
+    });
+    // 가로형(2026-11-09 P4 — 화면 .k-hub--row와 같은 차례): [앞 절반 기관 … ⇄ 가운데 ⇄ 뒤 절반 기관 …], 같은 쪽 기관 사이 3mm
+    if (b.variant === "row" && nodes.length >= 2) {
+      const left = Math.ceil(nodes.length / 2);
+      const parts: Array<number | { fr: number }> = [];
+      const cells: TCell[] = [];
+      const gap = () => {
+        cells.push({ r: 0, c: parts.length, paras: [], m: M0 });
+        parts.push(mm(3));
+      };
+      nodes.slice(0, left).forEach((c, k) => {
+        if (k) gap();
+        cells.push(node(c, parts.length));
+        parts.push({ fr: 1 });
+      });
+      cells.push(link(0, parts.length));
+      parts.push(mm(9));
+      const midCol = parts.length;
+      parts.push({ fr: 1.2 });
+      cells.push(link(0, parts.length));
+      parts.push(mm(9));
+      nodes.slice(left).forEach((c, k) => {
+        if (k) gap();
+        cells.push(node(c, parts.length));
+        parts.push({ fr: 1 });
+      });
+      const colW = this.cols(w, parts);
+      cells.push({ r: 0, c: midCol, paras: mid(colW[midCol]), box: all(HAIR), m: [px(5), px(5), 0, px(2)], va: "CENTER" });
+      return [this.host(this.table(colW, [lineH()], cells), px(3))];
+    }
+    // 수렴형: 기관 줄(사이 3mm) → ▼ 줄 → 가운데 결과 칸(전폭)
+    if (b.variant === "converge" && nodes.length >= 2) {
+      const parts: Array<number | { fr: number }> = [];
+      nodes.forEach((_, k) => {
+        if (k) parts.push(mm(3));
+        parts.push({ fr: 1 });
+      });
+      const colW = this.cols(w, parts);
+      const span = parts.length;
+      const cells: TCell[] = nodes.flatMap((c, k): TCell[] => [...(k ? [{ r: 0, c: 2 * k - 1, paras: [], m: M0 }] : []), node(c, 2 * k)]);
+      cells.push({ r: 1, c: 0, cs: span, paras: [this.para({ align: "CENTER", line: pct(LH.zigArr) }, [this.run("▼", { face: "label", pt: 12, bold: true, color: G.g3 })], BODY)], m: M0 });
+      cells.push({ r: 2, c: 0, cs: span, paras: mid(w), box: all(HAIR), m: [px(5), px(5), 0, px(2)] });
+      return [this.host(this.table(colW, [lineH(), mm(5), lineH()], cells), px(3))];
+    }
     if (nodes.length === 2) {
       const colW = this.cols(w, [{ fr: 1 }, mm(9), { fr: 1.2 }, mm(9), { fr: 1 }]);
-      const node = (c: BlockCell, col: number): TCell => ({
-        r: 0,
-        c: col,
-        box: all(HAIR),
-        m: [px(5), px(5), px(2), px(3)],
-        paras: [this.para({ align: "CENTER", line: pct(LH.hub), box: all(HAIR5, G.g0) }, this.rich(c.head, HEAD), HEAD), this.p(c.bullets.join(" / "), BODY, { align: "CENTER", chars: true })],
-      });
       return [this.host(this.table(colW, [lineH()], [node(nodes[0], 0), link(0, 1), { r: 0, c: 2, paras: mid(colW[2]), box: all(HAIR), m: [px(5), px(5), 0, px(2)], va: "CENTER" }, link(0, 3), node(nodes[1], 4)]), px(3))];
     }
     const colW = this.cols(w, [{ fr: 0.9 }, mm(9), { fr: 1.6 }]);
@@ -968,10 +1021,41 @@ class SectionWriter extends Writer {
     const fig = (b.figures ?? [])[0];
     const colW = fig ? this.cols(w, [{ fr: 1 }, mm(figureMm(fig).w)]) : [w];
     const H11: CS = { face: "dotumB", pt: F.box };
-    const items = b.items.map((x) => {
-      const m = /^([^|:：]{1,8}?)\s*[|:：]\s+(.+)$/.exec(x);
-      return m ? this.para({ align: "JUSTIFY", chars: true }, [...this.tag(m[1]), ...this.rich(m[2], BODY)]) : this.para({ bullet: true }, this.rich(x, BODY));
+    let items: Para[] = b.items.map((x) => {
+      const m = caseLabel(x);
+      return m ? this.para({ align: "JUSTIFY", chars: true }, [...this.tag(m.label), ...this.rich(m.text, BODY)]) : this.para({ bullet: true }, this.rich(x, BODY));
     });
+    // STEP 흐름·인용형(2026-11-09 P4 — 화면 DOM 변환이 기본이라 이 옛 렌더러는 단순하게): 단계 칸 표(STEP 띠 + 글, 사이 ▶) / 인용 문단 “…” + 결과 띠 문단
+    const bw = inner(colW[0], [px(5), px(5), px(2), px(3)]);
+    if (b.variant === "steps" && b.items.length) {
+      const parts: Array<number | { fr: number }> = [];
+      const cells: TCell[] = [];
+      b.items.forEach((x, i) => {
+        const m = caseLabel(x);
+        if (i) {
+          cells.push({ r: 0, c: parts.length, paras: [this.para({ align: "CENTER", line: pct(LH.join) }, [this.run("▶", { face: "label", pt: JOIN.pt, bold: true, color: G.g3 })], BODY)], m: M0 });
+          parts.push(mm(JOIN.gapMm));
+        }
+        cells.push({
+          r: 0,
+          c: parts.length,
+          va: "TOP",
+          box: all(HAIR),
+          m: [px(4), px(4), 0, px(2)],
+          paras: [this.p(`STEP ${i + 1}`, { ...HEAD, color: WHITE }, { align: "CENTER", line: pct(LH.card), box: { fill: G.g4 } }), this.para({ align: "JUSTIFY", chars: true }, m ? [...this.rich(m.label, BODY_B), this.run(" ", BODY), ...this.rich(m.text, BODY)] : this.rich(x, BODY))],
+        });
+        parts.push({ fr: 1 });
+      });
+      items = [this.host(this.table(this.cols(bw, parts), [lineH()], cells))];
+    } else if (b.variant === "quote" && b.items.length) {
+      const [q, ...res] = b.items;
+      const m = caseLabel(q);
+      const said = (m?.text ?? q).replace(/^[“"]|[”"]$/g, "");
+      items = [
+        this.para({ align: "CENTER", chars: true }, [...(m ? this.tag(m.label) : []), this.run("“", BODY_B), ...this.rich(said, BODY_B), this.run("”", BODY_B)]),
+        ...res.map((x) => this.host(this.table([bw], [lineH()], [{ r: 0, c: 0, paras: [this.p(x, { ...BODY_B, color: WHITE }, { align: "CENTER" })], box: { fill: G.g4 }, m: [px(6), px(6), px(1), px(1)] }]), px(2))),
+      ];
+    }
     const cells: TCell[] = [
       { r: 0, c: 0, paras: [this.para({ align: "CENTER", line: pct(LH.caseHead) }, [this.run(` ${flat(b.label || "우수사례")}  `, { ...H11, color: WHITE, shade: G.g4 }), this.run("  ", H11), ...this.rich(b.title, H11)], H11)], box: { fill: G.g1 }, m: [0, px(4), 0, 0] },
       { r: 1, c: 0, paras: items.length ? items : [this.empty()], m: [px(5), px(5), px(2), px(3)], va: "TOP" },
@@ -1172,17 +1256,28 @@ class SectionWriter extends Writer {
     const n = b.cells.length;
     const cells: TCell[] = [];
     const m: [number, number, number, number] = [px(4), px(4), px(1), px(1)];
-    for (const g of ladderGroups(b.cells)) {
+    // 흐름 표(cascade — 2026-11-09 P4): 큰 라벨 묶음 사이 ▼ 줄(합친 칸 하나). 줄 번호는 앞 묶음 수만큼 밀림(ladder는 그대로)
+    const groups = ladderGroups(b.cells);
+    const arrows = b.variant === "cascade";
+    const rowH: number[] = [];
+    groups.forEach((g, k) => {
+      const at = g.start + (arrows ? k : 0);
+      if (arrows && k) {
+        cells.push({ r: at - 1, c: 0, cs: sub ? 3 : 2, paras: [this.para({ align: "CENTER", line: 100 }, [this.run("▼", { face: "label", pt: 9, bold: true, color: G.g3 })], BODY)], box: { b: HAIR3 }, m: M0 });
+        rowH.push(mm(4));
+      }
       const end = g.start + g.rows === n;
-      cells.push({ r: g.start, c: 0, rs: g.rows, paras: [this.p(g.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { fill: G.g2, r: HAIR, b: end ? HAIR : HAIR3, t: g.start === 0 ? THICK : undefined }, m });
+      cells.push({ r: at, c: 0, rs: g.rows, paras: [this.p(g.head, { ...HEAD, pt: F.label }, { align: "CENTER", line: pct(LH.tbl) })], box: { fill: G.g2, r: HAIR, b: end ? HAIR : HAIR3, t: g.start === 0 ? THICK : undefined }, m });
       for (let i = g.start; i < g.start + g.rows; i++) {
         const bottom = i === n - 1 ? HAIR : HAIR3;
         const top = i === 0 ? THICK : undefined;
-        if (sub) cells.push({ r: i, c: 1, paras: [this.p(b.cells[i].tag, { ...HEAD, pt: F.label }, { align: "LEFT", line: pct(LH.tbl) })], box: { fill: G.g1, r: HAIR3, b: bottom, t: top }, m });
-        cells.push({ r: i, c: sub ? 2 : 1, paras: this.ul(b.cells[i].bullets), box: { b: bottom, t: top }, m });
+        const r = i + (at - g.start);
+        if (sub) cells.push({ r, c: 1, paras: [this.p(b.cells[i].tag, { ...HEAD, pt: F.label }, { align: "LEFT", line: pct(LH.tbl) })], box: { fill: G.g1, r: HAIR3, b: bottom, t: top }, m });
+        cells.push({ r, c: sub ? 2 : 1, paras: this.ul(b.cells[i].bullets), box: { b: bottom, t: top }, m });
+        rowH.push(lineH());
       }
-    }
-    return this.table(colW, b.cells.map(() => lineH()), cells);
+    });
+    return this.table(colW, rowH, cells);
   }
 
   /** 전략체계도: 왼쪽 층 이름 열(16mm, 있을 때) + 목표 띠(진회색) → 열 머리 → 과제 → 지표 행 */

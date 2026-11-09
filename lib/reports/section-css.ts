@@ -221,6 +221,24 @@ ${fontSpacingCss()}
 .kca-dg-doc .k-lay__r{font-weight:700}
 .kca-dg-doc ol.k-lay > li.k-focus .k-lay__m{background:var(--k-g5)}
 .kca-dg-doc ol.k-lay > li.k-focus .k-lay__b{background:var(--k-g1)}
+/* ───────────── 모양 변형 뒤 절반(2026-11-09 P4 — 주요사업). 크기는 fit.ts SHAPE_GAP_MM과 같은 값 ───────────── */
+/* PDCA 5칸(한 줄) · 6칸(두 줄 고리 — 칸·화살표 자리는 grid-area, 가운데 화살표 줄 5mm) */
+.kca-dg-doc .k-pdca--5{grid-template-columns:minmax(0,1fr) ${J.gapMm}mm minmax(0,1fr) ${J.gapMm}mm minmax(0,1fr) ${J.gapMm}mm minmax(0,1fr) ${J.gapMm}mm minmax(0,1fr)}
+.kca-dg-doc .k-pdca--6{grid-template-columns:minmax(0,1fr) ${J.gapMm}mm minmax(0,1fr) ${J.gapMm}mm minmax(0,1fr);grid-template-rows:auto 5mm auto}
+/* 우수사례 STEP 흐름(case:steps): 단계 칸(STEP 띠 + 「단계 이름」 굵게 + 글) 사이 ▶ · 인용형(case:quote): 인용 문단 + 결과 띠 */
+.kca-dg-doc ol.k-case__steps{list-style:none;margin:1px 0 0;padding:0;display:grid;align-items:stretch}
+.kca-dg-doc ol.k-case__steps > li{padding:0;min-width:0}
+.kca-dg-doc ol.k-case__steps > li::before{content:none}
+.kca-dg-doc .k-case__st{border:var(--k-hair) solid var(--k-g4);padding:0 4px 2px}
+.kca-dg-doc .k-case__sn{display:block;margin:0 -4px 1px;background:var(--k-g4);color:#fff;text-align:center;font:700 ${F.box - 0.4}pt/1.5 var(--k-f-dotum);letter-spacing:var(--k-ls-dotum)}
+.kca-dg-doc .k-case__q{margin:1px 0 0;text-align:center;font-weight:700}
+.kca-dg-doc .k-case__res{margin:2px 0 0;padding:1px 6px;background:var(--k-g4);color:#fff;text-align:center;font-weight:700}
+/* 협업 가로형(hub:row — 열은 style, 같은 쪽 기관 사이 빈 칸) · 수렴형(hub:converge — 기관 줄 → ▼ 줄 → 가운데 결과 칸 전폭) */
+.kca-dg-doc .k-hubc{margin-top:3px}
+.kca-dg-doc .k-hubc__nodes{display:grid;column-gap:3mm;align-items:stretch}
+.kca-dg-doc .k-hubc__arr{height:5mm;display:flex;align-items:center;justify-content:center;color:var(--k-g3);font:900 12pt/1 var(--k-f-label)}
+/* 2단 라벨 흐름 표(table:cascade): 큰 라벨 묶음 사이 ▼ 줄(4mm) */
+.kca-dg-doc table.k-tbl--lad tr.k-lad__arr td{height:4mm;padding:0;border-left:0;background:#fff;color:var(--k-g3);text-align:center;font:900 9pt/1 var(--k-f-label)}
 
 /* ───────────── before_after 표 ───────────── */
 .kca-dg-doc table.k-ba{width:100%;border-collapse:separate;border-spacing:0}

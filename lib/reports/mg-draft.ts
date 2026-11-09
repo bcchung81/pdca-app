@@ -470,7 +470,7 @@ export function verifyMgDraft(out: MgDraftOutput, card: Json, plan: Composition,
       strange += 1;
       continue;
     }
-    const c = cleanBlocks(op.blocks ?? [], cleanLine, (q) => quoteFoundIn(hay, q));
+    const c = cleanBlocks(op.blocks ?? [], cleanLine, (q) => quoteFoundIn(hay, q), { mg: true });
     // 배치(전폭·단 띠·가로 반씩)는 승인된 구성안의 이 절 블록에서 옮김(AI가 정하지 않음)
     applyPlanLayout({ blocks: plan.blocks.filter((b) => b.at === key) }, c.blocks);
     dropped.push(...c.dropped);

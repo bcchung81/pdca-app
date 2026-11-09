@@ -69,6 +69,14 @@ const SAMPLES: Record<string, Block> = {
   "timeline:status": block({ kind: "timeline", variant: "status", cells: [cell("’25 설계", ["체계 설계"], { tag: "완료" }), cell("’26 시범", ["3개 지역"], { tag: "진행", focus: true }), cell("’27 확산", ["전국 적용"], { tag: "예정", note: "목표 17개 시도" })] }),
   "hub:2": block({ kind: "hub", cells: [cell("KCA", ["총괄", "조정"]), cell("기관 A", ["자료 제공", "검증"]), cell("기관 B", ["현장 지원"])], figures: [fig("logo", "해양경찰청･KCA･KOMSA 기관 로고", "center", "M")] }),
   "hub:list": block({ kind: "hub", cells: [cell("KCA", ["총괄"]), cell("기관 A", ["자료"]), cell("기관 B", ["현장"]), cell("기관 C", ["홍보"])] }),
+  // 사례·협업·표 모양·PDCA 5·6칸(2026-11-09 P4 뒤 절반 — 옛 렌더러는 단순한 표로: 가로형은 한 줄, 수렴형은 기관 줄 · ▼ · 가운데 칸, STEP 칸 사이 ▶, 인용 + 결과 띠, 묶음 사이 ▼, 6칸은 위 줄 · 화살표 줄 · 아래 줄)
+  "hub:row": block({ kind: "hub", variant: "row", cells: [cell("KCA", ["공동 결과 1건"]), cell("과기정통부", ["정책", "예산"]), cell("지자체", ["현장"]), cell("통신 3사", ["설비 투자"]), cell("제조사", ["단말"])], figures: [fig("logo", "과기정통부･KCA･통신 3사 기관 로고", "center", "M")] }),
+  "hub:converge": block({ kind: "hub", variant: "converge", cells: [cell("공동 결과", ["음영 해소 120곳"]), cell("기관 A", ["측정"]), cell("기관 B", ["보강", "점검"]), cell("기관 C", ["홍보"])] }),
+  "case:steps": block({ kind: "case", variant: "steps", label: "우수사례", title: "공모전 대상", items: ["접수 | 아이디어 120건", "심사 : 전문가 2차", "그 밖 단계 글"] }),
+  "case:quote": block({ kind: "case", variant: "quote", title: "현장 호평", items: ["현장 검사관 | 판독이 빨라졌다", "’26 우수기관 선정"], figures: [fig("photo", "현장 사진", "right", "S")] }),
+  "table:cascade": block({ kind: "table", variant: "cascade", cells: [cell("현황", ["가"], { tag: "하위1" }), cell("", ["나"], { tag: "하위2" }), cell("조치", ["다"], { tag: "하위3" }), cell("성과", ["라"])] }),
+  "pdca:5": block({ kind: "pdca", cells: [...four, cell("확산", ["전국 적용"], { note: "17개 시도" })] }),
+  "pdca:6": block({ kind: "pdca", text: "환류 글", cells: [...four, cell("확산", ["전국 적용"]), cell("정착", ["제도화"], { tag: "F" })] }),
   voices: block({ kind: "voices", title: "목소리 제목", cells: [cell("현장 검사관", ["위험해요"]), cell("", ["빨라졌어요"]), cell("주민", ["좋아요"])] }),
   define: block({ kind: "define", title: "용어 정의", text: "정의 본문", items: ["입력", "처리", "출력"] }),
   band: block({ kind: "band", label: "핵심 가치", text: "띠 메시지" }),
@@ -324,8 +332,10 @@ test("같은 값은 모양 표에 한 번만(등록기) · 같은 spec → 같�
 // 그 밖 규칙은 그대로 — 이 다섯 줄을 뺀 글이 옛 고정값 fb80a6e5…과 같음을 확인
 // 2026-11-09 단계·시기 모양 4종·부분 강조(경평 초안 프레임워크 확장 계획 P4)로(7f287ee3… → b5dfe056…): .k-proc__r 규칙 바로 뒤에 빈 줄 + 주석·규칙 블록(부분 강조·진행 상태·깔때기·다층 차단)을 더함.
 // 그 밖 규칙은 그대로 — 더한 블록을 뺀 글이 옛 고정값 7f287ee3…과 같음을 확인
+// 2026-11-09 모양 변형 뒤 절반(경평 초안 프레임워크 확장 계획 P4 — PDCA 5·6칸·우수사례 STEP 흐름·인용형·협업 수렴형·2단 라벨 흐름 표)으로(b5dfe056… → 8e01d8e6…): .k-lay 강조 규칙 바로 뒤에
+// 주석·규칙 블록을 더함. 그 밖 규칙은 그대로 — 더한 블록을 뺀 글이 옛 고정값 b5dfe056…과 같음을 확인
 test("화면 CSS(REPORT_CSS) 고정 — 화면·한글 공용 값(REPORT_STYLE)을 바꾸면 이 값도 바뀜", () => {
-  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "b5dfe0562bc8fd6119d720a572cd0b2a47a3b9e4090ac1545e3ee6d836e0e92d");
+  assert.equal(createHash("sha256").update(REPORT_CSS).digest("hex"), "8e01d8e6e4e77f944a4bf8d55bf8c8374da1b40554d43b320c1b11effbc44c5a");
 });
 
 test("칸 사이 기호 칸(REPORT_STYLE.join.gapMm 3.5mm)·좁은 칸 안 여백(boxPadX 3px): 화면 HTML·CSS·판면 어림(slotOf)·한글 양식이 같은 값", () => {

@@ -8,7 +8,7 @@ import { z } from "zod";
 import { cardOutline } from "../ai/writer.ts";
 import { flattenHtmlTables } from "../knowledge/rich-text.ts";
 import { inspectionCardText } from "../ai/inspect.ts";
-import { BLOCK_OUT_FIELDS, type Block, CELL_FOCUS_FIELD, STORIES, actualBars, blockBullets, blockOutSchema, blockNumberTexts, blockSignature, blockTexts, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
+import { BLOCK_OUT_FIELDS, type Block, CELL_FOCUS_FIELD, STORIES, actualBars, blockBullets, blockOutSchema, blockNumberTexts, blockSignature, blockTexts, caseLabel, cleanBlocks, layoutHints, visualCount } from "./blocks.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { FIT_BAND, type FitLine, type FitNeed, type FitReport, type HeadMode, PAGE_MM, blockAreaMm, blockCosts, capacityLines, fitReport, guardFigureText, guardFigures, hollowWarning, subTitleMax } from "./fit.ts";
@@ -924,7 +924,9 @@ export function priorQuoteIssues(blocks: Block[], caseEvidence: string[], pastTe
   // 올해 쪽(currentKey — evidenceKey)과 같게 편 글도 대조(2026-10-29)
   const flat = flattenHtmlTables(pastText);
   const pastKey = sourceKey(flat === pastText ? pastText : `${pastText}\n${flat}`);
-  const quotes = [...blocks.filter((b) => b.kind === "quotes" || b.kind === "voices").map((b) => b.cells.map((c) => c.bullets[0] ?? "")).flat(), ...caseEvidence].map((q) => q.trim()).filter(Boolean);
+  // 우수사례 인용형(case:quote — 2026-11-09 P4)의 인용 줄도 인용 상자와 같이 봄(「화자 | 인용」이면 인용 글만)
+  const caseQuotes = blocks.filter((b) => b.kind === "case" && b.variant === "quote").map((b) => (caseLabel(b.items[0] ?? "")?.text ?? b.items[0] ?? "").replace(/^[“"]|[”"]$/g, ""));
+  const quotes = [...blocks.filter((b) => b.kind === "quotes" || b.kind === "voices").map((b) => b.cells.map((c) => c.bullets[0] ?? "")).flat(), ...caseQuotes, ...caseEvidence].map((q) => q.trim()).filter(Boolean);
   const only = [...new Set(quotes.filter((q) => quoteFoundIn(pastKey, q) && !quoteFoundIn(currentKey, q)))];
   if (!only.length) return [];
   const cut = (q: string) => (q.length > 30 ? `${q.slice(0, 30)}…` : q);

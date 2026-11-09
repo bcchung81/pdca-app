@@ -44,7 +44,7 @@ import {
   sideBySide,
 } from "./composition.ts";
 import { canonicalBlock } from "./fit.ts";
-import { cellRange, storyLabel } from "./frameworks.ts";
+import { BIZ_ONLY_SHAPES, cellRange, storyLabel } from "./frameworks.ts";
 import { evidenceOf } from "./section.ts";
 import { warningLevel } from "./warning-levels.ts";
 import { BIZ_TRACK } from "../tracks/index.ts";
@@ -465,15 +465,15 @@ test("applyCompositionEdit: 순서·빼기·이야기 틀(목록 안만)·추진
 // ---------------------------------------------------------------------------
 // shapeChoices
 
-test("shapeChoices: 35개 모두 돌아오고(로드맵 표·단계·시기 모양 4종 2026-11-09 — 경영관리 구성안은 주요사업 전용 5가지를 뺀 30개), 근거 없는 이 과제만의 요소는 ok false, 지금 모양과 같은 모양은 deltaMm 0, 칸을 더 쓰는 모양은 deltaMm > 0, add 모드는 블록이 하나 느는 판면이라 deltaMm > 0", () => {
+test("shapeChoices: 40개 모두 돌아오고(로드맵 표·단계·시기 모양 4종·사례·협업·표 모양 5종 2026-11-09 — 경영관리 구성안은 주요사업 전용 10가지를 뺀 30개), 근거 없는 이 과제만의 요소는 ok false, 지금 모양과 같은 모양은 deltaMm 0, 칸을 더 쓰는 모양은 deltaMm > 0, add 모드는 블록이 하나 느는 판면이라 deltaMm > 0", () => {
   const c = baseComposition({ blocks: [planBlock({ kind: "bullets", cells: 2, label: "A" })] });
   const e = editOf(c);
   const change = shapeChoices(c, e, { pos: 0, mode: "change" }, 1);
-  assert.equal(change.length, 35);
-  for (const code of ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status"]) assert.ok(change.some((x) => x.code === code), code);
+  assert.equal(change.length, 40);
+  for (const code of ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status", "case:steps", "case:quote", "hub:row", "hub:converge", "table:cascade"]) assert.ok(change.some((x) => x.code === code), code);
   const mgChange = shapeChoices({ ...c, mg: { parts: [] } as any }, e, { pos: 0, mode: "change" }, 1);
   assert.equal(mgChange.length, 30);
-  assert.ok(!mgChange.some((x) => x.code === "table:roadmap" || x.code === "steps:logic" || x.code === "timeline:status"), "경영관리 구성안 도식 목록에는 주요사업 전용 모양 없음");
+  assert.ok(!mgChange.some((x) => BIZ_ONLY_SHAPES.includes(x.code)), "경영관리 구성안 도식 목록에는 주요사업 전용 모양 없음");
   const quotesChoice = change.find((x) => x.code === "quotes")!;
   assert.equal(quotesChoice.ok, false, "재료도 AI 추천도 없는 이 과제만의 요소");
   const sameChoice = change.find((x) => x.kind === "bullets")!;

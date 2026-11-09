@@ -5,8 +5,8 @@
 import { fitTextLines } from "./fit-dom.ts";
 import { reportFontsScript } from "./report-fonts.ts";
 import { REPORT_CSS, REPORT_STYLE } from "./section-css.ts";
-import { type Block, FIGURE_LABEL, type Figure, type FigurePos, ROADMAP_PLAN, cellFocus, figureMm, isChevronTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
-import { STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, funnelMm, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
+import { type Block, FIGURE_LABEL, type Figure, type FigurePos, PDCA_RING, ROADMAP_PLAN, caseLabel, cellFocus, figureMm, isChevronTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark, tableBars } from "./blocks.ts";
+import { SHAPE_GAP_MM, STATS_ROW_LABEL, TABLE_SHAPE_MM, blockWidth, funnelMm, ownResult, resultRowHeadMm, soloWidth, statsBoxLabel, statsParts, statsRow, tableColsMm } from "./fit.ts";
 import { layoutGroups } from "./layout.ts";
 import { NUM_SRC, type RepeatMarks, UNIT_SRC, figureSpans, repeatMarks } from "./repeat-figures.ts";
 import { type Diagram, type LadderRow, type MiniChart, type ReportSectionSpec, numberTokens } from "./section.ts";
@@ -352,6 +352,8 @@ function ladderTableHtml(b: Block, u: Marks, at: At, w: number): string {
   const subW = ((TABLE_SHAPE_MM.ladderSub / w) * 100).toFixed(2);
   const rows: string[] = [];
   for (const g of ladderGroups(b.cells)) {
+    // 흐름 표(cascade — 2026-11-09 P4): 큰 라벨 묶음 사이 ▼ 줄(높이 fit.ts SHAPE_GAP_MM.ladderArrow). ladder는 예전 출력 그대로
+    if (b.variant === "cascade" && g.start > 0) rows.push(`<tr class="k-lad__arr" aria-hidden="true"><td colspan="${sub ? 3 : 2}">▼</td></tr>`);
     for (let i = g.start; i < g.start + g.rows; i++) {
       const c = b.cells[i];
       const bigTh = i === g.start ? `<th scope="rowgroup" class="k-lad__g"${g.rows > 1 ? ` rowspan="${g.rows}"` : ""}>${tx(g.head, u, at(`cells.${i}.head`))}</th>` : "";
@@ -467,6 +469,17 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
       // 가운데 칸 그림(기관 로고 묶음 — 2025 협업 구조 가운데)
       const logos = figsAt(b, "center");
       const mid = `<section class="k-hub__node k-hub__node--center"><h6 class="k-hub__name">${tx(center.head, u, at("cells.0.head"))}</h6>${logos.length ? `<div class="k-hub__logos">${logos.map((f) => figHtml(f)).join("")}</div>` : ""}${ul(center.bullets, u, at("cells.0.bullets"))}</section>`;
+      // 가로형(2026-11-09 P4): 기관을 가운데 양옆 한 줄로(앞 절반 왼쪽 — 같은 쪽 기관 사이 3mm, 가운데 옆 손 잡기 칸). 칸 폭은 fit.ts slotOf와 같은 비(가운데 1.2)
+      if (b.variant === "row" && nodes.length >= 2) {
+        const left = Math.ceil(nodes.length / 2);
+        const gap = `${SHAPE_GAP_MM.hubNodes}mm`;
+        const side = (xs: Block["cells"], off: number) => xs.map((c, k) => node(c, off + k + 1)).join('<div class="k-hub__gap" aria-hidden="true"></div>');
+        const cols = [nodes.slice(0, left).map(() => "minmax(0,1fr)").join(` ${gap} `), "9mm minmax(0,1.2fr) 9mm", nodes.slice(left).map(() => "minmax(0,1fr)").join(` ${gap} `)].join(" ");
+        return `${title}<div class="k-hub k-hub--row" style="grid-template-columns:${cols}">${side(nodes.slice(0, left), 0)}<div class="k-hub__link">${HANDS}</div>${mid}<div class="k-hub__link">${HANDS}</div>${side(nodes.slice(left), left)}</div>`;
+      }
+      // 수렴형: 기관(활동) 칸 한 줄 → ▼ → 가운데 결과 칸(전폭 — 공동 결과는 가운데 칸 불릿)
+      if (b.variant === "converge" && nodes.length >= 2)
+        return `${title}<div class="k-hubc"><div class="k-hubc__nodes" style="grid-template-columns:repeat(${nodes.length},minmax(0,1fr))">${nodes.map((c, i) => node(c, i + 1)).join("")}</div><div class="k-hubc__arr" aria-hidden="true">▼</div>${mid}</div>`;
       if (nodes.length === 2) return `${title}<div class="k-hub">${node(nodes[0], 1)}<div class="k-hub__link">${HANDS}</div>${mid}<div class="k-hub__link">${HANDS}</div>${node(nodes[1], 2)}</div>`;
       return `${title}<div class="k-hub k-hub--list">${mid}<div class="k-hub__link">${HANDS}</div><table class="k-hub__list"><tbody>${nodes.map((c, i) => `<tr><th scope="row">${tx(c.head, u, at(`cells.${i + 1}.head`))}</th><td>${ul(c.bullets, u, at(`cells.${i + 1}.bullets`))}</td></tr>`).join("")}</tbody></table></div>`;
     }
@@ -489,14 +502,30 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
     case "case": {
       // 「공모명 | 2025년 …」처럼 라벨이 있는 줄은 라벨 칩 + 글(2025 우수사례 상자 모양)
       // 라벨이 있는 줄은 라벨 칩과 글을 한 칸으로 표지(원래 글 「라벨 | 내용」 그대로 고침)
+      const ed = (i: number, x: string, inner: string) => (EDIT && bp ? `<span class="k-t" data-t="${bp}.items.${i}" data-raw="${esc(x)}">${inner}</span>` : inner);
       const item = (x: string, i: number) => {
-        const m = /^([^|:：]{1,8}?)\s*[|:：]\s+(.+)$/.exec(x);
-        const inner = m ? `<span class="k-tag">${txt(m[1], u)}</span>${txt(m[2], u)}` : txt(x, u);
-        return `<li${m ? ' class="k-case__kv"' : ""}>${EDIT && bp ? `<span class="k-t" data-t="${bp}.items.${i}" data-raw="${esc(x)}">${inner}</span>` : inner}</li>`;
+        const m = caseLabel(x);
+        const inner = m ? `<span class="k-tag">${txt(m.label, u)}</span>${txt(m.text, u)}` : txt(x, u);
+        return `<li${m ? ' class="k-case__kv"' : ""}>${ed(i, x, inner)}</li>`;
       };
+      // 상자 몸통(2026-11-09 P4 — 모양 없으면 예전 줄 목록 그대로): STEP 흐름 = 단계 칸(STEP n 띠 + 「단계 이름」 굵게 + 글) 사이 ▶ ·
+      // 인용형 = 첫 줄 인용(“…” — 「화자 | 인용」이면 화자 칩, 원문 대조는 blocks.ts cleanBlocks) + 뒤 줄 결과 띠
+      let body = `<ul>${b.items.map(item).join("")}</ul>`;
+      if (b.variant === "steps") {
+        const st = b.items.map((x, i) => {
+          const m = caseLabel(x);
+          return `<li class="k-case__st"><b class="k-case__sn">STEP ${i + 1}</b>${ed(i, x, m ? `<b class="k-case__sl">${txt(m.label, u)}</b> ${txt(m.text, u)}` : txt(x, u))}</li>`;
+        });
+        body = `<ol class="k-case__steps" style="grid-template-columns:${st.map(() => "minmax(0,1fr)").join(JOIN_GAP)}">${st.join('<li class="k-join" aria-hidden="true">▶</li>')}</ol>`;
+      } else if (b.variant === "quote") {
+        const [q = "", ...res] = b.items;
+        const m = caseLabel(q);
+        const said = (m?.text ?? q).replace(/^[“"]|[”"]$/g, "");
+        body = `<p class="k-case__q">${ed(0, q, `${m ? `<span class="k-tag">${txt(m.label, u)}</span>` : ""}“${txt(said, u)}”`)}</p>${res.map((x, k) => `<p class="k-case__res">${ed(k + 1, x, txt(x, u))}</p>`).join("")}`;
+      }
       // 그림(수상·보도 사진)은 상자 오른쪽 칸(2025 1-1 가·1-2 나)
       const fig = (b.figures ?? [])[0];
-      return `<aside class="k-case${fig ? "" : " k-case--nofig"}"${fig ? ` style="grid-template-columns:minmax(0,1fr) ${figureMm(fig).w}mm"` : ""}><div class="k-case__h"><span class="k-case__tab">${esc(b.label || "우수사례")}</span><span class="k-case__title">${tx(b.title, u, at("title"))}</span></div><div class="k-case__b"><ul>${b.items.map(item).join("")}</ul></div>${fig ? figHtml(fig, "k-case__figslot") : ""}</aside>`;
+      return `<aside class="k-case${fig ? "" : " k-case--nofig"}"${fig ? ` style="grid-template-columns:minmax(0,1fr) ${figureMm(fig).w}mm"` : ""}><div class="k-case__h"><span class="k-case__tab">${esc(b.label || "우수사례")}</span><span class="k-case__title">${tx(b.title, u, at("title"))}</span></div><div class="k-case__b">${body}</div>${fig ? figHtml(fig, "k-case__figslot") : ""}</aside>`;
     }
     case "chart":
       return miniChartHtml({ title: b.title, series: b.series, badge: b.badge }, side);
@@ -509,7 +538,7 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
         .join("")}</dl>`;
     case "table": {
       if (b.variant === "result") return `${title}${resultTableHtml(b, u, at, w)}`;
-      if (b.variant === "ladder") return `${title}${ladderTableHtml(b, u, at, w)}`;
+      if (isLadderTable(b)) return `${title}${ladderTableHtml(b, u, at, w)}`;
       // 수치 표(2025 복원지수·등급·로드맵·점검 비교 표): 머리 줄 = items(첫째 = 행 머리 열), 행마다 head = 행 머리·bullets = 값 열
       // 열 폭은 판면 어림과 같은 함수(fit.ts tableColsMm — 글 길이를 따름). 쉐브론 머리(chevron)는 값 열 머리를 단계 화살표로, 막대 표(bars)는 값 옆에 막대(tableBars — 같은 행·같은 단위끼리)
       const cols = tableColsMm(b, w).map((x) => ((x / w) * 100).toFixed(2));
@@ -556,12 +585,19 @@ function blockCore(b: Block, u: Marks, bp?: string, width?: number, side = false
       return `${title}<table class="k-strat"><tbody>${rows.join("")}</tbody></table>`;
     }
     case "pdca": {
-      // P·D·C·A 순환(2025 경영관리 PDCA 체계 도식·생애주기 순환): 4칸 사이 ▶, 칸 머리 = 단계 표지(비우면 P·D·C·A) + 단계 이름, 아래 환류 띠
-      const cells = b.cells.slice(0, 4).map(
-        (c, i) =>
-          `<div class="k-card"><div class="k-card__h"><span class="k-pdca__m">${esc(pdcaMark(c.tag, i))}</span>${tx(c.head, u, at(`cells.${i}.head`))}</div><div class="k-card__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}</div>${c.note ? `<div class="k-card__f">${tx(c.note, u, at(`cells.${i}.note`))}</div>` : ""}</div>`,
-      );
-      return `${title}<div class="k-pdca">${cells.join('<div class="k-join" aria-hidden="true">▶</div>')}${b.text ? `<p class="k-pdca__fb">↺ ${tx(b.text, u, at("text"))}</p>` : ""}</div>`;
+      // P·D·C·A 순환(2025 경영관리 PDCA 체계 도식·생애주기 순환): 4칸 사이 ▶, 칸 머리 = 단계 표지(비우면 P·D·C·A) + 단계 이름, 아래 환류 띠.
+      // 주요사업 5·6칸(2026-11-09 P4): 5칸은 같은 한 줄, 6칸은 두 줄 고리(blocks.ts PDCA_RING — 위 1 ▶ 2 ▶ 3, ▼, 아래 4 ◀ 5 ◀ 6, ▲), 표지는 비면 칸 번호(pdcaMark)
+      const n = Math.min(6, b.cells.length);
+      const card = (c: Block["cells"][number], i: number, style = "") =>
+        `<div class="k-card"${style}><div class="k-card__h"><span class="k-pdca__m">${esc(pdcaMark(c.tag, i, n))}</span>${tx(c.head, u, at(`cells.${i}.head`))}</div><div class="k-card__b">${ul(c.bullets, u, at(`cells.${i}.bullets`))}</div>${c.note ? `<div class="k-card__f">${tx(c.note, u, at(`cells.${i}.note`))}</div>` : ""}</div>`;
+      const fb = b.text ? `<p class="k-pdca__fb">↺ ${tx(b.text, u, at("text"))}</p>` : "";
+      if (n === 6) {
+        const arr = (r: number, c: number, ch: string) => `<div class="k-join" aria-hidden="true" style="grid-area:${r}/${c}">${ch}</div>`;
+        const cards = b.cells.slice(0, 6).map((c, i) => card(c, i, ` style="grid-area:${PDCA_RING[i][0] * 2 + 1}/${PDCA_RING[i][1] * 2 + 1}"`));
+        return `${title}<div class="k-pdca k-pdca--6">${cards.join("")}${arr(1, 2, "▶")}${arr(1, 4, "▶")}${arr(2, 5, "▼")}${arr(3, 4, "◀")}${arr(3, 2, "◀")}${arr(2, 1, "▲")}${fb}</div>`;
+      }
+      const cells = b.cells.slice(0, n).map((c, i) => card(c, i));
+      return `${title}<div class="k-pdca${n === 5 ? " k-pdca--5" : ""}">${cells.join('<div class="k-join" aria-hidden="true">▶</div>')}${fb}</div>`;
     }
     case "stats":
       // 수치 띠 = 추진성과 불릿(2026-10-28 — 2025 추진성과 행): 칸마다 「[칩] 성과 문장(^{시점}수치, 덧글)」 한 불릿(fit.ts statsParts — 어림·한글과 같은 글).

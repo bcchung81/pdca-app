@@ -69,16 +69,20 @@ test("shapeAllowed: 핵심 수치 띠(2026-10-28)만 주요사업 초안에서 �
   assert.deepEqual(shapeAllowed(cards, "table", "", BIZ), { ok: true });
 });
 
-test("shapeAllowed: 로드맵 표·단계·시기 모양 4종(2026-11-09 P1·P4)은 주요사업만 — 경영관리는 거절(경영관리 프롬프트·판 불변)", () => {
-  assert.deepEqual([...BIZ_ONLY_SHAPES], ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status"]);
+test("shapeAllowed: 로드맵 표·단계·시기 모양 4종·사례·협업·표 모양 5종(2026-11-09 P1·P4)은 주요사업만 — 경영관리는 거절(경영관리 프롬프트·판 불변)", () => {
+  assert.deepEqual([...BIZ_ONLY_SHAPES], ["table:roadmap", "steps:logic", "steps:funnel", "steps:layers", "timeline:status", "case:steps", "case:quote", "hub:row", "hub:converge", "table:cascade"]);
   assert.deepEqual(shapeAllowed(cards, "table", "roadmap", BIZ), { ok: true });
   const r = shapeAllowed(cards, "table", "roadmap", MG);
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.why, /로드맵 표」은 주요사업 초안에서만/);
+  // 우수사례·협업 모양은 이 과제만의 요소 — 근거가 있는 주요사업 규칙이면 됨, 경영관리는 근거가 있어도 거절
+  const own = { ok: true, why: "근거 있음" };
+  const bizOwn = { ...BIZ, avail: { case: own, hub: own } };
+  const mgOwn = { ...MG, avail: { case: own, hub: own } };
   for (const code of BIZ_ONLY_SHAPES.slice(1)) {
     const [kind, variant] = code.split(":");
-    assert.deepEqual(shapeAllowed(cards, kind, variant, BIZ), { ok: true }, code);
-    assert.equal(shapeAllowed(cards, kind, variant, MG).ok, false, code);
+    assert.deepEqual(shapeAllowed(cards, kind, variant, bizOwn), { ok: true }, code);
+    assert.equal(shapeAllowed(cards, kind, variant, mgOwn).ok, false, code);
   }
 });
 

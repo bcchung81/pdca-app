@@ -17,7 +17,7 @@ const cell = (head: string, bullets: string[] = [], note = "", tag = "") => ({ h
 const line = (s: unknown, max = 400) => String(s ?? "").trim().slice(0, max);
 const blk = (kind: Block["kind"], x: Partial<Block> = {}): Block => ({ kind, label: "", title: "", variant: "", text: "", items: [], cells: [], rows: [], series: [], badge: "", ...x });
 
-test("BLOCK_KINDS·SHAPES: strategy·pdca가 있고 기본 도식 무리, 칸 범위 strategy 2~4·pdca 4", () => {
+test("BLOCK_KINDS·SHAPES: strategy·pdca가 있고 기본 도식 무리, 칸 범위 strategy 2~4·pdca 4(주요사업 4~6 — 2026-11-09 P4, 경영관리 4)", () => {
   assert.ok(BLOCK_KINDS.includes("strategy" as any) && BLOCK_KINDS.includes("pdca" as any));
   for (const code of ["strategy", "pdca"]) {
     const s = SHAPES.find((x) => x.code === code);
@@ -25,7 +25,8 @@ test("BLOCK_KINDS·SHAPES: strategy·pdca가 있고 기본 도식 무리, 칸 �
     assert.equal(s!.group, "base");
   }
   assert.deepEqual(cellRange("strategy" as any), { min: 2, max: 4 });
-  assert.deepEqual(cellRange("pdca" as any), { min: 4, max: 4 });
+  assert.deepEqual(cellRange("pdca" as any), { min: 4, max: 6 });
+  assert.deepEqual(cellRange("pdca" as any, "", true), { min: 4, max: 4 }, "경영관리는 4칸 그대로");
   assert.equal(defaultCells("strategy" as any), 3);
   assert.equal(defaultCells("pdca" as any), 4);
   assert.equal(shapeName("strategy", ""), "전략체계도");

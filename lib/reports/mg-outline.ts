@@ -378,7 +378,7 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
   let lost = 0;
   for (const b of (out.blocks ?? []).slice(0, MG_LIMITS.blocks)) {
     const at = keyAt[Math.round(Number(b?.part)) - 1] ?? null;
-    const x = cleanPlanBlock(b, ids);
+    const x = cleanPlanBlock(b, ids, true);
     if (!x) continue;
     if (!at) {
       lost += 1;

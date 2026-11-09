@@ -408,8 +408,8 @@ export function cleanMaterials(raw: CompositionOutput["materials"] | undefined, 
   return { materials, warnings };
 }
 
-/** AI 구성안 블록 하나 정리(구성안 공용): 모르는 종류면 null, 모양·칸 수·그림·대안 정리, 재료표에 없는 번호는 뗌 */
-export function cleanPlanBlock(b: CompositionOutput["blocks"][number] | undefined, ids: Set<string>): PlanBlock | null {
+/** AI 구성안 블록 하나 정리(구성안 공용): 모르는 종류면 null, 모양·칸 수·그림·대안 정리, 재료표에 없는 번호는 뗌. mg = 경영관리(칸 수 범위 — frameworks.ts cellRange) */
+export function cleanPlanBlock(b: CompositionOutput["blocks"][number] | undefined, ids: Set<string>, mg = false): PlanBlock | null {
   if (!b || !BLOCK_KINDS.includes(b.kind)) return null;
   const variant = variantOf(b.kind, b.variant);
   return {
@@ -417,7 +417,7 @@ export function cleanPlanBlock(b: CompositionOutput["blocks"][number] | undefine
     variant,
     label: cleanLine(b.label, 24),
     purpose: cleanLine(b.purpose, 120),
-    cells: clampCells(b.kind, variant, Number(b.cells)),
+    cells: clampCells(b.kind, variant, Number(b.cells), mg),
     materials: (Array.isArray(b.materials) ? b.materials : []).map(String).filter((x) => ids.has(x)),
     figures: cleanFigures(b.kind, b.figures, cleanLine),
     ai: { kind: b.kind, variant },
@@ -882,7 +882,7 @@ export function applyCompositionEdit(c: Composition, e: CompositionEdit, maxBloc
       variant,
       label: cleanLine(x?.label, EDIT_LIMITS.label),
       purpose: cleanLine(x?.purpose, EDIT_LIMITS.purpose),
-      cells: clampCells(kind, variant, Number(x?.cells)),
+      cells: clampCells(kind, variant, Number(x?.cells), Boolean(c.mg)),
       materials,
       figures,
       ...(cleanLine(x?.memo, EDIT_LIMITS.memo) ? { memo: cleanLine(x?.memo, EDIT_LIMITS.memo) } : {}),
@@ -939,7 +939,7 @@ export function shapeChoices(c: Composition, e: CompositionEdit, target: { pos: 
   const cur = e.blocks[target.pos];
   // 경영관리 구성안에는 주요사업 전용 모양(로드맵 표)을 보이지 않음
   return SHAPES.filter((sh) => !(c.mg && BIZ_ONLY_SHAPES.includes(sh.code))).map((sh) => {
-    const cells = target.mode === "change" && cur && cur.kind === sh.kind ? clampCells(sh.kind, sh.variant, cur.cells) : defaultCells(sh.kind, sh.variant);
+    const cells = target.mode === "change" && cur && cur.kind === sh.kind ? clampCells(sh.kind, sh.variant, cur.cells, Boolean(c.mg)) : defaultCells(sh.kind, sh.variant);
     const one: BlockEdit =
       target.mode === "change" && cur
         ? { ...cur, kind: sh.kind, variant: sh.variant, cells }

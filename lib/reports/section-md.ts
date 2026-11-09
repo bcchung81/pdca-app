@@ -3,7 +3,7 @@
 // 묶는 규칙은 HTML 렌더러(section-html.ts)와 같은 함수를 씀: 라벨·단 띠·가로 반씩 = layoutGroups, 막대 없는 표 칸·2단 라벨 = ladderGroups,
 // 전후 비교 패널 = isPanelCompare. 경영관리 마커 옮기기(지적개선을 카드 지적 행과 겹치는 절 대주제에)는 section-html.ts mgBody와 같은 짜임.
 
-import { type Block, type BlockCell, FIGURE_LABEL, type Figure, ROADMAP_PLAN, blockTexts, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
+import { type Block, type BlockCell, FIGURE_LABEL, type Figure, ROADMAP_PLAN, blockTexts, caseLabel, isLadderTable, isPanelCompare, ladderGroups, layerMark, pdcaMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { layoutGroups } from "./layout.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 
@@ -65,7 +65,9 @@ function body(b: Block, warnings: string[]): string[] {
     case "cards":
       return [...title, ...cellLines(b.cells, (c) => (c.tag ? `[${t(c.tag)}] ` : ""))];
     case "pdca": {
-      return [...title, ...cellLines(b.cells.slice(0, 4), (c, i) => `[${t(pdcaMark(c.tag, i))}] `), ...(b.text ? [bullet(`↺ ${b.text}`)] : [])];
+      // 주요사업 5·6칸(2026-11-09 P4)도 칸 차례대로(표지는 렌더러와 같은 pdcaMark — 비면 칸 번호)
+      const n = Math.min(6, b.cells.length);
+      return [...title, ...cellLines(b.cells.slice(0, n), (c, i) => `[${t(pdcaMark(c.tag, i, n))}] `), ...(b.text ? [bullet(`↺ ${b.text}`)] : [])];
     }
     case "steps":
       // 깔때기(2026-11-09 P4): 단계 | 수치 | 집계 기준(note) 표 — 띠 폭은 한글 원고에서 뺌
@@ -81,6 +83,8 @@ function body(b: Block, warnings: string[]): string[] {
     case "hub": {
       const [center, ...nodes] = b.cells;
       if (!center) return title;
+      // 수렴형(2026-11-09 P4): 기관(활동) 먼저, 모이는 가운데 결과 칸을 뒤에 「[결과] 」로. 가로형은 협업 구조와 같은 차례
+      if (b.variant === "converge") return [...title, ...nodes.flatMap((c) => cellLines([c], () => "")), ...cellLines([center], () => "[결과] ")];
       return [...title, ...cellLines([center], () => "[중심] "), ...nodes.flatMap((c) => cellLines([c], () => ""))];
     }
     case "voices":
@@ -94,6 +98,14 @@ function body(b: Block, warnings: string[]): string[] {
     case "qa":
       return [...title, ...b.cells.flatMap((c) => [`ㅇ **Q. ${t(c.head)}**`, ...c.bullets.map((x, i) => sub(i ? x : `A. ${x}`))])];
     case "case":
+      // STEP 흐름(2026-11-09 P4): 줄 앞 「STEP n 」, 인용형: 첫 줄을 “인용”(화자 칩은 「화자: 」), 뒤 줄은 「→ 」 결과
+      if (b.variant === "steps") return [bullet(`**[${t(b.label) || "우수사례"}] ${t(b.title)}**`), ...b.items.map((x, i) => sub(`STEP ${i + 1} ${x}`))];
+      if (b.variant === "quote") {
+        const [q = "", ...res] = b.items;
+        const m = caseLabel(q);
+        const said = (m?.text ?? q).replace(/^[“"]|[”"]$/g, "");
+        return [bullet(`**[${t(b.label) || "우수사례"}] ${t(b.title)}**`), sub(`${m ? `${m.label}: ` : ""}“${said}”`), ...res.map((x) => sub(`→ ${x}`))];
+      }
       return [bullet(`**[${t(b.label) || "우수사례"}] ${t(b.title)}**`), ...b.items.map(sub)];
     case "chart":
       return [...caption(b.title), ...table([["구분", "값"], ...b.series.map((s) => [s.label, s.value])]), ...(b.badge ? [`※ ${t(b.badge)}`] : [])];
@@ -127,10 +139,12 @@ function body(b: Block, warnings: string[]): string[] {
         const right = (c: BlockCell, i: number) => (perRow ? [i ? "" : result, c.note].filter(Boolean).join(" / ") : i ? "〃" : result);
         return [...caption(b.title), ...table([resultHeads(b), ...b.cells.map((c, i) => [...(head ? [c.head] : []), c.bullets.join(" / "), right(c, i)])])];
       }
-      if (b.variant === "ladder") {
+      if (isLadderTable(b)) {
         const subCol = b.cells.some((c) => c.tag);
         const rows: string[][] = [];
         for (const g of ladderGroups(b.cells)) {
+          // 흐름 표(cascade — 2026-11-09 P4): 묶음 사이 ▼ 행
+          if (b.variant === "cascade" && g.start > 0) rows.push(["▼", ...(subCol ? [""] : []), ""]);
           for (let i = g.start; i < g.start + g.rows; i++) rows.push([i === g.start ? g.head : "〃", ...(subCol ? [b.cells[i].tag] : []), b.cells[i].bullets.join(" / ")]);
         }
         return [...caption(b.title), ...table([["구분", ...(subCol ? ["세부"] : []), "내용"], ...rows])];

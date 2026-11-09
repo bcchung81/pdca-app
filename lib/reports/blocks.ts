@@ -119,10 +119,16 @@ export const VARIANTS: Partial<Record<BlockKind, readonly string[]>> = {
   // funnel = 깔때기(단계마다 폭이 줄어드는 띠 + 오른쪽 집계 기준 칸), layers = 다층 차단(1차 ~ n차 세로 층), status = 진행 상태(칸 tag를 완료·진행·예정으로 — statusTag)
   steps: ["row", "zigzag", "logic", "funnel", "layers"],
   timeline: ["chevron", "dots", "status"],
+  // 우수사례·협업 구조 모양(2026-11-09 — 경평 초안 프레임워크 확장 계획 P4 뒤 절반, 주요사업만 — frameworks.ts BIZ_ONLY_SHAPES). 첫째 빈 글 = 예전 상자 그대로.
+  // case: steps = 사례 안 STEP 흐름(items = 단계 2~4줄 「단계 이름 | 내용」), quote = 인용 + 결과 띠(items[0] = 근거 원문 인용 「화자 | 인용」, 뒤 줄 = 결과 띠 1~2 — 인용은 원문 대조, cleanBlocks)
+  // hub: row = 정부 ─ KCA ─ 민간 가로형(가운데 = cells[0], 기관을 양옆에 한 줄로), converge = 여러 기관·활동 → 아래 가운데 결과 칸으로 모임(공동 결과는 가운데 칸 불릿)
+  case: ["", "steps", "quote"],
+  hub: ["", "row", "converge"],
   // 표 모양(2026-10-12 — 2025 경영관리 보고서 빈출, 분석 「블록 어휘 수준」 표): 빈 글 = 수치·구분표(예전 그대로), result = 오른쪽 「추진실적」 칸(머리만 어둡게 — 2026-10-29),
   // bars = 값 칸 옆 가로 막대(길이는 코드가 셈 — tableBars), chevron = 열 머리가 단계 화살표, ladder = 2단 라벨(큰 라벨 안 하위 라벨 + 내용),
-  // roadmap = 다년 로드맵(2026-11-09 — ⑲ 로드맵형, 쉐브론 머리 + 올해 열 강조·뒤 열 「계획」 표지 — roadmapCols가 열 머리 연도로 정함)
-  table: ["", "result", "bars", "chevron", "ladder", "roadmap"],
+  // roadmap = 다년 로드맵(2026-11-09 — ⑲ 로드맵형, 쉐브론 머리 + 올해 열 강조·뒤 열 「계획」 표지 — roadmapCols가 열 머리 연도로 정함),
+  // cascade = 2단 라벨 흐름 표(2026-11-09 P4 — ladder와 같은 칸 + 큰 라벨 묶음 사이 ▼, 주요사업만. ladder 초안의 출력은 그대로)
+  table: ["", "result", "bars", "chevron", "ladder", "roadmap", "cascade"],
 };
 
 /** 열 머리가 단계 화살표인 표(쉐브론 머리·로드맵) — 그리기·판면 어림·한글이 같은 화살표 머리를 씀 */
@@ -198,8 +204,11 @@ const FUNNEL_NUM = /\d|【확인:/;
 /** 두 패널로 그리는 전후 비교(panels·diag — 같은 마크업·같은 판면 어림, 꼬리표만 다름) */
 export const isPanelCompare = (b: Pick<Block, "kind" | "variant">) => b.kind === "compare" && (b.variant === "panels" || b.variant === "diag");
 
-/** 머리 줄(items) + 행마다 값 열(cells[].bullets = 열 순서 값)인 표 — 기본·막대·쉐브론. result·ladder는 칸(cells[].bullets = 불릿)으로 씀 */
-export const isGridTable = (b: Pick<Block, "kind" | "variant">) => b.kind === "table" && b.variant !== "result" && b.variant !== "ladder";
+/** 2단 라벨 칸으로 그리는 표(ladder·cascade — 같은 칸·같은 정리, cascade는 큰 라벨 묶음 사이 ▼만 더함) */
+export const isLadderTable = (b: Pick<Block, "kind" | "variant">) => b.kind === "table" && (b.variant === "ladder" || b.variant === "cascade");
+
+/** 머리 줄(items) + 행마다 값 열(cells[].bullets = 열 순서 값)인 표 — 기본·막대·쉐브론. result·ladder(cascade)는 칸(cells[].bullets = 불릿)으로 씀 */
+export const isGridTable = (b: Pick<Block, "kind" | "variant">) => b.kind === "table" && b.variant !== "result" && !isLadderTable(b);
 
 /** 표 칸 값 → 막대용 수(앞 수치 + 단위). 자리표시·음수·0·수치가 둘 이상(괄호 밖)·수치로 시작하지 않는 글은 null */
 function barNumber(raw: string): { value: number; unit: string } | null {
@@ -213,13 +222,32 @@ function barNumber(raw: string): { value: number; unit: string } | null {
 }
 
 /**
- * PDCA 순환 칸 머리의 단계 표지: 칸 칩(tag)이 두 글자 이하면 그대로, 비었거나 길면 P·D·C·A
- * (2026-10-28 표본 카드: 칩 「Step 1」을 앞 두 글자로 잘라 「St」로 그림 — 화면·한글·개조식이 함께 씀)
+ * PDCA 순환 칸 머리의 단계 표지: 칸 칩(tag)이 두 글자 이하면 그대로, 비었거나 길면 4칸은 P·D·C·A, 5·6칸(n — 주요사업 2026-11-09 P4)은 칸 번호 1~n
+ * (P·D·C·A 넷을 다섯·여섯 단계에 나눠 붙이면 뜻이 어긋남). 2026-10-28 표본 카드: 칩 「Step 1」을 앞 두 글자로 잘라 「St」로 그림 — 화면·한글·개조식이 함께 씀
  */
-export const pdcaMark = (tag: string, i: number) => {
+export const pdcaMark = (tag: string, i: number, n = 4) => {
   const t = tag.trim();
-  return t && [...t].length <= 2 ? t : (["P", "D", "C", "A"][i] ?? "");
+  return t && [...t].length <= 2 ? t : n === 4 ? (["P", "D", "C", "A"][i] ?? "") : String(i + 1);
 };
+
+/**
+ * PDCA 순환 6칸 고리 자리(2026-11-09 P4 — 그리기·옛 한글 렌더러가 같이 씀): 위 줄 1 ▶ 2 ▶ 3, 3 아래 ▼, 아래 줄 4 ◀ 5 ◀ 6(4가 3 아래), 1 아래 ▲.
+ * 칸 순번 → [줄, 열](0부터 — 열은 칸 셋 자리 0·1·2)
+ */
+export const PDCA_RING: ReadonlyArray<readonly [number, number]> = [
+  [0, 0],
+  [0, 1],
+  [0, 2],
+  [1, 2],
+  [1, 1],
+  [1, 0],
+];
+
+/** 우수사례 줄 「라벨 | 내용」(라벨 8자까지) — 상자·STEP 흐름·인용 화자가 같이 씀. 라벨이 없으면 null */
+export function caseLabel(x: string): { label: string; text: string } | null {
+  const m = /^([^|:：]{1,8}?)\s*[|:：]\s+(.+)$/.exec(x);
+  return m ? { label: m[1], text: m[2] } : null;
+}
 
 /**
  * 막대·추진실적 열 수치의 뜻(series label)은 16자까지 — 낱말 가운데서 자르지 않고, 자른 끝에 닫히지 않은 괄호가 남으면 그 괄호째 뺌
@@ -334,9 +362,10 @@ export interface BlockClean {
  * quotes·voices는 칸마다 원문을 찾은 것만, case·define은 evidence를 찾을 때만 남깁니다(지어낸 인용·수상·정의 차단).
  * opts.biz(주요사업 집필 검증만 — section.ts verifySection): 핵심 수치 띠를 뺌(2026-10-28 — 주요사업 새 초안은 수치 띠를 쓰지 않음, frameworks.ts BIZ_RETIRED_SHAPES.
  * 예전 2026-10-15부터는 올해 실적 칸이 2개 미만인 띠만 뺐음). 경영관리·블록 고치기는 주지 않음 — 경영관리 수치 띠는 절을 닫는 추진성과라 빼면 「성과로 닫지 않은 절」이 생기고,
- * 블록 고치기는 저장된 초안의 띠를 그대로 고침(모양 바꾸기로 새 띠를 만드는 것은 block-shape.ts shapeAllowed가 막음)
+ * 블록 고치기는 저장된 초안의 띠를 그대로 고침(모양 바꾸기로 새 띠를 만드는 것은 block-shape.ts shapeAllowed가 막음).
+ * opts.mg(경영관리 집필·블록 고치기 — mg-draft.ts·block-edit.ts checkBlock): PDCA 순환을 4칸까지만(주요사업은 6칸까지 — 2026-11-09 P4, 경영관리는 예전 그대로)
  */
-export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number) => string, found: (s: string) => boolean, opts: { biz?: boolean } = {}): BlockClean {
+export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number) => string, found: (s: string) => boolean, opts: { biz?: boolean; mg?: boolean } = {}): BlockClean {
   const dropped: string[] = [];
   const droppedShapes: BlockClean["droppedShapes"] = [];
   const list = (a: unknown, max: number, len = 200) => (Array.isArray(a) ? a.map((x) => line(x, len)).filter(Boolean).slice(0, max) : []);
@@ -364,7 +393,7 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       variant,
       text: line(b.text, 200),
       items: list(b.items, 8, 160),
-      cells: cells(b.cells, kind === "voices" || kind === "quotes" ? 3 : kind === "strategy" || kind === "pdca" ? 4 : 5),
+      cells: cells(b.cells, kind === "voices" || kind === "quotes" ? 3 : kind === "strategy" ? 4 : kind === "pdca" ? (opts.mg ? 4 : 6) : 5),
       rows: (Array.isArray(b.rows) ? b.rows : []).map((r: Json) => ({ key: line(r?.key, 30), before: list(r?.before, 4, 120), after: list(r?.after, 4, 120) })).filter((r: Json) => r.before.length || r.after.length).slice(0, 5),
       series: (Array.isArray(b.series) ? b.series : []).map((s: Json) => ({ label: seriesLabel(line(s?.label, 40)), value: line(s?.value, 24) })).filter((s: Json) => s.label && /\d/.test(s.value)).slice(0, 4),
       badge: line(b.badge, 24),
@@ -380,10 +409,12 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       x.items = heads.length <= (x.cells.some((c) => c.head) ? 2 : 1) ? heads : [];
       x.series = x.series.slice(0, 2);
       if (!x.series.length && !x.text && !resultPerRow(x)) Object.assign(x, x.cells.length >= 2 ? { variant: "plain", kind: "cards", items: [] } : { kind: "bullets", variant: "", items: x.cells.flatMap((c) => c.bullets).slice(0, 8), cells: [] });
-    } else if (kind === "table" && x.variant === "ladder") {
+    } else if (isLadderTable(x)) {
       // 2단 라벨 표(ladder): cells = 행(head 큰 라벨 — 이어진 같은 라벨·빈 글은 한 칸으로 합침, tag 하위 라벨, bullets 내용) 6행까지
+      // 흐름 표(cascade — 묶음 사이 ▼)는 큰 라벨 묶음이 둘 이상일 때만(하나면 ▼가 없어 2단 라벨 표와 같음 — ladder로)
       x.items = [];
       x.cells = cells(b.cells, 12).filter((c) => c.bullets.length).slice(0, 6);
+      if (x.variant === "cascade" && ladderGroups(x.cells).length < 2) x.variant = "ladder";
     } else if (kind === "table") {
       // 쉐브론 머리 표(chevron)·로드맵(roadmap)은 값 칸이 단계별 내용이라 조금 길게(120자)
       x.items = list(b.items, 6, 30);
@@ -400,8 +431,10 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
     else if (kind === "timeline" && x.variant === "status") x.cells = x.cells.map((c) => ({ ...c, tag: statusTag(c.tag) }));
     // 전략체계도: items = 왼쪽 층 이름(목표·전략·과제·지표 — 지표마다 달라 자유, 4개까지·짧게)
     if (kind === "strategy") x.items = list(b.items, 4, 20);
-    // PDCA 순환은 4칸일 때만(칸이 모자라거나 남으면 단계 흐름 — 환류 띠는 뺌)
-    if (kind === "pdca" && x.cells.length !== 4) Object.assign(x, { kind: "steps", variant: "row", text: "" });
+    // PDCA 순환은 4칸 이상일 때만(칸이 모자라면 단계 흐름 — 환류 띠는 뺌). 남는 칸은 위 cells가 자름(주요사업 6칸·경영관리 4칸까지)
+    if (kind === "pdca" && x.cells.length < 4) Object.assign(x, { kind: "steps", variant: "row", text: "" });
+    // 협업 가로형·수렴형: 가운데 + 기관 둘 이상(셋 미만이면 예전 협업 구조)
+    if (kind === "hub" && x.variant && x.cells.length < 3) x.variant = "";
     // VS 대립은 두 칸일 때만(칸이 셋 이상이면 평범한 칸)
     if (kind === "cards" && x.variant === "vs" && x.cells.length !== 2) x.variant = "plain";
     // Q&A 상자: 질문(head)과 답(bullets)이 다 있는 쌍만, 3쌍까지
@@ -415,6 +448,20 @@ export function cleanBlocks(raw: BlockOutput[], line: (s: unknown, max?: number)
       dropped.push(`${name}: 근거 원문(evidence)을 찾지 못해 뺐습니다 — ${kind === "case" ? "수상·보도 자료" : "정의가 적힌 자료"}를 첨부하면 넣을 수 있습니다.`);
       droppedShapes.push({ kind: x.kind, variant: x.variant });
       continue;
+    }
+    // 우수사례 STEP 흐름: 단계 2~4줄(모자라면 예전 상자). 인용형: 첫 줄 인용(「화자 | 인용」이면 인용 글만)을 근거 원문에서 찾아야 함 — 못 찾으면 그 줄을 빼고 예전 상자(지어낸 인용 차단, quotes와 같은 대조),
+    // 결과 띠 줄이 하나도 없으면 예전 상자(인용만이면 인용 상자 quotes의 몫)
+    if (kind === "case" && x.variant === "steps") {
+      x.items = x.items.slice(0, 4);
+      if (x.items.length < 2) x.variant = "";
+    } else if (kind === "case" && x.variant === "quote") {
+      const q = x.items[0] ?? "";
+      const said = (caseLabel(q)?.text ?? q).replace(/^[“"]|[”"]$/g, "");
+      if (q && !found(said)) {
+        dropped.push(`${name}: 근거 원문에서 찾지 못한 인용 1개를 뺐습니다(지어낸 인용 차단).`);
+        Object.assign(x, { variant: "", items: x.items.slice(1) });
+      } else x.items = x.items.slice(0, 3);
+      if (x.items.length < 2) x.variant = "";
     }
     if (!enough(x)) {
       // 수치 띠는 뺀 까닭을 남김(2026-10-29 — 경영관리 닫는 추진성과가 소리 없이 빠지고 원장 보강이 수치 없는 문장으로 채웠음)
@@ -482,14 +529,14 @@ function enough(b: Block): boolean {
     case "strategy":
       return b.cells.length >= 2;
     case "pdca":
-      return b.cells.length === 4;
+      return b.cells.length >= 4;
     case "voices":
     case "quotes":
     case "qa":
       return b.cells.length >= 1;
     case "table":
       if (b.variant === "result") return b.cells.length >= 1 && (b.series.length > 0 || Boolean(b.text) || resultPerRow(b));
-      if (b.variant === "ladder") return b.cells.length >= 2;
+      if (isLadderTable(b)) return b.cells.length >= 2;
       if (isChevronTable(b)) return b.items.length >= 3 && b.cells.length >= 1;
       return b.items.length >= 3 && b.cells.length >= 2;
     case "compare":

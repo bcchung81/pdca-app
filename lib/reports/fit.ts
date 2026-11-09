@@ -2,7 +2,7 @@
 // 칸 폭·여백·글꼴은 lib/reports/section-css.ts(2025 최종본 실측)와 같은 값입니다. CSS를 바꾸면 여기 SLOT·높이 상수도 함께 바꿉니다.
 // 쓰임: ① 요청 글의 「판면 예산」(칸마다 한 줄 글자 수·쪽 줄 수) ② 초안 뒤 높이 어림 → 넘치면 경고·맞추기 요청.
 
-import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, ROADMAP_PLAN, figureMm, isChevronTable, isGridTable, isPanelCompare, ladderGroups, layerMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
+import { type Block, FIGURE_GAP_MM, FIGURE_MM, FIGURE_SIZES, type Figure, LOGO_MM, ROADMAP_PLAN, caseLabel, figureMm, isChevronTable, isGridTable, isLadderTable, isPanelCompare, ladderGroups, layerMark, resultHeads, resultPerRow, resultTimeText, roadmapCols, roadmapPlanMark } from "./blocks.ts";
 import { type LayoutBlock, type LayoutGroup, PAIR_GAP_MM, cleanSpan, containerOf, layoutGroups } from "./layout.ts";
 import { MGMT_TRACK } from "../tracks/index.ts";
 import { REPORT_STYLE } from "./section-css.ts";
@@ -300,6 +300,11 @@ export function funnelMm(b: Pick<Block, "cells">, width: number): { note: number
 }
 /** 다층 차단(steps:layers — 2026-11-09 P4, section-css .k-lay): 왼쪽 층 표지 칸 · 층 이름 칸(어느 층이든 이름이 있을 때만) 폭(mm) — 나머지가 조치 불릿·결과 줄 칸 */
 export const LAYER_MM = { mark: 14, head: 30 } as const;
+/**
+ * 모양 변형 뒤 절반(2026-11-09 P4 — section-css와 같은 값, mm): PDCA 6칸 고리의 두 줄 사이 화살표 줄(.k-pdca--6 가운데 줄) · 협업 수렴형 ▼ 줄(.k-hubc__arr) ·
+ * 협업 수렴형 기관 칸 사이(.k-hubc__nodes) · 협업 가로형 같은 쪽 기관 사이(.k-hub--row 사이 칸) · 2단 라벨 흐름 표 묶음 사이 ▼ 줄(tr.k-lad__arr)
+ */
+export const SHAPE_GAP_MM = { pdcaRing: 5, hubArrow: 5, hubNodes: 3, ladderArrow: 4 } as const;
 
 /** 추진실적 열 표의 왼쪽 행 머리 열(행 머리가 하나라도 있을 때) */
 export const resultRowHeadMm = (width: number) => tableRowHeadMm(width - TABLE_SHAPE_MM.result);
@@ -336,7 +341,9 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
       return { body: col - pad(6) - INDENT_MM, head: col - pad(6), note: col - pad(6) };
     }
     case "pdca": {
-      const cell = (width - JOIN_GAP_MM * 3) / 4;
+      // 4칸·5칸은 한 줄, 6칸은 세 칸씩 두 줄 고리(2026-11-09 P4 — blocks.ts PDCA_RING)
+      const cols = b.cells.length === 6 ? 3 : b.cells.length === 5 ? 5 : 4;
+      const cell = (width - JOIN_GAP_MM * (cols - 1)) / cols;
       return { body: cell - BOX_PAD_MM - INDENT_MM, head: cell - pad(8) - PDCA_MARK_MM, note: cell - pad(8) };
     }
     case "cards": {
@@ -382,6 +389,16 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
       }
       return { body: width * 0.39 - pad(10) - INDENT_MM, head: width * 0.15 - pad(10), note: width * 0.4 - pad(10) - INDENT_MM - 1.2 };
     case "hub": {
+      // 가로형(2026-11-09 P4): 기관을 가운데 양옆 한 줄로 — 가운데 옆 손 잡기 칸 9mm 둘 + 같은 쪽 기관 사이 3mm, 가운데는 기관 칸의 1.2배(기관 둘이면 예전 협업 구조와 같은 폭)
+      if (b.variant === "row" && n >= 3) {
+        const unit = (width - 18 - SHAPE_GAP_MM.hubNodes * (n - 3)) / (n - 1 + 1.2);
+        return { body: unit * 1.2 - pad(10) - INDENT_MM, head: unit - pad(18), note: unit - pad(10) };
+      }
+      // 수렴형: 기관 칸이 위 한 줄(사이 3mm), 가운데 결과 칸은 그 아래 전폭
+      if (b.variant === "converge" && n >= 3) {
+        const cell = (width - SHAPE_GAP_MM.hubNodes * (n - 2)) / (n - 1);
+        return { body: width - pad(10) - INDENT_MM, head: cell - pad(18), note: cell - pad(10) };
+      }
       if (n - 1 === 2) {
         const unit = (width - 18) / 3.2;
         return { body: unit * 1.2 - pad(10) - INDENT_MM, head: unit - pad(18), note: unit - pad(10) };
@@ -404,8 +421,17 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
     case "stats":
       // 수치 띠 = 추진성과 굵은 불릿 목록(2026-10-28 — 칸마다 한 줄 「성과 문장(시점 수치)」, statsLine): 놓인 폭 전체가 한 줄
       return { body: width - INDENT_MM, head: width, note: width };
-    case "define":
     case "case":
+      // 우수사례 STEP 흐름(2026-11-09 P4): 상자 안 여백 좌우 5px 안에 단계 칸이 ▶(JOIN_GAP_MM) 사이로 나란히 — 단계 칸 안 여백 좌우 4px, 칸 머리(STEP + 단계 이름)·글이 같은 폭
+      if (b.variant === "steps") {
+        const k = Math.max(1, b.items?.length ?? 1);
+        const st = (width - pad(10) - JOIN_GAP_MM * (k - 1)) / k - pad(8);
+        return { body: st, head: st, note: width };
+      }
+      // 인용형: 인용 문단(불릿 없음 — 가운데) · 결과 띠(상자 안 여백 안, 띠 안 여백 좌우 6px)
+      if (b.variant === "quote") return { body: width - pad(12), head: width - 30, note: width - pad(10) - pad(12) };
+      return { body: width - pad(12) - INDENT_MM, head: width - 30, note: width };
+    case "define":
       return { body: width - pad(12) - INDENT_MM, head: width - 30, note: width };
     case "qa":
       // Q&A 상자: 테두리·안 여백 12px, 왼쪽 Q·A 표지 칸(QA_MARK_MM) — 질문은 돋움 굵게, 답은 불릿
@@ -416,8 +442,8 @@ export function slotOf(b: Pick<Block, "kind" | "variant" | "cells"> & Partial<Pi
         const rowHead = b.cells.some((c) => c.head) ? resultRowHeadMm(width) : 0;
         return { body: width - TABLE_SHAPE_MM.result - rowHead - pad(8) - INDENT_MM, head: rowHead - pad(8), note: TABLE_SHAPE_MM.result - pad(8) };
       }
-      // 2단 라벨 표: 큰 라벨 열 + 하위 라벨 열(tag가 있을 때) + 내용 불릿 칸 — body = 불릿, head = 큰 라벨, note = 하위 라벨
-      if (b.variant === "ladder") {
+      // 2단 라벨 표(흐름 표 cascade도): 큰 라벨 열 + 하위 라벨 열(tag가 있을 때) + 내용 불릿 칸 — body = 불릿, head = 큰 라벨, note = 하위 라벨
+      if (isLadderTable(b)) {
         const sub = b.cells.some((c) => c.tag) ? TABLE_SHAPE_MM.ladderSub : 0;
         return { body: width - TABLE_SHAPE_MM.ladderBig - sub - pad(8) - INDENT_MM, head: TABLE_SHAPE_MM.ladderBig - pad(8), note: sub - pad(8) };
       }
@@ -615,6 +641,11 @@ export function blockHeight(b: Block, width: number, centerExtra = 0, mg = false
       const [center, ...nodes] = b.cells;
       if (!center) return 0;
       const t = blockTitleMm(b.title, width, mg);
+      // 가로형·수렴형(2026-11-09 P4): 기관 칸 = 이름(돋움 10.6pt — 좁은 칸은 여러 줄) + 역할 한 문단. 가로형은 가운데 칸과 나란히, 수렴형은 기관 줄 + ▼ 줄 + 가운데 결과 칸(전폭)
+      const node = (c: Block["cells"][number]) => lineCount(c.head, s.head, 10.6, true) * HEAD_MM + bodyLines(c.bullets.join(" / "), s.note) * L + 1.3;
+      const mid = HEAD_MM + lines(center.bullets, s.body) * L + centerExtra;
+      if (b.variant === "row" && nodes.length >= 2) return t + max([mid, ...nodes.map(node)]) + 1.2;
+      if (b.variant === "converge" && nodes.length >= 2) return t + max(nodes.map(node)) + SHAPE_GAP_MM.hubArrow + mid + 1 + 1.2;
       if (nodes.length === 2) return t + max([HEAD_MM + lines(center.bullets, s.body) * L + centerExtra, ...nodes.map((c) => HEAD_MM + bodyLines(c.bullets.join(" / "), s.note) * L + 1.3)]) + 1.2;
       const list = nodes.reduce((n, c) => n + Math.max(lineCount(c.head, s.head, 10.2, true) * 5, lines(c.bullets, s.note) * L) + 0.6, 0);
       return t + Math.max(HEAD_MM + lines(center.bullets, s.body) * L + 1 + centerExtra, list) + 1.2;
@@ -635,6 +666,25 @@ export function blockHeight(b: Block, width: number, centerExtra = 0, mg = false
     case "subhead":
       return lineCount(b.text, width, 12, true) * 12 * 1.4 * PT + 2.4;
     case "case":
+      // STEP 흐름(2026-11-09 P4, section-css .k-case__steps): 단계 칸마다 STEP 띠(돋움 10.6pt 한 줄 + 아래 1px) + 「단계 이름」 굵게 이은 글(본문 문단) + 칸 아래 여백 2px·테두리 0.5mm 중 가장 높은 칸, 위 여백 1px
+      if (b.variant === "steps")
+        return (
+          HEAD11_MM +
+          max(
+            b.items.map((x) => {
+              const kv = caseLabel(x);
+              return HEAD_MM + PX + bodyLines(kv ? `${kv.label} ${kv.text}` : x, s.body) * L + 2 * PX + 0.5;
+            }),
+          ) +
+          PX +
+          2.6
+        );
+      // 인용형: 인용 문단(“…” — 화자 칩이 있으면 앞에) + 결과 띠 줄마다(본문 굵게 한 문단, 띠 안 여백 위아래 1px·띠 사이 2px)
+      if (b.variant === "quote") {
+        const [q = "", ...res] = b.items;
+        const kv = caseLabel(q);
+        return HEAD11_MM + bodyLines(`${kv ? `${kv.label} ` : ""}“${kv?.text ?? q}”`, s.body) * L + res.reduce((n, x) => n + bodyLines(x, s.note) * L + 4 * PX, 0) + 2.6;
+      }
       return HEAD11_MM + lines(b.items, s.body) * L + 2.6;
     case "chart":
       return CHART_MM;
@@ -657,12 +707,14 @@ export function blockHeight(b: Block, width: number, centerExtra = 0, mg = false
         if (resultPerRow(b)) return t + head + b.cells.reduce((n, c, i) => n + Math.max(leftRow(c), (i === 0 ? result : 0) + (c.note ? lines([c.note], bulletW) * L : 0) + 4 * PX), 0) + 1.2;
         return t + head + Math.max(b.cells.reduce((n, c) => n + leftRow(c), 0), result + 4 * PX) + 1.2;
       }
-      if (b.variant === "ladder") {
-        // 큰 라벨 묶음마다: 행(하위 라벨 돋움 · 내용 불릿) 합과 큰 라벨 줄 중 큰 것
-        return t + ladderGroups(b.cells).reduce((n, g) => {
+      if (isLadderTable(b)) {
+        // 큰 라벨 묶음마다: 행(하위 라벨 돋움 · 내용 불릿) 합과 큰 라벨 줄 중 큰 것. 흐름 표(cascade — 2026-11-09 P4)는 묶음 사이 ▼ 줄마다 더함
+        const groups = ladderGroups(b.cells);
+        const arrows = b.variant === "cascade" ? (groups.length - 1) * SHAPE_GAP_MM.ladderArrow : 0;
+        return t + groups.reduce((n, g) => {
           const rows = b.cells.slice(g.start, g.start + g.rows).reduce((m, c) => m + Math.max(c.tag ? lineCount(c.tag, s.note, 10.4, true) * TH : 0, lines(c.bullets, s.body) * L) + 2 * PX, 0);
           return n + Math.max(rows, lineCount(g.head, s.head, 10.4, true) * TH + 2 * PX);
-        }, 0) + 1.2;
+        }, 0) + 1.2 + arrows;
       }
       // 열마다 폭(tableColsMm — 그리기와 같은 값). 쉐브론 머리(로드맵 포함): 화살표 칸 위아래 여백 1px씩 더(section-css .k-chev), 로드맵 계획 열은 「계획」 표지까지 한 머리 글
       const cols = tableColsMm(b, width);
@@ -689,9 +741,17 @@ export function blockHeight(b: Block, width: number, centerExtra = 0, mg = false
       return blockTitleMm(b.title, width, mg) + top + head + body + foot + 0.8;
     }
     case "pdca": {
-      // 4칸(머리 = 단계 표지 원 + 단계 이름, 몸통 = 불릿, 꼬리 = 결과 줄) + 환류 띠(9.5pt 돋움, 있을 때)
+      // 4칸(머리 = 단계 표지 원 + 단계 이름, 몸통 = 불릿, 꼬리 = 결과 줄) + 환류 띠(9.5pt 돋움, 있을 때). 5칸은 같은 한 줄
       const heads4 = max(b.cells.map((c) => lineCount(c.head, s.head, 10.6, true))) * HEAD_MM;
       const fb = b.text ? lineCount(`↺ ${b.text}`, width - 12 * PX, 9.5, true) * 9.5 * 1.45 * PT + 4 * PX + 1.2 : 0;
+      if (b.cells.length === 6) {
+        // 6칸 고리(2026-11-09 P4 — section-css .k-pdca--6): 위 줄(1~3)·아래 줄(4~6)마다 머리 + 몸통 + 결과 줄, 두 줄 사이 화살표 줄, 아래 줄 칸 테두리·여백 1.1mm
+        const row = (cs: Block["cells"]) => {
+          const ns = max(cs.map((c) => lineCount(c.note, s.note))) * L;
+          return max(cs.map((c) => lineCount(c.head, s.head, 10.6, true))) * HEAD_MM + max(cs.map(cellBody)) + (ns ? ns + 0.6 : 0);
+        };
+        return blockTitleMm(b.title, width, mg) + row(b.cells.slice(0, 3)) + row(b.cells.slice(3)) + SHAPE_GAP_MM.pdcaRing + 1.9 + 1.1 + fb;
+      }
       return blockTitleMm(b.title, width, mg) + heads4 + max(b.cells.map(cellBody)) + (notes ? notes + 0.6 : 0) + 1.9 + fb;
     }
     case "stats":
@@ -1134,7 +1194,7 @@ export function hollowBoxes(blocks: Block[], at?: string[]): HollowBox[] {
         });
     const n = boxes.length;
     const cols = b.kind === "cards" ? 4 : n;
-    const groups = panel ? [[0, 1]] : b.kind === "steps" && b.variant === "zigzag" ? [[0, 3], [1, 2]] : Array.from({ length: Math.ceil(n / cols) }, (_, r) => Array.from({ length: Math.min(cols, n - r * cols) }, (_, k) => r * cols + k));
+    const groups = panel ? [[0, 1]] : b.kind === "steps" && b.variant === "zigzag" ? [[0, 3], [1, 2]] : b.kind === "pdca" && n === 6 ? [[0, 1, 2], [3, 4, 5]] : Array.from({ length: Math.ceil(n / cols) }, (_, r) => Array.from({ length: Math.min(cols, n - r * cols) }, (_, k) => r * cols + k));
     for (const g of groups) {
       const sib = g.filter((k) => k < n);
       if (sib.length < 2) continue;
@@ -1252,8 +1312,16 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
     }
     case "define":
       return { ...base, title: "무엇인가?", text: fill(inner(base) - 12, 2), items: ["단계", "단계", "단계"] };
-    case "case":
+    case "case": {
+      // STEP 흐름(2026-11-09 P4): 단계 2~4줄 「단계 | 글 약 1.4줄」 · 인용형: 인용 약 1.6줄 + 결과 띠 한 줄씩(1~2)
+      if (variant === "steps" || variant === "quote") {
+        const k = variant === "steps" ? Math.max(2, Math.min(4, count)) : Math.max(2, Math.min(3, count));
+        const b = { ...base, title: "우수사례", items: Array.from({ length: k }, () => "") };
+        const sl = slotOf(b, inner(b));
+        return { ...b, items: b.items.map((_, i) => (variant === "steps" ? `단계 | ${fill(sl.body, lines ?? 1.4)}` : i ? fill(sl.note, 1) : fill(sl.body, lines ?? 1.6))) };
+      }
       return { ...base, title: "우수사례", items: Array.from({ length: count }, () => fill(inner(base) - 12)) };
+    }
     case "band":
     case "banner":
     case "subhead":
@@ -1273,8 +1341,8 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       return { ...b, cells: b.cells.map((c) => ({ ...c, head: "전략목표", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.2)), fill(sl.body, per(sl.body, 1.2))], note: "성과지표" })) };
     }
     case "pdca": {
-      // 4칸(불릿 2개 × 약 1.4줄) + 환류 띠 한 줄
-      const b = { ...base, text: "가".repeat(30), cells: cells(4) };
+      // 4칸(불릿 2개 × 약 1.4줄) + 환류 띠 한 줄. 주요사업 5·6칸(2026-11-09 P4)은 칸 수대로
+      const b = { ...base, text: "가".repeat(30), cells: cells(Math.max(4, Math.min(6, count))) };
       const sl = slotOf(b, inner(b));
       return { ...b, cells: b.cells.map((c) => ({ ...c, head: "계획수립", bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))] })) };
     }
@@ -1285,8 +1353,8 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
         const sl = slotOf(b, inner(b));
         return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : [fill(sl.body, per(sl.body, 1.2)), fill(sl.body, per(sl.body, 1.2))] })) };
       }
-      // 2단 라벨 표: 큰 라벨 하나에 하위 라벨 행 둘씩(행마다 내용 불릿 1개 × 약 1.4줄)
-      if (variant === "ladder") {
+      // 2단 라벨 표(흐름 표 cascade도): 큰 라벨 하나에 하위 라벨 행 둘씩(행마다 내용 불릿 1개 × 약 1.4줄)
+      if (variant === "ladder" || variant === "cascade") {
         const b = { ...base, cells: Array.from({ length: Math.min(6, Math.max(2, count)) }, (_, i) => ({ head: `${"①②③"[Math.floor(i / 2)]} 큰 라벨`, tag: `${"①②③"[Math.floor(i / 2)]}-${(i % 2) + 1} 하위 라벨`, bullets: [] as string[], note: "" })) };
         const sl = slotOf(b, inner(b));
         return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: [fill(sl.body, lines ?? per(sl.body, 1.4))] })) };
@@ -1315,7 +1383,9 @@ export function canonicalBlock(kind: Block["kind"], variant: string, n: number, 
       const sl = slotOf(b, inner(b));
       const note = ["steps", "timeline"].includes(kind) ? fill(sl.note) : "";
       const one = kind === "steps" && variant === "funnel" ? 1 : kind === "steps" && variant === "layers" ? per(sl.body, 1.4) : 0;
-      return { ...b, cells: b.cells.map((c) => ({ ...c, bullets: lines ? [fill(sl.body, lines)] : one ? [fill(sl.body, one)] : [fill(sl.body, per(sl.body, 1.4)), fill(sl.body, per(sl.body, 1.4))], note })) };
+      // 협업 수렴형(2026-11-09 P4): 가운데 결과 칸은 전폭(sl.body)이라 기관 칸 글은 기관 칸 폭(sl.note)으로 채움
+      const w = (i: number) => (kind === "hub" && variant === "converge" && i > 0 ? sl.note : sl.body);
+      return { ...b, cells: b.cells.map((c, i) => ({ ...c, bullets: lines ? [fill(w(i), lines)] : one ? [fill(sl.body, one)] : [fill(w(i), per(w(i), 1.4)), fill(w(i), per(w(i), 1.4))], note })) };
     }
   }
 }

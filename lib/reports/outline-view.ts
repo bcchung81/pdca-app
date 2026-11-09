@@ -84,8 +84,9 @@ export interface ShapeRow {
 
 export const cellUnit = (kind: string) => (kind === "compare" || kind === "table" ? "행" : kind === "bullets" || kind === "case" ? "줄" : kind === "chart" ? "막대" : kind === "qa" ? "쌍" : kind === "strategy" ? "열" : "칸");
 
-export function shapeTable(): ShapeRow[] {
-  return SHAPES.map((s) => ({ ...s, ...cellRange(s.kind, s.variant), def: defaultCells(s.kind, s.variant), full: FULL_WIDTH_KINDS.includes(s.kind), unit: cellUnit(s.kind) }));
+/** 모양 표(구성안 화면 — 칸 수 범위·보통 칸 수). mg = 경영관리 구성안(PDCA 순환 4칸 — frameworks.ts cellRange) */
+export function shapeTable(mg = false): ShapeRow[] {
+  return SHAPES.map((s) => ({ ...s, ...cellRange(s.kind, s.variant, mg), def: defaultCells(s.kind, s.variant), full: FULL_WIDTH_KINDS.includes(s.kind), unit: cellUnit(s.kind) }));
 }
 
 /** 견본 그림이 든 틀·모양 카드 */
