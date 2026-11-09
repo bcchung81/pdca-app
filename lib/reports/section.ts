@@ -20,6 +20,7 @@ import { GROUND_WEAK, groundScores } from "./ground.ts";
 import { proseIssues } from "./prose.ts";
 import { kpiMissingWarning } from "./kpi-cover.ts";
 import { figureRepeatWarning, sentenceRepeatWarning } from "./repeat-figures.ts";
+import { branchWarnings } from "./branch-checks.ts";
 import { planAsResultWarning, resultPlanWarning } from "./result-plan.ts";
 import { LENS_GROUPS, type LensRef, SURVEY_TYPES } from "./lens.ts";
 import { type PriorPick, priorLabel } from "./prior.ts";
@@ -846,6 +847,8 @@ export function verifySection(out: SectionOutput, card: Json, ctx: SectionContex
   // 모양 다양성(2026-10-12): 경고만 — composeIssues(고치기 사유·점수)에는 넣지 않음
   const variety = bizVarietyIssue(blocks, String(out.story ?? ""));
   if (variety) warnings.push(variety);
+  // 갈래 점검 C1~C3(2026-11-09 — branch-checks.ts): 번호 일치·갈래 수(참고)·로드맵 계획 열(막힘) — 경고만, 자동 고치기 사유에 안 넣음
+  warnings.push(...branchWarnings(spec, today));
   const ownIssues = composeIssues(blocks, own);
   warnings.push(...ownIssues.map((x) => `도식: ${x}`));
   // 전년 인용: 2025 보고서 글에서만 찾은 인용·말풍선·우수사례 — 짜임 문제(자동 고치기 사유)로
@@ -1016,6 +1019,7 @@ export function recheckSection(spec: ReportSectionSpec, card: Json, extraText = 
   const planned = resultPlanWarning(next, today);
   if (planned) warnings.push(planned);
   warnings.push(...signalWarnings(next, card));
+  warnings.push(...branchWarnings(next, today));
   const scores = groundScores(next, `${cardOutline(card)}\n${inspectionCardText(card)}\n${extraText}`);
   const weak = scores.filter((x) => x.overlap < GROUND_WEAK);
   if (weak.length) {

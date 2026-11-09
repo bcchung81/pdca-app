@@ -19,6 +19,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "실적 칸": "block", // 추진성과·추진실적 칸에 계획 표현(예정·할 계획)이나 아직 안 온 시점(lib/reports/result-plan.ts, 2026-10-17 F1)
   "제목 폭": "block", // 소항목 제목이 한 줄(판면 폭 170mm)을 넘음 — 2025 소항목 제목은 모두 한 줄, 자동 고치기 사유(lib/reports/title-checks.ts, 2026-10-28)
   "값 충돌": "block", // 경영관리: 구성안이 근거에서 찾은 같은 항목의 다른 값 중 쓰지 않을 값이 초안 블록에 남음 — 사실 어긋남(lib/reports/mg-consistency.ts conflictWarnings, 2026-10-30)
+  "로드맵 계획": "block", // 로드맵 표(table:roadmap)의 계획 열 수치가 추진성과·결과 줄에 실적처럼 다시 나옴(lib/reports/branch-checks.ts roadmapPlanWarning, 2026-11-09 P2 C3)
   // ── info: 문장·표현·짜임
   문장: "info",
   문체: "info",
@@ -54,6 +55,8 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   구성: "info", // 구성안 정리가 블록·절을 뺌
   "목적 없는 블록": "info",
   "목소리–해법": "info",
+  "번호 일치": "info", // ⑰ 개요 칸 번호·키워드 ↔ 뒤 갈래 행, ④ 말풍선 ↔ 해법 행, ① 단계 이름 ↔ 세부 실적 이름(lib/reports/branch-checks.ts numberLinkWarnings, 2026-11-09 P2 C1)
+  "갈래 수": "info", // ⑱ 원인 칸 수·조치 표 행 수·추진성과 갈래 수가 다름(lib/reports/branch-checks.ts branchCountWarning, 2026-11-09 P2 C2)
   "성과 축": "info",
   틀: "info",
   "표기 없는 상자": "info", // 상자형 도식에 라벨·제목·칸 머리·칩이 하나도 없음(맨 상자 — lib/reports/title-checks.ts bareBoxWarnings, 2026-10-28)
