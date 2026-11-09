@@ -80,12 +80,13 @@ export function WorkspaceBody({ props, ws }: { props: WorkspaceProps; ws: CardWo
               preview={props.preview}
               tabs={assistTabs}
               active={aiOpen && (ws.sheet || !narrow)}
+              modeRequest={{ mode: "followup", n: ws.followupReq }}
             />
           </div>
         )}
         {assistPane && ws.inspSeen && (
           <div className={`${sidePane} ${inspOpen ? "" : "hidden"}`} style={sidePaneStyle}>
-            <InspectionPanel uid={props.uid} canAck={ws.draftMode} tabs={assistTabs} />
+            <InspectionPanel uid={props.uid} canAck={ws.draftMode} tabs={assistTabs} onFollowup={props.preview || props.readOnly ? undefined : ws.askFollowup} />
           </div>
         )}
         {side === "materials" && (

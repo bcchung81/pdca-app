@@ -122,9 +122,11 @@ export function CardBoard(props: {
   const unitRows = useMemo(() => (view.unit ? rows.filter((r) => r.evalUnitId === view.unit) : rows), [rows, view.unit]);
   const options = useMemo(() => {
     const o = {} as Record<FilterKey, string[]>;
-    for (const f of filterDefs) o[f.key] = f.key === "draft" ? [...DRAFT_FILTER_VALUES] : [...new Set(unitRows.map((r) => filterValue(r, f.key)))].sort((a, b) => a.localeCompare(b, "ko"));
+    // 작성본: 부서가 바로 확정하는 흐름(2026-10-27)이라 「돌려받음」·「제출」은 보이는 과제에 있거나 지금 골라져 있을 때만
+    const draftStates = new Set(unitRows.map((r) => filterValue(r, "draft", drafts)));
+    for (const f of filterDefs) o[f.key] = f.key === "draft" ? DRAFT_FILTER_VALUES.filter((v) => (v !== "돌려받음" && v !== "제출") || draftStates.has(v) || view.filters.draft.includes(v)) : [...new Set(unitRows.map((r) => filterValue(r, f.key)))].sort((a, b) => a.localeCompare(b, "ko"));
     return o;
-  }, [unitRows, filterDefs]);
+  }, [unitRows, filterDefs, drafts, view.filters.draft]);
   const shown = useMemo(() => {
     const list = unitRows.filter((r) => filterDefs.every((f) => !view.filters[f.key].length || view.filters[f.key].includes(filterValue(r, f.key, drafts)))).filter((r) => matchesQuery(r, view.q));
     const s = view.sort;

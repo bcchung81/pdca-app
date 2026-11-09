@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ChunkImages } from "../../../components/knowledge/chunk-images";
 import { ChunkText } from "../../../components/knowledge/chunk-text";
 import { type FilterGroup, KnowledgeFilter } from "../../../components/knowledge/knowledge-filter";
-import { Empty, PageHeader, Panel, Peek, Screen, T, Tag } from "../../../components/ui/kit";
+import { Empty, LinkTabs, PageHeader, Panel, Peek, Screen, T, Tag, Toolbar } from "../../../components/ui/kit";
 import { requireUser } from "../../../lib/auth/dal.ts";
 import { BUSINESSES } from "../../../lib/knowledge/dictionaries.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
@@ -11,6 +11,7 @@ import { MGMT_INDICATORS } from "../../../lib/tracks/mgmt-units.ts";
 import { cachedChunks, storeChunks } from "../../../lib/knowledge/chunk-cache.ts";
 import { knowledgeImagePath, metaImages } from "../../../lib/knowledge/images.ts";
 import { UNIT_LABEL } from "../../../lib/knowledge/labels.ts";
+import { filterMine, linkedChunkKeys, type ScopeLink } from "../../../lib/knowledge/my-scope.ts";
 import { snippetText } from "../../../lib/knowledge/rich-text.ts";
 import { buildSearchQuery } from "../../../lib/knowledge/search-query.ts";
 import { withReturn } from "../../../lib/nav/return-to.ts";
@@ -24,6 +25,8 @@ const COLS = "chunk_key, doc_id, unit_type, business, title, context_prefix, pri
 
 /** 유형·지표 집계용 행(select 열 그대로) */
 interface FacetRow {
+  chunk_key: string;
+  seq: number;
   doc_id: string;
   unit_type: string;
   business: string | null;
@@ -61,13 +64,34 @@ async function facetRows(supabase: Awaited<ReturnType<typeof createClient>>): Pr
   if (hit) return hit;
   const rows: FacetRow[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from("knowledge_chunks").select("doc_id, unit_type, business").order("chunk_key").range(from, from + 999);
+    const { data, error } = await supabase.from("knowledge_chunks").select("chunk_key, seq, doc_id, unit_type, business").order("chunk_key").range(from, from + 999);
     if (error) return rows; // 실패한 집계는 캐시에 두지 않음
     rows.push(...(data ?? []));
     if ((data?.length ?? 0) < 1000) break;
   }
   storeChunks("facets", rows);
   return rows;
+}
+
+/**
+ * 부서 담당자의 담당 과제에 연결된 조각 열쇠 — 사용자 권한으로 읽어 RLS(`private.can_read_card`)가 자기 담당 과제만 돌려줌(서비스 키 아님).
+ * 1,000행 한도라 모자랄 때까지 이어서 읽음(조회 ⌈행수/1000⌉번). 활성 카드의 rejected 아닌 행만
+ */
+async function myScopeKeys(supabase: Awaited<ReturnType<typeof createClient>>): Promise<Set<string>> {
+  const rows: ScopeLink[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("card_knowledge_scope")
+      .select("chunk_key, status, card:cards!inner(status)")
+      .eq("card.status", "active")
+      .neq("status", "rejected")
+      .order("chunk_key")
+      .range(from, from + 999);
+    if (error) break;
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < 1000) break;
+  }
+  return linkedChunkKeys(rows);
 }
 
 /** 공통 지식(로그인 전원 — 부서 담당자는 읽기 전용, 성과관리팀 연결 링크만 다름): 적재한 경영평가 문서 조각을 검색·열람 — AI 작성지원·점검이 쓰는 근거와 같은 자료 */
@@ -83,12 +107,17 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
   const chunkKey = one(sp.chunk);
   const track = await getTrack();
   const supabase = await createClient();
+  // 부서 담당자는 기본이 「내 과제 자료」(all=1이면 전체). 성과관리팀·관리자는 늘 전체
+  const showAll = one(sp.all) === "1";
+  const mine = !staff && !showAll;
 
-  const [{ data: docs }, facets] = await Promise.all([
+  const [{ data: docs }, facets, myKeys] = await Promise.all([
     supabase.from("knowledge_documents").select("doc_id, title, edition, published, chunk_count, status").order("published", { ascending: false }),
     facetRows(supabase),
+    staff ? Promise.resolve(new Set<string>()) : myScopeKeys(supabase),
   ]);
-  const inScope = (f: FacetRow) => (!doc || f.doc_id === doc) && (!biz || f.business === biz);
+  const myCount = filterMine(facets, myKeys, {}).length;
+  const inScope = (f: FacetRow) => (!doc || f.doc_id === doc) && (!biz || f.business === biz) && (!mine || myKeys.has(f.chunk_key));
   const typeCounts = new Map<string, number>();
   for (const f of facets ?? []) if (inScope(f)) typeCounts.set(f.unit_type, (typeCounts.get(f.unit_type) ?? 0) + 1);
 
@@ -96,7 +125,7 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
   let total = 0;
   let loose = false;
   if (q) {
-    const filters = { doc_ids: doc ? [doc] : null, unit_types: type ? [type] : null, businesses: biz ? [biz] : null, max_rows: 60 };
+    const filters = { doc_ids: doc ? [doc] : null, unit_types: type ? [type] : null, businesses: biz ? [biz] : null, max_rows: mine ? 100 : 60 }; // 내 과제 보기는 결과를 내 조각으로 거르므로 DB가 허용하는 최대(100)로 받음
     let { data } = await supabase.rpc("search_knowledge", { query: buildSearchQuery(q, "all"), ...filters });
     if (!data?.length) {
       ({ data } = await supabase.rpc("search_knowledge", { query: buildSearchQuery(q, "any"), ...filters }));
@@ -104,8 +133,15 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
     }
     const keys = ((data as Array<{ chunk_key: string }> | null) ?? []).map((r) => r.chunk_key);
     const rows = keys.length ? ((await supabase.from("knowledge_chunks").select(COLS).in("chunk_key", keys)).data ?? []) : [];
-    results = keys.map((k) => rows.find((r) => r.chunk_key === k)).filter(Boolean) as ChunkListRow[];
+    results = keys.map((k) => rows.find((r) => r.chunk_key === k)).filter((r) => r && (!mine || myKeys.has(r.chunk_key))) as ChunkListRow[];
     total = results.length;
+  } else if (mine) {
+    // 내 조각은 집계 행(chunk_key·seq 포함)에서 걸러 쪽 나눔 — 그 쪽 40건만 본문을 읽음
+    const picked = filterMine(facets, myKeys, { doc, type, biz });
+    total = picked.length;
+    const keys = picked.slice((page - 1) * PAGE, page * PAGE).map((c) => c.chunk_key);
+    const rows = keys.length ? ((await supabase.from("knowledge_chunks").select(COLS).in("chunk_key", keys)).data ?? []) : [];
+    results = keys.map((k) => rows.find((r) => r.chunk_key === k)).filter(Boolean) as ChunkListRow[];
   } else {
     let query = supabase.from("knowledge_chunks").select(COLS, { count: "exact" });
     if (doc) query = query.eq("doc_id", doc);
@@ -136,7 +172,7 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
 
   const href = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
-    const cur = { q, doc, type, biz, page: page > 1 ? String(page) : "", chunk: chunkKey };
+    const cur = { q, doc, type, biz, page: page > 1 ? String(page) : "", chunk: chunkKey, all: !staff && showAll ? "1" : "" };
     for (const [k, v] of Object.entries({ ...cur, ...patch })) if (v) p.set(k, v);
     const s = p.toString();
     return s ? `/knowledge?${s}` : "/knowledge";
@@ -195,7 +231,7 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
                             {c.title}
                           </Link>
                           <span className="ml-auto shrink-0">
-                            <Tag tone={l.status === "confirmed" ? "navy" : "warn"}>{l.status === "confirmed" ? "확정" : "확정 전"}</Tag>
+                            {staff && <Tag tone={l.status === "confirmed" ? "navy" : "warn"}>{l.status === "confirmed" ? "확정" : "확정 전"}</Tag>}
                           </span>
                         </li>
                       ) : null;
@@ -209,10 +245,24 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
         )
       }
     >
+      {!staff && (
+        <Toolbar>
+          <span title="자동 연결 기준 — 빠진 자료는 전체 자료에서">
+            <LinkTabs
+              label="자료 범위"
+              tabs={[
+                { href: href({ all: "", page: "", chunk: "" }), label: "내 과제 자료", n: myCount, on: mine },
+                { href: href({ all: "1", page: "", chunk: "" }), label: "전체 자료", on: showAll },
+              ]}
+            />
+          </span>
+        </Toolbar>
+      )}
       <form action="/knowledge" className="flex min-w-0 flex-wrap items-center gap-2">
         {doc && <input type="hidden" name="doc" value={doc} />}
         {type && <input type="hidden" name="type" value={type} />}
         {biz && <input type="hidden" name="biz" value={biz} />}
+        {!staff && showAll && <input type="hidden" name="all" value="1" />}
         <label className="flex h-10 min-w-0 grow items-center gap-2 rounded-md border border-line-strong bg-paper px-3 focus-within:border-navy">
           <span className="sr-only">공통 지식 검색</span>
           <input name="q" defaultValue={q} placeholder="예: 사후검증 시간 산식, 전파품질 목표 도전성" className="min-w-0 grow border-0 bg-transparent text-sm outline-none" />
@@ -231,7 +281,17 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
 
       <Panel title={q ? `「${q}」 검색 결과 ${total}건${loose ? " · 모든 낱말이 든 결과가 없어 한 낱말이라도 든 결과" : ""}` : `조각 ${total}건`} aside={!q && total > PAGE ? `${page} / ${Math.ceil(total / PAGE)}쪽` : undefined}>
         {results.length === 0 ? (
-          <Empty title={q ? "찾은 조각이 없습니다." : "조각이 없습니다."}>{q ? "낱말을 줄이거나 필터를 풀어 보세요." : "관리자가 공통 지식을 적재하면 여기에 보입니다."}</Empty>
+          mine && myCount === 0 ? (
+            <Empty title="담당 과제에 연결된 자료가 아직 없습니다.">
+              <Link href={href({ all: "1", page: "", chunk: "" })} className="text-link">
+                「전체 자료」에서 찾아보세요
+              </Link>
+            </Empty>
+          ) : (
+            <Empty title={q ? "찾은 조각이 없습니다." : "조각이 없습니다."}>
+              {q ? (mine ? "낱말을 줄이거나 필터를 풀어 보세요. 연결되지 않은 자료는 「전체 자료」에서 찾을 수 있습니다." : "낱말을 줄이거나 필터를 풀어 보세요.") : "관리자가 공통 지식을 적재하면 여기에 보입니다."}
+            </Empty>
+          )
         ) : (
           <ul className="flex flex-col">
             {results.map((r) => (

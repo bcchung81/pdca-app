@@ -244,7 +244,7 @@ try {
   // 실적 문장·수치는 요청 칸 하나에 붙여 넣음(따로 뜨던 붙여 넣기 칸은 없앴음)
   await panel.getByLabel("실적 자료·요청", { exact: true }).fill("9월 실적(결과보고 9.26.): 고속철도 LTE-R 준공검사 3건 완료(9.12.), 정기검사 2개 노선 12km 전파품질 측정 완료, 이동형 측정시스템 5대 운영으로 누적 측정 구간 1,240km");
   const answers1 = await panel.locator("[data-answer]").count();
-  await panel.getByRole("button", { name: "실적 반영(모드 A) 요청" }).click();
+  await panel.getByRole("button", { name: "실적 반영 요청" }).click();
   await panel.locator("[data-answer]").nth(answers1).waitFor({ timeout: 330000 });
   const reflectText = await panel.innerText();
   const sixCols = ["월", "추진실적", "정량성과", "정성성과", "진도율", "리스크(대응)"].every((k) => reflectText.includes(k));

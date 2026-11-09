@@ -1,17 +1,20 @@
 "use client";
 
+import { Sparkles } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { type CardInspection, getCardInspections } from "../../app/(app)/cards/actions";
 import { acknowledgeInspection } from "../../app/(app)/my/actions";
 import { currentPeriod } from "../../lib/cards/view.ts";
 import { fmtDate, monthLabel } from "../../lib/format.ts";
+import { followupBasis } from "../../lib/ai/followup.ts";
 import { finalInspection, isPreMonth } from "../../lib/inspections/model.ts";
+import { T } from "../ui/kit";
 import { InspectionSheet, TallyLine } from "../inspections/inspection-sheet";
 
 const STATUS: Record<CardInspection["status"], string> = { draft: "초안(부서에 안 보임)", sent: "확인 필요", acknowledged: "확인함" };
 
 /** 카드 옆 창 「점검 결과」 탭: 받은 월간 점검을 「AI 컨설팅 결과」 양식(지침 14 <출력구조>) 그대로 보면서 카드를 보완 */
-export function InspectionPanel({ uid, canAck, tabs }: { uid: string; canAck: boolean; /** 머리의 제목 자리에 둘 탭(「AI 작성지원 | 점검 결과」) */ tabs?: ReactNode }) {
+export function InspectionPanel({ uid, canAck, tabs, onFollowup }: { uid: string; canAck: boolean; /** 머리의 제목 자리에 둘 탭(「AI 작성지원 | 점검 결과」) */ tabs?: ReactNode; /** 「AI로 보완 점검」 — 요청을 보낼 수 있을 때만 넘김(읽기 전용·미리보기는 없음) */ onFollowup?: () => void }) {
   const [state, setState] = useState<{ loading: boolean; items: CardInspection[]; error: string | null }>({ loading: true, items: [], error: null });
   const [pickId, setPickId] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
@@ -26,6 +29,8 @@ export function InspectionPanel({ uid, canAck, tabs }: { uid: string; canAck: bo
   // 처음 보이는 것은 최종 점검(부서에 보낸·확인한 것 중 점검월이 가장 늦은 1건). 초안은 월 칩에 「초안」으로만(성과관리팀만 보임)
   const final = finalInspection(state.items).final;
   const cur = state.items.find((it) => it.id === pickId) ?? final ?? state.items[0];
+  // 보완 점검이 쓰는 근거(최종 점검표의 미흡 행)가 있을 때만 바로가기를 그림 — AI 쪽 판정(followupBasis)을 그대로 씀
+  const canFollowup = Boolean(onFollowup) && (followupBasis(final)?.rows.length ?? 0) > 0;
   const now = currentPeriod();
   const chip = (it: CardInspection) => `${monthLabel(it.period)}${isPreMonth(it.period, now) ? " 사전" : ""}${it.status === "draft" ? " · 초안" : ""}`;
 
@@ -60,6 +65,12 @@ export function InspectionPanel({ uid, canAck, tabs }: { uid: string; canAck: bo
               <span className="ml-auto font-mono text-muted">{fmtDate(cur.updatedAt)}</span>
             </div>
             <TallyLine result={cur.result} />
+            {canFollowup && (
+              <button type="button" onClick={onFollowup} className={`${T.btn} self-start`} title="AI 작성지원 탭에서 요청 종류를 「보완 점검」으로 고릅니다(보내기는 직접)">
+                <Sparkles size={14} aria-hidden />
+                AI로 보완 점검
+              </button>
+            )}
             <InspectionSheet result={cur.result} idPrefix={`panel-${cur.id}`} date={cur.updatedAt} />
             {canAck && cur.status === "sent" && (
               <div className="flex items-center gap-2">

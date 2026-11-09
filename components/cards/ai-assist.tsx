@@ -57,6 +57,9 @@ function lastSpot(turns: AssistTurn[]): Spot | null {
 /** 쓰는 중 진행 줄의 요청 종류(옛 기록의 요청 종류는 쓰는 중일 수 없으나 모양만 맞춤) */
 const progressMode = (m: TurnMode): PickMode => (m === "chat" || m in WRITER_MODES ? (m as PickMode) : "improve");
 
+/** 화면에 보이는 요청 종류 이름(말풍선 머리·보내기 단추): 「(모드 A)」 없는 짧은 이름. 질문·옛 종류는 기존 이름 그대로 — WRITER_MODES.label·modeLabel은 프롬프트에 들어가 못 바꿈 */
+const shownMode = (m: TurnMode) => (m in WRITER_MODES ? WRITER_MODES[m as WriterMode].short : modeLabel(m));
+
 function loadTurns(uid: string): AssistTurn[] {
   try {
     const raw = sessionStorage.getItem(assistKey(uid));
@@ -114,10 +117,18 @@ export function AiAssist(props: {
   tabs?: ReactNode;
   /** 이 탭이 지금 보이는지(다른 탭이면 숨김 — 숨은 동안 온 답은 돌아올 때 그 자리로 옮김). 기본 보임 */
   active?: boolean;
+  /** 점검 결과 탭의 「AI로 보완 점검」 신호: n이 바뀔 때마다 요청 종류를 그 값으로 고름(보내지는 않음) */
+  modeRequest?: { mode: WriterMode; n: number };
 }) {
   const { uid } = props;
   const active = props.active !== false;
   const [mode, setMode] = useState<PickMode>("improve");
+  // 부모가 요청 종류를 골라 달라고 한 차례(렌더 중 상태 조정 — useEffect 안 setState 대신)
+  const [seenReq, setSeenReq] = useState(props.modeRequest?.n ?? 0);
+  if (props.modeRequest && props.modeRequest.n !== seenReq) {
+    setSeenReq(props.modeRequest.n);
+    setMode(props.modeRequest.mode);
+  }
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [turns, setTurns] = useState<AssistTurn[]>([]);
@@ -451,18 +462,17 @@ export function AiAssist(props: {
           <div className="mx-auto flex max-w-[640px] flex-col gap-3 py-6">
             {props.unavailable ? (
               <p className="rounded-xl border border-field-line bg-paper p-4 text-sm leading-7 text-muted-2">{props.unavailable}</p>
-            ) : props.preview ? (
-              <ul className="list-disc pl-5 text-sm leading-7 text-muted-2">
-                {MODES.map(([k, m]) => (
-                  <li key={k}>
-                    <b className="font-semibold text-ink">{m.short}</b> — {m.hint}
-                  </li>
-                ))}
-              </ul>
             ) : (
-              <p className="text-center text-sm leading-7 text-muted-2">
-                요청 종류를 고르고 보내세요{upload && " · 파일은 끌어 놓으면 근거로 첨부됩니다"}
-              </p>
+              <>
+                {!props.preview && <p className="text-center text-sm leading-7 text-muted-2">요청 종류를 고르고 보내세요{upload && " · 파일은 끌어 놓으면 근거로 첨부됩니다"}</p>}
+                <ul className="list-disc pl-5 text-sm leading-7 text-muted-2">
+                  {MODES.map(([k, m]) => (
+                    <li key={k}>
+                      <b className="font-semibold text-ink">{m.short}</b> — {m.hint}
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </div>
         ) : (
@@ -470,7 +480,7 @@ export function AiAssist(props: {
             {turns.map((t, idx) => (
               <li key={t.id} data-turn={t.id} className="flex min-w-0 flex-col gap-2.5">
                 <div className="flex max-w-[88%] flex-col gap-0.5 self-end rounded-2xl rounded-br-md bg-navy/[0.07] px-3.5 py-2">
-                  <span className="text-xs font-semibold text-navy">{modeLabel(t.mode)}</span>
+                  <span className="text-xs font-semibold text-navy">{shownMode(t.mode)}</span>
                   {t.ask.length ? (
                     t.ask.map((a, i) => (
                       <p key={i} className="text-sm leading-[1.6] break-keep whitespace-pre-wrap text-ink">
@@ -671,7 +681,7 @@ export function AiAssist(props: {
           placeholder={PLACEHOLDER[mode]}
           keyHint={false}
           submitDisabled={pending || Boolean(uploading)}
-          submitLabel={mode === "chat" ? "질문 보내기" : `${WRITER_MODES[mode].label} 요청`}
+          submitLabel={mode === "chat" ? "질문 보내기" : `${WRITER_MODES[mode].short} 요청`}
           error={
             err && (
               <p role="alert" className="text-xs text-error">

@@ -152,13 +152,13 @@ export function DraftCompose(props: {
 
   const story = props.currentStory ? `(${props.currentStory})` : "";
   const MODES: Array<[DraftMode, string, string]> = [
-    ...(defaultMode === "revise" ? [["revise", "자료 반영 고치기", `지금 구성안${story}의 짜임(블록·라벨·재료)은 그대로 두고, 구성안 뒤 고른 첨부와 요청 글을 더해 초안을 다시 씁니다(${rangeText(draftExpect("revise", props.mg))})`] as [DraftMode, string, string]] : []),
-    ...(props.hasOutline ? [["plan", "구성안대로 집필", `지금 구성안${story}의 틀·블록 순서·도식대로 초안을 씁니다 — 구성안 뒤 고른 첨부와 요청 글도 넣고, 구성안을 승인합니다(${rangeText(draftExpect("plan", props.mg))})`] as [DraftMode, string, string]] : []),
+    ...(defaultMode === "revise" ? [["revise", "자료 반영 고치기", `지금 구성안${story}의 뼈대는 그대로 두고, 그 뒤에 고른 첨부와 요청 글을 더해 초안을 다시 씁니다(${rangeText(draftExpect("revise", props.mg))})`] as [DraftMode, string, string]] : []),
+    ...(props.hasOutline ? [["plan", "구성안대로 집필", `지금 구성안${story}의 순서·그림 배치대로 초안을 씁니다. 그 뒤에 고른 첨부와 요청 글도 넣고, 구성안은 승인됩니다(${rangeText(draftExpect("plan", props.mg))})`] as [DraftMode, string, string]] : []),
     props.mg
-      ? ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `이 카드가 맡을 평가내용·대주제·절과 절마다 이야기 틀·블록·재료를 먼저 만들어 보고 고친 뒤 승인하면 그 짜임대로 집필합니다(${rangeText(draftExpect("outline", true))})`]
-      : ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `재료표·평가 논점·이야기 틀·블록 목록·그림 자리를 먼저 만들어 보고 고친 뒤 승인하면 그 짜임대로 집필합니다(${rangeText(draftExpect("outline", props.mg))})`],
+      ? ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `초안을 쓰기 전에 글의 뼈대(이 카드가 들어갈 평가내용·절과 절마다 쓸 내용 순서)를 먼저 만듭니다. 보고 고친 뒤 승인하면 그대로 초안을 씁니다(${rangeText(draftExpect("outline", true))})`]
+      : ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `초안을 쓰기 전에 글의 뼈대(쓸 근거·평가 논점·내용 순서·그림 자리)를 먼저 만듭니다. 보고 고친 뒤 승인하면 그대로 초안을 씁니다(${rangeText(draftExpect("outline", props.mg))})`],
     // 경영관리는 평가내용·대주제·절을 먼저 정해야 해 구성안 없이 바로 쓰지 않음(서버 runReportSectionDraft도 막음)
-    ...(props.mg ? [] : [["draft", props.hasSpec ? "바로 다시 만들기" : "바로 만들기", props.hasOutline ? `구성안을 쓰지 않고 AI가 짜임을 새로 정해 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})` : `구성안 없이 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})`] as [DraftMode, string, string]]),
+    ...(props.mg ? [] : [["draft", props.hasSpec ? "바로 다시 만들기" : "바로 만들기", props.hasOutline ? `구성안을 쓰지 않고 AI가 뼈대를 새로 정해 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})` : `구성안 없이 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})`] as [DraftMode, string, string]]),
   ];
   const label = (m: DraftMode) => MODES.find(([k]) => k === m)?.[1] ?? "";
   const hint = (m: DraftMode) => MODES.find(([k]) => k === m)?.[2] ?? "";
@@ -380,7 +380,7 @@ export function DraftCompose(props: {
     </button>
   );
   const editBtn = btn("edit", "구성안 고치기", props.onOpenOutline, "secondary", "블록·도식·재료·짜임을 고치는 창을 엽니다(왼쪽은 구성안 판면)", false);
-  const againBtn = btn("again", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", askOutline, "quiet", `요청 칸에서 바라는 점·짜임을 정하고 보냅니다 — ${hint("outline")}`);
+  const againBtn = btn("again", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", askOutline, "quiet", `요청 칸에 바라는 점을 적고 보냅니다 — ${hint("outline")}`);
   const draftBtn = props.mg ? [] : [btn("draft", label("draft"), () => send("draft"), "quiet", hint("draft"))];
   const actions = props.locked
     ? thread.submit

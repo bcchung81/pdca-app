@@ -21,6 +21,12 @@ export function useCardWorkspace(props: WorkspaceProps) {
   // 오른쪽 패널은 늘 열려 있음: 기본은 「AI 작성지원 | 점검 결과」 탭(점검 결과에서 오면 ?panes=inspection으로 점검 결과 탭).
   // 자료·수정 이력·한글 파일 채우기는 그 자리에 잠시 바꿔 열고, 닫으면 탭으로 돌아옴
   const [tab, setTab] = useState<"ai" | "inspection">(() => ((props.initialPanes ?? "").split(",")[0] === "inspection" ? "inspection" : "ai"));
+  // 점검 결과 탭의 「AI로 보완 점검」: AI 작성지원 탭으로 옮기고 요청 종류를 「보완 점검」으로 고르게 하는 신호(n이 바뀔 때마다)
+  const [followupReq, setFollowupReq] = useState(0);
+  const askFollowup = () => {
+    setFollowupReq((n) => n + 1);
+    setTab("ai");
+  };
   const [other, setOther] = useState<null | "history" | "materials" | "import">(null);
   const side = other ?? tab;
   const [menu, setMenu] = useState(false);
@@ -129,7 +135,7 @@ export function useCardWorkspace(props: WorkspaceProps) {
     });
 
   return {
-    router, editor, shell, tab, setTab, other, setOther, side, sheet, setSheet, menu, setMenu, menuRef, archiving, setArchiving, savedTick, leaving, setLeaving,
+    router, editor, shell, tab, setTab, followupReq, askFollowup, other, setOther, side, sheet, setSheet, menu, setMenu, menuRef, archiving, setArchiving, savedTick, leaving, setLeaving,
     aiOpen, inspOpen, toggle, assistPane, inspSeen, paneId, paneW, setPaneW, setPaneLive, paneDragging, setPaneDragging, sidePane, sidePaneStyle,
     imageUrls, setImageUrls, message, setMessage, pending, draftMode, pageHref, listLabel, reportHref, close, onSaved, draftOp,
   };

@@ -95,7 +95,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
             allOn={!status}
             segments={[
               { label: "승인", n: count("approved"), tone: REPORT_STATUS_TONE.approved.seg, href: status === "approved" ? "/reports" : "/reports?status=approved", on: status === "approved", title: "부서가 확정(바로 승인 상태) — 필요하면 검토 화면에서 메모와 함께 승인을 풂" },
-              { label: "제출 · 검토 중", n: count("submitted"), tone: REPORT_STATUS_TONE.submitted.seg, href: status === "submitted" ? "/reports" : "/reports?status=submitted", on: status === "submitted", title: "2026-10-27 전에 제출된 보고서 — 승인하거나 돌려보냄(부서는 이제 제출 대신 확정)" },
+              ...(count("submitted") || status === "submitted" ? [{ label: "제출 · 검토 중", n: count("submitted"), tone: REPORT_STATUS_TONE.submitted.seg, href: status === "submitted" ? "/reports" : "/reports?status=submitted", on: status === "submitted", title: "2026-10-27 전에 제출된 보고서 — 승인하거나 돌려보냄(부서는 이제 제출 대신 확정)" }] : []),
               { label: "초안 작성", n: count("drafting"), tone: REPORT_STATUS_TONE.drafting.seg, href: status === "drafting" ? "/reports" : "/reports?status=drafting", on: status === "drafting", title: "부서가 과제별 초안을 쓰는 중" },
               { label: "자료 준비", n: count("preparing"), tone: REPORT_STATUS_TONE.preparing.seg, href: status === "preparing" ? "/reports" : "/reports?status=preparing", on: status === "preparing", title: "추가자료" },
             ]}

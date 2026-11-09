@@ -1,6 +1,7 @@
 import { UserPlus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CopyEmails } from "../../../components/users/copy-emails";
 import { PeekEscape } from "../../../components/shell/peek-escape";
 import { LinkTabs, NoAccess, PageHeader, Screen, T, Toolbar } from "../../../components/ui/kit";
 import { type AppRole, ROLE_LABEL, requireAtLeast } from "../../../lib/auth/dal.ts";
@@ -19,6 +20,8 @@ const ROLE_CLASS: Record<AppRole, string> = {
   pmo: "border-link text-link",
   dept_user: "border-field-line text-muted-2",
 };
+/** 활성 부서 담당자 가운데 아직 한 번도 로그인하지 않은 사람 */
+const isNeverSignedIn = (u: { role: AppRole; active: boolean; lastSignInAt: string | null }) => u.role === "dept_user" && u.active && !u.lastSignInAt;
 const cell = "border-b border-row-line px-3 whitespace-nowrap";
 
 export default async function UsersPage({ searchParams }: PageProps<"/users">) {
@@ -28,31 +31,34 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
   const sp = await searchParams;
   const roleFilter = (["dept_user", "pmo", "admin"] as AppRole[]).find((r) => r === one(sp.role));
   const inactiveOnly = one(sp.status) === "inactive";
+  const neverOnly = one(sp.status) === "never";
   const editId = one(sp.edit);
   const creating = one(sp.new) === "1";
   const { users, teams } = await listUsers();
   const shown = users
-    .filter((u) => (roleFilter ? u.role === roleFilter : true) && (inactiveOnly ? !u.active : true))
+    .filter((u) => (roleFilter ? u.role === roleFilter : true) && (inactiveOnly ? !u.active : true) && (neverOnly ? isNeverSignedIn(u) : true))
     .sort((a, b) => Number(b.active) - Number(a.active));
   const editing = editId ? users.find((u) => u.id === editId) : undefined;
   const href = (extra: Record<string, string>) => {
     const p = new URLSearchParams();
     if (roleFilter) p.set("role", roleFilter);
     if (inactiveOnly) p.set("status", "inactive");
+    if (neverOnly) p.set("status", "never");
     for (const [k, v] of Object.entries(extra)) p.set(k, v);
     const s = p.toString();
     return s ? `/users?${s}` : "/users";
   };
   const closeHref = href({});
   const chips: Array<{ key: string; status?: string; label: string; n: number; on: boolean; to: string }> = [
-    { key: "", label: "전체", n: users.length, on: !roleFilter && !inactiveOnly, to: "/users" },
+    { key: "", label: "전체", n: users.length, on: !roleFilter && !inactiveOnly && !neverOnly, to: "/users" },
     ...(["dept_user", "pmo", "admin"] as AppRole[]).map((r) => ({
       key: r,
       label: ROLE_LABEL[r],
       n: users.filter((u) => u.role === r).length,
-      on: roleFilter === r && !inactiveOnly,
+      on: roleFilter === r && !inactiveOnly && !neverOnly,
       to: `/users?role=${r}`,
     })),
+    { key: "never", label: "첫 로그인 전", n: users.filter(isNeverSignedIn).length, on: neverOnly, to: "/users?status=never" },
     { key: "inactive", label: "사용 중지", n: users.filter((u) => !u.active).length, on: inactiveOnly, to: "/users?status=inactive" },
   ];
   const panelOpen = creating || Boolean(editing);
@@ -120,6 +126,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
     >
       <Toolbar>
         <LinkTabs label="역할" tabs={chips.map((c) => ({ href: c.to, label: c.label, n: c.n, on: c.on }))} />
+        {neverOnly && <CopyEmails emails={shown.map((u) => u.email)} />}
         <Link
           href={href({ new: "1" })}
           scroll={false}
