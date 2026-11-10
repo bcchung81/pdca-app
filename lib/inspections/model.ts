@@ -249,6 +249,33 @@ export function inspectionWriteBlock(status: string | null, intent: "save" | "se
   return null;
 }
 
+/** 사람이 고친 점검표를 저장·보낼 때 판이 바뀌었으면(그사이 고침·만듦·지움) — 덮지 않고 이 안내(입력은 화면에 남김). 바꾼 주체는 단정하지 않음(같은 사람의 다른 창·본인 AI 저장일 수도 — T4 리뷰 T3-R4) */
+export const STALE_SAVE_MSG = "그사이 이 점검표가 바뀌었습니다(다른 창·다른 사람·AI 저장) — 새로 불러와 다시 고치세요(입력한 내용은 화면에 남아 있습니다).";
+
+/** 「보내기 취소」인데 보낸 점검표가 아님(그사이 다른 창·다른 사람이 먼저 취소했거나 지움) — 내용을 저장하지 않고 끝냄(T4 리뷰 T3-R6) */
+export const ALREADY_DRAFT_MSG = "이미 초안입니다 — 보내기 취소할 것이 없습니다.";
+export const NO_SHEET_MSG = "점검표가 없습니다 — 새로 불러와 주세요.";
+
+/** 보내기 취소의 결과: 보낸 점검표면 null(취소 진행), 확인한 점검표는 inspectionWriteBlock이 먼저 막고, 초안이면 「이미 초안」, 없으면 「없음」 */
+export function unsendBlock(status: string | null): string | null {
+  if (status === "sent") return null;
+  if (status === "acknowledged") return inspectionWriteBlock(status, "unsend");
+  return status ? ALREADY_DRAFT_MSG : NO_SHEET_MSG;
+}
+
+/**
+ * 저장의 판 조건(2026-11-10 T4 리뷰 X3a — AI 저장과 같은 방식): 편집기가 열 때(또는 마지막 저장·AI 저장·보내기 취소 때) 받은 판 base와 지금 행의 판이 다르면 충돌.
+ * 행이 없었으면(base null) 지금도 없어야 하고, 있었으면 그 행이 그대로(updated_at 같음)여야 함. 서버는 쓰기에도 같은 조건을 걸어 그 사이 경합도 막음
+ */
+export function inspectionVersionConflict(current: { updated_at: string } | null, base: string | null): boolean {
+  return current ? current.updated_at !== base : base !== null;
+}
+
+/** 판 조건을 건 쓰기의 결과가 충돌인가: 넣기의 고유 키 충돌(그사이 누가 만듦) 또는 오류 없이 0행(그사이 판이 바뀌거나 지워짐). 그 밖의 오류는 충돌이 아님 */
+export function versionedWriteConflict(error: { code?: string } | null, rows: number): boolean {
+  return error?.code === "23505" || (!error && rows === 0);
+}
+
 export function emptyResult(form: FormId = FORM_ID): InspectionResult {
   const tables = formTablesOf(form);
   return {

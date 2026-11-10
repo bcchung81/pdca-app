@@ -6,13 +6,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { runInspectionDraft } from "../../app/(app)/inspections/actions";
 import { T } from "../ui/kit";
+import { settleAiJob } from "../workspace/ai-jobs";
 
 type Target = { uid: string; taskNo: string; title: string };
 
 /**
  * AI 일괄 점검(지침 14 <일괄점검모드>): 미작성 과제를 동시에 BATCH_CONCURRENCY건씩(2026-10-10 B5 — 예전 한 건씩은 59장 ≈ 6.5시간) AI 초안으로 만듭니다.
- * 과제당 몇 분(INSPECT_EXPECT) — 이 창을 열어 두는 동안 진행하고, 실패한 건은 건너뛰고 끝에 사유를 모읍니다(다시 돌려도 안전: 초안만 씀,
+ * 과제당 몇 분(INSPECT_EXPECT) — 이 창을 열어 두는 동안 다음 과제를 이어서 시작하고, 실패한 건은 건너뛰고 끝에 사유를 모읍니다(다시 돌려도 안전: 초안만 씀,
  * 대상이 미작성뿐이라 멈춘 뒤 다시 누르면 남은 것부터 이어짐). 동시 수는 서버의 AI 동시 실행 제한과 같아 그동안 다른 AI 요청은 「이미 N건」으로 기다림.
+ * 과제 하나는 백그라운드 작업(2026-11-10): 서버 액션은 시작만 하고, 그 작업이 끝날 때까지(settleAiJob — GET /api/ai/requests 폴링) 그 자리를 비우지 않아 동시 수가 지켜짐.
+ * 이미 시작한 과제는 창을 닫아도 서버에서 끝까지 돎.
  */
 export function AiBatchButton({ period, targets }: { period: string; targets: Target[] }) {
   const router = useRouter();
@@ -42,7 +45,7 @@ export function AiBatchButton({ period, targets }: { period: string; targets: Ta
         live.add(name);
         show();
         try {
-          const out = await runInspectionDraft(t.uid, period);
+          const out = await settleAiJob(runInspectionDraft(t.uid, period), "inspect", { card: { uid: t.uid } });
           if (out.ok) ok += 1;
           else failed.push({ t, message: out.message });
         } catch {
@@ -90,7 +93,7 @@ export function AiBatchButton({ period, targets }: { period: string; targets: Ta
       {asking && (
         <span role="alertdialog" aria-label="AI 일괄 점검" className="absolute top-10 right-0 z-pop flex w-[340px] flex-col gap-2 rounded-md border border-line-strong bg-paper p-3 text-xs text-ink shadow-lg">
           <span>
-            미작성 {targets.length}건을 동시에 {BATCH_CONCURRENCY}건씩 AI 점검 초안으로 만듭니다. 과제당 {rangeText(INSPECT_EXPECT)}이며, 이 창을 열어 두는 동안 진행합니다(그동안 다른 AI 요청은 기다림). 멈춘 뒤 다시 누르면 남은 과제부터 이어서 합니다. 초안은 확인한 뒤 부서에 보내세요.
+            미작성 {targets.length}건을 동시에 {BATCH_CONCURRENCY}건씩 AI 점검 초안으로 만듭니다. 과제당 {rangeText(INSPECT_EXPECT)}이며, 이 창을 열어 두는 동안 다음 과제를 이어서 시작합니다(이미 시작한 과제는 창을 닫아도 서버에서 끝까지 돌고, 그동안 다른 AI 요청은 기다림). 멈춘 뒤 다시 누르면 남은 과제부터 이어서 합니다. 초안은 확인한 뒤 부서에 보내세요.
           </span>
           <span className="flex justify-end gap-2">
             <button type="button" onClick={() => setAsking(false)} className={T.btnSm}>

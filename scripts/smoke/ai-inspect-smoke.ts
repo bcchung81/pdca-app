@@ -1,12 +1,13 @@
 // 월간 점검 AI 초안 연기 시험(수동 실행 전용): 호스티드 DB에서 카드 원장과 관리계획 발췌를 읽기만 하고
 // callInspection → verifyInspection 결과를 보여 줍니다(점검표는 저장하지 않음).
-// 실행: node --conditions=react-server --env-file=.env.local scripts/smoke/ai-inspect-smoke.ts [카드 id(기본 주요사업1/1-가)] [점검월 YYYY-MM] [결과 JSON 경로] [--fake-peer]
+// 실행: node --conditions=react-server --env-file=.env.local scripts/smoke/ai-inspect-smoke.ts [카드 id(기본 주요사업1/1-가)] [점검월 YYYY-MM] [결과 JSON 경로] [--fake-peer] [--dry]
 // --fake-peer: 붙임2 사례 경로 시험용 가상 사례 3행을 메모리에서만 더함(DB에 넣지 않음, 실제 기관 자료 아님)
+// --dry: AI를 부르지 않고 근거 조각(종류별 수)·시스템·요청 글 크기만 보여 줌(비용 없음)
 import { writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import { gatherInspectionKnowledge } from "../../lib/ai/context.ts";
 import { type InspectContext, inspectionPrompt, verifyInspection } from "../../lib/ai/inspect.ts";
-import { aiProvider, callInspection, modelLabel } from "../../lib/ai/run.ts";
+import { aiProvider, callInspection, inspectSystem, modelLabel } from "../../lib/ai/run.ts";
 import { inspectPrompts } from "../../lib/prompts/sets.ts";
 import { currentPeriod } from "../../lib/cards/view.ts";
 import { isoDay } from "../../lib/format.ts";
@@ -15,6 +16,7 @@ import { BUSINESSES } from "../../lib/knowledge/dictionaries.ts";
 
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const fakePeer = process.argv.includes("--fake-peer");
+const dry = process.argv.includes("--dry");
 const id = args[0] || "주요사업1/1-가";
 const period = args[1] || currentPeriod();
 const out = args[2];
@@ -29,7 +31,7 @@ if (fakePeer)
       ["가상기관B", "시험 산업 지원 사업", "B0", "민간 협의체와 공동 분석으로 제도 개선까지 연결하고 개선 효과를 이용자 만족도로 측정함", "확산 로드맵 부족"],
       ["한국방송통신전파진흥원", "전파이용 기회 확대 사업", "C", "", "내부 업무 효율성 향상에 치중"],
     ].map(([org, business, grade, good, bad], i) => ({
-      key: `peer25-biz/${String(i + 1).padStart(3, "0")}`,
+      key: `peer-fake/${String(i + 1).padStart(3, "0")}`, // 운영 붙임2 키(peer25-biz/NNN)와 겹치지 않게
       title: `붙임2 · ${org} — ${business}(${grade})`,
       unitType: "peer_case",
       text: [good ? `잘한 점(성과): ${good}` : "", `아쉬운 점(지적사항): ${bad}`].filter(Boolean).join("\n\n"),
@@ -47,7 +49,9 @@ const ctx: InspectContext = {
   hasPeerCases: refs.some((r) => r.unitType === "peer_case"),
 };
 const prompt = inspectionPrompt(inspectPrompts().prompts, card.data, refs, ctx);
-console.log(`provider ${aiProvider()} · 카드 ${id} · 점검월 ${period} · 조각 ${refs.length}개 · 요청 ${prompt.length}자`);
+const byType = refs.reduce<Record<string, number>>((a, r) => ({ ...a, [r.unitType]: (a[r.unitType] ?? 0) + 1 }), {});
+console.log(`provider ${aiProvider()} · 카드 ${id} · 점검월 ${period} · 조각 ${refs.length}개 ${JSON.stringify(byType)} · 시스템 ${inspectSystem(ctx.hasPeerCases).length}자 · 요청 ${prompt.length}자`);
+if (dry) process.exit(0);
 const t0 = Date.now();
 const call = await callInspection({ card: card.data, refs, ctx });
 const v = verifyInspection(call.output, refs, ctx, { model: modelLabel(call), at: new Date().toISOString() });
@@ -61,4 +65,5 @@ for (const k of TABLE_KEYS) {
   });
 }
 console.log(`\n추진현황: ${v.result.overview.status}\n개선방향:\n${v.result.overview.direction}\n사례제안: ${v.result.overview.case}\n알림: ${v.result.notices.join(" / ")}`);
-if (out) writeFileSync(out, JSON.stringify({ ctx, result: v.result, raw: call.output }, null, 1));
+// refs: 근거 범위 확인용(조각 key·종류 — 카드 전용 자료·검색 결과가 끼지 않았는지)
+if (out) writeFileSync(out, JSON.stringify({ ctx, refs: refs.map((r) => ({ key: r.key, unitType: r.unitType })), usage: call.usage, result: v.result, raw: call.output }, null, 1));

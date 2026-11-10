@@ -6,7 +6,8 @@ import { AI_LIMITS } from "./request-log.ts";
 
 /**
  * 작업 종류 → 호출 기록 기능 키(ai_requests.feature)·묶음(같은 카드에서 한 번에 하나 — 같은 묶음끼리 막음)·이름.
- * report = 경평 초안(모두 같은 초안 행에 씀), assist = 과제원장 AI 작성지원·질문(한 대화), comment = 카드 리뷰어 코멘트
+ * report = 경평 초안(모두 같은 초안 행에 씀), assist = 과제원장 AI 작성지원·질문(한 대화), comment = 카드 리뷰어 코멘트,
+ * inspect = 월간 점검 AI 초안(2026-11-10 — 같은 과제의 점검은 점검월이 달라도 한 번에 하나). DB ai_requests.job의 허용값(check)도 같은 목록이어야 함
  */
 export const JOB_KINDS = {
   outline: { feature: "report_outline", group: "report", label: "구성안 만들기" },
@@ -18,6 +19,7 @@ export const JOB_KINDS = {
   assist: { feature: "card_assist", group: "assist", label: "AI 작성지원" },
   chat: { feature: "card_chat", group: "assist", label: "질문" },
   comment: { feature: "card_comment", group: "comment", label: "리뷰어 코멘트" },
+  inspect: { feature: "inspection", group: "inspect", label: "AI 점검 초안" },
 } as const;
 export type JobKind = keyof typeof JOB_KINDS;
 export type JobGroup = (typeof JOB_KINDS)[JobKind]["group"];
@@ -102,15 +104,19 @@ export function busyJobMessage(rows: Array<Pick<JobRow, "job" | "status" | "erro
   return `이 과제의 「${JOB_KINDS[running.job].label}」 AI 작업이 아직 돌고 있습니다(다른 화면에서 보낸 것 포함). 끝난 뒤 다시 보내 주세요.`;
 }
 
-/** 작업 화면 주소(경평 초안은 과제별 초안, 과제원장은 카드 전체 쪽 — 부서 담당자도 같은 주소로 염) */
+/** 작업 화면 주소(경평 초안은 과제별 초안, 월간 점검은 점검 목록의 그 과제 옆 창(이번 달 — 점검월은 작업에 없음), 과제원장은 카드 전체 쪽 — 부서 담당자도 같은 주소로 염) */
 export function jobHref(j: Pick<AiJob, "kind" | "card">): string | null {
   if (!j.card) return null;
-  return JOB_KINDS[j.kind].group === "report" ? `/reports/cards/${j.card.uid}` : `/cards/${j.card.uid}`;
+  const group = JOB_KINDS[j.kind].group;
+  if (group === "report") return `/reports/cards/${j.card.uid}`;
+  if (group === "inspect") return `/inspections?peek=${encodeURIComponent(j.card.uid)}`;
+  return `/cards/${j.card.uid}`;
 }
 
-/** 작업 이름(「1-가 경평 초안 · 구성안 만들기」) */
+/** 작업 이름(「1-가 경평 초안 · 구성안 만들기」 · 「1-가 월간 점검 · AI 점검 초안」) */
 export function jobTitle(j: Pick<AiJob, "kind" | "card">): string {
-  const where = JOB_KINDS[j.kind].group === "report" ? "경평 초안" : "과제원장";
+  const group = JOB_KINDS[j.kind].group;
+  const where = group === "report" ? "경평 초안" : group === "inspect" ? "월간 점검" : "과제원장";
   return [j.card?.taskNo, where].filter(Boolean).join(" ") + ` · ${JOB_KINDS[j.kind].label}`;
 }
 

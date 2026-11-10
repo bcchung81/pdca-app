@@ -20,10 +20,10 @@ export function AiJobsMenu() {
   const jobs = useAiJobs();
   const running = jobs.filter((j) => j.state === "running");
   const [notices, setNotices] = useState<AiJob[]>([]);
-  // 지금 그 작업 화면에 있으면 알리지 않음(답이 바로 그 화면에 보임)
+  // 지금 그 작업 화면에 있으면 알리지 않음(답이 바로 그 화면에 보임 — 월간 점검은 주소에 ?peek=가 붙어 경로만 비교)
   const path = usePathname();
   const onDone = useCallback((done: AiJob[]) => {
-    const away = done.filter((j) => jobHref(j) !== path);
+    const away = done.filter((j) => (jobHref(j) ?? "").split("?")[0] !== path);
     if (away.length) setNotices((n) => [...n.filter((x) => !away.some((d) => d.id === x.id)), ...away].slice(-3));
   }, [path]);
   useAiJobsDone(onDone);

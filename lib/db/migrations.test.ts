@@ -437,6 +437,7 @@ test("AI 백그라운드 작업 결과(ai_results, 20261106100000): 본인 결�
   const theirs = await job("license", null);
   try {
     await rejects(() => as("inspector", () => db.query("insert into public.ai_requests (user_id, feature, status, job) values ($1, 'card_assist', 'running', 'nope')", [users.inspector])), /check constraint|violates/);
+    await job("inspector", own, "inspect"); // 월간 점검 AI 초안도 백그라운드 작업(20261110120000)
     // 작업 종류는 넣을 때만(열 단위 update 권한에 없음)
     await rejects(() => as("inspector", () => db.query("update public.ai_requests set job = 'chat' where id = $1", [mine])), /permission denied/);
 

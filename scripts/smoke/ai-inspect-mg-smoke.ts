@@ -74,4 +74,5 @@ console.log(`\n추진현황: ${v.result.overview.status}\n개선방향:\n${v.res
 console.log(`\n□ 자가진단 체크리스트 대조\n${checklistIntro(v.result.checklist)}`);
 for (const r of v.result.checklist?.rows ?? []) console.log(`${r.label} | ${r.point} | ${r.result ?? "미정"} | ${r.task} | ${r.note}`);
 console.log(JSON.stringify(checklistCounts(v.result.checklist)));
-if (out) writeFileSync(out, JSON.stringify({ ctx: { ...ctx, items: items.length }, result: v.result, raw: call.output }, null, 1));
+// refs: 근거 범위 확인용(조각 key·종류 — 카드 전용 자료·검색 결과가 끼지 않았는지), items: 체크리스트 항목(id·구분)
+if (out) writeFileSync(out, JSON.stringify({ ctx: { ...ctx, items: items.length }, refs: refs.map((r) => ({ key: r.key, unitType: r.unitType })), items: items.map((x) => ({ id: x.id, label: x.label })), usage: call.usage, result: v.result, raw: call.output }, null, 1));

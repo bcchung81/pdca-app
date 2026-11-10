@@ -1,8 +1,11 @@
 // AI 백그라운드 작업 순수 규칙(lib/ai/jobs.ts) — 상태 판정·중복 막기·폴링 대상·끝난 작업·화면 주소(2026-11-06)
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { AI_LIMITS } from "./request-log.ts";
-import { JOB_STALE_MSG, type JobRow, busyJobMessage, elapsedLabel, finishedSince, jobHref, jobNotice, jobState, jobTitle, parseIds, shouldPoll, toAiJob } from "./jobs.ts";
+import { JOB_KINDS, JOB_STALE_MSG, type JobRow, busyJobMessage, elapsedLabel, finishedSince, jobHref, jobNotice, jobState, jobTitle, parseIds, shouldPoll, toAiJob } from "./jobs.ts";
 
 const NOW = Date.parse("2026-11-06T10:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -80,4 +83,33 @@ test("parseIds: 양의 정수만·중복 없이·많아야 n개", () => {
   assert.deepEqual(parseIds("3, 1,x,-2,1,0,4.5"), [3, 1]);
   assert.deepEqual(parseIds(null), []);
   assert.deepEqual(parseIds("1,2,3", 2), [1, 2]);
+});
+
+test("월간 점검 작업(inspect, 2026-11-10): 기록 기능 키 inspection, 같은 과제 점검끼리만 막음, 주소는 점검 목록의 그 과제 옆 창, 이름은 「월간 점검」", () => {
+  assert.equal(JOB_KINDS.inspect.feature, "inspection", "호출 기록·사용량 화면이 쓰는 기능 키는 예전 동기 호출과 같음");
+  const ins = row({ job: "inspect", feature: "inspection", mode: "month" });
+  const j = toAiJob(ins, NOW)!;
+  assert.deepEqual({ kind: j.kind, feature: j.feature, state: j.state }, { kind: "inspect", feature: "inspection", state: "running" });
+  assert.match(busyJobMessage([ins], "inspect", NOW) ?? "", /AI 점검 초안.*돌고 있습니다/, "같은 과제 점검은 점검월이 달라도 한 번에 하나");
+  assert.equal(busyJobMessage([ins], "assist", NOW), null, "작성지원은 따로");
+  assert.equal(busyJobMessage([ins], "outline", NOW), null, "경평 초안은 따로");
+  assert.equal(busyJobMessage([row({ job: "assist", feature: "card_assist" }), row({ job: "outline" })], "inspect", NOW), null, "다른 묶음 작업은 점검을 막지 않음");
+  assert.equal(jobHref(j), "/inspections?peek=u-1");
+  assert.equal(jobHref({ ...j, card: { uid: "a/b", taskNo: "", title: "" } }), "/inspections?peek=a%2Fb", "uid는 주소용으로 감쌈");
+  assert.equal(jobTitle(j), "1-가 월간 점검 · AI 점검 초안");
+  assert.equal(jobNotice({ ...j, state: "ok" }), "1-가 월간 점검 · AI 점검 초안 — 끝났어요");
+});
+
+// DB ai_requests.job의 허용값(check — 마지막으로 바꾼 마이그레이션)이 작업 종류를 모두 받는가. 모자라면 그 종류의 작업 시작(startAiJob)이 check 위반으로 실패함.
+// 마이그레이션은 공용 파일이라 메인이 넣음 — 들어오기 전에는 TODO로 표시(실패로 세지 않음), 들어오면 보통 시험이 됨
+const migDir = join(dirname(fileURLToPath(import.meta.url)), "../../supabase/migrations");
+const jobChecks = readdirSync(migDir)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .flatMap((f) => [...readFileSync(join(migDir, f), "utf8").matchAll(/\bjob\s+in\s*\(([^)]*)\)/gi)].map((m) => [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1])));
+const allowedJobs = new Set(jobChecks.at(-1) ?? []);
+const missingJobs = Object.keys(JOB_KINDS).filter((k) => !allowedJobs.has(k));
+test("DB ai_requests.job 허용값 = 작업 종류(lib/ai/jobs.ts JOB_KINDS)", missingJobs.length ? { todo: `마이그레이션 대기 — DB 허용값에 없음: ${missingJobs.join(", ")}` } : {}, () => {
+  assert.ok(jobChecks.length > 0, "ai_requests.job check를 찾지 못함");
+  assert.deepEqual(missingJobs, []);
 });

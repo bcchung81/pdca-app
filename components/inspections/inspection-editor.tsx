@@ -1,9 +1,11 @@
 "use client";
 
-import { INSPECT_EXPECT, rangeText } from "../../lib/ai/progress.ts";
+import type { AiJob } from "../../lib/ai/jobs.ts";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { runInspectionDraft, saveInspection } from "../../app/(app)/inspections/actions";
+import { inspectionJobResult, pendingAiResult } from "../../lib/inspections/draft-job.ts";
+import { fetchAiResults, trackAiJob, useAiJobs, useAiJobsDone } from "../workspace/ai-jobs";
 import { fmtDateTime } from "../../lib/format.ts";
 import { T } from "../ui/kit";
 import {
@@ -27,6 +29,7 @@ import {
   directionLines,
   formTablesOf,
   linkText,
+  readResult,
   sendProblems,
   tally,
   unverifiedCount,
@@ -91,8 +94,31 @@ export function InspectionEditor({
   const [askAi, setAskAi] = useState(false);
   const before = useRef<InspectionResult | null>(null);
   const [canUndoAi, setCanUndoAi] = useState(false);
+  // AI 결과를 점검표에 쓰지 못하고 남긴 것(그사이 다른 사람이 고침·보냄 등 — T4 리뷰 X3·X4): 「AI 결과 보기」로 저장하지 않은 채 불러옴
+  const [kept, setKept] = useState<unknown>(null);
+  // 이 화면 내용의 판(updated_at): 열 때 받은 값 → 저장·AI 저장·보내기 취소 때마다 새 값. 저장·보내기는 이 판일 때만(T4 리뷰 X3a — 아니면 「다른 사람이 먼저 고쳤습니다」)
+  const [version, setVersion] = useState<string | null>(updatedAt ?? null);
+  const [stale, setStale] = useState(false);
+  // 열 때 한 번: 저장하지 못하고 남은 본인 AI 결과(이 점검월, 지금 점검표의 마지막 저장보다 늦은 것)를 되찾아 「AI 결과 보기」로(T4 리뷰 T3-R5 —
+  // 결과를 불러와 저장하다 충돌해 「새로 불러오기」하면 잃던 것). 결과는 본인 것만(GET /api/ai/results — RLS·user_id)
+  useEffect(() => {
+    let live = true;
+    void fetchAiResults({ card: uid, features: ["inspection"] }).then((rows) => {
+      const found = pendingAiResult(rows, period, updatedAt ?? null);
+      if (!live || found == null) return;
+      setKept((k: unknown) => k ?? found);
+      setMsg((m) => m ?? { ok: true, text: "저장하지 못한 AI 점검 결과가 있습니다 — 「AI 결과 보기」로 불러와 견줘 보세요." });
+    });
+    return () => {
+      live = false;
+    };
+  }, [uid, period, updatedAt]);
   const locked = status === "sent" || status === "acknowledged";
-  const busy = pending || aiBusy;
+  // 이 과제의 AI 점검 작업(머리띠와 같은 저장소 — components/workspace/ai-jobs.ts): 창을 닫았다 열었거나 다른 탭에서 시작했어도 도는 동안은 잠금
+  const jobs = useAiJobs();
+  const live = jobs.some((j) => j.kind === "inspect" && j.card?.uid === uid && j.state === "running");
+  const aiRunning = aiBusy || live;
+  const busy = pending || aiRunning;
   // 보기(부서와 같은 「AI 컨설팅 결과」 양식) · 고치기(입력). 보낸·확인한 점검표는 보기만, 내용이 있으면 보기부터
   const [mode, setMode] = useState<"view" | "edit">(() => (locked || hasContent(initial) ? "view" : "edit"));
   const viewing = locked || mode === "view";
@@ -111,35 +137,71 @@ export function InspectionEditor({
 
   const save = (intent: "save" | "send" | "unsend") =>
     start(async () => {
-      const out = await saveInspection(uid, period, res, intent);
+      const out = await saveInspection(uid, period, res, intent, version);
       if (out.status === "ok") {
         setRes(out.result);
+        setVersion(out.version);
+        setStale(false);
         setCanUndoAi(false);
         router.refresh();
+      } else if (out.status === "error" && out.conflict) {
+        // 덮지 않음 — 입력은 그대로 두고 「새로 불러오기」만 띄움
+        setStale(true);
       }
       setMsg(out.status === "ok" ? { ok: true, text: out.message } : { ok: false, text: out.status === "error" ? out.message : "" });
     });
 
+  // AI 점검 초안은 백그라운드 작업(2026-11-10 — 작성지원과 같은 방식): 서버 액션은 시작만 하고 requestId를 돌려주며, 끝은 아래 onJobsDone이 받음
   const runAi = async () => {
     setAskAi(false);
     setAiBusy(true);
-    setMsg({ ok: true, text: `카드와 관리계획 발췌로 AI 점검 중입니다(${rangeText(INSPECT_EXPECT)}) — 이 창을 열어 두세요. 끝나면 초안으로 저장됩니다.` });
+    setKept(null);
+    setMsg({ ok: true, text: "AI 점검을 시작합니다…" });
     before.current = res;
     try {
       const out = await runInspectionDraft(uid, period);
-      if (out.ok) {
-        setRes(out.result);
-        setCanUndoAi(hasContent(before.current));
-        setMode("view");
-        router.refresh();
+      if (!out.ok) {
+        setMsg({ ok: false, text: out.message });
+        setAiBusy(false);
+        return;
       }
-      setMsg({ ok: out.ok, text: out.message });
+      trackAiJob(out.requestId, "inspect", { uid });
+      setMsg({ ok: true, text: out.message });
     } catch {
       setMsg({ ok: false, text: "AI 점검 요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요." });
-    } finally {
       setAiBusy(false);
     }
   };
+
+  // 이 과제의 점검 작업이 끝나면(이 탭에서 진행 중으로 본 것 — 창을 닫았다 연 경우 포함): 결과(ai_results)에서 같은 점검월의 점검표만 채우고 목록을 새로 그림.
+  // 시작 때 본 판이 아니라 덮지 않았으면(다른 사람이 고침·만듦·보냄·지움·권한) 까닭 글과 「AI 결과 보기」만
+  const onJobsDone = useCallback(
+    (done: AiJob[]) => {
+      const j = done.find((x) => x.kind === "inspect" && x.card?.uid === uid);
+      if (!j) return;
+      setAiBusy(false);
+      void fetchAiResults({ ids: [j.id] }).then((rows) => {
+        const got = inspectionJobResult(rows.find((r) => r.requestId === j.id)?.result.data, period);
+        if (j.state === "ok") {
+          if (got) {
+            setRes(readResult(got.result));
+            if (got.version) setVersion(got.version);
+            setStale(false);
+            setCanUndoAi(before.current ? hasContent(before.current) : false);
+            setMode("view");
+          }
+          setMsg({ ok: true, text: j.message });
+        } else {
+          setKept(got && !got.saved ? got.result : null);
+          setMsg({ ok: false, text: j.message || "AI 점검에 실패했습니다." });
+        }
+        router.refresh();
+      });
+    },
+    [uid, period, router],
+  );
+  useAiJobsDone(onJobsDone);
+  const shownMsg = msg ?? (live ? { ok: true, text: "이 과제의 AI 점검이 진행 중입니다 — 끝나면 이 창에 초안이 보입니다." } : null);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -187,7 +249,7 @@ export function InspectionEditor({
           <h3 className="text-sm font-bold text-navy">□ AI 점검 총평</h3>
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             추진현황 — 평가 기준상 현재 단계 + 연말까지의 관건(2~3줄, 활동·수치 나열 없이)
-            <textarea value={res.overview.status} disabled={locked || aiBusy} onChange={(e) => setOverview("status", e.target.value)} maxLength={MAX.overview} rows={3} className={area} />
+            <textarea value={res.overview.status} disabled={locked || aiRunning} onChange={(e) => setOverview("status", e.target.value)} maxLength={MAX.overview} rows={3} className={area} />
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             <span>
@@ -195,13 +257,13 @@ export function InspectionEditor({
               {directionLines(res.overview.direction).length > 4 && <span className="ml-2 font-normal text-warn">4줄을 넘었습니다</span>}
               {directionLines(res.overview.direction).some((l) => !l.startsWith("★")) && <span className="ml-2 font-normal text-warn">★로 시작하지 않는 줄이 있습니다</span>}
             </span>
-            <textarea value={res.overview.direction} disabled={locked || aiBusy} onChange={(e) => setOverview("direction", e.target.value)} maxLength={MAX.overview} rows={4} placeholder="★OutCome 연결·계량 수치의 함정: … → …" className={area} />
+            <textarea value={res.overview.direction} disabled={locked || aiRunning} onChange={(e) => setOverview("direction", e.target.value)} maxLength={MAX.overview} rows={4} placeholder="★OutCome 연결·계량 수치의 함정: … → …" className={area} />
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             {peerReady
               ? "★ 사례제안 — 기관명 — 사업명(등급): 잘한 점 요약(2~3줄) / 다음 줄 ▸ 인사이트: 1문장. 맞는 사례가 없으면 「해당 없음 — 붙임2에 유사 유형 사례 없음」"
               : "★ 사례제안 — 붙임2(유관기관 평가보고서 정리)가 들어오기 전에는 「기준 미확인 — 붙임2 미확보」"}
-            <textarea value={res.overview.case} disabled={locked || aiBusy} onChange={(e) => setOverview("case", e.target.value)} maxLength={MAX.overview} rows={2} className={area} />
+            <textarea value={res.overview.case} disabled={locked || aiRunning} onChange={(e) => setOverview("case", e.target.value)} maxLength={MAX.overview} rows={2} className={area} />
           </label>
           <p className="text-xs text-muted">{caseFootnote(res.form)}</p>
         </section>
@@ -391,13 +453,42 @@ export function InspectionEditor({
             {locked ? `보완 ${t.needs}건` : issues.length ? `보내기 전 확인 ${issues.length}곳` : "보낼 수 있음"}
             {unverified > 0 && <span className="ml-1 text-warn">· 원문 다름 {unverified}</span>}
           </span>
-          {msg && (
-            <span role={msg.ok ? "status" : "alert"} className={`min-w-0 truncate text-xs ${msg.ok ? "text-muted-2" : "text-error"}`} title={msg.text}>
-              {msg.text}
+          {shownMsg && (
+            <span role={shownMsg.ok ? "status" : "alert"} className={`min-w-0 truncate text-xs ${shownMsg.ok ? "text-muted-2" : "text-error"}`} title={shownMsg.text}>
+              {shownMsg.text}
             </span>
           )}
           <span className="ml-auto flex items-center gap-2">
-            {canUndoAi && !locked && (
+            {stale && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => window.location.reload()}
+                title="지금 저장된 점검표를 다시 불러옵니다 — 이 화면에서 고친 내용은 사라지니 필요하면 먼저 옮겨 적으세요"
+                className={T.btn}
+              >
+                새로 불러오기
+              </button>
+            )}
+            {kept != null && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  before.current = res;
+                  setRes(readResult(kept));
+                  setKept(null);
+                  setCanUndoAi(true);
+                  setMode("view");
+                  setMsg({ ok: true, text: locked ? "AI 결과를 불러왔습니다(보기만 — 보낸 점검표는 고칠 수 없음)." : "AI 결과를 불러왔습니다(아직 저장 안 됨) — 저장하면 지금 저장된 점검표를 이 내용으로 바꿉니다. 「AI 전 내용으로」로 되돌릴 수 있습니다." });
+                }}
+                title="저장하지 못하고 남긴 AI 점검 결과를 이 창에 불러옵니다(저장하지 않음)"
+                className={T.btn}
+              >
+                AI 결과 보기
+              </button>
+            )}
+            {canUndoAi && (
               <button
                 type="button"
                 disabled={busy}
@@ -419,7 +510,7 @@ export function InspectionEditor({
                 title={`확정 카드 + 관리계획 발췌(공통 지식)로 종합점검 지침 ${res.form === MGMT_FORM_ID ? "13(경영관리)" : "14"}의 점검표 초안을 만듭니다`}
                 className={`h-8 rounded-md border border-navy bg-paper px-3 text-xs font-semibold text-navy hover:bg-row-hover ${T.off}`}
               >
-                {aiBusy ? "AI 점검 중…" : "AI 점검 초안"}
+                {aiRunning ? "AI 점검 중…" : "AI 점검 초안"}
               </button>
             )}
             {status === "sent" ? (

@@ -397,6 +397,31 @@ test("inspectionWriteBlock(2026-10-10 개선 계획 P1-2): 초안은 저장·보
   for (const intent of ["save", "send", "unsend"] as const) assert.match(inspectionWriteBlock("acknowledged", intent) ?? "", /확인한 점검표/);
 });
 
+test("저장의 판 조건(2026-11-10 T4 리뷰 X3a): 편집기가 받은 판과 지금 행이 같을 때만 저장·보내기 — 그사이 고침·만듦·지움이면 충돌, 안내는 덮지 않고 새로 불러오게", async () => {
+  const { inspectionVersionConflict, versionedWriteConflict, STALE_SAVE_MSG, unsendBlock, ALREADY_DRAFT_MSG, NO_SHEET_MSG } = await import("./model.ts");
+  const v1 = "2026-11-10T12:00:00.000001+00:00";
+  const v2 = "2026-11-10T12:05:00.000001+00:00";
+  assert.equal(inspectionVersionConflict({ updated_at: v1 }, v1), false, "열 때 본 판 그대로");
+  assert.equal(inspectionVersionConflict(null, null), false, "없던 행이 지금도 없음 — 새로 넣음");
+  assert.equal(inspectionVersionConflict({ updated_at: v2 }, v1), true, "그사이 다른 사람·AI가 고침(판이 바뀜)");
+  assert.equal(inspectionVersionConflict({ updated_at: v1 }, null), true, "열 때 없던 행을 그사이 누가 만듦");
+  assert.equal(inspectionVersionConflict(null, v1), true, "열 때 있던 행이 그사이 지워짐");
+  // 바꾼 주체를 단정하지 않음 — 같은 사람의 다른 창·본인 AI 저장일 수도(T4 리뷰 T3-R4)
+  assert.match(STALE_SAVE_MSG, /^그사이 이 점검표가 바뀌었습니다\(다른 창·다른 사람·AI 저장\) — 새로 불러와 다시 고치세요/);
+  assert.doesNotMatch(STALE_SAVE_MSG, /다른 사람이 먼저/);
+  assert.match(STALE_SAVE_MSG, /입력한 내용은 화면에 남아/);
+  // 읽은 뒤 쓰기 전 사이의 경합: 쓰기에도 같은 조건(update … eq updated_at / insert)
+  assert.equal(versionedWriteConflict(null, 1), false, "썼음");
+  assert.equal(versionedWriteConflict(null, 0), true, "조건에 걸려 0행 — 그사이 판이 바뀌거나 지워짐");
+  assert.equal(versionedWriteConflict({ code: "23505" }, 0), true, "넣기 고유 키 충돌 — 그사이 누가 만듦");
+  assert.equal(versionedWriteConflict({ code: "42501" }, 0), false, "권한 오류는 충돌이 아님(일반 오류로 안내)");
+  // 보내기 취소인데 보낸 점검표가 아님 — 내용을 저장하지 않고 끝냄(T4 리뷰 T3-R6, 예전에는 일반 저장으로 흘러 「초안을 저장했습니다」)
+  assert.equal(unsendBlock("sent"), null, "보낸 점검표만 취소 진행");
+  assert.equal(unsendBlock("draft"), ALREADY_DRAFT_MSG);
+  assert.equal(unsendBlock(null), NO_SHEET_MSG);
+  assert.match(unsendBlock("acknowledged") ?? "", /확인한 점검표/, "확인한 점검표는 잠금 안내 그대로");
+});
+
 test("주요사업 연계 후보(경영관리 미흡 행 — 2026-10-12 붙임4 대체): 저장·읽기에서 미흡 행에만·번호 형식만·행당 2건, 옛 점검표(links 없음)는 그대로 읽힘, 보완방안 칸 끝에 「▸ 연계 후보」", () => {
   const old = emptyResult(MGMT_FORM_ID);
   old.axes[3] = { judgment: "미흡", question: "", fix: "f", evidence: [{ source: "s", quote: "q", key: null, verified: null }], card: "c", note: "" };
