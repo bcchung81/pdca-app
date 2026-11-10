@@ -739,9 +739,14 @@ class CardParser {
     for (const r of rows) {
       if (r <= hr) continue;
       const rowCells: Record<string, Cell[]> = Object.fromEntries(order.map((k) => [k, this.spanCells(r, cols[k])]));
-      const fresh = Object.values(rowCells)
-        .flat()
-        .filter((c) => !seen.has(c) && c.r === r && hasContent(c));
+      // 여러 열에 걸친 칸(주석 행)은 열마다 같은 칸이 나오므로 한 번만 — 겹치면 주석이 열 수만큼 늘어남(261103판 3/5-가)
+      const fresh = [
+        ...new Set(
+          Object.values(rowCells)
+            .flat()
+            .filter((c) => !seen.has(c) && c.r === r && hasContent(c)),
+        ),
+      ];
       if (!fresh.length) continue;
       const wide = fresh.filter((c) => c.c <= firstC && c.c + c.colspan >= lastEnd);
       if (wide.length) {
@@ -910,7 +915,8 @@ class CardParser {
       let per: number | null = null;
       for (let i = 0; i < row.length; i++) {
         const t = nospace(this.text(row[i], ""));
-        if (t && /^(?:\d{1,2}월|[~∼])+$/.test(t) && t.includes("월")) {
+        // 월 상자 딱지: 월·물결만, 끝에 「실적」이 붙은 딱지도(「3월 ~ 10월 실적」 — 261103판 주요사업3 4-나)
+        if (t && /^(?:\d{1,2}월|[~∼])+(?:실적)?$/.test(t) && t.includes("월")) {
           per = i;
           break;
         }
@@ -998,6 +1004,9 @@ class CardParser {
 
 const BADGE_WORDS = ["정부정책"];
 
+/** 덜 끝난 제목 줄의 끝: 가운뎃점류·쉼표·「및」(「와/과」는 「성과」처럼 낱말 끝과 헷갈려 넣지 않음) */
+const AGENDA_JOIN_END = /(?:[·‧･・,，、]|(?:^|\s)및)$/;
+
 export function parseNationalAgenda(lines: string[]) {
   const toks: Array<["B" | "T", string]> = [];
   for (const ln of lines)
@@ -1017,9 +1026,12 @@ export function parseNationalAgenda(lines: string[]) {
       cur.badges.push(val);
       return;
     }
-    const nxtIsBadge = i + 1 < toks.length && toks[i + 1][0] === "B";
+    // 번호 뒤의 글: 번호 앞 제목 줄이 이음 기호(·, 쉼표, 「및」)로 끝나 덜 끝난 제목이면 앞 과제 제목의 끝 줄(번호가 제목 줄 사이에 낀 모양 — 261103판 3/1-가 「미래지향적 디지털·」),
+    // 아니면 뒤에 번호가 더 있을 때 다음 과제의 제목(두 줄 제목 + 번호가 이어지는 모양 — 3/7-다), 없을 때 앞 과제 제목의 끝 줄
+    const laterBadge = toks.slice(i + 1).some(([k]) => k === "B");
+    const unfinished = i > 0 && toks[i - 1][0] === "B" && cur !== null && AGENDA_JOIN_END.test(cur.titleParts[cur.titleParts.length - 1] ?? "");
     if (cur !== null && !cur.badges.length) cur.titleParts.push(val);
-    else if (cur !== null && !nxtIsBadge) cur.titleParts.push(val);
+    else if (cur !== null && (unfinished || !laterBadge)) cur.titleParts.push(val);
     else {
       cur = { titleParts: [val], badges: [] };
       items.push(cur);
@@ -1215,6 +1227,23 @@ function splitGroups(blocks: Block[]): { order: number[]; of: number[] } | null 
   return { order, of };
 }
 
+/** 표의 행 첫 칸이 가리키는 카드 구역들 */
+function sectionsOfTable(t: Table): Set<string> {
+  return new Set(t.rows.map((row) => (row.length ? sectionOf(plainText(row[0])) : null)).filter((k): k is string => k !== null));
+}
+
+/**
+ * 카드 표의 이음 표인가: 첫 칸에 카드 구역 표지([Check]·추진성과 등)가 있거나 월 상자(「1월 ~ 10월」)가 있고, 그 구역들이 카드 표에 아직 없음.
+ * 카드 표에 이미 있는 구역이면 이음이 아님(카드 뒤의 다른 참고 표 — 붙이면 「구역 두 번」·덮어쓰기)
+ */
+function isCardContinuation(t: Table | undefined, card: Table | undefined): boolean {
+  if (!t || !card) return false;
+  const theirs = sectionsOfTable(t);
+  const mine = sectionsOfTable(card);
+  if ([...theirs].some((k) => mine.has(k))) return false;
+  return theirs.size > 0 || t.rows.some((row) => row.some((c) => /^\d{1,2}월~\d{1,2}월$/.test(nospace(plainText(c)))));
+}
+
 function parseGroupBlocks(blocks: Block[], opts: ParseOptions): ParsedGroup {
   let groupNo = opts.groupNo;
   const gt = blocks.find((b) => b.type === "groupTitle");
@@ -1226,8 +1255,18 @@ function parseGroupBlocks(blocks: Block[], opts: ParseOptions): ParsedGroup {
   let indexRows: IndexRow[] = [];
   const cardsRaw: Array<{ card: Block; tail: Block[] }> = [];
   const ignored: ParsedGroup["ignored"] = [];
+  // 카드 표 바로 뒤(사이에 쪽 번호·빈 줄만)에 온 이음 표: 한글 원본에서 카드 표가 [Do] 칸에서 끊기고 월별 상자·[Check]·추진성과가 따로 표로 이어진 모양(261103판 주요사업3 3-가)
+  let afterCard = false;
   for (const b of blocks) {
     const typ = b.type;
+    if (afterCard && typ === "unknown" && isCardContinuation(b.tables[0], cardsRaw[cardsRaw.length - 1]?.card.tables[0])) {
+      const cr = cardsRaw[cardsRaw.length - 1];
+      cr.card.tables[0].rows.push(...b.tables[0].rows);
+      cr.card.text += `\n\n${b.text}`;
+      continue;
+    }
+    if (typ === "card") afterCard = true;
+    else if (!(typ === "pagenum" || (typ === "para" && !b.text))) afterCard = false;
     if (typ === "groupTitle") {
       const t = firstCellText(b.tables[0]);
       const m = /^\((주요사업\s*\d+)\)\s*([\s\S]*?)\s*\((\d+)\s*개\)\s*$/.exec(t);

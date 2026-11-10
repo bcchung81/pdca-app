@@ -7,7 +7,7 @@ import { requireUser } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
 import { safeExt } from "../../../lib/reports/model.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
-import { MATERIAL_MAX_BYTES, materialNameProblem } from "../../../lib/cards/limits.ts";
+import { MATERIAL_MAX_BYTES, isMaterialPath, materialNameProblem } from "../../../lib/cards/limits.ts";
 import { type DraftSourceRow, MATERIAL_LOCKED_MSG, lockedMaterialIds } from "../../../lib/cards/material-lock.ts";
 import { loadWho } from "../../../lib/users/who.ts";
 
@@ -113,7 +113,7 @@ export async function finishCardMaterialUpload(uid: string, path: string, fileNa
   const me = await requireUser("/cards");
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const { supabase, card } = await cardFor(uid);
-  if (!card || !path.startsWith(`${card.uid}/`)) return { ok: false, message: "경로가 올바르지 않습니다." };
+  if (!card || !isMaterialPath(card.uid, path)) return { ok: false, message: "경로가 올바르지 않습니다." };
   const name = fileName.slice(0, 300);
   const parsed = await parseStored(supabase, "card-materials", path, name);
   const { data, error } = await supabase

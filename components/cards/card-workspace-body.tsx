@@ -81,6 +81,7 @@ export function WorkspaceBody({ props, ws }: { props: WorkspaceProps; ws: CardWo
               tabs={assistTabs}
               active={aiOpen && (ws.sheet || !narrow)}
               modeRequest={{ mode: "followup", n: ws.followupReq }}
+              locked={props.locked}
             />
           </div>
         )}

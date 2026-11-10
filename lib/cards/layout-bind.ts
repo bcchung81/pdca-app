@@ -168,6 +168,17 @@ function lastPart(key: string, u: string): string {
   return "";
 }
 
+/**
+ * 가운데 조각: 문단 열쇠 u가 남은 칸 열쇠 rest의 끝과 같은 앞부분 + 괄호 한 묶음(「(과제번호:…)」 같은 고정 표지)이면 그 앞부분, 아니면 "".
+ * 괄호 묶음만 떼어 냄 — 아무 뒤 글이나 떼면 다른 칸의 문단까지 조각으로 끌어와 잇기가 어긋남(59장·43장 시험)
+ */
+function midPart(rest: string, u: string): string {
+  const m = /\([^()]*\)$/.exec(u);
+  if (!m || !m.index) return "";
+  const head = u.slice(0, m.index);
+  return rest.endsWith(head) ? head : "";
+}
+
 /** 한 칸 ↔ 문단 하나의 맞춤 점수(0이면 안 맞음). 기호만 있는 칸(→ 등)은 빈칸만 뺀 글로 비교 */
 function sim(t: { key: string; empty: boolean; raw: string }, u: { key: string; raw: string }): number {
   if (!t.key) return t.raw ? (t.raw === u.raw ? 2 : 0) : !u.key && t.empty ? 0.2 : 0;
@@ -243,7 +254,11 @@ export function anchorUnits(targets: Target[], units: Unit[]): { anchors: Map<st
           let parts = acc ? 1 : 0;
           for (let k = 2; k <= Math.min(MAX_PARTS, j); k++) {
             const u = uk[j - k].key;
-            acc = u + acc;
+            // 가운데 조각도 끝에 고정 글이 붙을 수 있음(두 문단 과제명의 첫 문단 끝 「(과제번호 : …)」 — 261103판 2/4-가): 남은 열쇠 끝과 맞는 앞부분만
+            const rest = key.slice(0, key.length - acc.length);
+            const piece = u && !rest.endsWith(u) ? midPart(rest, u) : u;
+            if (u && !piece) break;
+            acc = piece + acc;
             if (u) parts++;
             if (acc.length > key.length || !key.endsWith(acc)) break;
             if (parts > 1 && acc === key) {
@@ -370,6 +385,22 @@ export function edgesOf(T: string, S: string): [number, number] | null {
   return [t0, tc.length - t1];
 }
 
+/** 여러 문단 칸: 잇기(anchorUnits)처럼 칸 열쇠를 뒤에서부터 문단마다 나눠 가지며, 끝이 아닌 문단 글이 제 몫보다 길면 그 뒤 글자 수를 뒤 고정 글로(edge[1]) */
+function postEdges(ps: BoundPara[], key: string) {
+  let acc = "";
+  for (let k = ps.length - 1; k >= 0; k--) {
+    const u = keyOf(paraText(ps[k]));
+    const rest = key.slice(0, key.length - acc.length);
+    const piece = k === ps.length - 1 ? lastPart(rest, u) : rest.endsWith(u) ? u : midPart(rest, u);
+    if (u && !piece) return;
+    if (k < ps.length - 1 && piece.length < u.length) {
+      const e = edgesOf(paraText(ps[k]), piece);
+      if (e && e[1]) ps[k].edge = [ps[k].edge?.[0] ?? 0, e[1]];
+    }
+    acc = piece + acc;
+  }
+}
+
 /** 배치에 잇기 표시를 적음(복사본). 적재·현행화 때 그때의 카드 JSON으로 한 번 */
 export function anchorLayout(layout: CardLayout, card: LooseJson): { layout: CardLayout; stats: AnchorStats } {
   const copy = structuredClone(layout) as CardLayout;
@@ -397,7 +428,11 @@ export function anchorLayout(layout: CardLayout, card: LooseJson): { layout: Car
   for (const [path, ps] of multi) {
     if (ps.length < 2) continue;
     const e = edgesOf(ps.map(paraText).join("\n"), textOf.get(path) ?? "");
-    if (!e) continue;
+    if (!e) {
+      // 고정 글이 가운데 문단 끝에 있으면(위 잇기의 가운데 조각) 문단마다 뒤 고정 글 수
+      postEdges(ps, keyOf(textOf.get(path) ?? ""));
+      continue;
+    }
     if (e[0]) ps[0].edge = [e[0], ps[0].edge?.[1] ?? 0];
     if (e[1]) ps[ps.length - 1].edge = [ps[ps.length - 1].edge?.[0] ?? 0, e[1]];
   }

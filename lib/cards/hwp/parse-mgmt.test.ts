@@ -104,3 +104,18 @@ test("실제 경영관리 카드 파일(8월 점검 자료): 43장을 경고 없
   // 추진내용의 중첩 표는 표 줄({table})로 보존
   assert.ok(byNo("1-1").do.lines.some((l) => typeof l === "object" && "table" in l));
 });
+
+test("계량 성과지표: 부칸(「대표」)만 여러 행에 걸치고 행마다 더 넓은 지표명 칸이 있으면 행마다 한 지표, 지표명이 걸치고 행마다 좁은 구분 칸(상반기·하반기)이면 한 지표(합성 표)", () => {
+  const head = (no: string) => `<tr><th rowspan="2">과제명<br>(과제번호)</th><th colspan="2" rowspan="2">시험 과제 ${no}<br>(과제번호 : 시험지표 ${no})</th><th>부서(팀)</th><th>시험본부(시험팀)</th></tr>\n<tr><td>관리자/작성자</td><td>가나 팀장 / 다라 차장</td></tr>`;
+  const kpiHead = `<tr><td rowspan="3">계량<br>성과지표</td><td colspan="3">지표명(단위)</td><td>’25년 실적</td><td>’26년 목표</td></tr>`;
+  const card = (no: string, rows: string) => `<table>\n${head(no)}\n${kpiHead}\n${rows}\n</table>`;
+  // 261103판 13-4 모양: 「대표」(1칸)가 두 행에 걸치고 행마다 지표명(2칸)·실적·목표
+  const split = card("13-4", `<tr><td rowspan="2">대표</td><td colspan="2">업무시간 단축률(%)</td><td>75.1</td><td>50</td></tr>\n<tr><td colspan="2">순절감 시간(시간)</td><td>-</td><td>1,000</td></tr>`);
+  // 반대 모양: 지표명(2칸)이 두 행에 걸치고 행마다 좁은 구분 칸(1칸)·실적·목표 — 한 지표
+  const keep = card("13-6", `<tr><td colspan="2" rowspan="2">만족도(점)</td><td>상반기</td><td>80</td><td>85</td></tr>\n<tr><td>하반기</td><td>82</td><td>86</td></tr>`);
+  const out = parseMgmtMarkdown(["# [혁신노력과 성과]", split, keep].join("\n\n"), { sourceName: "x.hwp" });
+  const byNo = (no: string) => out.cards.find((c) => c.taskNo === no)!;
+  assert.deepEqual(byNo("13-4").kpi.rows.map((r) => [r.nameRaw, r.prev, r.target]), [["대표 업무시간 단축률(%)", "75.1", "50"], ["순절감 시간(시간)", "-", "1,000"]]);
+  assert.equal(byNo("13-6").kpi.rows.length, 1);
+  assert.match(byNo("13-6").kpi.rows[0].nameRaw, /^만족도\(점\)[\s\S]*상반기[\s\S]*하반기/);
+});

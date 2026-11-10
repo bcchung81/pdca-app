@@ -89,6 +89,39 @@ const lineContainer = (path: string) => {
   return m ? { list: m[1], index: Number(m[2]) } : null;
 };
 
+/**
+ * 목록 맞춤 + 딱지 표 문단 묶기: 원본 한 문단이 글 사이에 표(딱지)를 품었는데 JSON은 그 문단을 「앞 글 · 표 · 뒤 글」 줄로 나눠 적은 모양
+ * (261103판 3/1-가 「- ( [제작] AI 방송…」·3/2-나 「∙ [TF] 국민이…」). 표 줄만 사이에 둔 이웃 두 글줄을 이은 열쇠가 어떤 원본 문단 열쇠와 같으면 한 덩이로 맞추고,
+ * 그 문단은 잇기 표시가 가리키는 줄과 짝(다른 줄은 그 문단이 이미 그리므로 새 줄로 끼우지 않음). 짝을 못 찾은 덩이는 예전처럼 줄마다 새 줄
+ */
+function alignGrouped(card: Json, list: string, xs: { a: Anchor }[], origText: string[], curItems: Target[]): { pairs: Map<number, number | null>; added: number[] } {
+  const keys = curItems.map((t) => keyOf(t.text));
+  const arr = list.split(".").reduce<Json>((v, k) => (v && typeof v === "object" ? (v as Record<string, Json>)[k] : undefined), card);
+  const isTableLine = (v: Json) => Boolean(v) && typeof v === "object" && !Array.isArray(v) && "table" in v;
+  const origSet = new Set(origText);
+  const joinable = (i: number, j: number) => {
+    const ia = lineContainer(curItems[i].path)?.index ?? -1;
+    const ib = lineContainer(curItems[j].path)?.index ?? -1;
+    return Array.isArray(arr) && ia >= 0 && ib - ia >= 2 && arr.slice(ia + 1, ib).every(isTableLine);
+  };
+  const groups: number[][] = [];
+  for (let i = 0; i < curItems.length; i++) {
+    if (i + 1 < curItems.length && joinable(i, i + 1) && origSet.has(keys[i] + keys[i + 1])) {
+      groups.push([i, i + 1]);
+      i++;
+    } else groups.push([i]);
+  }
+  if (groups.length === curItems.length) return alignLists(origText, keys);
+  const bound = new Set(xs.map((x) => x.a.path));
+  const rep = (g: number[]) => g.find((i) => bound.has(curItems[i].path)) ?? g[0];
+  const r = alignLists(
+    origText,
+    groups.map((g) => g.map((i) => keys[i]).join("")),
+  );
+  const pairs = new Map<number, number | null>([...r.pairs].map(([k, v]) => [k, v === null || v === undefined ? null : rep(groups[v])]));
+  return { pairs, added: r.added.flatMap((v) => groups[v]) };
+}
+
 /** 순서 보존 맞춤: 같은 열쇠끼리 최장 공통 부분열, 그 사이는 차례대로 짝(글이 고쳐진 줄) — [원래 번호, 지금 번호|null][] + 짝 없는 지금 번호 */
 function alignLists(orig: string[], cur: string[]): { pairs: Map<number, number | null>; added: number[] } {
   const n = orig.length;
@@ -707,10 +740,7 @@ export function applyCardToLayout(card: Json, layout: CardLayout, opts: LayoutRe
       ),
     );
     const curItems = curListItems(list);
-    const { pairs, added } = alignLists(
-      origText,
-      curItems.map((t) => keyOf(t.text)),
-    );
+    const { pairs, added } = alignGrouped(card, list, xs, origText, curItems);
     const posOf = new Map<number, Entry>();
     origIdx.forEach((oi, k) => {
       const to = pairs.get(k);
@@ -874,6 +904,42 @@ function containsPara(c: Cell, target: Para): boolean {
   return hit;
 }
 
+/** 번호 머리의 수 자리(앞에서부터 처음 맞는 것): 숫자 · 한글 음절 · 원 숫자 · 로마 숫자 · 로마자 · 한글 자모 */
+const HEAD_CORES = [/\d{1,3}/, /[가-힣]/, /[①-⑳]/, /[Ⅰ-Ⅻ]+/, /[ⅰ-ⅻ]+/, /[A-Z]/, /[a-z]/, /[ㄱ-ㅎ]/];
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * 번호 문단: 카드 JSON이 번호를 본문 앞에 적었으면 그 번호를 편집 글로(headText) 하고 나머지 글을 돌려줌. 번호가 없으면 null.
+ * 원본 배치가 센 번호(para.head)와 JSON 번호가 모양(괄호·점)은 같고 값만 다르면 JSON 번호를 머리로 씀 — 261103판에서 원본 배치의 번호 세기와
+ * kordoc의 번호 세기가 갈린 문단(「다.」 대 「가.」)이 화면·한글 파일에 「다. 가. …」로 두 번 나오고 다시 올리면 번호가 바뀌던 것.
+ * 머리를 JSON 번호로 두면 한글 파일도 그 번호로 시작하고(hwpx-write numberingStarts) 다시 읽어도 같은 번호
+ */
+export function takeHead(para: BoundPara, text: string): string[] | null {
+  if (!para.head) return null;
+  const lead = text.replace(/^\s+/, "");
+  let head: string | null = lead.startsWith(para.head) ? para.head : null;
+  if (!head) {
+    for (const core of HEAD_CORES) {
+      const m = core.exec(para.head);
+      if (!m) continue;
+      const pre = para.head.slice(0, m.index);
+      const post = para.head.slice(m.index + m[0].length);
+      // 둘레 기호 없는 번호(「가」만)는 본문 첫 글자와 헷갈리므로 원 숫자만
+      if (!pre && !post && !/^[①-⑳]$/.test(m[0])) break;
+      const hit = new RegExp(`^${reEsc(pre)}(${core.source})${reEsc(post)}(?=\\s|$)`).exec(lead);
+      // 숫자 머리는 한글 번호 시작값을 찾는 범위(1~500, hwpx-write numberingStarts) 안만 — 「2026. 1. 29.」 같은 날짜를 번호로 잡지 않게
+      if (hit && !(/^\d+$/.test(hit[1]) && (Number(hit[1]) < 1 || Number(hit[1]) > 500))) {
+        head = hit[0];
+        para.head = head;
+      }
+      break;
+    }
+  }
+  if (!head) return null;
+  para.headText = true;
+  return [...lead.slice(head.length).replace(/^\s/, "")];
+}
+
 /** 문단 하나 = 칸 하나 */
 function shapePara(para: BoundPara, t: Target, a: Anchor, marks: Marks, boxCount: Map<string, { n: number; before: number }>, touch: (p: Para) => void) {
   const slots = slotsOf(para);
@@ -883,13 +949,7 @@ function shapePara(para: BoundPara, t: Target, a: Anchor, marks: Marks, boxCount
   boxCount.set(t.path, base);
   // 번호 글: JSON이 본문에 적었으면 머리를 편집 글로
   para.headText = false;
-  if (para.head) {
-    const lead = t.text.replace(/^\s+/, "");
-    if (lead.startsWith(para.head)) {
-      para.headText = true;
-      S = [...lead.slice(para.head.length).replace(/^\s/, "")];
-    }
-  }
+  S = takeHead(para, t.text) ?? S;
   const edge = a.role === "sub" || a.role === "part";
   const ops = alignChars(
     slots.map((s) => s.ch),
@@ -997,6 +1057,8 @@ function shapeCellParts(xs: { e: Entry; a: Anchor; seg: number }[], t: Target, m
   boxCount.set(t.path, base);
   const tg: Toggles = { inner: t.toggles, before: t.before, orig: parts[0].a.boxes };
   const segs = paras.map((p) => ({ para: p, slots: slotsOf(p) }));
+  // 끝 문단이 아닌 문단의 뒤 고정 글(두 문단 과제명의 첫 문단 끝 「(과제번호 : …)」 — 잇기 postEdges)은 맞추기에서 빼고 원본 모양 그대로(gen)
+  const midPost = segs.map((sg, k) => (k < segs.length - 1 ? Math.min(sg.slots.length, (sg.para as BoundPara).edge?.[1] ?? 0) : 0));
   const T: string[] = [];
   const where: { k: number; i: number }[] = [];
   segs.forEach((sg, k) => {
@@ -1005,13 +1067,14 @@ function shapeCellParts(xs: { e: Entry; a: Anchor; seg: number }[], t: Target, m
       where.push({ k, i: -1 });
     }
     sg.slots.forEach((sl, i) => {
+      if (i >= sg.slots.length - midPost[k]) return;
       T.push(sl.ch);
       where.push({ k, i });
     });
   });
   const ops = alignChars(T, [...t.text], true);
   if (ops) {
-    const per: Op[][] = segs.map(() => []);
+    const per: Op[][] = segs.map((sg, k) => Array.from({ length: midPost[k] }, (_, q) => ({ op: "gen" as const, t: sg.slots.length - midPost[k] + q })));
     for (const o of ops) {
       if (o.op === "zero") {
         const w = where[o.after];
@@ -1035,8 +1098,11 @@ function shapeCellParts(xs: { e: Entry; a: Anchor; seg: number }[], t: Target, m
     const pre = first.para.edge?.[0] ?? 0;
     const post = last.para.edge?.[1] ?? 0;
     const fixed = (sl: Slot[]) => sl.filter((x) => x.ch !== "\n").map((x): Inline => ({ kind: "gen", pos: 0, charPr: x.cp, text: x.ch }));
-    const body = flowItems(first.para, first.slots.slice(pre), [...t.text], tg);
-    first.para.items = [...fixed(first.slots.slice(0, pre)), ...body, ...fixed(last.slots.slice(last.slots.length - post))].map((it, k) => ({ ...it, pos: k }));
+    const body = flowItems(first.para, first.slots.slice(pre, first.slots.length - midPost[0]), [...t.text], tg);
+    // 가운데 문단 뒤 고정 글도 버리지 않고 글 뒤에(빈칸 하나 두고)
+    const mids = segs.flatMap((sg, k) => (midPost[k] ? fixed(sg.slots.slice(sg.slots.length - midPost[k])) : []));
+    const gap = mids.length && mids[0].kind === "gen" && !isWs(mids[0].text) ? [{ ...mids[0], text: " " }] : [];
+    first.para.items = [...fixed(first.slots.slice(0, pre)), ...body, ...gap, ...mids, ...fixed(last.slots.slice(last.slots.length - post))].map((it, k) => ({ ...it, pos: k }));
     first.para.flow = true;
     cell.paras = cell.paras.filter((p) => p === first.para || !paras.includes(p));
   }
@@ -1076,28 +1142,30 @@ function shapeSegments(para: BoundPara, segs: string[], bySeg: Map<number, { tar
   bounds.push(slots.length + 1);
   const newItems: Inline[] = para.items.filter((it) => it.kind === "obj" || it.kind === "compose" || it.kind === "br");
   const segAttrs: (string | null)[] = [];
+  // 한 칸이 강제 줄바꿈으로 나뉜 조각(part)이 이어지면 한 덩이로 맞춤(두 줄 과제명 뒤에 고정 글 「(과제번호 : …)」 조각이 있는 문단 — 261103판).
+  // 조각마다 칸 글 전체를 맞추면 어긋나 흘려 그릴 때 칸 글이 조각 수만큼 겹쳐 들어감. 덩이의 조각은 같은 편집 표시(html.ts가 한 편집 칸으로 이어 감쌈)
+  const runEnd = segs.map((_, s) => s);
+  for (let s = segs.length - 2; s >= 0; s--) {
+    const a = bySeg.get(s);
+    const b = bySeg.get(s + 1);
+    if (a?.target && b?.target && a.target.path === b.target.path && a.anchor.role === "part" && b.anchor.role === "part") runEnd[s] = runEnd[s + 1];
+  }
   let ok = true;
-  segs.forEach((_, s) => {
-    const sub = slots.slice(bounds[s], Math.min(slots.length, bounds[s + 1] - 1));
+  for (let s = 0; s < segs.length; s = runEnd[s] + 1) {
+    const e = runEnd[s];
+    const sub = slots.slice(bounds[s], Math.min(slots.length, bounds[e + 1] - 1));
     const v = bySeg.get(s);
     if (!v || !v.target) {
       // 칸 없는 조각은 원본 글 그대로, 지운 줄 조각은 비움
       if (!v) for (const sl of sub) newItems.push({ kind: "text", pos: sl.pos, charPr: sl.cp, text: sl.ch });
       segAttrs.push(null);
-      return;
+      continue;
     }
     const t = v.target;
     const base = boxCount.get(t.path) ?? { n: 0, before: 0 };
     boxCount.set(t.path, base);
     // 첫 조각의 번호 글: JSON이 본문에 적었으면 머리를 편집 글로
-    let S = [...t.text];
-    if (s === 0 && para.head) {
-      const lead = t.text.replace(/^\s+/, "");
-      if (lead.startsWith(para.head)) {
-        para.headText = true;
-        S = [...lead.slice(para.head.length).replace(/^\s/, "")];
-      }
-    }
+    const S = (s === 0 && takeHead(para, t.text)) || [...t.text];
     const ops = alignChars(
       sub.map((x) => x.ch),
       S,
@@ -1105,20 +1173,22 @@ function shapeSegments(para: BoundPara, segs: string[], bySeg: Map<number, { tar
     );
     if (!ops) {
       ok = false;
-      segAttrs.push(null);
-      return;
+      for (let k = s; k <= e; k++) segAttrs.push(null);
+      continue;
     }
     newItems.push(...exactItems({ ...para, items: [] }, sub, ops, { inner: t.toggles, before: t.before, orig: v.anchor.boxes }, base));
-    segAttrs.push(` class="hw-seg${t.line ? " kc-ln" : ""}"${edAttrs(marks, t)}`);
-  });
+    const attrs = ` class="hw-seg${t.line ? " kc-ln" : ""}"${edAttrs(marks, t)}`;
+    for (let k = s; k <= e; k++) segAttrs.push(attrs);
+  }
   if (!ok) {
     touch(para);
-    // 조각 글이 원본과 달라짐: 문단째 흘려 그림(조각은 줄바꿈으로 나눠 따로 감쌈)
+    // 조각 글이 원본과 달라짐: 문단째 흘려 그림(조각은 줄바꿈으로 나눠 따로 감쌈). 한 덩이의 조각은 칸 글을 한 번만
     const S: string[] = [];
     const attrs: (string | null)[] = [];
     segs.forEach((seg, s) => {
       const v = bySeg.get(s);
       if (v && !v.target) return;
+      if (s > 0 && runEnd[s - 1] === runEnd[s]) return;
       if (attrs.length) S.push("\n");
       S.push(...(v?.target ? [...v.target.text] : [...seg]));
       attrs.push(v?.target ? ` class="hw-seg${v.target.line ? " kc-ln" : ""}"${edAttrs(marks, v.target)}` : null);

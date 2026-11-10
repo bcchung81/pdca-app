@@ -8,7 +8,8 @@ import type { CardLayout } from "../hwp/layout.ts";
 import { addMonthly, applyText, deleteLine, insertLineAfter, toggleBox } from "./edit.ts";
 import { buildLayouts, layoutTaskNo } from "./layout-build.ts";
 import { keyOf, targetsOf } from "./layout-bind.ts";
-import { CARD_LAYOUT_CSS, renderLayoutCard } from "./layout-render.ts";
+import { CARD_LAYOUT_CSS, renderLayoutCard, takeHead } from "./layout-render.ts";
+import type { BoundPara } from "./layout-bind.ts";
 import { cardSourceFile } from "./file-names.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 
@@ -127,4 +128,20 @@ test("원본 배치 CSS: word-break:normal 되돌림이 흘려 그리는 문단(
   assert.ok(reset >= 0 && inherit > reset && edit > reset, "되돌림 뒤에 물려받기·편집 규칙");
   // 편집 문단 규칙(클래스 셋)이 물려받기 규칙(클래스 둘)보다 구체적이어야 문단 자신이 --hw-wb를 씀
   assert.ok(rules.slice(reset + 1).every((r, i) => reset + 1 + i === inherit || reset + 1 + i === edit || !/word-break/.test(r)), "그 뒤에 word-break를 다시 정하는 규칙 없음");
+});
+
+test("번호 머리(takeHead): JSON 번호가 원본 배치 번호와 모양만 같고 값이 다르면 JSON 번호를 머리로, 날짜 앞머리(「2026.」)·둘레 기호 없는 글자는 번호로 잡지 않음(리뷰 T2-R4)", () => {
+  const p = (head: string) => ({ paraPr: 0, style: 0, items: [], lines: [], length: 0, pageBreak: false, head }) as unknown as BoundPara;
+  const a = p("다.");
+  assert.deepEqual(takeHead(a, "가. 적합 판정")?.join(""), "적합 판정");
+  assert.equal(a.head, "가.");
+  assert.equal(a.headText, true);
+  const b = p("1.");
+  assert.equal(takeHead(b, "2026. 1. 29. 회의 개최"), null, "연도 숫자는 번호가 아님");
+  assert.equal(b.head, "1.");
+  const c = p("1.");
+  assert.deepEqual(takeHead(c, "3. 셋째 줄")?.join(""), "셋째 줄");
+  assert.equal(c.head, "3.");
+  assert.equal(takeHead(p("1)"), "1.5배 증가"), null, "모양(괄호)이 다르면 번호가 아님");
+  assert.equal(takeHead(p("가"), "나무 심기"), null, "둘레 기호 없는 머리는 원 숫자만");
 });

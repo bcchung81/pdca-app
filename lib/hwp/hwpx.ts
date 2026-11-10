@@ -32,6 +32,7 @@ import {
   type ParaPr,
   type Pic,
   resolveHeads,
+  safeBinExt,
   type Shape,
   type ShapeGeo,
   type Table,
@@ -689,7 +690,7 @@ export async function readHwpx(bytes: Uint8Array): Promise<HwpDoc> {
     const n = binNums.size + 1;
     binNums.set(id, n);
     const f = zip.file(href);
-    const item: BinItem = { id: n, ext: (href.split(".").pop() ?? "").toLowerCase(), data: f ? await f.async("uint8array") : null };
+    const item: BinItem = { id: n, ext: safeBinExt(href.split(".").pop() ?? ""), data: f ? await f.async("uint8array") : null };
     doc.bins.set(n, item);
   }
   const binId = (ref: string) => binNums.get(ref) ?? 0;

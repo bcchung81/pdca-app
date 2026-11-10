@@ -248,8 +248,16 @@ export function countEquations(v: LooseJson): number {
   if (v && typeof v === "object") return Object.values(v).reduce((n: number, x) => n + countEquations(x), 0);
   return 0;
 }
+const EQ_LINE = /^[ \t]*(?:\$[^$\n]+\$[ \t]*)+$/;
 function withoutEquations(v: LooseJson): LooseJson {
-  if (typeof v === "string") return v.replace(EQ, "").replace(/[ \t]{2,}/g, " ");
+  // 수식만 있던 줄은 줄째 뺌(계량 산식 칸 「글\n$수식$」 — 남은 빈 줄 때문에 수식만 빠진 칸이 다르게 보였음, 261103판 2/6-나). 다른 빈 줄은 그대로
+  if (typeof v === "string")
+    return v
+      .split("\n")
+      .filter((line) => !EQ_LINE.test(line))
+      .join("\n")
+      .replace(EQ, "")
+      .replace(/[ \t]{2,}/g, " ");
   if (Array.isArray(v)) return v.map(withoutEquations);
   if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, withoutEquations(x)]));
   return v;

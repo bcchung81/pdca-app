@@ -200,6 +200,14 @@ test("한글 수식($…$): 파일에서 수식만 빠진 블록은 [유지](원
   const both = planSync(l, p).blocks.find((b) => b.key === "check")!;
   assert.equal(both.status, "changed");
   assert.match(both.risk ?? "", /수식/);
+  // 수식이 한 줄을 다 차지한 산식 칸(「글\n$수식$」 — 261103판 2/6-나): 수식 줄째 빠져도 [유지]
+  l.kpi.rows[0].formula = "AI 안테나 자동 판독 기술 활용 검사한 건수\n$x= \\frac{ a } { b } \\times 100$";
+  const eqLine = planSync(l, p).blocks.find((b) => b.key === "kpi")!;
+  assert.equal(eqLine.status, "same");
+  assert.match(eqLine.note ?? "", /수식/);  // 수식만 있던 줄만 지움 — 수식이 빠지면서 다른 곳의 빈 줄까지 달라진 칸은 [변경](리뷰 T2-R5)
+  l.kpi.rows[0].formula = "AI 안테나 자동 판독 기술\n\n활용 검사한 건수\n$x$";
+  p.kpi.rows[0].formula = "AI 안테나 자동 판독 기술\n활용 검사한 건수";
+  assert.equal(planSync(l, p).blocks.find((b) => b.key === "kpi")!.status, "changed");
 });
 
 test("경영관리 카드: 블록은 기본정보·전년도 환류·지적 및 개선방안·추진내용·월별 실적·계량지표·추진성과 7개(목차·전략·Act·Plan·Check·AX 없음), 묶음 「경영관리N」으로 매칭", () => {

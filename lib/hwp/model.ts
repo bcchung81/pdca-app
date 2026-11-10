@@ -203,6 +203,15 @@ export interface BinItem {
   data: Uint8Array | null;
 }
 
+/**
+ * 그림 확장자(파일에 적힌 글 — HWPX content.hpf href, HWP5 DocInfo)는 영문 소문자·숫자 1~5자만, 아니면 「bin」.
+ * 확장자는 저장 이름(hwp-<해시>.<ext>)·서명 주소를 거쳐 CSS url() 안까지 가므로 따옴표 등으로 CSS를 끼우지 못하게(2026-11-10 보안 리뷰 R2)
+ */
+export function safeBinExt(ext: string): string {
+  const e = ext.toLowerCase();
+  return /^[a-z0-9]{1,5}$/.test(e) ? e : "bin";
+}
+
 export interface LineSeg {
   textpos: number;
   vertpos: number;
@@ -405,7 +414,7 @@ export interface RenderHints {
   cls?: string;
   /** 문단 글만 감쌀 속성(줄 앞 개체 — 글상자·표 — 는 감싸지 않음: 그 안 글은 따로 편집 칸) */
   textAttrs?: string;
-  /** 조각(강제 줄바꿈으로 나뉜 줄 묶음)마다 감쌀 속성(null이면 감싸지 않음) */
+  /** 조각(강제 줄바꿈으로 나뉜 줄 묶음)마다 감쌀 속성(null이면 감싸지 않음). 이웃 조각의 속성이 같으면 한 감쌈으로 이어 감(한 칸이 줄바꿈으로 나뉜 조각) */
   segAttrs?: (string | null)[];
   /** 글이 원본과 달라 원본 줄 배치를 못 씀: 같은 모양으로 흘려 그림 */
   flow?: boolean;

@@ -93,6 +93,15 @@ test("첨부는 자르지 않음: 8만 자 자료 셋의 끝 글까지 모두 �
   for (const f of files) assert.ok(p.includes(f.text), f.name);
 });
 
+test("확정된 고정 영역(부서 작성본): 요청에 잠긴 칸 경로를 알려 제안하지 않게 하고, 잠금이 없으면 그 블록이 없음", { skip: NO_SEED_CARDS }, () => {
+  const base = { mode: "improve" as const, note: "", periodLabel: "2026년 9월", attachmentText: null, files: [] };
+  const locked = userPrompt(P, card, "", { ...base, locked: ["act", "plan", "kpi"] });
+  assert.match(locked, /「확정된 고정 영역」 Act·Plan·계량지표 — .*경로가 act·plan·kpi로 시작하는 칸/);
+  assert.match(locked, /suggestions로 주지 않습니다/);
+  assert.doesNotMatch(userPrompt(P, card, "", base), /확정된 고정 영역/);
+  assert.doesNotMatch(userPrompt(P, card, "", { ...base, locked: [] }), /확정된 고정 영역/);
+});
+
 test("실적 반영: 요청 칸에 붙여 넣은 글은 「실적 자료·요청」으로(요청 내용 줄은 그쪽을 가리킴, 2만 자까지)", { skip: NO_SEED_CARDS }, () => {
   const pasted = "9월 실적: 준공검사 3건 완료(9.12.) — 월별 상자로 정리해 줘";
   const p = userPrompt(P, card, "", { mode: "reflect", note: "", periodLabel: "2026년 9월", attachmentText: pasted, files: [] });

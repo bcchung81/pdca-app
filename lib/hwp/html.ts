@@ -37,7 +37,16 @@ export const SPACE_EM = { normal: 0.5, fixed: 0.25 } as const;
 export const SCRIPT = { scale: 0.64, raise: 0.444, lower: 0.15 } as const;
 
 const SERIF = /명조|바탕|Batang|Myeongjo|궁서/i;
-const q = (name: string) => `'${name.replace(/'/g, "")}'`;
+/**
+ * 글꼴 이름 → CSS 따옴표 글. 이름은 한글 파일에 적힌 글(누구나 지을 수 있음)이고 style="…" 속성 안에 들어가므로 따옴표·역빗금·꺾쇠·&·조종 문자를 뺌 —
+ * 큰따옴표가 남으면 속성을 벗어나 HTML을 끼울 수 있고(2026-11-10 보안 점검 H2, 편집기는 이 HTML을 그대로 넣음), &가 남으면 &#39;·&apos;가
+ * HTML 해석 때 작은따옴표로 풀려 CSS 글을 닫음(같은 날 보안 리뷰 R1). 속성에 넣는 곳은 escHtml로 한 번 더 감쌈
+ */
+const q = (name: string) => `'${name.replace(/['"\\<>&\u0000-\u001f\u007f]/g, "")}'`;
+/** CSS 따옴표 글 안에 넣을 값(그림 주소 등): 역빗금·작은따옴표·줄바꿈을 CSS 이스케이프(2026-11-10 보안 리뷰 R2) */
+const cssStr = (v: string) => v.replace(/[\\'\n\r\f]/g, (ch) => (ch === "\\" || ch === "'" ? `\\${ch}` : `\\${ch.charCodeAt(0).toString(16)} `));
+/** 번호 머리 정렬(파일 값) → CSS. 모르는 값은 왼쪽(파일 글을 CSS에 그대로 넣지 않음) */
+const HEAD_ALIGN: Record<string, string> = { LEFT: "left", CENTER: "center", RIGHT: "right" };
 
 /** 글꼴 정보 찾기(파일에 적힌 다른 이름·대체 글꼴). 렌더러가 문서마다 설정 */
 let faceInfoOf: (face: string) => FaceInfo | undefined = () => undefined;
@@ -194,7 +203,7 @@ export function borderFillCss(bf: BorderFill | null | undefined, imageUrl: (bin:
       const size = mode === "TOTAL" || mode === "ZOOM" ? "100% 100%" : "auto";
       const repeat = mode.startsWith("TILE") ? "repeat" : "no-repeat";
       const pos = mode === "CENTER" ? "center" : "left top";
-      s += `background-image:url('${url}');background-size:${size};background-repeat:${repeat};background-position:${pos};`;
+      s += `background-image:url('${cssStr(url)}');background-size:${size};background-repeat:${repeat};background-position:${pos};`;
     }
   } else if (f?.gradation) s += `background-image:${gradientCss(f)};`;
   else if (f?.color && f.pattern < 0) s += `background-color:${f.color};`;
@@ -556,7 +565,7 @@ function lineHtml(ctx: HtmlCtx, gs: Glyph[], uniformRatio: boolean, depth: numbe
       const sp = spacingAttrs(c, lang, { ratioInLine: uniformRatio, space: isSpace ? (g.ch === "\u2007" ? "q" : c.useFontSpace ? "f" : "h") : undefined, last: gi === lastVis });
       let css = charBaseCss(c, lang) + sp.css;
       if (SYMBOL_PUA.test(g.ch)) css += `;font-family:${[...SYMBOL_FACES.map(q), fontStack(c.face[lang] || c.face[0])].join(",")}`;
-      (lead ? leadBuf : out).push(`<span class="hw-g"${sp.attrs} data-c="${escHtml(isSpace ? " " : g.ch)}"${g.item.attrs ?? ""} style="${css}"></span>`);
+      (lead ? leadBuf : out).push(`<span class="hw-g"${sp.attrs} data-c="${escHtml(isSpace ? " " : g.ch)}"${g.item.attrs ?? ""} style="${escHtml(css)}"></span>`);
       continue;
     }
     if (trail && isSpace && g.ch !== "\u2007" && gi > lastInk) {
@@ -592,7 +601,7 @@ function lineHtml(ctx: HtmlCtx, gs: Glyph[], uniformRatio: boolean, depth: numbe
     if (k !== key) {
       flush();
       key = k;
-      open = `<span${attrs} style="${css}">`;
+      open = `<span${attrs} style="${escHtml(css)}">`;
     } else if (isSpace && !/ data-w=/.test(open)) {
       const w = g.ch === "\u2007" ? "q" : c.useFontSpace ? "f" : "h";
       open = open.replace("<span", `<span data-w="${w}"`);
@@ -625,10 +634,10 @@ function composeHtml(ctx: HtmlCtx, it: Extract<Inline, { kind: "compose" }>): st
     const lang = langOf(ch.codePointAt(0) ?? 32);
     let css = charBaseCss(c, lang);
     if (SYMBOL_PUA.test(ch)) css += `;font-family:${[...SYMBOL_FACES.map(q), fontStack(c.face[lang] || c.face[0])].join(",")}`;
-    return `<span data-c="${escHtml(ch)}" style="${css}"></span>`;
+    return `<span data-c="${escHtml(ch)}" style="${escHtml(css)}"></span>`;
   });
   const shape = COMPOSE_SHAPE[it.border];
-  return `<span class="hw-cmp${shape ? ` hw-cmp-${shape.replace(" ", " hw-cmp-")}` : ""}" aria-hidden="true" style="${charBaseCss(base, 0)}">${kids.join("")}</span>`;
+  return `<span class="hw-cmp${shape ? ` hw-cmp-${shape.replace(" ", " hw-cmp-")}` : ""}" aria-hidden="true" style="${escHtml(charBaseCss(base, 0))}">${kids.join("")}</span>`;
 }
 
 /** 문단 머리 글자 조각: 글머리표 문자·번호 글을 머리 글자 모양으로, 본문과의 거리만큼 띄움.
@@ -648,7 +657,7 @@ function paraHeadHtml(ctx: HtmlCtx, p: Para, pp: ParaPr, endCp: number, gs: Glyp
   // 번호 글자에도 자간이 붙음(fit.ts가 맞춤)
   const sp = spacingAttrs(c, lang, { ratioInLine: false });
   let css = `${charBaseCss(c, lang)}${sp.css};margin-right:${f3(gap)}px`;
-  if (!def.instWidth) css += `;width:${f3(fs * [...p.head].length + px(def.widthAdjust))}px;text-align:${def.align.toLowerCase()}`;
+  if (!def.instWidth) css += `;width:${f3(fs * [...p.head].length + px(def.widthAdjust))}px;text-align:${HEAD_ALIGN[def.align] ?? "left"}`;
   else if (def.widthAdjust) css += `;padding-right:${f3(px(def.widthAdjust))}px`;
   if (SYMBOL_PUA.test(p.head)) css += `;font-family:${[...SYMBOL_FACES.map(q), fontStack(c.face[lang] || c.face[0])].join(",")}`;
   const data = escHtml(p.head);
@@ -656,8 +665,8 @@ function paraHeadHtml(ctx: HtmlCtx, p: Para, pp: ParaPr, endCp: number, gs: Glyp
     auto: def.autoIndent,
     html: (visible) =>
       p.headText && visible
-        ? `<span class="hw-head hw-head-t"${sp.attrs}${def.instWidth ? ` data-g="${f3(gap)}"` : ""} style="${css}">${data}<span class="hw-z"> </span></span>`
-        : `<span class="hw-head${visible ? "" : " hw-ghost"}"${sp.attrs}${def.instWidth ? ` data-g="${f3(gap)}"` : ""} data-head="${data}" style="${css}" aria-hidden="true"></span>`,
+        ? `<span class="hw-head hw-head-t"${sp.attrs}${def.instWidth ? ` data-g="${f3(gap)}"` : ""} style="${escHtml(css)}">${data}<span class="hw-z"> </span></span>`
+        : `<span class="hw-head${visible ? "" : " hw-ghost"}"${sp.attrs}${def.instWidth ? ` data-g="${f3(gap)}"` : ""} data-head="${data}" style="${escHtml(css)}" aria-hidden="true"></span>`,
   };
 }
 
@@ -724,9 +733,12 @@ export function paraHtml(ctx: HtmlCtx, p: Para, opts: { first: boolean; last: bo
     if (p.segAttrs) {
       let seg: Glyph[] = [];
       let k = 0;
+      // 속성이 같은 이웃 조각은 한 감쌈 안에 줄바꿈째(한 편집 칸)
+      const same = (a: number, b: number) => Boolean(p.segAttrs?.[a]) && p.segAttrs?.[a] === p.segAttrs?.[b];
       const put = () => {
         const inner = lineHtml(ctx, seg, false, opts.depth);
-        body += p.segAttrs?.[k] ? `<span${p.segAttrs[k]}>${inner}</span>` : inner;
+        const a = p.segAttrs?.[k];
+        body += a ? `${same(k - 1, k) ? "" : `<span${a}>`}${inner}${same(k, k + 1) ? "" : "</span>"}` : inner;
       };
       for (const g of gs) {
         if (g.item.kind === "br") {
@@ -824,9 +836,9 @@ export function paraHtml(ctx: HtmlCtx, p: Para, opts: { first: boolean; last: bo
         // 글 부분은 원래 정렬대로 줄 폭에서 딱지 폭을 뺀 만큼, 딱지는 그 뒤(원본에서 딱지는 글 끝 뒤에 이어 붙음)
         const mStyle = style.replace(/width:[^;]+/, `width:${f3(px(Math.max(0, w - tw)))}px`);
         const tStyle = style.replace(/margin-left:[^;]+/, "margin-left:0px").replace(/width:[^;]+/, `width:${f3(px(tw))}px`).replace(/;?padding-left:[^;]+/, "");
-        html.push(`<span class="hw-l"${lineAttrs} style="${mStyle}">${bl}${mainBody}</span>`);
+        html.push(`<span class="hw-l"${lineAttrs} style="${escHtml(mStyle)}">${bl}${mainBody}</span>`);
         html.push("</span>");
-        html.push(`<span class="hw-l" style="${tStyle}">${bl}${lineHtml(ctx, trailing, uniform, opts.depth, false, l.vertsize)}</span>`);
+        html.push(`<span class="hw-l" style="${escHtml(tStyle)}">${bl}${lineHtml(ctx, trailing, uniform, opts.depth, false, l.vertsize)}</span>`);
         continue;
       }
       let k = 0;
@@ -842,23 +854,25 @@ export function paraHtml(ctx: HtmlCtx, p: Para, opts: { first: boolean; last: bo
           .replace(/margin-left:[^;]+/, "margin-left:0px")
           .replace(/width:[^;]+/, `width:${f3(px(Math.max(0, w - ow - ind)))}px`)
           .replace(/;?padding-left:[^;]+/, "");
-        html.push(`<span class="hw-l" style="${aStyle}">${bl}${lead}</span>`);
+        html.push(`<span class="hw-l" style="${escHtml(aStyle)}">${bl}${lead}</span>`);
         html.push(`<span${p.textAttrs}>`);
-        html.push(`<span class="hw-l"${lineAttrs} style="${bStyle}">${bl}${restBody}</span>`);
+        html.push(`<span class="hw-l"${lineAttrs} style="${escHtml(bStyle)}">${bl}${restBody}</span>`);
       } else {
         if (i === 0) html.push(`<span${p.textAttrs}>`);
-        html.push(`<span class="hw-l"${lineAttrs} style="${style}">${bl}${body || ""}</span>`);
+        html.push(`<span class="hw-l"${lineAttrs} style="${escHtml(style)}">${bl}${body || ""}</span>`);
       }
       if (i === lines.length - 1) html.push("</span>");
       continue;
     }
-    const line = `<span class="hw-l"${lineAttrs} style="${style}">${bl}${body || ""}</span>`;
+    const line = `<span class="hw-l"${lineAttrs} style="${escHtml(style)}">${bl}${body || ""}</span>`;
     if (p.segAttrs) {
       const seg = segOf(l.textpos);
       if (seg !== segOpen) {
-        if (segOpen >= 0 && p.segAttrs[segOpen]) html.push("</span>");
+        // 속성이 같은 이웃 조각은 감쌈을 닫지 않고 이어 감(한 편집 칸)
+        const cont = segOpen >= 0 && Boolean(p.segAttrs[segOpen]) && p.segAttrs[segOpen] === p.segAttrs[seg];
+        if (!cont && segOpen >= 0 && p.segAttrs[segOpen]) html.push("</span>");
+        if (!cont && p.segAttrs[seg]) html.push(`<span${p.segAttrs[seg]}>`);
         segOpen = seg;
-        if (p.segAttrs[seg]) html.push(`<span${p.segAttrs[seg]}>`);
       }
     }
     html.push(line);
@@ -934,7 +948,7 @@ function objHtml(ctx: HtmlCtx, o: Table | Pic | Shape, depth: number): string {
   // 글자처럼 취급하는 표는 줄 안 상자로(표는 블록이라 그대로 두면 줄 흐름에서 빠져 앞 글자 위에 겹침)
   if (o.kind === "table") {
     const m = outMarginCss(o);
-    return `<span class="hw-o hw-tbo"${m ? ` style="${m.slice(1)}"` : ""}>${tableHtml(ctx, o, depth + 1)}</span>`;
+    return `<span class="hw-o hw-tbo"${m ? ` style="${escHtml(m.slice(1))}"` : ""}>${tableHtml(ctx, o, depth + 1)}</span>`;
   }
   if (o.kind === "pic") return picHtml(ctx, o);
   return shapeHtml(ctx, o, depth);
@@ -953,12 +967,12 @@ function picHtml(ctx: HtmlCtx, p: Pic): string {
   const whole = Math.abs(cw - bw) <= 1 && Math.abs(ch - bh) <= 1;
   const cropped = !whole && (cl > 0 || ct > 0 || (cr > 0 && cr < bw) || (cb > 0 && cb < bh)) && bw > 0 && bh > 0 && cw > 0 && ch > 0;
   const style = `width:${f3(w)}px;height:${f3(h)}px${outMarginCss(p)}`;
-  if (!url) return `<span class="hw-o hw-pic" style="${style}"></span>`;
-  if (!cropped) return `<img class="hw-o hw-pic" src="${escHtml(url)}" alt="" style="${style}">`;
+  if (!url) return `<span class="hw-o hw-pic" style="${escHtml(style)}"></span>`;
+  if (!cropped) return `<img class="hw-o hw-pic" src="${escHtml(url)}" alt="" style="${escHtml(style)}">`;
   // 자르기: 저장된 그림 범위 기준 영역만 보이게
   const sx = Math.abs(p.curW) / cw;
   const sy = Math.abs(p.curH) / ch;
-  return `<span class="hw-o hw-pic" style="${style};overflow:hidden"><img src="${escHtml(url)}" alt="" style="position:absolute;left:${f3(px(-cl * sx))}px;top:${f3(px(-ct * sy))}px;width:${f3(px(bw * sx))}px;height:${f3(px(bh * sy))}px;max-width:none"></span>`;
+  return `<span class="hw-o hw-pic" style="${escHtml(style)};overflow:hidden"><img src="${escHtml(url)}" alt="" style="position:absolute;left:${f3(px(-cl * sx))}px;top:${f3(px(-ct * sy))}px;width:${f3(px(bw * sx))}px;height:${f3(px(bh * sy))}px;max-width:none"></span>`;
 }
 
 /** 묶음 속 개체: 만들 때 좌표를 묶음 상자 좌표로 옮겨, 차지하는 범위에 그림(선·다각형은 점을 옮겨 그림) */
@@ -1002,7 +1016,7 @@ function shapeHtml(ctx: HtmlCtx, s: Shape, depth: number): string {
   // 묶음: 자식(도형·그림)을 변환 행렬대로 묶음 상자 안에 둠
   if (s.kind === "container") {
     const kids = s.children.map((c) => childHtml(ctx, c, depth)).join("");
-    return `<span class="hw-o hw-grp" style="${size}">${kids}</span>`;
+    return `<span class="hw-o hw-grp" style="${escHtml(size)}">${kids}</span>`;
   }
   const lw = s.line && s.line.type !== "NONE" && s.line.width > 0 ? px(s.line.width) : 0;
   // 선·다각형·곡선: SVG(점은 만들 때 좌표 — 변환 행렬로 상자 좌표로 옮김)
@@ -1013,7 +1027,7 @@ function shapeHtml(ctx: HtmlCtx, s: Shape, depth: number): string {
     const pts = pts0.map(([x, y]) => `${f3(px(x))},${f3(px(y))}`).join(" ");
     const { defs, paint } = s.kind !== "line" ? svgPaint(s.fill) : { defs: "", paint: "none" };
     const shape = s.kind === "line" ? `<polyline points="${pts}" fill="none"${stroke}/>` : `<polygon points="${pts}" fill="${paint}"${stroke}/>`;
-    return `<span class="hw-o hw-box" style="${size}"><svg class="hw-svg" width="${f3(px(w))}" height="${f3(px(h))}" viewBox="0 0 ${f3(px(w))} ${f3(px(h))}" aria-hidden="true">${defs}${shape}</svg></span>`;
+    return `<span class="hw-o hw-box" style="${escHtml(size)}"><svg class="hw-svg" width="${f3(px(w))}" height="${f3(px(h))}" viewBox="0 0 ${f3(px(w))} ${f3(px(h))}" aria-hidden="true">${defs}${shape}</svg></span>`;
   }
   const st: string[] = [size];
   if (lw) {
@@ -1036,7 +1050,7 @@ function shapeHtml(ctx: HtmlCtx, s: Shape, depth: number): string {
     const va = s.text.vertAlign === "CENTER" ? "center" : s.text.vertAlign === "BOTTOM" ? "flex-end" : "flex-start";
     inner = `<span class="hw-tx" style="padding:${f3(px(mt))}px ${f3(px(mr))}px ${f3(px(mb))}px ${f3(px(ml))}px;justify-content:${va}">${parasHtml(ctx, s.text.paras, w - ml - mr, depth + 1)}</span>`;
   }
-  return `<span class="hw-o hw-box" style="${st.join(";")}">${inner}</span>`;
+  return `<span class="hw-o hw-box" style="${escHtml(st.join(";"))}">${inner}</span>`;
 }
 
 // ───────────────────────── 표

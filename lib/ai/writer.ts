@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import { getAt } from "../cards/edit.ts";
+import { fixedLabelOf } from "../cards/fixed.ts";
 import { isMgmtCard } from "../cards/mgmt-card.ts";
 import { BUSINESSES } from "../knowledge/dictionaries.ts";
 import { compactKey } from "../knowledge/normalize.ts";
@@ -60,7 +61,7 @@ export function filesBlock(p: PromptSet, files: PromptFile[]): string[] {
 export const FILES_SECTIONS = ["files.head"] as const;
 export const ASSIST_PROMPT_SPEC: PromptSpec = {
   system: ["system"],
-  request: ["prompt", "note.given", "note.inPaste", "note.none", "task.improve", "task.discover", "task.reflect", "task.followup", "paste", "followup.head", "followup.row", "followup.recheck", ...FILES_SECTIONS, ...KB_SECTIONS],
+  request: ["prompt", "note.given", "note.inPaste", "note.none", "task.improve", "task.discover", "task.reflect", "task.followup", "locked", "paste", "followup.head", "followup.row", "followup.recheck", ...FILES_SECTIONS, ...KB_SECTIONS],
   schema: ["headline", "summary", "citations", "citations.key", "citations.quote", "suggestions", "suggestions.target_path", "suggestions.period", "suggestions.proposed", "suggestions.reason", "suggestions.source_keys", "monthly_row", "need_input", "followup", "followup.id", "followup.judgment", "followup.card_quote", "followup.inspection_quote", "followup.remaining"],
 };
 
@@ -241,6 +242,8 @@ export interface WriterRequest {
   files: PromptFile[];
   /** 보완 점검: 최종 점검표에서 뽑은 미흡 행(서버가 채움 — followup 요청일 때만) */
   followup?: FollowupBasis | null;
+  /** 확정돼 이 작성본에서 고칠 수 없는 고정 영역(부서 담당자 — 서버가 채움). 있으면 그 칸은 제안하지 말라고 알림 */
+  locked?: readonly string[] | null;
 }
 
 /** kb = 이 과제 기준 공통 지식 목록(lib/knowledge/bundle.ts listText — 공통 지식 ①~③ 글은 요청 앞에 따로 붙음) */
@@ -250,6 +253,7 @@ export function userPrompt(p: PromptSet, card: Json, kb: string, req: WriterRequ
   const parts = [r("prompt", { label: WRITER_MODES[req.mode].label, task: r(`task.${req.mode}`), period: req.periodLabel, note, card: cardOutline(card), refs: kb })];
   if (req.attachmentText) parts.push("", r("paste", { text: escapeXml(req.attachmentText.slice(0, ASSIST_TEXT_MAX.reflect)) }));
   if (req.mode === "followup" && req.followup) parts.push("", followupBlock(p, req.followup));
+  if (req.locked?.length) parts.push("", r("locked", { label: fixedLabelOf(card), paths: req.locked.join("·") }));
   parts.push(...filesBlock(p, req.files));
   return parts.join("\n");
 }

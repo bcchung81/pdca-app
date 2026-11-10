@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
-import { parseCardGroups, parseCardMarkdown, pyRepr, splitBlocks, unmarkKordocInline } from "./parse.ts";
+import { parseCardGroups, parseCardMarkdown, parseNationalAgenda, pyRepr, splitBlocks, unmarkKordocInline } from "./parse.ts";
 import { HAS_SEED_CARDS, NO_SEED_CARDS } from "../../testing/originals.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -118,4 +118,56 @@ test("AX 붙임 머리: 「AX 연계과제」 + 번호 기호(띄어쓰기 무�
   const type = (label: string) => splitBlocks(AX_HEAD(label, "제목"))[0].type;
   for (const label of ["AX연계과제", "AX 연계과제", "AX 연계 과제 ❶", "AX 연계과제 ⓫", "AX 연계과제 ②", "AX 연계과제(3)", "AX 연계과제 #4"]) assert.equal(type(label), "axHeader", label);
   for (const label of ["AX 연계과제 목록", "AX 과제", "비AX연계과제"]) assert.notEqual(type(label), "axHeader", label);
+});
+
+test("국정과제 칸: 번호 뒤의 글은 뒤에 번호가 더 있으면 다음 과제 제목, 없으면 앞 과제 제목의 끝 줄", () => {
+  const titles = (lines: string[]) => parseNationalAgenda(lines).map((a) => [a.title, a.nos]);
+  // 두 줄 제목 + 번호가 두 번(261103판 3/7-다): 둘째 과제의 첫 줄을 앞 과제에 붙이지 않음
+  assert.deepEqual(titles(["재정운용의 투명성·", "책임성 강화", "#17", "세계에서 AI를 가장", "잘 쓰는 나라 구현", "#21"]), [
+    ["재정운용의 투명성·책임성 강화", ["17"]],
+    ["세계에서 AI를 가장 잘 쓰는 나라 구현", ["21"]],
+  ]);
+  // 번호가 둘째 제목 줄 사이에 낀 모양(3/1-가): 끝 줄은 앞 과제 제목으로
+  assert.deepEqual(titles(["AI 가장 잘쓰는 나라 구현", "#21", "미래지향적 디지털·", "#108", "미디어 생태계 구축"]), [
+    ["AI 가장 잘쓰는 나라 구현", ["21"]],
+    ["미래지향적 디지털·미디어 생태계 구축", ["108"]],
+  ]);
+  // 번호 여럿이 이어진 과제(1/8-가)
+  assert.deepEqual(titles(["AI고속도로 구축 등", "#20", "#21", "재난안전관리 고도화", "#73"]), [
+    ["AI고속도로 구축 등", ["20", "21"]],
+    ["재난안전관리 고도화", ["73"]],
+  ]);
+});
+
+test("국정과제 칸 섞인 모양(리뷰 T2-R1): 번호 앞 제목 줄이 이음 기호로 끝나면 번호 뒤 줄은 앞 과제의 끝 줄 — 뒤에 과제가 더 있어도", () => {
+  const titles = (lines: string[]) => parseNationalAgenda(lines).map((a) => [a.title, a.nos]);
+  // 「번호가 제목 줄 사이에 낀 과제(3/1-가 모양)」 + 「두 줄 제목 과제(3/7-다 모양)」가 한 칸에
+  assert.deepEqual(titles(["미래지향적 디지털·", "#108", "미디어 생태계 구축", "세계에서 AI를 가장", "잘 쓰는 나라 구현", "#21"]), [
+    ["미래지향적 디지털·미디어 생태계 구축", ["108"]],
+    ["세계에서 AI를 가장 잘 쓰는 나라 구현", ["21"]],
+  ]);
+  assert.deepEqual(titles(["과학기술 기반 연구개발 및", "#5", "혁신 생태계 조성", "세계에서 AI를 잘 쓰는 나라", "#21"]), [
+    ["과학기술 기반 연구개발 및 혁신 생태계 조성", ["5"]],
+    ["세계에서 AI를 잘 쓰는 나라", ["21"]],
+  ]);
+  // 이음 기호가 없으면 줄 모양만으로는 가를 수 없어 「뒤에 번호가 더 있으면 다음 과제」(3/7-다 실제 모양)를 따름
+  assert.deepEqual(titles(["과학기술 기반", "#5", "혁신 생태계 조성", "세계에서 AI를 잘 쓰는 나라", "#21"]), [
+    ["과학기술 기반", ["5"]],
+    ["혁신 생태계 조성 세계에서 AI를 잘 쓰는 나라", ["21"]],
+  ]);
+});
+
+// ── 카드 표의 이음 표(합성 표): 카드 표가 [Do]에서 끊기고 [Check]·추진성과가 뒤 표로 이어지면 붙이고, 카드에 이미 있는 구역의 참고 표는 붙이지 않음
+const CARD_ROWS = (no: string, rows: string) => `<table>\n<tr><th>과제명<br>(과제번호)</th><th>시험 과제 (과제번호 : ${no})</th><th>부서(팀)</th><th>시험본부(시험팀)</th></tr>\n${rows}\n</table>`;
+const ROW = (label: string, text: string) => `<tr><td>${label}</td><td colspan="3">${text}</td></tr>`;
+
+test("카드 이음 표(리뷰 T2-R2): 카드 표에 없는 구역([Check])이 바로 뒤 표에 있으면 이어 붙이고, 이미 있는 구역의 참고 표는 붙이지 않음(구역 두 번 없음)", () => {
+  const cont = `<table>\n${ROW("[Check]<br>성과점검", "∙ (장애 또는 리스크 요인) 이음 표 리스크")}\n</table>`;
+  const joined = parseCardMarkdown([GT(1, "첫째 사업"), INDEX([["1-가", "시험 과제"]]), CARD_ROWS("1-가", ROW("[Do]<br>추진내용", "∙ 시험 추진")), "- 1 -", cont].join("\n\n"), { sourceName: "x.hwp" }).cards[0];
+  assert.ok(joined.raw.includes("이음 표 리스크"), "이음 표를 카드 표에 붙임");
+  assert.ok(!joined.parseWarnings.some((w: string) => /두 번|없는 구역: check\b/.test(w)), joined.parseWarnings.join(" / "));
+  const ref = `<table>\n${ROW("[Check]<br>성과점검", "∙ 카드 밖 참고 표")}\n</table>`;
+  const kept = parseCardMarkdown([GT(1, "첫째 사업"), INDEX([["1-가", "시험 과제"]]), CARD_ROWS("1-가", [ROW("[Do]<br>추진내용", "∙ 시험 추진"), ROW("[Check]<br>성과점검", "∙ 카드 안 리스크")].join("\n")), ref].join("\n\n"), { sourceName: "x.hwp" }).cards[0];
+  assert.ok(!kept.raw.includes("카드 밖 참고 표"), "이미 있는 구역의 표는 이음 표가 아님");
+  assert.ok(!kept.parseWarnings.some((w: string) => /두 번/.test(w)), kept.parseWarnings.join(" / "));
 });

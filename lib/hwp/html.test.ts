@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyMat, borderFillCss, cellContentHeight, cellLines, charBaseCss, escHtml, f3, fontStack, gradientCss, HW_CSS, HWP_FALLBACK_FACE, lineWidthPx, paraHtml, px, shapeMatrix, sharedEdgeSkips, spacingAttrs, tableGrid, tableHtml } from "./html.ts";
-import type { Border, BorderFill, Cell, CharPr, Fill, HwpDoc, LineSeg, Para, ParaPr, Table } from "./model.ts";
+import { type Border, type BorderFill, type Cell, type CharPr, type Fill, type HwpDoc, type LineSeg, type Para, type ParaPr, safeBinExt, type Table } from "./model.ts";
 
 const cp = (over: Partial<CharPr> = {}): CharPr => ({ height: 1000, face: Array(7).fill("함초롬바탕"), ratio: Array(7).fill(100), spacing: Array(7).fill(0), relSize: Array(7).fill(100), offset: Array(7).fill(0), bold: false, italic: false, underline: "", underlineColor: null, strike: false, strikeColor: null, supscript: false, subscript: false, outline: false, shadow: "", shadowColor: null, shadowX: 0, shadowY: 0, emboss: false, engrave: false, color: "#000000", shade: null, kerning: false, useFontSpace: false, borderFill: 0, ...over });
 const pp = (over: Partial<ParaPr> = {}): ParaPr => ({ align: "JUSTIFY", breakLatin: "KEEP_WORD", breakNonLatin: "KEEP_WORD", condense: 0, lineSpacingType: "PERCENT", lineSpacing: 160, left: 0, right: 0, indent: 0, before: 0, after: 0, vertAlign: "BASELINE", snapToGrid: true, fontLineHeight: false, keepWithNext: false, borderFill: 0, borderOffset: [0, 0, 0, 0], tabDef: 0, headingType: "NONE", headingId: 0, headingLevel: 0, autoSpaceEAsianEng: false, autoSpaceEAsianNum: false, ...over });
@@ -34,6 +34,47 @@ test("글꼴 후보: 중복 없이 한글 대체 글꼴 포함, 명조·바탕 �
   assert.equal(fontStack(HWP_FALLBACK_FACE), `'${HWP_FALLBACK_FACE}',serif`);
   assert.equal(fontStack(""), `'${HWP_FALLBACK_FACE}',sans-serif`);
   assert.equal(fontStack("a'b"), `'ab','${HWP_FALLBACK_FACE}',sans-serif`);
+  // 글꼴 이름은 파일 글 — style="…" 속성을 벗어나지 못하게 따옴표·역빗금·꺾쇠·조종 문자를 뺌(2026-11-10 보안 점검 H2)
+  const evil = `X"><img src=x onerror=alert(1)><b x="\\'\n`;
+  assert.equal(fontStack(evil), `'Ximg src=x onerror=alert(1)b x=','${HWP_FALLBACK_FACE}',sans-serif`);
+});
+
+/** 브라우저가 속성 값을 해석하듯 문자 참조를 풂 */
+const decodeAttr = (v: string) =>
+  v
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+    .replace(/&(apos|quot|lt|gt|amp);/g, (_m, n) => ({ apos: "'", quot: '"', lt: "<", gt: ">", amp: "&" })[n as "apos"]);
+
+test("글꼴 이름 주입(보안 점검 H2·리뷰 R1·R4): 문단 HTML의 모든 style 속성은 하나로 닫히고, 문자 참조(&#39;·&apos;·&#x27;·&#92;)를 풀어도 CSS 글이 닫히지 않음", () => {
+  for (const face of [`X"><img src=x onerror=alert(1)><b x="`, "X&#39;;position:fixed;inset:0;background:red;x:&#39;", "X&apos;;background:blue;x:&apos;", "X&#x27;;background:blue;x:&#x27;", "X&#92;';background:blue;x:'", "X'\;background:blue"]) {
+    const ctx = ctxOf([pp()]);
+    ctx.doc.charPrs = [cp({ face: Array(7).fill(face) })];
+    const opts = { first: true, last: true, prevAfter: 0, width: 10000, depth: 1 };
+    // 원본 줄 배치 문단과 흘려 그리는 문단 둘 다
+    for (const html of [paraHtml(ctx, para("가나", [line(0, 1000)]), opts).html, paraHtml(ctx, { ...para("가나", []), flow: true }, opts).html]) {
+      // 꺾쇠가 없어 새 태그가 생기지 않음(「onerror」 같은 글자는 따옴표 안 글꼴 이름으로만 남음)
+      assert.doesNotMatch(html, /<img|<b /, face);
+      for (const m of html.matchAll(/style="([^"]*)"/g)) {
+        // 브라우저가 속성 값을 풀고 CSS가 따옴표 글을 읽은 뒤에도 끼운 속성(position·inset·background)이 따옴표 밖에 남지 않음
+        const outside = decodeAttr(m[1]).replace(/'[^'\\]*(?:\\.[^'\\]*)*'/g, "''");
+        assert.doesNotMatch(outside, /position:fixed|inset:|background:(red|blue)/, `${face} → ${m[1]}`);
+      }
+    }
+  }
+});
+
+test("번호 머리 정렬(보안 리뷰 R3): 파일의 정렬 값은 허용 목록만 CSS로 — 원문이 속성을 벗어나지 않음", () => {
+  const doc = { ...ctxOf([pp({ headingType: "NUMBER", headingId: 1, headingLevel: 0 })]).doc } as HwpDoc;
+  const head = (align: string) => ({ align, instWidth: false, autoIndent: true, widthAdjust: 0, textOffset: 50, textOffsetPercent: true, numFormat: 0, charPr: 0 });
+  const run = (align: string) => {
+    doc.numberings = [{ levels: [{ head: head(align), format: "^1." }], start: 1 }] as unknown as HwpDoc["numberings"];
+    return paraHtml({ doc, imageUrl: () => null }, { ...para("본문", [line(0, 1000)]), head: "1." }, { first: true, last: true, prevAfter: 0, width: 10000, depth: 1 }).html;
+  };
+  assert.match(run("CENTER"), /text-align:center/);
+  const evil = run('LEFT"><img src=x onerror=alert(1)>');
+  assert.doesNotMatch(evil, /<img|onerror/);
+  assert.match(evil, /class="hw-head[^"]*"[^>]*text-align:left/);
 });
 
 test("글자 모양 CSS: 기본, 굵게·기울임·색·음영·밑줄·취소선, 첨자·글자 위치, 상대 크기", () => {
@@ -183,4 +224,13 @@ test("줄 나눔 단위(HWPX 이름): BREAK_WORD(어절) → word-break:keep-all
   const lined = (paraPr: number) => paraHtml(ctx, { ...para("과제 개요", [line(0, 1000)]), paraPr, attrs: ' data-p="x"' }, opts).html;
   assert.match(lined(0), /--hw-wb:keep-all/);
   assert.match(lined(1), /--hw-wb:normal/);
+});
+
+test("그림 확장자·그림 채우기 주소(보안 리뷰 R2): 확장자는 허용 목록(아니면 bin), 주소는 CSS 글 안에서 이스케이프 — 따옴표로 url()을 닫지 못함", () => {
+  assert.deepEqual(["png", "JPG", "jpeg", "bmp", "png');x:('", "", "toolong"].map(safeBinExt), ["png", "jpg", "jpeg", "bmp", "bin", "bin", "bin"]);
+  const fill = { color: null, patternColor: null, pattern: -1, image: { bin: 1, mode: "TOTAL" }, gradation: null } as unknown as Fill;
+  const css = borderFillCss(bf(none, none, none, none, fill), () => "https://x.test/a.png');position:fixed;x:('\\").style;
+  const outside = css.replace(/'[^'\\]*(?:\\.[^'\\]*)*'/g, "''");
+  assert.doesNotMatch(outside, /position:fixed/, css);
+  assert.match(css, /background-image:url\('https:\/\/x\.test\/a\.png\\'\);position:fixed;x:\(\\'\\\\'\);/);
 });

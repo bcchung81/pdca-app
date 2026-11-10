@@ -390,7 +390,7 @@ export function pagesHtml(ctx: HtmlCtx, blocks: LayoutBlock[], page: PageDef, st
       const n = first + i;
       const f = foot.replace(/(data-hw-field="page"[^>]*>)0</g, `$1${pageNumText(n)}<`);
       const note = i === 0 && startY > 0 && deco.startNote ? `<div class="hw-prev" style="height:${f3(Math.max(0, px(startY) - 6))}px">${escHtml(deco.startNote)}</div>` : "";
-      return `<div class="hw-page" data-page="${i + 1}" style="width:${f3(px(page.width))}px;height:${f3(px(page.height))}px"><div class="hw-body" style="${body}">${note}${list
+      return `<div class="hw-page" data-page="${i + 1}" style="width:${f3(px(page.width))}px;height:${f3(px(page.height))}px"><div class="hw-body" style="${escHtml(body)}">${note}${list
         .map((it) => `<div class="hw-pb" style="left:${f3(px(it.x))}px;top:${f3(px(it.y))}px">${it.html}</div>`)
         .join("")}</div>${f}${pnHtml(n)}</div>`;
     })

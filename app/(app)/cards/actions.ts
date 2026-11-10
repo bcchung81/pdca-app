@@ -165,7 +165,7 @@ export async function runCardAssist(_prev: AssistState, formData: FormData): Pro
   const mode = String(formData.get("mode") ?? "") as WriterMode;
   if (!(mode in WRITER_MODES)) return { status: "error", message: "요청 종류를 골라 주세요." };
   const supabase = await createClient();
-  const { data: card } = await supabase.from("cards").select("id, eval_unit_id, data, status").eq("uid", uid).maybeSingle();
+  const { data: card } = await supabase.from("cards").select("id, eval_unit_id, data, status, fixed_locked_at").eq("uid", uid).maybeSingle();
   if (!card) return { status: "error", message: "카드를 찾을 수 없습니다." };
   if (card.status !== "active") return { status: "error", message: RETIRED };
 
@@ -193,6 +193,8 @@ export async function runCardAssist(_prev: AssistState, formData: FormData): Pro
     note: mode === "reflect" ? "" : text.slice(0, ASSIST_TEXT_MAX.note),
     periodLabel: `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`,
     attachmentText,
+    // 확정된 고정 영역(부서 작성본은 그 칸을 못 고침 — 리뷰어 runCardComments와 같은 규칙): AI에 알려 그 칸은 제안하지 않게
+    locked: card.fixed_locked_at && me.role === "dept_user" ? [...fixedSectionsOf(card.data)] : null,
   };
   // AI 기준 카드 = 편집기에 지금 보이는 카드(부서는 작성본). 제안 경로도 이것으로 검사해 반영 위치가 어긋나지 않게
   let working: Record<string, unknown> = card.data;

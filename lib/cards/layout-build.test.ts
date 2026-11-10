@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { readHwp5 } from "../hwp/hwp5.ts";
 import { encodePng } from "./hwp/image.ts";
-import { type BuiltLayout, buildLayouts, fitLayoutImages } from "./layout-build.ts";
+import { type BuiltLayout, buildLayouts, fitLayoutImages, isLayoutImageKey } from "./layout-build.ts";
 import { cardSourceFile } from "./file-names.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 
@@ -40,4 +40,9 @@ test("fitLayoutImages: 한도를 넘는 배치 그림만 흰 바탕 JPEG로 — 
   assert.deepEqual(b.images.map((im) => [im.key, im.mime]), [[f.to, "image/jpeg"], ["hwp-small.png", "image/png"]]);
   assert.deepEqual(b.layout.bins.map((x) => x.key), [f.to, "hwp-small.png", f.to], "배치 참조도 같은 이름");
   assert.deepEqual(fitLayoutImages(b), [], "한도 안이면 그대로");
+});
+
+test("배치 그림 저장 이름(보안 리뷰 R2): hwp-<해시 16자>.<영문 소문자·숫자 1~5자>만 올림", () => {
+  for (const k of ["hwp-0123456789abcdef.png", "hwp-0123456789abcdef.jpg", "hwp-0123456789abcdef.bin"]) assert.equal(isLayoutImageKey(k), true, k);
+  for (const k of ["hwp-0123456789abcdef.png');x:('", "hwp-0123456789abcdef.PNG", "hwp-0123456789abcde.png", "../hwp-0123456789abcdef.png", "hwp-0123456789abcdef.toolong", "hwp-0123456789abcdef"]) assert.equal(isLayoutImageKey(k), false, k);
 });

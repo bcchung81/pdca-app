@@ -13,7 +13,7 @@ import { renderCard } from "../../../../lib/cards/render.ts";
 import { currentPeriod } from "../../../../lib/cards/view.ts";
 import { latestVersion } from "../../../../lib/cards/versions.ts";
 import { cardImageRefs } from "../../../../lib/cards/original-html.ts";
-import { type BuiltLayout, buildLayouts } from "../../../../lib/cards/layout-build.ts";
+import { type BuiltLayout, buildLayouts, isLayoutImageKey } from "../../../../lib/cards/layout-build.ts";
 import { readHwp5 } from "../../../../lib/hwp/hwp5.ts";
 import { readHwpx } from "../../../../lib/hwp/hwpx.ts";
 import { type CardLayout, layoutImageKeys } from "../../../../lib/hwp/layout.ts";
@@ -210,6 +210,11 @@ export async function parseCardImport(importId: number): Promise<{ ok: boolean; 
         const { data: listed } = await supabase.storage.from("card-originals").list(folder, { limit: 1000 });
         const have = new Set((listed ?? []).map((o) => o.name));
         for (const im of built.images) {
+          // 저장 이름은 hwp-<해시>.<허용 확장자>만(파일 글이 서명 주소·CSS url()로 가지 않게)
+          if (!isLayoutImageKey(im.key)) {
+            layoutOk = false;
+            continue;
+          }
           if (have.has(im.key)) continue;
           const { error: upErr } = await supabase.storage.from("card-originals").upload(`${folder}/${im.key}`, im.data, { contentType: im.mime, upsert: staff });
           if (upErr && !/exist/i.test(upErr.message)) layoutOk = false;

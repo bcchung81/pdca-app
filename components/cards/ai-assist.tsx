@@ -119,6 +119,8 @@ export function AiAssist(props: {
   active?: boolean;
   /** 점검 결과 탭의 「AI로 보완 점검」 신호: n이 바뀔 때마다 요청 종류를 그 값으로 고름(보내지는 않음) */
   modeRequest?: { mode: WriterMode; n: number };
+  /** 확정된 고정 영역(부서 작성본) — 이 칸을 고치는 제안은 반영 단추 대신 안내(편집기도 반영을 막음) */
+  locked?: string[];
 }) {
   const { uid } = props;
   const active = props.active !== false;
@@ -556,7 +558,7 @@ export function AiAssist(props: {
                         <h4 className="text-ui font-bold text-ink">카드 반영 제안 {t.result.suggestions.length}건</h4>
                         {/* 우선순위 앞 SUG_FIRST건만 먼저 — 번호(i)는 전체 목록 기준(반영 표시) */}
                         {t.result.suggestions.slice(0, allSug.has(t.id) ? undefined : SUG_FIRST).map((s, i) => (
-                          <SuggestionCard key={i} s={s} card={props.getCard?.()} done={Boolean(t.applied?.includes(i))} canApply={props.canApply} onApply={() => apply(t, i, s)} />
+                          <SuggestionCard key={i} s={s} card={props.getCard?.()} done={Boolean(t.applied?.includes(i))} canApply={props.canApply} locked={props.locked} onApply={() => apply(t, i, s)} />
                         ))}
                         {t.result.suggestions.length > SUG_FIRST && (
                           <button
@@ -698,8 +700,9 @@ export function AiAssist(props: {
 /**
  * 카드 반영 제안 한 건: 바꿀 글(제안)은 늘 전부, 지금 글(취소선)과 이유는 한 줄 말줄임 — 「자세히」나 그 줄을 누르면 전부(2026-09-29 사용자 결정)
  */
-function SuggestionCard(props: { s: VerifiedSuggestion; card?: unknown; done: boolean; canApply: boolean; onApply: () => void }) {
+function SuggestionCard(props: { s: VerifiedSuggestion; card?: unknown; done: boolean; canApply: boolean; locked?: string[]; onApply: () => void }) {
   const { s } = props;
+  const lockedHit = Boolean(s.targetPath && props.locked?.some((p) => s.targetPath === p || s.targetPath?.startsWith(`${p}.`)));
   const [more, setMore] = useState(false);
   const where = s.kind === "monthly" ? `${s.period} 상자` : pathLabel(s.targetPath, props.card);
   const clip = more ? "" : "cursor-pointer truncate";
@@ -724,7 +727,9 @@ function SuggestionCard(props: { s: VerifiedSuggestion; card?: unknown; done: bo
         </p>
       )}
       <div className="mt-2 flex items-center gap-2">
-        {props.canApply && s.applicable ? (
+        {props.canApply && s.applicable && lockedHit ? (
+          <span className="text-xs text-muted">고정 영역(확정됨)이라 반영할 수 없습니다 — 성과관리팀에 요청</span>
+        ) : props.canApply && s.applicable ? (
           <button type="button" disabled={props.done} onClick={props.onApply} className={T.btnPrimarySm}>
             {props.done ? "반영함" : "카드에 반영"}
           </button>

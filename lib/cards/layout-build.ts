@@ -85,6 +85,8 @@ export function buildLayouts(doc: HwpDoc, cards: LooseJson[]): { built: BuiltLay
 
 /** 배치 그림 저장 이름: 웹 그림 내용 해시 + 확장자 */
 const imageKey = (data: Uint8Array, ext: string) => `hwp-${createHash("sha256").update(data).digest("hex").slice(0, 16)}.${ext}`;
+/** 저장 이름이 imageKey 모양 그대로인가 — 올리기 전 확인(확장자는 읽을 때 허용 목록으로 거름, 2026-11-10 보안 리뷰 R2) */
+export const isLayoutImageKey = (key: string) => /^hwp-[0-9a-f]{16}\.[a-z0-9]{1,5}$/.test(key);
 
 /** 저장소 card-originals의 파일 한도(supabase/migrations/20260925090700_card_originals.sql)와, 넘는 그림을 바꿀 때 맞출 크기(여유를 둠) */
 export const CARD_ORIGINALS_MAX = 10 * 1024 * 1024;

@@ -142,6 +142,26 @@ function groupByRows(cells: Cell[]): Cell[][] {
   return groups;
 }
 
+/**
+ * 계량 성과지표 묶음을 행마다 한 지표로 나눔: 지표명 쪽 부칸만 여러 행에 걸치고(「대표」 — 261103판 13-4·13-5) 값 칸(실적·목표)은 모두 한 행짜리이며
+ * 행마다 그 부칸 오른쪽에 부칸보다 넓은 자기 지표명 칸이 있을 때. 걸친 부칸 글은 그 칸이 시작하는 첫 행 지표명에 붙음(원본 배치에서 부칸 + 지표명 칸이 이어진 조각으로 잇기).
+ * 값 칸이 여러 행에 걸치면(9.04판 13-4의 「(신규)」, 13-2의 「4.15」) 예전처럼 한 지표 — valueCol = 실적 머리 칸의 열
+ */
+function splitNameSpan(g: Cell[], valueCol: number): Cell[][] {
+  const rows = [...new Set(g.map((c) => c.r))].sort((a, b) => a - b);
+  if (rows.length < 2) return [g];
+  const span = (c: Cell) => Math.max(1, c.rowspan) > 1;
+  if (g.some((c) => c.c >= valueCol && span(c))) return [g];
+  const spans = g.filter((c) => c.c < valueCol && span(c));
+  if (!spans.length) return [g];
+  // 걸친 칸은 부칸(「대표」)이어야 함: 행마다 그 오른쪽 지표명 자리에 걸친 칸보다 넓은 자기 칸이 있을 때만. 지표명이 걸치고 행마다 좁은 구분 칸(상반기·하반기)이 붙은 한 지표는 나누지 않음
+  for (const r of rows) {
+    const own = g.filter((c) => c.r === r && c.c < valueCol && hasContent(c) && !span(c));
+    if (!spans.every((sp) => own.some((o) => o.c >= sp.c + Math.max(1, sp.colspan) && Math.max(1, o.colspan) > Math.max(1, sp.colspan)))) return [g];
+  }
+  return rows.map((r) => g.filter((c) => c.r === r));
+}
+
 function linesOf(cells: Cell[]): Line[] {
   return cells.flatMap((c) => cellLines(c));
 }
@@ -252,7 +272,7 @@ export function parseMgmtCardTable(table: Table, ctx: { file: string; bundle: st
       const [nh, ph, th] = rowCells(kh);
       kpiHeaders = { name: strip(textOf(nh)), prev: strip(textOf(ph)), target: strip(textOf(th)) };
       const data = kRows.filter((r) => r > kh).flatMap((r) => rows[r].filter((c) => c.c >= nh.c));
-      for (const g of groupByRows(data)) {
+      for (const g of groupByRows(data).flatMap((grp) => splitNameSpan(grp, ph.c))) {
         const slot = (cs: Cell[]) =>
           [...cs]
             .sort((a, b) => a.r - b.r || a.c - b.c)

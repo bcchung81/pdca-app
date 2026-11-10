@@ -31,6 +31,7 @@ import {
   type ParaHead,
   type ParaPr,
   type Pic,
+  safeBinExt,
   type Section,
   type Shape,
   type ShapeGeo,
@@ -851,7 +852,8 @@ export function readHwp5(bytes: Uint8Array): HwpDoc {
         data = raw;
       }
     }
-    const item: BinItem = { id: b.id, ext: b.ext, data };
+    // 스트림 이름은 파일에 적힌 확장자 그대로, 그림 항목에는 허용 목록 확장자만
+    const item: BinItem = { id: b.id, ext: safeBinExt(b.ext), data };
     doc.bins.set(b.id, item);
   }
 
