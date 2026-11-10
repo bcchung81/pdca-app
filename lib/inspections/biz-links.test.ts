@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BIZ_LINK_MAX, type BizLedgerCard, bizTaskId, bizTaskIdsIn, parseLinkIndex, pickBizLinks } from "./biz-links.ts";
 import { NO_PDCA_GUIDES, pdcaGuide } from "../testing/originals.ts";
+import { PRIOR_MIN_SCORE, rankSimilar } from "../reports/prior.ts";
 
 const guide13 = pdcaGuide("13-inspection-guide-mg.md");
 
@@ -94,4 +95,25 @@ test("후보 고르기: 본문은 10장까지, 넘친 색인 과제는 번호·�
   assert.ok(labor.cards.every((c) => c.reasons.join("") === "c"), "색인 없는 지표는 글자 겹침만");
   assert.ok(labor.cards.length <= 3);
   assert.deepEqual(labor.more, []);
+});
+
+test("후보 고르기: 글자 겹침(c)은 점수 PRIOR_MIN_SCORE 이상만 — 0보다 크기만 한 무관한 카드는 안 붙음(2026-11-10 사용자 결정)", () => {
+  const ledger = [
+    biz("주요사업2 8-가", "노사 협력 소통 강화", "노사 협의회 정례화와 소통 채널 운영"),
+    biz("주요사업1 1-가", "안테나 자동판독", "무선국 검사 운영 효율"),
+    biz("주요사업3 6-가", "자산운용관리 체계", "기금 자산운용"),
+  ];
+  const mg = { group: "경영관리10", taskNo: "10-1", title: "노사 협력 소통 강화", do: { lines: ["노사 협의회 정례화와 소통 채널 운영"] } };
+  // 전제: 무관한 카드도 점수가 0보다 크지만 하한 아래(예전 `score > 0`이면 붙었음), 같은 내용 카드는 하한 이상
+  const plain = (d: BizLedgerCard["data"]) => d.title + " " + d.do.lines.join(" ");
+  const scores = new Map(rankSimilar({ title: mg.title, outcome: { quantitative: [plain(mg)] } }, ledger.map((c) => ({ key: c.id, head: c.title, text: plain(c.data) }))).map((x) => [x.key, x.score]));
+  assert.ok(scores.get("주요사업2 8-가")! >= PRIOR_MIN_SCORE);
+  assert.ok(scores.get("주요사업1 1-가")! > 0 && scores.get("주요사업1 1-가")! < PRIOR_MIN_SCORE);
+  const pack = pickBizLinks(mg, ledger, [], "MG-10");
+  assert.deepEqual(
+    pack.cards.map((c) => [c.id, c.reasons.join("")]),
+    [["주요사업2 8-가", "c"]],
+    "하한 이상만 붙고 하한 미만은 안 붙음",
+  );
+  assert.equal(pack.indexed, false);
 });

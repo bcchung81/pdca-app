@@ -283,7 +283,9 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // report-block@7a0c8bda → d35a938c (report-draft@69b024ba → 434b1eef, report-outline@42b53d45 → 3b9e6c1e).
   // 3단계에 「한 줄 보입니다(재료표에 그 칸을 재료로 뽑아 빼지 않음)」를 더했다가(report-block@7c260962) 4단계 실호출 2/2장에서 효과가 없어 되돌림 —
   // 카드의 국정과제 칸이 과제 이름뿐(56장 중 숫자 든 칸 4)이라 「기여를 근거 수치·실적으로」를 채울 근거가 없어 빠지는 것(근거 우선). 이름만 한 줄 남길지는 사용자 결정
-  assert.equal(bp.version, "report-block@d35a938c", "주요사업 블록 고치기 판은 분량 채움 보강으로는 안 바뀌고, 끼운 report-draft 조각(inputs·style·blocks)이 바뀌면 바뀜(2026-11-10 inputs.md 국정과제 줄)");
+  // 2026-11-10 국정과제 한 구절(사용자 결정): inputs.md 국정과제 줄 — 기여 수치가 근거에 없으면 번호·이름만 추진배경 불릿·추진성과 문장 안의 짧은 구절로(수치·기여 주장 없음, 소명 불릿 행은 계속 금지)
+  // report-block@d35a938c → a713b0ac (report-draft@434b1eef → 5ed9e3ab, report-outline@3b9e6c1e → 24e40c57). 경영관리 판은 그대로(report-draft-mg/inputs.md를 따로 씀)
+  assert.equal(bp.version, "report-block@a713b0ac", "주요사업 블록 고치기 판은 분량 채움 보강으로는 안 바뀌고, 끼운 report-draft 조각(inputs·style·blocks)이 바뀌면 바뀜(2026-11-10 inputs.md 국정과제 한 구절)");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {

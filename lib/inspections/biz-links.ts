@@ -1,13 +1,13 @@
 // 경영관리 월간 점검의 주요사업 연계 후보 고르기(지침 13 [붙임4 사용 규칙]) — 순수 함수.
 // 2026-10-12 사용자 결정: 붙임4(주요사업 과제관리카드 파일)는 이 앱에 없으므로 원장의 주요사업 카드(cards.data, 보관 제외)를 붙임4 자리로 씁니다.
 // 카드 전용 자료·부서 작성본·검색 결과는 넣지 않습니다(금기 4). 읽기는 호출하는 쪽(서버 액션 — 로그인 사용자 권한, 연기 시험 — 서비스 키)이 합니다.
-// 고르는 순서: (a) 경영관리 카드 글이 인용한 주요사업 과제번호(인용 대조용) → (b) 지침 13의 [경영관리 지표 ↔ 주요사업 연계 색인] 번호 → (c) 글자 겹침 상위 3장.
+// 고르는 순서: (a) 경영관리 카드 글이 인용한 주요사업 과제번호(인용 대조용) → (b) 지침 13의 [경영관리 지표 ↔ 주요사업 연계 색인] 번호 → (c) 글자 겹침 상위 3장(점수 PRIOR_MIN_SCORE 이상만 — 2026-11-10 사용자 결정).
 // 같은 카드는 한 번, 본문을 주는 카드는 BIZ_LINK_MAX장까지 — 넘친 (a)·(b)는 「번호 · 과제명」 목록으로만, 넘친 (c)는 버림.
 
 import { inspectionCardText } from "../ai/inspect.ts";
 import { cardOutline } from "../ai/writer.ts";
 import { resolveMgmtUnit } from "../knowledge/dictionaries-mg.ts";
-import { rankSimilar } from "../reports/prior.ts";
+import { PRIOR_MIN_SCORE, rankSimilar } from "../reports/prior.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 type Json = LooseJson;
@@ -148,12 +148,13 @@ export function pickBizLinks(mgCard: Json, ledger: BizLedgerCard[], index: LinkI
   for (const id of cited) add(id, "a");
   for (const id of row?.ids ?? []) add(id, "b");
   // (c) 글자 겹침: 경영관리 카드의 칸 글 전체(제목은 3배) ↔ 주요사업 카드 풀이 글 — 같은 bigram TF-IDF 코사인(lib/reports/prior.ts rankSimilar).
-  // rankSimilar의 카드 벡터는 주요사업 칸만 읽으므로 경영관리 카드는 제목 + 칸 글 전체를 한 칸에 넣어 넘김
+  // rankSimilar의 카드 벡터는 주요사업 칸만 읽으므로 경영관리 카드는 제목 + 칸 글 전체를 한 칸에 넣어 넘김.
+  // 하한은 같은 계산을 쓰는 전년 절 고르기의 PRIOR_MIN_SCORE(2026-11-10 사용자 결정) — 0 초과만 보면 색인 없는 지표(MG-9·10·11)에 무관한 카드가 붙음
   const query = { title: mgCard?.title ?? "", outcome: { quantitative: [plainOutline(mgCard)] } };
   const ranked = rankSimilar(
     query,
     ledger.map((c) => ({ key: c.id, head: c.title, text: plainOutline(c.data) })),
-  ).filter((x) => x.score > 0);
+  ).filter((x) => x.score >= PRIOR_MIN_SCORE);
   for (const x of ranked.slice(0, BIZ_SIMILAR_TOP)) add(x.key, "c");
   const full = (o: { id: string; reasons: LinkReason[] }): BizLinkCandidate => {
     const c = byId.get(o.id)!;
