@@ -114,7 +114,11 @@ test("⑫ AI·자동화 낱말 서로 다른 것 2개 이상 + 업무 절차 변
   assert.ok(!hintsOf("check.items.0 | AI 자동 판독으로 육안 확인 없이 소요 시간을 단축했다").some((h) => h.story === "AX 전환형"), "AI 낱말이 제목·계획·추진내용 줄에 없음");
   const weak = hintsOf(doLine("AI 판독과 자동화로 소요 시간을 단축했다")).find((h) => h.story === "AX 전환형")!;
   const strong = hintsOf(doLine("AI 판독과 자동화로 육안 확인·수작업을 없애 프로세스를 바꾸고 소요 시간을 단축했다")).find((h) => h.story === "AX 전환형")!;
-  assert.equal(strong.score - weak.score, 2, "절차 변화 낱말 4개 이상이면 2점 더(뚜렷한 전환 과제가 다른 틀에 밀리지 않게)");
+  assert.equal(strong.score - weak.score, 1, "절차 변화 낱말 4개 이상이면 1점 더(다른 틀의 「N개 이상」 보조 신호와 같은 무게 — 2026-11-10 T1, 예전 2점은 ⑫가 단독 1순위 10장·AI가 따른 것 2장)");
+  assert.ok(
+    !hintsOf("do.lines.0 | AI 판독과 자동화를 도입했다\noutcome.quantitative.0 | 수작업 줄여 소요 시간 단축").some((h) => h.story === "AX 전환형"),
+    "절차 변화 낱말이 성과 줄에만 있음 — 제목·계획·추진내용 줄에도 하나 있어야(2026-11-10 T1)",
+  );
 });
 
 test("형제 초안이 이미 쓴 틀은 뒤로 미루고 이유에 형제 수를 적음", () => {
@@ -162,10 +166,10 @@ test("storyHintsPrompt: 후보 줄·형제 표시·없을 때 문구를 프롬�
   assert.equal(storyHintsPrompt(p as never, []), "틀 고르기\n- 없음");
 });
 
-test("'25 실사 질의로만 뜬 Q&A 후보는 왜-어떻게형 신호가 아님(거의 모든 카드에 실사 질의가 있어 이 틀로 몰림 — 평가 라운드 P 4/8)", () => {
-  const text = "검사 업무 개선을 추진했다.";
-  const fromSurvey = storyHints(diagramHints(text, { survey: ["Q8 오판독 대비책은?"] }), text);
-  assert.ok(!fromSurvey.some((h) => h.story === "왜-어떻게형"));
+test("'25 실사 질의는 Q&A 후보·왜-어떻게형 신호가 아님(거의 모든 카드에 실사 질의가 있어 이 틀로 몰림 — 평가 라운드 P 4/8, 2026-11-10부터 도식 후보에도 안 실림)", () => {
+  const card = cardOf(["검사 업무 개선을 추진했다."]);
+  const survey = { group: "survey" as const, key: "qa25", title: "'25 실사 질의", where: "", text: "Q8 오판독 대비책은?" };
+  assert.ok(!storyHintsOf(card, [], [survey], NO_ACTUALS, 2026).some((h) => h.story === "왜-어떻게형"));
   const asked = "왜 연습기가 필요한가? 어떻게 쓰는가?";
   assert.ok(storyHints(diagramHints(asked), asked).some((h) => h.story === "왜-어떻게형"));
 });
@@ -234,7 +238,42 @@ test("P1-2: ⑳ 수혜 대상 낱말 3종 이상 → 대상별 맞춤형, 1종�
   assert.ok(!hintsOf("중소기업 지원을 넓혔다").some((h) => h.story === "대상별 맞춤형"));
 });
 
-test("P1-2: 점수가 같으면 기본형 ★(⑨ ⑱ ① ⑰ ⑩)을 먼저, 나머지는 틀 번호 순", () => {
+test("동점: 후보 3개에 넣을 때는 기본형 ★(⑨ ⑱ ① ⑰ ⑩) 먼저·나머지는 틀 번호 순, 고른 후보를 보여 주는 순서는 ★이 아닌 틀 먼저(2026-11-10 T1)", () => {
   const hs = hintsOf(["❶ 시범 운영", "❷ 표준화", "❸ 전국 확산"].map((t, i) => `do.lines.${i} | ${t}`).join("\n"));
-  assert.deepEqual(hs.slice(0, 2).map((h) => [h.story, h.score]), [["핵심키워드 연결형", 3], ["시범→확산형", 3]], "⑰(★)이 번호가 앞선 ⑬보다 먼저");
+  assert.deepEqual(hs.slice(0, 2).map((h) => [h.story, h.score]), [["시범→확산형", 3], ["핵심키워드 연결형", 3]], "같은 3점이면 ⑬이 ⑰(★)보다 앞에 보임");
+  const four = hintsOf(
+    [...["❶ 시범 운영", "❷ 표준화", "❸ 전국 확산"].map((t, i) => `do.lines.${i} | ${t}`), "do.lines.3 | 위험 요인을 찾아 사고 예방과 안전 점검", "do.lines.4 | 중소기업·소상공인·취약계층 지원"].join("\n"),
+  );
+  assert.deepEqual(
+    four.map((h) => [h.story, h.score]),
+    [
+      ["시범→확산형", 3],
+      ["위험관리·안전형", 3],
+      ["핵심키워드 연결형", 3],
+    ],
+    "4틀이 3점 동점 — ⑰(★)이 먼저 후보에 들고(⑳은 빠짐) 보이는 순서는 ⑬·⑮ 다음 ⑰",
+  );
+});
+
+test("양식·연계 칸 줄(실행과제 머리 「(과제번호 …)」·국정과제 연계·AI 연계 칸)은 틀 신호로 세지 않음(2026-11-10 T1 — 형제 소항목이 같은 실행과제 이름으로 같은 틀에 걸렸음)", () => {
+  const work = "do.lines.0 | AI 판독과 자동화로 육안 확인·수작업을 줄여 소요 시간을 단축했다";
+  assert.equal(top(work), "AX 전환형");
+  assert.ok(!hintsOf("(과제번호 6-가 · 실행과제 6. AI기반 자동화 혁신)\ndo.lines.0 | 육안 확인·수작업을 줄여 소요 시간을 단축했다").some((h) => h.story === "AX 전환형"), "AI 낱말이 실행과제 머리 줄에만");
+  assert.ok(!hintsOf("strategy.ai.text | 인공지능 자동화 연계\nstrategy.nationalAgenda.0.title | AI 디지털 전환\ndo.lines.0 | AI 점검으로 수작업 단축").some((h) => h.story === "AX 전환형"), "AI 낱말 둘째가 연계 칸에만");
+  // ⑫만이 아니라 모든 틀 신호에서 뺌(T4 리뷰 T1-R3): 실행과제 이름의 시범·확산 낱말로는 ⑬이 아님, 이 소항목 추진내용에 있으면 ⑬
+  const head = "(과제번호 3-가 · 실행과제 3. 시범 운영 성과의 전국 확산·표준화)";
+  assert.ok(!storyHints([], `${head}\ndo.lines.0 | 점검 업무를 추진했다`).some((h) => h.story === "시범→확산형"), "시범·확산 낱말이 실행과제 머리 줄에만");
+  assert.equal(storyHints([], `${head}\ndo.lines.0 | 시범 운영 결과를 표준화해 전국으로 확산했다`)[0]?.story, "시범→확산형");
+});
+
+test("현장 말 원문이 없는 ④는 후보에 남되(3번째 자리 동점에서도) 보여 주는 순서는 맨 뒤 — 형제 감점으로 다른 틀이 더 낮아도(2026-11-10 T1)", () => {
+  const text = "do.lines.0 | 민원과 간담회 건의를 받아 원인을 찾고 조치·해결했다";
+  assert.deepEqual(hintsOf(text).map((h) => h.story), ["문제·원인별 해결형", "현장 목소리형"], "같은 2점이면 ⑱ 먼저");
+  const sib = hintsOf(text, ["문제·원인별 해결형"]);
+  assert.deepEqual(sib.map((h) => [h.story, h.score]), [["문제·원인별 해결형", 0], ["현장 목소리형", 2]], "형제가 ⑱을 써 0점이어도 원문 없는 ④(2점)보다 앞");
+  const spoken = hintsOf(`do.lines.0 | “측정 결과를 보니 안심이 돼요” 민원·간담회 건의\n${text}`, ["문제·원인별 해결형"]);
+  assert.equal(spoken[0]?.story, "현장 목소리형", "말풍선 원문이 있으면 그대로 앞");
+  // 3번째 자리 동점(T4 리뷰 T1-R1): ④(2점·원문 없음)와 ⑲(2점)가 남은 한 자리를 다투면 후보 고르기는 점수·tieRank 그대로(④가 ⑲보다 앞 번호) — 원문 없음은 보여 주는 순서만 바꿈
+  const third = storyHints([], [text, "do.lines.1 | 2024년 착수, 2025년 확대, 2026년 고도화 로드맵", "do.lines.2 | 위험성 평가로 위험 요인을 찾고 사고 예방·안전 점검·재해 방지"].join("\n"));
+  assert.deepEqual(third.map((h) => [h.story, h.score]), [["위험관리·안전형", 3], ["문제·원인별 해결형", 3], ["현장 목소리형", 2]], "④는 후보에 남고 맨 뒤에 보임(⑲는 빠짐)");
 });

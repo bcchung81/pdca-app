@@ -505,7 +505,6 @@ export function sectionHints(card: Json, prior: PriorPick[], files: ReportFile[]
   const extras = {
     critiques: lens.filter((x) => x.group === "critiques").map((x) => x.text),
     series,
-    survey: lens.filter((x) => x.group === "survey").map((x) => x.text),
   };
   // 주요사업 표 모양 신호는 전년 절을 뺀 카드·첨부 글로만(2026-11-09 — 전년 글 신호가 후보를 켜면 전년복제)
   const o: HintOptions = opts?.track === "mg" ? opts : { ...opts, cardText: hintSource(card, [], files) };

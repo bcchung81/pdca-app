@@ -85,3 +85,24 @@ test("mgStoryHintsFor: 추천 평가내용의 2025 절 글만 보고(다른 평�
   const sib = mgStoryHintsFor(p, { card: { title: "t" }, ctx: { prior, evals: [1] }, siblings: [{ taskNo: "9-1", parts: [{ key: "1.1.가", evalNo: 1, themeNo: 1, mark: "가", title: "", label: "", story: "구분표 중심형", signature: "" }] }] });
   assert.match(sib, /같은 지표 다른 카드의 절 1개가 이미 주 틀로 씀/);
 });
+
+test("mgStoryHintsFor(2026-11-10 T1): 2025 절 글의 전략체계·연도 흐름만으로는 ①·⑥ 후보가 아님, 카드 글에 있으면 후보", () => {
+  const p = reportOutlinePromptsMg().prompts;
+  const sec = (text: string): MgPriorSection => ({ key: `k${text.length}`, evalNo: 1, evalTitle: "", themeNo: 1, themeTitle: "", mark: "가", title: "", markers: [], text, page: null });
+  const prior = [sec("비전·미션 아래 전략목표·전략과제·추진전략 수립\n추진경과 ’23년 기반 → ’24년 확대 → ’25년 정착")];
+  const plain = mgStoryHintsFor(p, { card: { title: "t", do: { lines: ["교육 운영"] } }, ctx: { prior, evals: [1] } });
+  assert.match(plain, /뚜렷한 신호 없음/, "2025 절 글은 틀 신호로 안 셈");
+  const own = mgStoryHintsFor(p, { card: { title: "t", do: { lines: ["비전과 미션을 재정립하고 전략목표·전략과제 체계를 세움"] } }, ctx: { prior, evals: [1] } });
+  assert.match(own, /전략수립형 — 신호/);
+});
+
+test("틀 고르기(경영관리) ⑬~⑮(2026-11-10 T1): 시범·확산(시범 낱말이 있어야) · 위험·예방 · 데이터·경영 반영 낱말", () => {
+  assert.equal(first({ text: "do.lines.0 | ∙ 시범 운영 뒤 표준화해 전사 확산" }), "시범→확산형", "시범 + 확산 낱말 2종");
+  assert.ok(!stories({ text: "do.lines.0 | ∙ 지침으로 표준화해 전사에 정착" }).includes("시범→확산형"), "시범 낱말 없이 확산 낱말 3종은 보조 신호뿐 — 후보 아님(T4 리뷰 T1-R2)");
+  assert.ok(!stories({ text: "do.lines.0 | ∙ 전사 확산" }).includes("시범→확산형"), "확산 낱말 2종뿐");
+  assert.equal(mgStoryHints({ text: "do.lines.0 | ∙ 시범 운영 뒤 표준화해 전사에 정착·확산" })[0]?.score, 4, "시범 + 확산 3종 이상이면 보조 신호 +1");
+  assert.equal(first({ text: "do.lines.0 | ∙ 위험성 평가로 위험 요인을 찾고 사고 예방·안전 점검" }), "위험관리·안전형", "위험 낱말 4종");
+  assert.ok(!stories({ text: "do.lines.0 | ∙ 사고 예방 교육" }).includes("위험관리·안전형"), "위험 낱말 2종뿐");
+  assert.equal(first({ text: "do.lines.0 | ∙ 데이터 수집과 데이터 분석 결과로 의사 결정·제도 개선" }), "데이터 기반 의사결정형");
+  assert.ok(!stories({ text: "do.lines.0 | ∙ 데이터 분석과 통계 공유" }).includes("데이터 기반 의사결정형"), "결정 낱말 없음");
+});

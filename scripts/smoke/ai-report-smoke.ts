@@ -8,6 +8,7 @@
 //   --story <이야기 틀> --pattern <구성 패턴 id(lib/reports/framework-patterns.ts)> --example <2025 절 조각 키(rpt25-biz/…)> --request <요청 글> — --outline 구성안에 넣음
 //   --alts <story:틀,pattern:id,example:키,auto …(쉼표, 2~3개)> — 그 짜임들로 구성안을 동시에 한 번씩(집필 없이 안마다 요약·같은 짜임 표시)
 //   --dry — 위 짜임의 구성안 요청 글 크기·짜임 절 글만(AI 호출 없음, 여러 안이면 안마다)
+//  --outline-only(2026-11-10): --outline에서 구성안만 만들고 멈춤(집필 안 함 — AI 1회). 틀 후보·AI가 고른 틀·구성안 경고를 <HTML>.meta.json에
 //  앱 흐름 그대로(2026-10-21 모델 비교 — scripts/eval/model-compare-run.ts가 부름): --app
 //   「구성안 다시 만들기」(--outline과 같음) → 그 구성안 그대로 승인(판면 자동 줄이기 fitComposition 없음 — 화면에서도 사람이 누를 때만) → 집필(판면 맞추기·자동 고치기 포함, 검증은 서버 writeDraft와 같은 인자)
 //   --app이면 초안 옆에 <HTML>.meta.json도 씀: 앱이 저장할 경고(card_report_drafts.warnings·unknown_numbers와 같은 목록)·구성안 경고(outline_warnings)·틀·판·시간·토큰·모델·요청 글 크기(구성안·집필 1차)
@@ -40,7 +41,7 @@ import { loadLens } from "../../lib/reports/lens-queries.ts";
 import { loadCardBundle, setSelectionSource } from "../../lib/ai/context.ts";
 import { selectionFromDir } from "../lib/select-dir.ts";
 import { relevantRefs } from "../../lib/knowledge/bundle.ts";
-import { type SiblingCard, type SiblingLayout, draftEvidence, evidenceOf, readSection, sectionContext, sectionHints, sectionPrompt, siblingLayout, verifySection } from "../../lib/reports/section.ts";
+import { type SiblingCard, type SiblingLayout, draftEvidence, evidenceOf, readSection, sectionContext, sectionHints, sectionPrompt, siblingLayout, storyHintsOf, verifySection } from "../../lib/reports/section.ts";
 
 // 위치 인자 = 옵션(--…)과 값을 받는 옵션의 값을 뺀 것: 카드 id · HTML 경로 · 첨부 파일…
 const VALUED = new Set(["--sib", "--story", "--pattern", "--example", "--request", "--alts", "--select-dir"]);
@@ -233,6 +234,13 @@ if (process.argv.includes("--outline") || app) {
     usage: oc.usage,
     request: requestSize(outlineSystem(reportOutlinePrompts().prompts), reportOutlineAsk(outlineInput)(files.map((d) => ({ name: d.name, text: d.text })))),
   };
+  if (argv.includes("--outline-only")) {
+    // 구성안만(2026-11-10 T1 — 틀 다양성 실호출을 구성안 1회로 세려고): 요청에 실린 틀 후보(서버와 같은 입력·형제 = 저장된 형제 초안의 틀)와 AI가 고른 틀
+    const hints = storyHintsOf(card.data, files.map((d) => ({ name: d.name, text: d.text })), lens, actuals, 2026, layouts.map((x) => x.story));
+    console.log("틀 후보:", hints.map((h) => `${h.story}(${h.score})`).join(" / ") || "없음", "→ AI:", composition.story, composition.subStory ? `+ ${composition.subStory}` : "");
+    writeFileSync(`${out}.meta.json`, JSON.stringify({ hints: hints.map((h) => ({ story: h.story, score: h.score, why: h.why })), story: composition.story, subStory: composition.subStory ?? "", storyWhy: composition.storyWhy, outline: outlineMeta, sec: outlineSec }, null, 1));
+    process.exit(0);
+  }
 }
 const prompts = reportDraftPrompts().prompts;
 const prompt = sectionPrompt(prompts, card.data, ctx, 2026, files, prior, layouts, lens, actuals);

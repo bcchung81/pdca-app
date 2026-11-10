@@ -1,11 +1,14 @@
 // 경영관리 경평 구성안 「틀 고르기」(결정론, 순수 — 2026-10-12 C5): 주요사업 lib/reports/story-hints.ts와 같은 방식으로 이야기 틀 후보를 구성안 요청에 적어
 // AI가 「섞음」·한두 틀로 몰리지 않게 합니다. 경영관리는 절을 AI가 정하므로 후보는 카드 단위(카드 글 + 숫자 근거로 인정하는 첨부 글 + 추천 평가내용의 2025 절 글)로 3개까지 냅니다.
+// 2026-11-10 T1: 신호에 쓰는 도식 후보 종류는 카드·첨부 글로만 만듦(mgStoryHintsOf) — 요청 글의 도식 후보(2025 같은 평가내용 절까지 봄)를 그대로 쓰면 2025 절의
+// 전략체계·연도 글이 같은 평가내용의 모든 카드에 ①·⑥을 켜 ① 전략수립형이 단독 1순위 10장(AI가 실제로 쓴 절 3개), ⑥이 3후보 20장이었음(주요사업 2026-11-09 P1-2와 같은 문제).
+// 2025 절 글은 ⑦의 「2025 절 구분표」 신호에만 씀. ⑬~⑮ 신호도 이때 더함(2026-11-04에 틀만 더해 후보로 한 번도 안 나왔음).
 // 신호와 문턱은 2025 경영관리 보고서 14개 지표 육안 판정(분석 docs/analysis/2025-경영관리-경영실적보고서-분석.md §8.7·§8.8 — 절 223단위, 적재 조각 글과 맞춘 220단위)과
 // 카드 43장(260904판)에서 신호가 잡히는 빈도로 맞춤 — 문턱별 2025 적중률은 각 신호 주석. ② 배경·내용·성과형은 기본형이라 문 신호가 없어 후보로 내지 않음(후보가 맞지 않으면 기본형).
 // 요청 글은 resources/prompts/report-outline-mg/request.md storyHints.*
 
 import { inspectionCardText } from "../ai/inspect.ts";
-import type { DiagramHint } from "./diagram-hints.ts";
+import { type DiagramHint, diagramHints } from "./diagram-hints.ts";
 import { MG_FRAMEWORKS, MG_MAIN_STORIES, type MgMainStory } from "./frameworks-mg.ts";
 import { shapeName } from "./frameworks.ts";
 import type { MgPriorSection, MgSibling } from "./mg-outline.ts";
@@ -62,6 +65,13 @@ const W = {
   ax: /(?<![A-Za-z])AI(?![A-Za-z])|인공지능|자동\s?판독|챗봇|RPA|머신\s?러닝|딥\s?러닝|자동화|디지털\s?전환|생성형/g,
   // ⑫ 업무 절차가 바뀐 낱말(주요사업 story-hints.ts W.proc와 같음 — AI 낱말과 함께 있어야 문 신호)
   proc: /수작업|수기|육안|절차\s?(?:단축|간소화|개선|자동화)|프로세스|업무\s?(?:효율|시간|처리|부담|자동화)|소요\s?(?:시간|기간)|처리\s?(?:시간|기간)|단축|인력\s?(?:절감|투입)|자동\s?(?:탐지|분석|분류|추출|검출|생성|점검)/g,
+  // ⑬~⑮(2026-11-10 T1 — 주요사업 story-hints.ts W.pilot·spread·risk·data·decide를 경영관리 말로: 지역 대신 전사, 위험성 평가·경영 반영·제도 개선을 더함).
+  // 경영관리 카드 47장(261103판)에서 걸리는 장수는 각 신호 주석. 2025 경영관리 보고서에는 ⑬~⑮ 예시가 없어 문턱은 주요사업과 같은 꼴
+  pilot: /시범|실증|테스트베드|파일럿/g,
+  spread: /확산|전사|표준화|지침화|매뉴얼화|전면\s?(?:시행|적용|도입)|본격\s?(?:시행|운영)|정착|확대\s?(?:적용|운영|시행)/g,
+  risk: /위험\s?(?:요인|요소|지역|성|등급|현장)|위험성\s?평가|사고|재해|예방|안전\s?(?:점검|관리|사고|진단|수칙|확보)|작업\s?중지|무사고|추락|재발\s?방지/g,
+  data: /데이터\s?(?:분석|수집|연계|기반|축적|활용|구축|플랫폼)|빅\s?데이터|DB|통계|대시보드|지표\s?분석|모니터링\s?(?:체계|시스템)/g,
+  decide: /정책\s?(?:반영|결정|수립|활용|근거)|의사\s?결정|경영\s?(?:반영|의사결정)|기준\s?(?:마련|개선|정립|수립)|배분|우선\s?순위|선정\s?기준|제도\s?개선/g,
 };
 /** 「지침·가이드라인·권고(안)·기준 (100%) 준수·이행」 — 2025 절 8개에서 잡혀 ⑪ 2단위 모두(나머지 6은 다른 틀), 카드 3/43(3-1·3-3·11-2). 낱말만 따로 보면 카드 8/43이라 이어 쓴 것만 */
 const COMPLY = /(?:지침|가이드라인|권고안?|기준)\s?(?:\d+%\s?)?(?:준수|이행)/;
@@ -108,6 +118,22 @@ const SIGNALS: Partial<Record<MgMainStory, Signal[]>> = {
   생애주기형: [{ test: many(W.life, 3), w: 3, gate: true, why: say("임신·육아·퇴직 등 생애 단계 낱말 3개 이상") }],
   "준수 점검형": [{ test: (c) => c.comply, w: 3, gate: true, why: say("지침·가이드라인 준수·이행") }],
   "AX 전환형": [{ test: (c) => many(W.ax, 2)(c) && many(W.proc, 2)(c), w: 3, gate: true, why: say("AI·자동화 낱말과 업무 절차 변화(수작업·소요 시간·단축 등)") }],
+  // ⑬ 시범 낱말 + 확산 낱말 2종 1장(13-3). 확산·전사·정착 낱말 3종 이상은 보조 신호(+1)만 — 「전사·정착·표준화」는 경영관리 카드에 흔해 시범 재료 없는 카드 4장(1-2·5-3·9-3·13-2)에
+  // 「시범 운영 ▶ 검증 결과」로 여는 틀을 권했음(T4 리뷰 T1-R2). 「우선 적용·1단계·단계적 확대」 같은 시범 비슷한 낱말도 그 4장에는 없음(2026-11-10 실측)
+  "시범→확산형": [
+    { test: (c) => c.words(W.pilot) >= 1 && c.words(W.spread) >= 2, w: 3, gate: true, why: say("시범·실증 낱말과 확산·표준화·정착 낱말") },
+    { test: many(W.spread, 3), w: 1, why: say("전사 확산·표준화·정착 낱말 3종 이상") },
+  ],
+  // ⑭ 위험 낱말 4종 이상 4장, 3종 4장(AI가 ⑭를 주 틀로 쓴 2-2·4-2 포함)
+  "위험관리·안전형": [
+    { test: many(W.risk, 4), w: 3, gate: true, why: say("위험 요인·사고·예방·안전 점검 낱말 4종 이상") },
+    { test: (c) => c.words(W.risk) === 3, w: 2, gate: true, why: say("위험·예방·안전 낱말 3종") },
+  ],
+  // ⑮ 데이터 2종 + 결정 2종 1장, 데이터 2종 + 결정 1종 3장(AI가 ⑮를 보조 틀로 쓴 6-2 포함)
+  "데이터 기반 의사결정형": [
+    { test: (c) => c.words(W.data) >= 2 && c.words(W.decide) >= 2, w: 3, gate: true, why: say("데이터 수집·분석 낱말과 경영 반영·기준 마련 낱말") },
+    { test: (c) => c.words(W.data) >= 2 && c.words(W.decide) === 1, w: 2, gate: true, why: say("데이터 분석 낱말과 결정 낱말 하나") },
+  ],
 };
 
 /** 후보가 되는 최소 점수 */
@@ -175,12 +201,22 @@ export function mgStoryHintsPrompt(p: PromptSet, hints: MgStoryHint[]): string {
   return fillFrom(p, "request", "storyHints", { items });
 }
 
-/**
- * 구성안 요청의 「틀 고르기」 글 한 덩이(callReportOutlineMg가 task 뒤에 붙임 — 절별 다시 짜기에는 안 붙임): 카드·숫자 근거 첨부 글, 도식 후보,
- * 추천 평가내용(ctx.evals)의 2025 절 글, 같은 지표 다른 카드 구성안 절의 주 틀
- */
-export function mgStoryHintsFor(p: PromptSet, x: { card: Json; ctx: { prior: MgPriorSection[]; evals: number[] }; files?: Array<{ text: string; numberEvidence?: boolean }>; hints?: DiagramHint[]; siblings?: MgSibling[] }): string {
+/** 틀 신호용 도식 후보 — 카드·숫자 근거 첨부 글로만(2025 같은 평가내용 절 글은 넣지 않음 — 머리 주석 2026-11-10). 글은 서버 sectionHints의 hintSource와 같은 모양(카드 칸 풀이 + 첨부) */
+export function mgCardKinds(card: Json, files: Array<{ text: string; numberEvidence?: boolean }> = []): DiagramHint[] {
+  return diagramHints([inspectionCardText(card), ...files.filter((f) => f.numberEvidence !== false).map((f) => f.text)].join("\n"), {}, { track: "mg" });
+}
+
+/** 카드 하나의 틀 후보(구성안 요청·집계 공용): 카드·첨부 글과 그 글로 만든 도식 후보, 추천 평가내용(ctx.evals)의 2025 절 글(⑦ 신호만), 형제 절의 주 틀 */
+export function mgStoryHintsOf(x: { card: Json; ctx: { prior: MgPriorSection[]; evals: number[] }; files?: Array<{ text: string; numberEvidence?: boolean }>; siblingStories?: string[] }): MgStoryHint[] {
   const prior = x.ctx.prior.filter((s) => x.ctx.evals.includes(s.evalNo)).map((s) => s.text);
+  return mgStoryHints({ text: mgHintText(x.card, x.files ?? []), hints: mgCardKinds(x.card, x.files ?? []), prior, siblingStories: x.siblingStories });
+}
+
+/**
+ * 구성안 요청의 「틀 고르기」 글 한 덩이(callReportOutlineMg가 task 뒤에 붙임 — 절별 다시 짜기에는 안 붙임): 카드·숫자 근거 첨부 글과 그 글의 도식 후보,
+ * 추천 평가내용(ctx.evals)의 2025 절 글(⑦ 신호), 같은 지표 다른 카드 구성안 절의 주 틀. 요청 글의 도식 후보(2025 절 글까지 봄)는 받지 않음(2026-11-10)
+ */
+export function mgStoryHintsFor(p: PromptSet, x: { card: Json; ctx: { prior: MgPriorSection[]; evals: number[] }; files?: Array<{ text: string; numberEvidence?: boolean }>; siblings?: MgSibling[] }): string {
   const siblingStories = (x.siblings ?? []).flatMap((sb) => sb.parts.map((q) => q.story));
-  return mgStoryHintsPrompt(p, mgStoryHints({ text: mgHintText(x.card, x.files ?? []), hints: x.hints, prior, siblingStories }));
+  return mgStoryHintsPrompt(p, mgStoryHintsOf({ card: x.card, ctx: x.ctx, files: x.files, siblingStories }));
 }

@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { inspectionCardText } from "../ai/inspect.ts";
 import type { Block } from "./blocks.ts";
 import { diagramHints, isOwnKind, orgNames, kindUsage, ownKindsIn, repeatedKinds } from "./diagram-hints.ts";
+import { sectionHints } from "./section.ts";
 import { NO_SEED_CARDS } from "../testing/originals.ts";
 
 
@@ -109,11 +110,12 @@ test("VS 대립 신호: 찬반·입장 차이·상충·대립·VS가 있으면 c
   assert.equal(first("입장 차이가 크다"), "cards:vs");
 });
 
-test("Q&A 신호: 「왜/어떻게 …?」 질문 글이 있으면 qa(질문 글 우선), 질문 글이 없고 extras.survey만 있어도 qa", () => {
+test("Q&A 신호: 「왜/어떻게 …?」 질문 글이 있을 때만 qa — '25 실사 질의(평가 근거)만으로는 후보가 아님(2026-11-10 T1 — 모든 카드에 실려 Q&A 상자가 몰렸음)", () => {
   assert.equal(first("왜 이 사업을 하는가? 국민 편익을 위해서다."), "qa");
-  assert.deepEqual(diagramHints("평범한 문장뿐"), [], "질문 글·survey 둘 다 없으면 후보 없음");
-  const hints = diagramHints("평범한 문장뿐", { survey: ["평가위원 질의 하나", "질의 둘"] });
-  assert.ok(hints.some((h) => h.kind === "qa" && h.why.includes("실사 질의")), hints.map((h) => h.kind).join(","));
+  assert.deepEqual(diagramHints("평범한 문장뿐"), [], "질문 글이 없으면 후보 없음");
+  const survey = { group: "survey" as const, key: "qa25", title: "'25 실사 질의", where: "", text: "Q8 오판독 대비책은? 왜 이 방식을 택했나요?" };
+  const kinds = sectionHints({ title: "평범한 과제", do: { lines: ["평범한 문장뿐"] } }, [], [], [survey], { today: "", kpi: [], monthly: [] }, 2026).map((h) => h.kind);
+  assert.ok(!kinds.includes("qa"), kinds.join(","));
 });
 
 test("table·cards:vs·qa는 이 과제만의 요소(own)가 아님 — 기본 도식", () => {

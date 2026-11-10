@@ -135,7 +135,7 @@ const inspection = followupBasis(ins ? { period: ins.period, status: ins.status,
 // 서버 callReportOutlineMg와 같은 순서: 분량 목표 · 닫기 관례 · 절 성과 재료 · 수치 묶음 재료(2026-10-29 — 연결 조각 표도 서버와 같은 kb의 relevantRefs)
 const outcomes = ledgerOutcomeItems(card.data, cleanLine, Infinity);
 const volumeClose = [mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, prior, indicator.name), mgOutcomePrompt(outline, outcomes), mgBundlePrompt(outline, [...cardBundles(card.data, actuals), ...linkedBundles(relevantRefs(kb))])].filter(Boolean).join("\n\n");
-const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files, hints, siblings });
+const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files, siblings });
 // 갈래 축 사전(서버 callReportOutlineMg와 같은 절 — 전체 구성안만, 2026-10-13)
 const splitHead = splitHeadPrompt(outline, "mg");
 const extra = [mgDiagramPrompt(outline, hints), mgSiblingsPrompt(outline, siblings), outlineInspectionPrompt(outline, inspection), storyHints, volumeClose, splitHead].filter(Boolean).join("\n\n");
@@ -362,7 +362,9 @@ const data = addMgDataBlocks(cleaned.composition, ctx.pages);
 const composition = data.composition;
 // 서버 runReportOutlineMg가 저장하는 구성안 경고와 같은 목록
 const outlineWarnings = [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))];
-console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}`), materials: composition.materials.length, warnings: outlineWarnings }, null, 1));
+console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}${b.variant ? `:${b.variant}` : ""}`), materials: composition.materials.length, warnings: outlineWarnings }, null, 1));
+// 구성안만 돌릴 때도 구성안 JSON을 남김(2026-11-10 T1 — 모양 비교용, 저장 안 함)
+if (!withDraft && args[1]) writeFileSync(`${args[1]}.outline.json`, JSON.stringify(composition, null, 1));
 if (withDraft) {
   // 집필(서버 writeMgDraft와 같은 숫자 근거: 카드·첨부·실사 답변 + 그 지표 2025 보고서 전 장·핵심공통항목)
   const t1 = Date.now();

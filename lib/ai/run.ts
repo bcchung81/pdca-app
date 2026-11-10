@@ -576,7 +576,7 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
       // 갈래 축 사전(카드 하나에 축 하나 — 전체 구성안만, 절 다시 짜기는 part.split 줄로 카드 축을 알림, 2026-10-13)
       input.part ? "" : splitHeadPrompt(prompts, "mg"),
       // 이야기 틀 후보(카드 단위 3개 — lib/reports/story-hints-mg.ts, 2026-10-12 C5) — 전체 구성안만
-      input.part ? "" : mgStoryHintsFor(prompts, { card: input.card, ctx: input.ctx, files, hints: input.hints, siblings: input.siblings }),
+      input.part ? "" : mgStoryHintsFor(prompts, { card: input.card, ctx: input.ctx, files, siblings: input.siblings }),
       // 분량 목표(배정 쪽 — 전체 구성안만)·이 지표의 닫기 관례(2026-10-12 사용자 결정 D1·D2)
       input.part ? "" : mgVolumePrompt(prompts, input.ctx.pages),
       mgClosePrompt(prompts, input.ctx.prior, input.ctx.indicator),

@@ -104,8 +104,12 @@ const W = {
  * (2026-11-09 — 예전에는 점 갈래 「∙ (키워드)」만 세어 「❶ …」·「① (…)」 표지 카드를 놓침)
  */
 const HEAD = /^(do|plan)\.lines\.\d+ \| \s*(?:([①-⑳❶-❿➀-➓])|([가나다라마바사아자차카타파하])\.|(\d)\)|[∙•·○])\s?(?:\(([^)]{2,20})\))?/gm;
-/** 양식 글 줄(신호로 안 셈): 개요 칸(☑ 체크박스)·지표 범주·ESG 칸·담당자·부서, `## ` 머리 줄 */
-const FORM_LINE = /^(?:(?:overview\.cells\.\d+|kpi\.categoriesText|strategy\.esgText|@person|deptText) \||## )/;
+/**
+ * 양식 글 줄(20개 틀 신호 모두에서 안 셈): 개요 칸(☑ 체크박스)·지표 범주·ESG 칸·담당자·부서, `## ` 머리 줄,
+ * 실행과제 머리 「(과제번호 … 실행과제 N. …)」·국정과제 연계·AI 연계 칸(2026-11-10 T1 — 형제 소항목이 같은 실행과제 이름 낱말(「AI」·「확산」 등)로 함께 같은 틀에 걸렸고,
+ * AI 연계 칸은 AX 붙임과 같은 곁가지 글). 신호 글에서만 빼고 요청 글의 카드 본문에는 그대로 실림
+ */
+const FORM_LINE = /^(?:(?:overview\.cells\.\d+|kpi\.categoriesText|strategy\.(?:esgText|ai\.text|nationalAgenda\.\d+\.title)|@person|deptText) \||## |\(과제번호 )/;
 /** 칸 이름(양식 — 거의 모든 카드에 있어 ⑱이 50/56장에 걸렸음) */
 const FORM_LABEL = /\(장애 또는 리스크 요인\)|\(모니터링 및 해결 방안\)/g;
 /** 제목·계획·추진내용 줄(⑫ 핵심 줄) */
@@ -176,11 +180,13 @@ const SIGNALS: Record<MainStory, Signal[]> = {
     { test: many(W.analysis, 3), w: 3, gate: true, why: "현황분석·조사·진단 낱말 3종 이상" },
     { test: has("table"), w: 1, why: "행·열 수치(분석 결과)" },
   ],
-  // ⑫(2026-10-13): AI·자동화 낱말 서로 다른 것 2개 이상 + 업무 절차가 바뀐 낱말 2개 이상, 2026-11-09부터 제목·계획·추진내용 줄에 AI 낱말 1개 이상(AX 연계 붙임만으로는 안 열림)
+  // ⑫(2026-10-13): AI·자동화 낱말 서로 다른 것 2개 이상 + 업무 절차가 바뀐 낱말 2개 이상, 2026-11-09부터 제목·계획·추진내용 줄에 AI 낱말 1개 이상(AX 연계 붙임만으로는 안 열림),
+  // 2026-11-10 T1부터 같은 핵심 줄에 절차 낱말도 1개 이상(성과 줄의 「업무시간 단축」만으로는 안 열림 — 운영 일괄에서 ⑫가 단독 1순위 10장, AI가 따른 것 2장)
   "AX 전환형": [
-    { test: (c) => c.core(W.ax) >= 1 && c.words(W.ax) >= 2 && c.words(W.proc) >= 2, w: 3, gate: true, why: "AI·자동화 낱말과 업무 절차 변화(수작업·소요 시간·단축 등)" },
-    // 절차 변화 낱말이 4개 이상이면 뚜렷한 전환 과제(운영 카드 7장 — 1-가 안테나 자동판독은 이것 없이 3점이라 5·4·4점 틀에 밀려 후보 3개 밖이었음, 2026-10-13 실측)
-    { test: many(W.proc, 4), w: 2, why: "업무 절차 변화 낱말 4개 이상" },
+    { test: (c) => c.core(W.ax) >= 1 && c.core(W.proc) >= 1 && c.words(W.ax) >= 2 && c.words(W.proc) >= 2, w: 3, gate: true, why: "AI·자동화 낱말과 업무 절차 변화(수작업·소요 시간·단축 등)" },
+    // 절차 변화 낱말이 4개 이상이면 뚜렷한 전환 과제(운영 카드 7장 — 1-가 안테나 자동판독은 이것 없이 3점이라 5·4·4점 틀에 밀려 후보 3개 밖이었음, 2026-10-13 실측).
+    // 2026-11-10 T1: 2점 → 1점(다른 틀의 「N개 이상」 보조 신호와 같은 무게 — 2점이면 ⑫가 문 신호 하나로 5~7점이 돼 다른 틀 위에 늘 섬)
+    { test: many(W.proc, 4), w: 1, why: "업무 절차 변화 낱말 4개 이상" },
     { test: has("compare:panels"), w: 1, why: "기존과 새 절차가 한 줄에 든 글" },
     { test: many(W.axm, 1), w: 1, why: "PoC·기준선·절감률·적용률 낱말" },
   ],
@@ -222,9 +228,15 @@ const SIGNALS: Record<MainStory, Signal[]> = {
   ],
 };
 
-/** 동점일 때 먼저 둘 기본형 ★(교육 자료 분류표 — ⑨ ⑱ ① ⑰ ⑩), 나머지는 틀 번호 순 */
+/** 기본형 ★(교육 자료 분류표 — ⑨ ⑱ ① ⑰ ⑩) */
 const STAR_FIRST: readonly MainStory[] = ["기존→개선형", "문제·원인별 해결형", "단계 전개형", "핵심키워드 연결형", "구분표 중심형"];
+/** 후보 3개를 고를 때 동점이면 기본형 ★ 먼저, 나머지는 틀 번호 순 */
 const tieRank = (s: MainStory) => (STAR_FIRST.includes(s) ? STAR_FIRST.indexOf(s) : STAR_FIRST.length + MAIN_STORIES.indexOf(s));
+/**
+ * 고른 후보 안에서 보여 주는 순서는 동점이면 ★이 아닌 틀 먼저(2026-11-10 T1): ★은 프롬프트 「질문 → 틀」 표로 AI가 이미 먼저 봄 —
+ * 운영 일괄 56장에서 AI가 후보 밖에서 고른 22장 중 17장이 ★, 동점으로 1순위가 된 ⑨ 7장 중 AI가 따른 것은 1장. 후보에 드는 틀(경계 동점)은 tieRank 그대로
+ */
+const showRank = (s: MainStory) => (STAR_FIRST.includes(s) ? MAIN_STORIES.length + STAR_FIRST.indexOf(s) : MAIN_STORIES.indexOf(s));
 
 /** 신호를 볼 값: 양식 글(개요 칸·지표 범주·ESG·`## ` 머리 줄·칸 이름)을 뺀 본문으로 셈 */
 function contextOf(hints: DiagramHint[], text: string): Ctx {
@@ -277,12 +289,14 @@ export function openerOf(story: string): string {
 
 /**
  * 도식 후보(diagramHints)·글·형제 초안의 주 틀 → 이야기 틀 후보(점수 순, 3개까지). 문 신호가 하나도 없거나 점수가 모자라면 후보가 아님.
- * 형제가 이미 주 틀로 쓴 틀은 형제 하나에 SIBLING_COST씩 깎아 뒤로 미룸(빼지는 않음 — 그래도 가장 맞으면 앞에 남음). 동점이면 기본형 ★ 먼저(tieRank)
+ * 형제가 이미 주 틀로 쓴 틀은 형제 하나에 SIBLING_COST씩 깎아 뒤로 미룸(빼지는 않음 — 그래도 가장 맞으면 앞에 남음). 동점이면 후보에 넣을 때는 기본형 ★ 먼저(tieRank), 보여 주는 순서는 ★이 아닌 틀 먼저(showRank)
  * hints·text는 전년 절을 뺀 카드 본문(+ 숫자 근거 첨부)과 그 글로 만든 도식 후보 — 서버는 section.ts storyHintsOf로 넘김(2026-11-09 P1-2)
  */
 export function storyHints(hints: DiagramHint[], text: string, siblingStories: string[] = []): StoryHint[] {
   const ctx = contextOf(hints, text);
   const out: StoryHint[] = [];
+  /** 그 틀을 서게 하는 이 과제만의 요소 근거가 없는 후보(lack — ④ 말풍선 원문 없음) */
+  const lacking = new Set<string>();
   MAIN_STORIES.forEach((story) => {
     const signals = SIGNALS[story];
     let score = 0;
@@ -293,13 +307,22 @@ export function storyHints(hints: DiagramHint[], text: string, siblingStories: s
         score += s.w;
         why.push(s.why);
         if (s.gate) gated = true;
-      } else if (s.lack) why.push(s.lack);
+      } else if (s.lack) {
+        why.push(s.lack);
+        lacking.add(story);
+      }
     }
     if (!gated || score < MIN_SCORE) return;
     const siblings = siblingStories.filter((x) => x === story).length;
     out.push({ story, why: why.join(" · "), opener: openerOf(story), siblings, score: score - siblings * SIBLING_COST });
   });
-  return out.sort((a, b) => b.score - a.score || tieRank(a.story) - tieRank(b.story)).slice(0, MAX_HINTS);
+  // 요소 근거가 없는 후보는 후보 고르기(첫 정렬 — 점수·tieRank)는 그대로 두고 보여 주는 순서에서만 맨 뒤(2026-11-10 T1 — 형제 감점으로 다른 틀이 0점 아래로 내려가면
+  // ④가 「원문 없음」을 단 채 1순위가 됐음, 운영 「다시 만들기」 조건 주요사업 56장 중 7장. AI는 원문 없는 ④를 버리게 돼 있어 1순위 자리가 헛됨)
+  const last = (h: StoryHint) => (lacking.has(h.story) ? 1 : 0);
+  return out
+    .sort((a, b) => b.score - a.score || tieRank(a.story) - tieRank(b.story))
+    .slice(0, MAX_HINTS)
+    .sort((a, b) => last(a) - last(b) || b.score - a.score || showRank(a.story) - showRank(b.story));
 }
 
 /** 요청 글 「틀 고르기」(report-outline/request.md storyHints·storyHints.item·storyHints.none·storyHints.siblings) */

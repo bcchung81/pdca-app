@@ -27,8 +27,6 @@ export interface HintExtras {
   critiques?: string[];
   /** 막대로 그릴 수 있는 같은 지표의 시점별 값(예: 「AI 활용 고위험 작업 대체 건수: ’25년 30,706건 → ’26년 목표 45,000건」) */
   series?: string[];
-  /** 이 과제·사업의 '25 실사 질의(평가 근거 survey) — 평가위원이 물을 질문에 미리 답하는 Q&A 상자(질문 고르기 참고) */
-  survey?: string[];
 }
 
 /** 도식 후보 옵션 — track이 "mg"(경영관리)일 때만 경영관리 보고서의 짜임 신호를 더 켬. 없으면 주요사업 결과 그대로 */
@@ -164,11 +162,10 @@ export function diagramHints(fullText: string, extras: HintExtras = {}, opts: Hi
   if (strat.has("전략체계") || ((strat.has("전략목표") || strat.has("경영목표")) && strat.size >= 2)) push("strategy", `${[...strat].join("·")} — 전략체계도`, 3);
   const cycle = body.match(/PDCA|P-D-C-A|선순환\s?체계|순환\s?구조|환류\s?체계/);
   if (cycle) push("pdca", `「${cycle[0]}」 — PDCA 순환(계획 → 실행 → 점검 → 환류)`, 3);
-  // Q&A: 「왜·어떻게 …?」 질문 글, 또는 '25 실사 질의(평가위원이 물을 질문에 미리 답함 — 질문 고르기 참고로만)
+  // Q&A: 「왜·어떻게 …?」 질문 글. '25 실사 질의만으로는 후보를 내지 않음(2026-11-10 T1 — 실사 질의는 모든 카드에 있어 후보가 103/103장에 실렸고,
+  // 운영 일괄 초안 Q&A 상자가 주요사업 19/56·경영관리 9/47장 — 2025 주요사업 최종본은 질문 글이 든 소항목 3/62. 실사 질의는 평가 근거로 요청에 그대로 실림)
   const asked = all(text, /(?:왜|어떻게)\s?[^?\n]{2,40}\?/g);
-  const survey = (extras.survey ?? []).filter((x) => x.trim());
   if (asked.length) push("qa", `질문 글 ${asked.length}개(${asked[0].slice(0, 20)}…) — Q&A 상자`, 3);
-  else if (survey.length) push("qa", `'25 실사 질의 ${survey.length}건 — 평가위원이 물을 질문에 미리 답하는 Q&A 상자`, 1.5);
 
   // 경영관리 전용 신호(2025 경영관리 보고서 분석 §8.4·§8.5·§8.9 — 모두 기본 도식, 이 과제만의 요소 아님)
   if (mg) {
