@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { allowedEmailDomains, otpPolicy, requestOrigin, safeNext } from "../../lib/auth/redirect.ts";
+import { isNotRegisteredError, isValidEmail, requestOrigin, safeNext } from "../../lib/auth/redirect.ts";
 import { createClient } from "../../lib/supabase/server.ts";
 
 export type LoginState = { status: "idle" } | { status: "sent"; email: string } | { status: "error"; message: string; email?: string };
@@ -15,20 +15,15 @@ async function siteOrigin(): Promise<string> {
 export async function sendMagicLink(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const next = safeNext(formData.get("next"));
-  const policy = otpPolicy(email);
-  if (!policy.valid) return { status: "error", email, message: "메일 주소를 확인해 주세요." };
+  if (!isValidEmail(email)) return { status: "error", email, message: "메일 주소를 확인해 주세요." };
   const supabase = await createClient();
+  // 계정은 만들지 않음(「사용자」 화면·pnpm db:user로만 — Supabase 가입은 꺼 둠, 2026-11-10 보안 점검 T4 H1)
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: `${await siteOrigin()}/auth/confirm?next=${encodeURIComponent(next)}`, shouldCreateUser: policy.createUser },
+    options: { emailRedirectTo: `${await siteOrigin()}/auth/confirm?next=${encodeURIComponent(next)}`, shouldCreateUser: false },
   });
-  if (error && !policy.createUser && /signups? not allowed|user not found/i.test(error.message)) {
-    return {
-      status: "error",
-      email,
-      message: `등록된 계정이 아닙니다. 기관 메일(@${allowedEmailDomains().join(", @")})로 로그인하거나 관리자에게 계정 등록을 요청해 주세요.`,
-    };
-  }
+  // 등록 안 된 주소도 보낸 것과 같은 답 — 계정이 있는지 알려 주지 않음(T4 L1). 안내는 보낸 화면 문구가 함께 함(login-form.tsx)
+  if (error && isNotRegisteredError(error)) return { status: "sent", email };
   if (error) {
     // 운영은 Supabase 사용자 지정 SMTP(Gmail, 시간당 60통)로 보냅니다 — docs/ops/운영-전환.md §2. 한도를 넘으면 429
     const message =

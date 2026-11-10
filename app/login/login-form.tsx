@@ -11,9 +11,10 @@ export function LoginForm({ next, domain }: { next: string; domain: string }) {
     return (
       <div className="flex flex-col gap-2 text-sm leading-6 text-ink" role="status">
         <p>
-          <strong className="break-all">{state.email}</strong>으로 로그인 메일을 보냈습니다.
+          <strong className="break-all">{state.email}</strong> 계정이 등록돼 있으면 로그인 메일이 갑니다.
         </p>
         <p className="text-ink/80">메일의 링크를 이 브라우저에서 열고, 나오는 화면에서 「로그인 계속」을 누르세요.</p>
+        <p className="text-ink/80">몇 분 안에 메일이 오지 않으면 주소를 확인하거나 성과관리팀에 계정 등록을 요청해 주세요.</p>
       </div>
     );
   }

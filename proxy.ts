@@ -4,6 +4,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { supabaseEnv } from "./lib/supabase/env.ts";
+import { AUTH_COOKIE_OPTIONS } from "./lib/supabase/cookie-options.ts";
 import { isPublicPath } from "./lib/auth/public-paths.ts";
 import { authCallbackSearch } from "./lib/auth/redirect.ts";
 
@@ -12,6 +13,8 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
   const { url, publishableKey } = supabaseEnv();
   const supabase = createServerClient(url, publishableKey, {
+    // 세션 쿠키는 httpOnly(스크립트가 못 읽음 — lib/supabase/cookie-options.ts)
+    cookieOptions: AUTH_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return request.cookies.getAll();

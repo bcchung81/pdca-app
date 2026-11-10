@@ -4,6 +4,7 @@ import { ChunkImages } from "../../../components/knowledge/chunk-images";
 import { ChunkText } from "../../../components/knowledge/chunk-text";
 import { type FilterGroup, KnowledgeFilter } from "../../../components/knowledge/knowledge-filter";
 import { Empty, LinkTabs, PageHeader, Panel, Peek, Screen, T, Tag, Toolbar } from "../../../components/ui/kit";
+import { isKnowledgeMember } from "../../../lib/auth/access.ts";
 import { requireUser } from "../../../lib/auth/dal.ts";
 import { BUSINESSES } from "../../../lib/knowledge/dictionaries.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
@@ -57,7 +58,8 @@ interface LinkedCard {
 
 /**
  * 유형·지표 집계용 조각 목록 — 한 번에 1,000행까지만 돌아오므로(PostgREST 기본 한도) 모자랄 때까지 이어서 읽음.
- * 화면을 열 때마다 전 조각(약 5천 행)을 훑지 않게 공통 지식 조각 캐시(5분, 올리기·지우기 때 비움 — lib/knowledge/chunk-cache.ts)에 둠(개선 계획 P2-7)
+ * 화면을 열 때마다 전 조각(약 5천 행)을 훑지 않게 공통 지식 조각 캐시(5분, 올리기·지우기 때 비움 — lib/knowledge/chunk-cache.ts)에 둠(개선 계획 P2-7).
+ * 구성원(isKnowledgeMember)일 때만 부름 — 캐시는 서버 인스턴스의 모든 요청이 함께 써서, 비구성원의 RLS 빈 결과가 들어가면 남의 집계까지 비었음(2026-11-10 T3 리뷰 T4-R1)
  */
 async function facetRows(supabase: Awaited<ReturnType<typeof createClient>>): Promise<FacetRow[]> {
   const hit = cachedChunks<FacetRow>("facets");
@@ -94,9 +96,19 @@ async function myScopeKeys(supabase: Awaited<ReturnType<typeof createClient>>): 
   return linkedChunkKeys(rows);
 }
 
-/** 공통 지식(로그인 전원 — 부서 담당자는 읽기 전용, 성과관리팀 연결 링크만 다름): 적재한 경영평가 문서 조각을 검색·열람 — AI 작성지원·점검이 쓰는 근거와 같은 자료 */
+/**
+ * 공통 지식(성과관리팀·관리자와 팀이 지정된 부서 담당자 — DB private.is_member(), 부서 담당자는 읽기 전용, 성과관리팀 연결 링크만 다름): 적재한 경영평가 문서 조각을 검색·열람 — AI 작성지원·점검이 쓰는 근거와 같은 자료.
+ * 팀이 없는 부서 담당자는 RLS가 0행을 돌려주므로 조회·캐시 없이 안내만(빈 화면 대신 이유를 알림)
+ */
 export default async function KnowledgePage({ searchParams }: PageProps<"/knowledge">) {
   const me = await requireUser("/knowledge");
+  if (!isKnowledgeMember(me)) {
+    return (
+      <Screen header={<PageHeader title="공통 지식" />}>
+        <Empty title="팀이 지정되면 공통 지식을 볼 수 있습니다">성과관리팀에 팀 지정을 요청해 주세요.</Empty>
+      </Screen>
+    );
+  }
   const staff = me.role !== "dept_user";
   const sp = await searchParams;
   const q = one(sp.q).trim().slice(0, 100);

@@ -1,6 +1,28 @@
 import type { NextConfig } from "next";
 
+/**
+ * 모든 응답에 붙이는 보안 머리글(2026-11-10 보안 점검 T4 — 시험 lib/auth/security-headers.test.ts).
+ *  · 액자(frame): 같은 출처만 — 「한글(화면 그대로)」이 같은 출처 숨은 iframe(/cards/<uid>/hwpx-copy·/reports/cards/<uid>/html?for=hwpx)을 씀. 남의 사이트가 앱을 액자로 감싸 단추를 누르게 하는 것(클릭재킹) 방지
+ *  · CSP는 화면을 깨지 않는 지시어만 강제(frame-ancestors·base-uri·object-src). 스크립트·스타일 출처 제한은 화면 확인 뒤(보고서 .team/T4-report.md 제안)
+ *  · Referrer-Policy: 같은 출처에는 전체 주소를 보냄 — 부서 화면 보기 쓰기 막기(lib/auth/preview.ts previewWriteBlocked)가 Referer의 ?team=을 읽음. 다른 사이트에는 출처만
+ *  · HSTS는 Vercel이 붙임(운영 응답에서 확인) — 겹치지 않게 여기서는 안 붙임
+ */
+const SECURITY_HEADERS = [
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Content-Security-Policy", value: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), browsing-topics=()" },
+];
+
 const nextConfig: NextConfig = {
+  // 응답에 Next.js 판 정보를 싣지 않음(공격 표면 안내 줄이기)
+  poweredByHeader: false,
+  // 앱은 next/image를 쓰지 않음(<img> + 서명 주소). 이미지 최적화 경로(/_next/image)를 닫아 그 경로의 취약점(SSRF·SVG 처리 등)이 닿지 않게 — 켜면 404 대신 최적화기가 돎
+  images: { unoptimized: true },
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+  },
   // kordoc(한글·PDF 읽기, HWPX 만들기)은 선택 의존성(OCR 등)을 동적으로 불러서 번들하지 않고 Node가 그대로 불러오게
   serverExternalPackages: ["kordoc"],
   // 서버가 실행 중에 읽는 파일 — Vercel 배포본에 함께 싣습니다.

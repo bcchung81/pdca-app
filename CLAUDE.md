@@ -233,7 +233,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 
 ### 로그인(Supabase 매직링크)
 
-- 기관 메일(`ALLOWED_EMAIL_DOMAINS`)은 첫 로그인에 `dept_user`·부서 미지정으로 생성, 그 밖은 관리자가 만든 계정만(`otpPolicy`). 사용 중지(`profiles.active = false`)는 `requireUser`→`/login?blocked=1`·DB `my_role()`·auth ban(`setUserActive`)
+- 계정은 「사용자」 화면·`db:user`로만(Supabase 가입 끔 — 로그인은 미등록도 같은 답), 공통 지식 읽기는 `is_member`. 사용 중지(`profiles.active = false`)는 `requireUser`→`/login?blocked=1`·DB `my_role()`·auth ban(`setUserActive`)
 - 메일 링크 돌아올 주소는 호출한 주소 기준(`lib/auth/redirect.ts requestOrigin`, `docs/ops/운영-전환.md` §2). `/auth/confirm`에서 **버튼을 눌러야** 로그인(`token_hash`·`code` 둘 다)
 - 로그인 전 차단은 `proxy.ts`(공개 경로 `lib/auth/public-paths.ts`뿐, `safeNext`), 사용자 조회는 `lib/auth/dal.ts` `requireUser`. 최종 판정은 RLS, **서버 액션은 공개 API처럼** 안에서 사용자를 다시 확인
 

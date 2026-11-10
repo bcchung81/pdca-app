@@ -529,7 +529,7 @@ test("자동 저장 이력 병합·AI 사용 기록 권한", { skip: NO_SEED_CAR
   assert.equal(await as("pmo", () => count("select 1 from public.ai_requests")), 1);
 });
 
-test("공통 지식: 모두 읽고, 관리자만 쓴다(2026-11-03 — 성과관리팀도 거절). anon은 아무것도 못 읽음", { skip: NO_SEED_CARDS }, async () => {
+test("공통 지식: 팀 있는 사용자·성과관리팀·관리자가 읽고(2026-11-10 — 팀 없음·사용 중지는 아래 「공통 자료 읽기 범위」), 관리자만 쓴다(2026-11-03 — 성과관리팀도 거절). anon은 아무것도 못 읽음", { skip: NO_SEED_CARDS }, async () => {
   assert.equal(await as("inspector", () => count("select 1 from public.eval_units")), rows.evalUnits.length); // 주요사업 4 + 시드 조각이 가리키는 경영관리 지표
   await rejects(
     () => as("inspector", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('x', 'x', 'x')")),
@@ -1709,5 +1709,47 @@ test("현행화 원본 파일 삭제(마이그레이션 없음): 성과관리팀
   } finally {
     await db.query("delete from storage.objects where bucket_id = 'card-imports' and name = any($1)", [[`${ledger}/1.hwpx`, `${draft}/1.hwpx`]]);
     await db.query("delete from public.card_imports where id = any($1)", [[ledger, draft]]);
+  }
+});
+
+test("공통 자료 읽기 범위(20261110100000 — 보안 점검 T4 H1): 외부 가입·팀 없는 계정·사용 중지 계정은 공통 지식·원본 파일을 못 읽고, 팀 있는 담당자·성과관리팀·관리자는 읽는다", { skip: NO_SEED_CARDS }, async () => {
+  // 가입 트리거가 만든 그대로(부서 담당자·팀 없음·활성) — 외부 메일 가입과 팀이 아직 없는 기관 메일 계정
+  const fresh = { outsider: "00000000-0000-0000-0000-0000000000f1", noTeam: "00000000-0000-0000-0000-0000000000f2" };
+  await db.query("insert into auth.users (id, email) values ($1, 'outsider@example.test'), ($2, 'noteam@kca.test')", [fresh.outsider, fresh.noTeam]);
+  const asId = async <T,>(id: string, fn: () => Promise<T>): Promise<T> => {
+    await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [id]);
+    await db.exec("set role authenticated");
+    try {
+      return await fn();
+    } finally {
+      await db.exec("reset role");
+      await db.query(`select set_config('request.jwt.claim.sub', '', false)`);
+    }
+  };
+  await db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('t4-doc', 't4', 't4.pdf')");
+  await db.query("insert into storage.objects (bucket_id, name) values ('knowledge', 't4-doc/t4.pdf')");
+  const docs = "select 1 from public.knowledge_documents where doc_id = 't4-doc'";
+  const files = "select 1 from storage.objects where bucket_id = 'knowledge' and name = 't4-doc/t4.pdf'";
+  try {
+    for (const id of [fresh.outsider, fresh.noTeam]) {
+      assert.equal(await asId(id, () => count(docs)), 0, "공통 지식 문서");
+      assert.equal(await asId(id, () => count(files)), 0, "knowledge 버킷 원본 파일");
+      assert.equal(await asId(id, () => count("select 1 from public.knowledge_chunks")), 0, "공통 지식 조각");
+      assert.equal(await asId(id, () => count("select 1 from public.eval_units")), rows.evalUnits.length, "평가단위 이름은 활성 사용자면 봄");
+      assert.ok((await asId(id, () => count("select 1 from public.teams"))) > 0, "팀 이름도");
+    }
+    for (const u of ["inspector", "pmo", "admin"] as const) {
+      assert.equal(await as(u, () => count(docs)), 1, u);
+      assert.equal(await as(u, () => count(files)), 1, u);
+    }
+    if (seed.knowledgeAvailable) assert.equal(await as("license", () => count("select 1 from public.knowledge_chunks")), rows.chunks.length, "팀 있는 담당자는 조각 전부");
+    // 사용 중지 직후 남은 접근 토큰으로도 못 읽음(평가단위·팀 이름 포함)
+    await db.query("update public.profiles set active = false where id = $1", [users.inspector]);
+    for (const q of [docs, files, "select 1 from public.eval_units", "select 1 from public.teams"]) assert.equal(await as("inspector", () => count(q)), 0, q);
+  } finally {
+    await db.query("update public.profiles set active = true where id = $1", [users.inspector]);
+    await db.query("delete from storage.objects where bucket_id = 'knowledge' and name = 't4-doc/t4.pdf'");
+    await db.query("delete from public.knowledge_documents where doc_id = 't4-doc'");
+    await db.query("delete from auth.users where id = any($1)", [[fresh.outsider, fresh.noTeam]]); // 프로필은 연쇄 삭제
   }
 });

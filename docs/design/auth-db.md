@@ -18,7 +18,8 @@ CLAUDE.md의 「데이터베이스(Supabase)」·「로그인(Supabase 매직링
 
 ## 로그인(Supabase 매직링크)
 
-- 기관 메일(`ALLOWED_EMAIL_DOMAINS`, 기본 `kca.kr`)은 처음 로그인할 때 계정이 생깁니다(`dept_user`·부서 미지정 → 팀이 정해지기 전에는 카드가 안 보임). 그 밖의 주소는 관리자가 미리 만든 계정만 로그인합니다(`otpPolicy`).
+- **계정은 로그인으로 만들지 않습니다**(2026-11-10 보안 점검 T4 H1): 「사용자」 화면(성과관리팀은 기관 메일 부서 담당자만)이나 `pnpm db:user`로만 만들고, Supabase Auth 가입(「Allow new users to sign up」)은 꺼 둡니다 — 켜 두면 공개 키로 Auth API를 직접 불러 외부 메일도 계정을 만들 수 있었음. 로그인은 `shouldCreateUser: false`, 메일 모양만 확인(`isValidEmail`)하고, 등록 안 된 주소에도 보낸 것과 같은 답을 합니다(`isNotRegisteredError` — 계정이 있는지 알리지 않음). `ALLOWED_EMAIL_DOMAINS`(기본 `kca.kr`)는 성과관리팀이 등록할 수 있는 주소·로그인 화면 예시 주소로만 씁니다. 가입을 꺼도 관리자 API(`auth.admin.createUser`·`generateLink`)는 그대로 됨(운영 절차·근거 `docs/ops/운영-전환.md` §10).
+- 공통 지식(조각·문서·원본 파일)은 성과관리팀·관리자 또는 팀이 지정된 활성 사용자만 읽습니다(`private.is_member()`, `20261110100000_member_read_guard.sql`). 팀이 아직 없는 사용자·사용 중지 계정은 못 읽고, 평가단위·팀 이름은 활성 사용자면 읽습니다.
 - **사용 중지된 계정**(`profiles.active = false`)은 `requireUser`가 안내가 붙은 `/login?blocked=1`로 보내고(앱 틀·첫 화면도 메뉴를 안 그림), DB는 `my_role()`이 비어 데이터를 막으며, 로그인 링크는 Supabase auth ban으로 막습니다(`setUserActive`).
 - **메일 링크가 돌아올 주소는 호출한 주소 기준**(2026-10-12 — `lib/auth/redirect.ts requestOrigin`): 요청 호스트가 이 앱의 주소(`NEXT_PUBLIC_SITE_URL`·Vercel이 넣는 `VERCEL_URL`·`VERCEL_BRANCH_URL`·`VERCEL_PROJECT_PRODUCTION_URL`·localhost)일 때만 그 주소, 아니면 `NEXT_PUBLIC_SITE_URL`(호스트 헤더로 로그인 링크를 남의 주소로 돌리는 것 방지). Supabase Redirect URLs 허용 목록에 그 주소가 있어야 하고(없으면 Site URL 루트로 `/?code=`가 옴 — `proxy.ts`가 `authCallbackSearch`로 `/auth/confirm`에 넘김). 운영 주소·허용 목록은 `docs/ops/운영-전환.md` §2
 - 메일 링크는 `/auth/confirm`에서 **버튼을 눌러야** 로그인합니다. 기관 메일 보안 검사기가 링크를 미리 열어도 일회용 토큰이 소모되지 않게 하려는 것입니다. `token_hash`(권장 메일 양식)와 `code`(기본 양식, PKCE) 둘 다 받습니다.

@@ -15,3 +15,15 @@ test("캐시: 5분 안이면 같은 것을, 지나면 null, 비우면 null", () 
   assert.equal(cachedChunks("주요사업", 2_001), null, "올리기·지우기 뒤 비움");
   assert.equal(cachedChunks("없는 열쇠", 0), null);
 });
+
+test("캐시: 빈 배열은 두지 않고 있던 값도 덮지 않음 — 비구성원의 RLS 빈 결과로 5분간 모든 사람의 집계가 비던 회귀(2026-11-10 T3 리뷰 T4-R1)", () => {
+  clearChunkCache();
+  storeChunks("facets", [], 1_000);
+  assert.equal(cachedChunks("facets", 1_001), null, "빈 결과는 캐시하지 않음 — 다음 요청이 다시 읽음");
+  storeChunks("facets", [{ chunk_key: "a" }], 2_000);
+  storeChunks("facets", [], 2_001);
+  assert.deepEqual(cachedChunks("facets", 2_002), [{ chunk_key: "a" }], "구성원이 채운 값을 빈 결과가 덮지 않음");
+  storeChunks("주요사업", [], 3_000);
+  assert.equal(cachedChunks("주요사업", 3_001), null, "AI 묶음 열쇠(loadBundleChunks)도 같음");
+  clearChunkCache();
+});

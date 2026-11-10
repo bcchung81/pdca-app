@@ -140,7 +140,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 
 | 테스트 | 막는 것 |
 |---|---|
-| `lib/auth/redirect.test.ts`(`safeNext`) | 로그인 뒤 돌아갈 주소가 제어 문자·`//`·`/\`·스킴(`/javascript:`)·너무 긴 값이면 기본 주소 — `safeReturn`과 같은 규칙 한 곳(`lib/nav/return-to.ts isSafeAppPath`, P0-1) · 메일 링크 돌아올 주소는 호출한 주소 기준(운영·배포·미리보기·로컬), 이 앱 주소가 아닌 호스트 헤더·경로·@가 낀 호스트·이상한 proto는 `NEXT_PUBLIC_SITE_URL`로(`requestOrigin`) · 루트로 온 `?code=`·`token_hash+type`은 `/auth/confirm` 쿼리로(`authCallbackSearch`, 2026-10-12) |
+| `lib/auth/redirect.test.ts`(`safeNext`) | 로그인 뒤 돌아갈 주소가 제어 문자·`//`·`/\`·스킴(`/javascript:`)·너무 긴 값이면 기본 주소 — `safeReturn`과 같은 규칙 한 곳(`lib/nav/return-to.ts isSafeAppPath`, P0-1) · 메일 링크 돌아올 주소는 호출한 주소 기준(운영·배포·미리보기·로컬), 이 앱 주소가 아닌 호스트 헤더·경로·@가 낀 호스트·이상한 proto는 `NEXT_PUBLIC_SITE_URL`로(`requestOrigin`) · 루트로 온 `?code=`·`token_hash+type`은 `/auth/confirm` 쿼리로(`authCallbackSearch`, 2026-10-12) · 로그인 메일 요청은 기관·외부 구별 없이 메일 모양만 봄(`isValidEmail` — 계정은 로그인으로 안 만듦), 등록 안 된 주소의 Supabase 오류(`otp_disabled`·「Signups not allowed」·「User not found」)만 알아보고 발송 한도·발송 실패는 따로(`isNotRegisteredError` — 화면은 보낸 것과 같은 답, 2026-11-10 보안 점검 T4; 사용 중지 계정의 `user_banned`도 같은 답) · 메일 링크 확인 실패 문구는 사용 중지(`user_banned`)면 「사용이 중지된 계정」, 나머지는 「만료·이미 쓰임」(`confirmErrorMessage` — 메일함 주인만 보는 단계) |
 | `lib/reports/draft-store.test.ts` | 과제별 초안·구성안 쓰기가 읽을 때의 `updated_at`이 그대로일 때만 바꾸고(아니면 「다른 곳에서 바뀜」 충돌), 처음 넣는 행이 겹치면(23505) 충돌, 그 밖의 오류는 충돌 아님(`saveDraftRow`, P0-2). 지표 단위 부분(`saveUnitPartRow`, R5b)도 같은 내부 함수 |
 | `lib/ai/request-log.test.ts` | AI 호출 기록을 부르기 **전에** running 행으로 남기고(동시 2건·1분 5회 제한 — 그림 설명은 안 셈), 20분 넘은 running은 「중단」으로 닫고, 끝낼 때 토큰·소요 시간·구간 시간을 채움, 상태 판정(`requestState` — running·끊김·ok·error)·중앙값(P0-3) |
 | `lib/prep/queue.test.ts`(`reclaimState`) | 시간 초과로 멈춘 작업도 시도 상한을 넘으면 다시 대기가 아니라 실패(P0-4) |
@@ -339,6 +339,16 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/ai/assist-thread.test.ts`(백그라운드) | 작업 id가 있는 쓰는 중 차례는 작업 창(30분)까지 기다림(없으면 예전 12분), 잘못된 id는 버림 / `mergeServerTurns`: 쓰는 중 차례를 서버 결과로 채우되 이 탭의 id·요청 시각·말풍선·반영 표시는 유지, 이미 받은 차례는 이 탭 것, 없는 서버 결과·다른 곳의 진행 중 작업은 더함(코멘트 작업은 대화에 안 넣음), 다시 합쳐도 같음(같은 requestId 한 번), 결과 없이 실패한 작업은 실패 차례로, 진행 중 작성지원은 요청 종류(mode)로, 막 보내 id를 못 받은 차례가 있으면 진행 중 작업을 따로 더하지 않음, 최근 12건 |
 | `lib/supabase/job-token.test.ts` | 작업 클라이언트 토큰: 남은 시간이 25분(작업 최장 20분 + 여유)보다 짧거나 모르면 시작에서 먼저 갱신 |
 | `lib/db/migrations.test.ts`(AI 작업 결과, `20261106100000`) | `ai_results`: 본인만 읽음(다른 부서 담당자·성과관리팀·관리자 0행), 남의 요청·남의 이름·작업이 아닌 요청·다른 기능·다른 카드로는 못 넣음, 남은 못 지우고 본인은 지움, 만료 행은 본인에게도 안 보이고 다음 넣기(다른 사용자) 때 물리 삭제, 기본 만료 7일 / `ai_requests.job`: 허용 값만·로그인 사용자는 못 고침 / 보관 카드 영구 삭제면 결과도 연쇄 삭제(호출 기록은 card_id만 비움) |
+
+## 보안 점검(2026-11-10, T4)이 더한 시험
+
+| 테스트 | 막는 것 |
+|---|---|
+| `lib/auth/security-headers.test.ts` | `next.config.ts` 응답 머리글: 액자는 같은 출처만(`X-Frame-Options: SAMEORIGIN`·CSP `frame-ancestors 'self'` — `'none'`이면 「한글(화면 그대로)」 숨은 iframe이 깨짐, 남의 사이트 액자는 클릭재킹), CSP는 화면을 깨지 않는 지시어(`frame-ancestors`·`base-uri`·`object-src`)만 강제하고 `script-src` 등은 아직 안 넣음, `Referrer-Policy: strict-origin-when-cross-origin`(같은 출처엔 전체 주소 — 부서 화면 보기 쓰기 막기가 Referer의 `?team=`을 읽음), `nosniff`·`Permissions-Policy`, HSTS는 Vercel이 붙여 여기선 안 붙임, `X-Powered-By` 끔, 이미지 최적화(`/_next/image`) 닫음(`images.unoptimized`) |
+| `lib/supabase/auth-cookie.test.ts` | 세션 쿠키 httpOnly(`lib/supabase/cookie-options.ts`): 세션 쿠키를 쓰는 서버 클라이언트 두 곳(`proxy.ts`·`lib/supabase/server.ts`)이 이 옵션을 씀, 설치된 `@supabase/ssr`이 세션 저장 때 `sb-…-auth-token`에 `httpOnly`를 싣고 `sameSite=lax`·`path=/`는 그대로 / 브라우저 서명 업로드는 세션 쿠키가 안 보여도(httpOnly) 서명 주소(`/storage/v1/object/upload/sign/…?token=`)에 공개 키를 Bearer로 PUT하고, 인증 서버를 부르거나 쿠키를 쓰지 않음(네트워크 없이 설치된 라이브러리를 그대로 돌림) |
+| `lib/db/migrations.test.ts`(공통 자료 읽기 범위, `20261110100000`) | 가입 트리거가 만든 그대로의 외부 가입 계정·팀 없는 기관 계정은 공통 지식 문서·조각·knowledge 버킷 원본 파일을 못 읽고 평가단위·팀 이름은 읽음, 팀 있는 담당자·성과관리팀·관리자는 읽음, 사용 중지 직후 남은 토큰으로는 문서·원본 파일·평가단위·팀 모두 못 읽음 |
+| `lib/auth/access.test.ts` | 공통 지식 구성원 판정(`isKnowledgeMember` — DB `private.is_member()`와 같은 규칙): 성과관리팀·관리자는 팀이 없어도, 부서 담당자는 팀이 있을 때만 — 팀 없는 부서 담당자는 `/knowledge`가 조회·캐시 없이 「팀이 지정되면 공통 지식을 볼 수 있습니다」만 보임(T3 리뷰 T4-R1·R5) |
+| `lib/knowledge/chunk-cache.test.ts`(빈 결과, 2026-11-10) | 공통 지식 조각 캐시에 빈 배열을 넣지 않고 구성원이 채운 값도 빈 배열로 덮지 않음(「facets」·트랙 열쇠 모두) — 비구성원의 RLS 빈 결과로 그 서버 인스턴스의 모든 사람 집계·「내 과제 자료」가 5분간 비던 회귀(T3 리뷰 T4-R1) |
 
 ## 원본 필요 시험(git 밖 — 없으면 이유를 적고 건너뜀)
 

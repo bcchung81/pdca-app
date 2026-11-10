@@ -2,7 +2,7 @@
 
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
-import { safeNext } from "../../../lib/auth/redirect.ts";
+import { confirmErrorMessage, safeNext } from "../../../lib/auth/redirect.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 
 export type ConfirmState = { status: "idle" } | { status: "error"; message: string };
@@ -22,19 +22,20 @@ export async function confirmLogin(_prev: ConfirmState, formData: FormData): Pro
   const next = safeNext(formData.get("next"));
   const supabase = await createClient();
 
-  let failed: string | null = null;
+  let failed: { code?: string; message: string } | null = null;
   if (tokenHash && OTP_TYPES.includes(type)) {
     const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
-    if (error) failed = error.message;
+    if (error) failed = error;
   } else if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) failed = error.message;
+    if (error) failed = error;
   } else {
-    failed = "missing token";
+    failed = { message: "missing token" };
   }
   if (failed) {
-    console.error("confirmLogin", failed);
-    return { status: "error", message: "로그인 링크가 만료됐거나 이미 쓰였습니다. 로그인 메일을 다시 받아 주세요." };
+    console.error("confirmLogin", failed.code ?? "", failed.message);
+    // 사용 중지 계정이면 그렇다고(메일함 주인만 오는 단계), 나머지는 만료·이미 쓰임 — lib/auth/redirect.ts confirmErrorMessage
+    return { status: "error", message: confirmErrorMessage(failed) };
   }
   redirect(next);
 }

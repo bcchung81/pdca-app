@@ -23,7 +23,8 @@ const PER_CHUNK = 2_500;
 
 /**
  * 이 트랙 요청의 공통 지식 조각 전부(트랙을 안 정하면 주요사업). "all"은 모든 트랙 — 올릴 때 크기 보호처럼 트랙별로 따로 재야 하는 곳이 씀(AI 요청에는 안 씀:
- * 요청에 붙는 조각은 평가단위의 트랙으로 걸러짐, layerOf). 캐시 5분(lib/knowledge/chunk-cache.ts — 모든 로그인 사용자가 같은 것을 읽음),
+ * 요청에 붙는 조각은 평가단위의 트랙으로 걸러짐, layerOf). 캐시 5분(lib/knowledge/chunk-cache.ts — 공통 지식은 구성원(성과관리팀·관리자, 팀이 지정된 활성 사용자 — DB private.is_member())만 읽고
+ * 구성원은 모두 같은 것을 읽음. 이 함수를 부르는 곳은 카드를 읽을 수 있는 AI·경평 경로·관리자 화면·서비스 키 스크립트뿐이라 구성원이고, 빈 결과는 캐시에 안 들어감),
  * opts.fresh는 캐시를 건너뜀: 올리기 크기 보호는 다른 서버 인스턴스가 방금 올린 문서까지 재야 함(개선 계획 P2-2)
  */
 export async function loadBundleChunks(supabase: SupabaseClient, track: TrackSpec | "all" = DEFAULT_TRACK, opts: { fresh?: boolean } = {}): Promise<BundleChunk[]> {

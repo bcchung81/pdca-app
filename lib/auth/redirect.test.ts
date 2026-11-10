@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { authCallbackSearch, isAllowedEmail, otpPolicy, requestOrigin, safeNext } from "./redirect.ts";
+import { BANNED_MSG, LINK_FAILED_MSG, authCallbackSearch, confirmErrorMessage, isNotRegisteredError, isValidEmail, requestOrigin, safeNext } from "./redirect.ts";
 
 test("로그인 뒤 경로는 같은 사이트 절대 경로만", () => {
   assert.equal(safeNext("/cards?x=1"), "/cards?x=1");
@@ -24,18 +24,24 @@ test("로그인 뒤 경로: 제어 문자(탭 등)·스킴이 낀 경로는 거�
   assert.equal(safeNext("//evil.com", "/my"), "/my", "기본 경로 인자");
 });
 
-test("메일 도메인 허용 목록", () => {
-  assert.equal(isAllowedEmail("someone@kca.kr", ["kca.kr"]), true);
-  assert.equal(isAllowedEmail(" Someone@KCA.kr ", ["kca.kr"]), true);
-  assert.equal(isAllowedEmail("a@evil.kca.kr.com", ["kca.kr"]), false);
-  assert.equal(isAllowedEmail("a@gmail.com", ["kca.kr"]), false);
-  assert.equal(isAllowedEmail("not-an-email", ["kca.kr"]), false);
+test("로그인 메일 요청: 메일 모양만 봄(기관·외부 구별 없음 — 계정은 로그인으로 만들지 않음)", () => {
+  for (const e of ["new@kca.kr", " Someone@KCA.kr ", "someone@gmail.com"]) assert.equal(isValidEmail(e), true, e);
+  for (const e of ["broken", "a@b", "a b@kca.kr", ""]) assert.equal(isValidEmail(e), false, e);
 });
 
-test("매직링크 정책: 기관 메일만 새 계정, 그 밖은 등록된 계정만", () => {
-  assert.deepEqual(otpPolicy("new@kca.kr", ["kca.kr"]), { valid: true, createUser: true });
-  assert.deepEqual(otpPolicy("someone@gmail.com", ["kca.kr"]), { valid: true, createUser: false });
-  assert.deepEqual(otpPolicy("broken", ["kca.kr"]), { valid: false, createUser: false });
+test("등록 안 된 주소 오류 알아보기(가입 끈 Supabase의 답) — 화면은 보낸 것과 같은 답(계정 여부를 알리지 않음)", () => {
+  assert.equal(isNotRegisteredError({ code: "otp_disabled", message: "Signups not allowed for otp" }), true);
+  assert.equal(isNotRegisteredError({ message: "Signups not allowed for otp" }), true, "코드가 없어도 문구로");
+  assert.equal(isNotRegisteredError({ message: "User not found" }), true);
+  assert.equal(isNotRegisteredError({ code: "over_email_send_rate_limit", message: "email rate limit exceeded" }), false, "발송 한도는 따로 안내");
+  assert.equal(isNotRegisteredError({ message: "Error sending magic link email" }), false);
+  // 사용 중지(auth ban) 계정: 보내기에서 오류가 오더라도 등록 안 된 주소와 같은 답 — 사용 중지 여부·계정 여부를 알리지 않음(T3 리뷰 T4-R3)
+  assert.equal(isNotRegisteredError({ code: "user_banned", message: "User is banned" }), true);
+  // 링크 확인 단계(메일함 주인만 옴): 사용 중지면 그렇다고, 나머지(만료·이미 쓰임·토큰 없음)는 다시 받으라고(T4 9단계)
+  assert.deepEqual(
+    [confirmErrorMessage({ code: "user_banned", message: "User is banned" }), confirmErrorMessage({ message: "User is banned" }), confirmErrorMessage({ code: "otp_expired", message: "Email link is invalid or has expired" }), confirmErrorMessage(null)],
+    [BANNED_MSG, BANNED_MSG, LINK_FAILED_MSG, LINK_FAILED_MSG],
+  );
 });
 
 const hdr = (o: Record<string, string>) => ({ get: (k: string) => o[k] ?? null });

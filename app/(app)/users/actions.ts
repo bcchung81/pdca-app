@@ -271,7 +271,8 @@ export async function applyUserPaste(input: ApplyRowInput[], options: { autoAssi
     try {
       results.push(await applyPlanned(supabase, me, line, plan, profiles.get(plan.email) ?? null, autoAssign));
     } catch (e) {
-      console.error("applyUserPaste", plan.email, e);
+      // 운영 로그(Vercel)에 개인정보를 남기지 않음: 메일 대신 줄 번호, 오류 객체 대신 사유 글만(중복 오류 details에 「Key (email)=(…)」가 들어갈 수 있어 메일 모양도 가림 — 2026-11-10 보안 점검 T4 L5)
+      console.error("applyUserPaste", `${line}번째 줄`, (e instanceof Error ? e.message : String(e)).replace(/[^\s@()<>"']+@[^\s@()<>"']+/g, "<메일>"));
       results.push({ line, email: plan.email, status: "error", message: "처리하지 못했습니다.", assigned: 0 });
     }
   }
