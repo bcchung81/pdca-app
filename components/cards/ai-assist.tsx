@@ -26,7 +26,7 @@ type ModeInfo = { label: string; short: string; hint: string };
 type PickMode = WriterMode | "chat";
 const MODES: Array<[PickMode, ModeInfo]> = [...(Object.entries(WRITER_MODES) as Array<[WriterMode, ModeInfo]>), ["chat", CHAT_MODE]];
 /** 요청 종류 칩(AiComposer 공용 부품 — 짧은 이름을 보이고 title에 자세한 설명) */
-const COMPOSER_MODES: AiComposerMode<PickMode>[] = MODES.map(([key, m]) => ({ key, label: m.short, title: `${m.label} — ${m.hint}` }));
+const COMPOSER_MODES: AiComposerMode<PickMode>[] = MODES.map(([key, m]) => ({ key, label: m.short, title: `${m.short} — ${m.hint}` }));
 /** 요청 칸 placeholder(요청 종류별 30자 안팎) */
 const PLACEHOLDER: Record<PickMode, string> = {
   improve: "추가로 반영할 점(선택)",
@@ -57,7 +57,7 @@ function lastSpot(turns: AssistTurn[]): Spot | null {
 /** 쓰는 중 진행 줄의 요청 종류(옛 기록의 요청 종류는 쓰는 중일 수 없으나 모양만 맞춤) */
 const progressMode = (m: TurnMode): PickMode => (m === "chat" || m in WRITER_MODES ? (m as PickMode) : "improve");
 
-/** 화면에 보이는 요청 종류 이름(말풍선 머리·보내기 단추): 「(모드 A)」 없는 짧은 이름. 질문·옛 종류는 기존 이름 그대로 — WRITER_MODES.label·modeLabel은 프롬프트에 들어가 못 바꿈 */
+/** 화면에 보이는 요청 종류 이름(말풍선 머리·보내기 단추·답 머리·칩 title): 「(모드 A)」 없는 짧은 이름. 질문·옛 종류는 기존 이름 그대로 — WRITER_MODES.label·modeLabel은 프롬프트에 들어가 못 바꿈 */
 const shownMode = (m: TurnMode) => (m in WRITER_MODES ? WRITER_MODES[m as WriterMode].short : modeLabel(m));
 
 function loadTurns(uid: string): AssistTurn[] {
@@ -375,7 +375,7 @@ export function AiAssist(props: {
       <span className="sr-only">{copied === t.id ? "복사함" : "답 복사"}{note ? ` — ${note}` : ""}</span>
     </button>
   );
-  const answerMeta = (t: AssistTurn) => modeLabel(t.mode);
+  const answerMeta = (t: AssistTurn) => shownMode(t.mode);
   /** 펼친 답의 머리: AI · 요청 종류·근거 수·모델·시각 · 접기(결론만 보기) */
   const answerHead = (t: AssistTurn) => (
     <div className="flex min-w-0 items-center gap-2.5">

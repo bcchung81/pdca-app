@@ -13,7 +13,7 @@ export interface AiComposerMode<K extends string = string> {
 }
 
 export interface AiComposerAttach {
-  onFiles: (files: FileList) => void;
+  onFiles: (files: File[]) => void;
   accept: string;
   disabled?: boolean;
   title: string;
@@ -124,10 +124,11 @@ export function AiComposer<K extends string>(props: {
                 tabIndex={-1}
                 aria-hidden="true"
                 // 고른 파일을 바로 올려 보낸 뒤 값을 비워 같은 파일을 다시 골라도 다시 뜨게 함
+                // 배열로 먼저 복사 — Chrome은 value를 비우면 받아 둔 FileList까지 비워 올리기가 조용히 건너뛰어짐(2026-11-10)
                 onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                  const files = e.target.files;
+                  const files = Array.from(e.target.files ?? []);
                   e.target.value = "";
-                  if (files && files.length) props.attach!.onFiles(files);
+                  if (files.length) props.attach!.onFiles(files);
                 }}
               />
               <button

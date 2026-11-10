@@ -328,7 +328,7 @@ export function verifyResult(result: WriterResult, card: Json, refs: KnowledgeRe
 export function noRequirementResult(b: FollowupBasis): VerifiedResult {
   return {
     headline: `${b.period} 점검표에는 보완 요구가 없습니다`,
-    summary: "점검표의 미흡 항목이 없어 대조할 보완 요구가 없습니다. 이번 달 실적 정리(모드 A)나 실적 발굴(모드 B)은 도와드릴 수 있습니다.",
+    summary: "점검표의 미흡 항목이 없어 대조할 보완 요구가 없습니다. 「실적 반영」이나 「실적 발굴」은 도와드릴 수 있습니다.",
     citations: [],
     suggestions: [],
     monthlyRow: null,

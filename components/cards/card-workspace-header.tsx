@@ -142,14 +142,14 @@ async function openPage(ws: CardWorkspaceState) {
   else await go();
 }
 
-/** 머리 오른쪽 아이콘 묶음: 목록 · 경평 초안 · 자료 · 수정 이력 · 더보기 · (옆 창) 전체 페이지·닫기. 휴대폰 폭에서는 묶음째 그리지 않음(보기 중심 — 목록으로는 머리 맨 앞 ‹) */
+/** 머리 오른쪽 아이콘 묶음: 전체 페이지는 목록 · 경평 초안 · 자료 · 수정 이력 · 더보기. 옆 창은 경평 초안 · 자료 · 수정 이력 · 더보기 · 전체 페이지 · 닫기(목록 단추는 ✕와 같은 동작이라 옆 창에서는 뺌, 2026-11-10). 휴대폰 폭에서는 묶음째 그리지 않음(보기 중심 — 목록으로는 머리 맨 앞 ‹) */
 function HeaderButtons({ props, ws }: HeaderProps) {
   const { variant } = props;
   const { side, toggle } = ws;
   return (
     // 전체 페이지는 머리 한 줄(56px) — 버튼은 줄지 않고 제목이 말줄임. 옆 창은 폭이 좁아 버튼 묶음이 줄을 바꿔 감(머리가 이미 제목 두 줄까지 늘어나는 구조)
     <div className={`flex items-center justify-end gap-2 max-md:hidden ${variant === "peek" ? "min-w-0 flex-wrap" : "shrink-0"}`}>
-      <ListIconButton label={ws.listLabel} onClick={() => void ws.close()} />
+      {variant === "page" && <ListIconButton label={ws.listLabel} onClick={() => void ws.close()} />}
       <Link href={ws.reportHref} aria-label="경평 초안" title="경평 초안 — 과제별 초안 열기" className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}>
         <FileText size={16} aria-hidden />
         <span className={T.deskOnly}>경평 초안</span>
@@ -179,16 +179,16 @@ function HeaderButtons({ props, ws }: HeaderProps) {
         </Link>
       )}
       {variant === "peek" && (
-        <button type="button" onClick={() => void ws.close()} aria-label="닫고 목록으로 (Esc)" title="닫고 목록으로 (Esc)" className={`${T.iconLabelBtn} border-field-line text-muted hover:border-navy`}>
+        <button type="button" onClick={() => void ws.close()} aria-label={`닫기 — ${ws.listLabel} (Esc)`} title={`닫기 — ${ws.listLabel} (Esc)`} className={`${T.iconLabelBtn} border-field-line text-muted hover:border-navy`}>
           <X size={16} aria-hidden />
-          <span className={T.deskOnly}>닫고 목록으로</span>
+          <span className={T.deskOnly}>닫기</span>
         </button>
       )}
     </div>
   );
 }
 
-/** 더보기 메뉴: HWPX 내려받기(다시 올리기용 · 화면 그대로) · 작성본 채우기 · 보관 */
+/** 더보기 메뉴: HWPX 내려받기(다시 올리기용 · 화면 그대로) · 작성본 채우기 · 보관. 항목은 이름만, 설명은 title(마우스 올림)로(2026-11-10) */
 function MoreMenu({ props, ws }: HeaderProps) {
   const { draft } = props;
   const { menu, setMenu, draftMode, menuRef } = ws;
@@ -203,9 +203,8 @@ function MoreMenu({ props, ws }: HeaderProps) {
       </button>
       {menu && (
         <div role="menu" aria-label="카드 더보기" className="absolute top-9 right-0 z-menu flex w-60 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu">
-          <a role="menuitem" href={`/cards/${props.uid}/hwpx`} download onClick={() => setMenu(false)} className="px-3 py-2 text-ink no-underline hover:bg-row-hover">
+          <a role="menuitem" href={`/cards/${props.uid}/hwpx`} download onClick={() => setMenu(false)} title={`지금 보이는 ${draftMode ? "작성본" : "원장"} · ${props.layout ? "원본 모양" : "9.16 양식"} · 채우기·현행화에 다시 올림`} className="px-3 py-2 text-ink no-underline hover:bg-row-hover">
             HWPX 내려받기(다시 올리기용)
-            <span className="block text-xs text-muted">지금 보이는 {draftMode ? "작성본" : "원장"} · 9.16 양식 · 채우기·현행화에 다시 올림</span>
           </a>
           {props.layout && (
             <button
@@ -216,10 +215,10 @@ function MoreMenu({ props, ws }: HeaderProps) {
                 setMenu(false);
                 dom.startTarget(cardDomTarget(props.uid, async () => (await ws.editor.current?.flush()) ?? true));
               }}
+              title="보기용 — 다시 올리기에는 위 파일"
               className={`px-3 py-2 text-left text-ink hover:bg-row-hover ${T.off}`}
             >
               HWPX 내려받기(화면 그대로)
-              <span className="block text-xs text-muted">보기용 — 다시 올리기에는 위 파일</span>
             </button>
           )}
           {draftMode && !props.readOnly && (
@@ -231,10 +230,10 @@ function MoreMenu({ props, ws }: HeaderProps) {
                 ws.setOther("import");
                 ws.setSheet(true);
               }}
+              title="한글에서 고친 카드를 올려 바뀐 곳만 반영"
               className="px-3 py-2 text-left text-ink hover:bg-row-hover"
             >
               한글 파일로 작성본 채우기
-              <span className="block text-xs text-muted">한글에서 고친 카드를 올려 바뀐 곳만 반영</span>
             </button>
           )}
           {!draft && !props.preview && !props.readOnly && (
@@ -246,6 +245,7 @@ function MoreMenu({ props, ws }: HeaderProps) {
                   setMenu(false);
                   ws.setArchiving(true);
                 }}
+                title="보관함으로 옮김 — 보관함에서 되살릴 수 있음"
                 className="border-t border-line px-3 py-2 text-left text-warn hover:bg-warn-bg"
               >
                 과제 삭제(보관)…

@@ -11,7 +11,7 @@ export const FOLLOWUP_JUDGMENTS = ["반영됨", "일부 반영", "미반영", "�
 export type FollowupJudgment = (typeof FOLLOWUP_JUDGMENTS)[number];
 
 /** 지침 <보완이행점검> 2단계: 점검표가 없으면 AI 없이 이 말로 안내하고 멈춤 */
-export const NO_INSPECTION_MESSAGE = "아직 성과관리팀 점검결과가 없어 자가점검할 기준이 없습니다. 이번 달 실적 정리(모드 A)나 실적 발굴(모드 B)은 도와드릴 수 있습니다.";
+export const NO_INSPECTION_MESSAGE = "아직 성과관리팀 점검결과가 없어 자가점검할 기준이 없습니다. 「실적 반영」이나 「실적 발굴」은 도와드릴 수 있습니다.";
 export const FOLLOWUP_NOTICE = "자가점검 결과이며 공식 판정은 성과관리팀 점검에서 정해집니다.";
 export const MISSING_REMAINING = "AI 답에서 빠졌습니다. 다시 요청해 주세요.";
 
