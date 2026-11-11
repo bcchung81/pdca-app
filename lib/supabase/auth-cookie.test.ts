@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { createBrowserClient, createServerClient } from "@supabase/ssr";
-import { AUTH_COOKIE_OPTIONS } from "./cookie-options.ts";
+import { AUTH_COOKIE_OPTIONS, authCookieOptions } from "./cookie-options.ts";
 
 const URL_ = "https://proj.supabase.example";
 const KEY = "sb_publishable_test";
@@ -14,6 +14,14 @@ const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200
 
 test("세션 쿠키 옵션: httpOnly", () => {
   assert.equal(AUTH_COOKIE_OPTIONS.httpOnly, true);
+});
+
+test("세션 쿠키 옵션: secure는 Vercel에서만 참(로컬 http에 붙이면 쿠키가 버려질 수 있음)", () => {
+  assert.deepEqual(authCookieOptions({}), { httpOnly: true, secure: false });
+  assert.deepEqual(authCookieOptions({ VERCEL: "" }), { httpOnly: true, secure: false });
+  assert.deepEqual(authCookieOptions({ VERCEL: "1" }), { httpOnly: true, secure: true });
+  // 이 시험 프로세스는 로컬 실행이라 모듈 값도 secure:false여야 함(Vercel 환경변수가 없을 때)
+  if (!process.env.VERCEL) assert.equal(AUTH_COOKIE_OPTIONS.secure, false);
 });
 
 test("세션 쿠키를 쓰는 서버 클라이언트 두 곳(proxy.ts·server.ts)이 모두 이 옵션을 씀", () => {
