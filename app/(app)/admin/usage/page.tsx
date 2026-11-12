@@ -147,7 +147,7 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
               <col className="w-[82px]" />
               <col className="w-[82px]" />
               <col className="w-[70px]" />
-              <col className="w-[64px]" />
+              <col className="w-[72px]" />
               <col className="w-[44px]" />
             </colgroup>
             <thead>
@@ -255,7 +255,7 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
                   <col />
                   <col className="w-[120px]" />
                   <col className="w-[190px]" />
-                  <col className="w-[150px]" />
+                  <col className="w-[210px]" />
                   <col className="w-[80px]" />
                   <col className="w-[90px]" />
                 </colgroup>
@@ -297,7 +297,7 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
                             </span>
                           )}
                         </td>
-                        <td className={T.td}>
+                        <td className={`${T.td} truncate`}>
                           {requestState(r, now) === "running" ? (
                             <Tag tone="link">진행 중</Tag>
                           ) : requestState(r, now) === "stalled" ? (
@@ -309,7 +309,7 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
                               <Tag tone="warn">오류</Tag>
                             </span>
                           ) : (
-                            <span className="font-mono text-xs text-muted-2">
+                            <span className="font-mono text-xs text-muted-2" title={`입력 ${fmtInt(r.input_tokens)} / 출력 ${fmtInt(r.output_tokens)} / 캐시 쓰기 ${fmtInt(r.cache_write_tokens)}`}>
                               {fmtInt(r.input_tokens)} / {fmtInt(r.output_tokens)} / {fmtInt(r.cache_write_tokens)}
                             </span>
                           )}
