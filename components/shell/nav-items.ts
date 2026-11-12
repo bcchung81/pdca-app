@@ -114,7 +114,8 @@ export function navSectionsFor(role: AppRole): NavSection[] {
     { id: "pmo", title: "성과관리팀", items: PMO },
     { id: "dept", title: "부서 화면", items: DEPT_VIEW },
   ];
-  if (atLeast(role, "admin")) sections.push({ id: "admin", title: "관리자", items: ADMIN });
+  // 관리 메뉴는 성과관리팀도 봄(조회 — 올리기·지우기는 화면·서버 액션이 관리자만 허용)
+  if (atLeast(role, "pmo")) sections.push({ id: "admin", title: "관리", items: ADMIN });
   return sections;
 }
 

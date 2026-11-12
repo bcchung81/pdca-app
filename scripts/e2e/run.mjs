@@ -180,7 +180,7 @@ try {
 
   // ── 역할 계층: 관리자 > 성과관리팀 > 부서 담당자(윗 역할은 아랫 역할 화면을 모두 봄)
   const ROUTES = ["/dashboard", "/cards", "/cards/import", "/cards/archive", "/inspections", "/inspections/summary", "/links", "/knowledge", "/reports", "/reports/cards", "/reports/outline", "/my", "/my/inspections", "/my/report", "/admin/library", "/admin/users", "/admin/usage", "/help"];
-  const MIN = { "/dashboard": "pmo", "/cards": "pmo", "/cards/import": "pmo", "/cards/archive": "pmo", "/inspections": "pmo", "/inspections/summary": "pmo", "/links": "pmo", "/reports": "pmo", "/reports/cards": "pmo", "/reports/outline": "pmo", "/admin/library": "admin", "/admin/users": "admin", "/admin/usage": "admin" };
+  const MIN = { "/dashboard": "pmo", "/cards": "pmo", "/cards/import": "pmo", "/cards/archive": "pmo", "/inspections": "pmo", "/inspections/summary": "pmo", "/links": "pmo", "/reports": "pmo", "/reports/cards": "pmo", "/reports/outline": "pmo", "/admin/library": "pmo", "/admin/users": "admin", "/admin/usage": "pmo" };
   const RANK = { dept_user: 0, pmo: 1, admin: 2 };
   const ERR = /Application error|Unhandled Runtime Error|Internal Server Error/;
   const a = await login(ADMIN);
@@ -475,6 +475,8 @@ try {
   check("리뷰 화면: 과제별 초안 HTML이 평가내용2 칸에 모임", own.eval_unit_id !== "BZ-1" || rvDraft.html.includes('class="k-task__no">1-1<'), own.eval_unit_id);
   const lib = await a.get("/admin/library");
   check("관리 › 공통 자료: 파일 올리기 칸(끌어 놓기)", lib.status === 200 && text(lib.html).includes("파일을 끌어 놓거나 눌러서 고르기"), String(lib.status));
+  const libPmo = await p.get("/admin/library");
+  check("관리 › 공통 자료: 성과관리팀은 보기만(올리기 칸 없음)", libPmo.status === 200 && !text(libPmo.html).includes("파일을 끌어 놓거나 눌러서 고르기"), String(libPmo.status));
   const libFw = await a.get("/admin/library?tab=frameworks");
   check("관리 › 옛 「보고서 틀」 탭 주소는 공통 지식 탭으로", libFw.status === 200 && !text(libFw.html).includes("보고서 틀"), String(libFw.status));
 

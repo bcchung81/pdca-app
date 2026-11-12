@@ -93,10 +93,10 @@ const modeText = (r: { feature: string; mode: string | null }) =>
         ? `블록 ${(r.mode ?? "").startsWith("ask") ? "질문" : "고치기"}`
         : (MODE_LABEL[r.mode ?? ""] ?? r.mode ?? FEATURE_LABEL[r.feature] ?? r.feature);
 
-/** 관리자 · AI 사용량: 달마다 호출·토큰·오류(본문은 저장하지 않음) */
+/** 성과관리팀·관리자 · AI 사용량: 달마다 호출·토큰·오류(본문은 저장하지 않음) */
 export default async function UsagePage({ searchParams }: PageProps<"/admin/usage">) {
-  const me = await requireAtLeast("admin", "/admin/usage");
-  if (!me) return <NoAccess title="AI 사용량" need="관리자" />;
+  const me = await requireAtLeast("pmo", "/admin/usage");
+  if (!me) return <NoAccess title="AI 사용량" need="성과관리팀" />;
   const sp = await searchParams;
   const period = isPeriod(one(sp.period)) ? one(sp.period) : currentPeriod();
   const next = shiftPeriod(period, 1);
@@ -135,57 +135,59 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
 
   // 이름 칸: 기능 이름(위 줄) + 모드(아래 작은 줄)로 나눠 — 좁은 칸에서도 서로 다른 행이 「보고서 과제별 초…」로 똑같이 잘리지 않게(줄바꿈은 안 하고 두 줄로만 나눔)
   const small = (title: string, entries: Array<[string, { n: number; input: number; output: number; usd: number; errors: number; rows: UsageRow[] }]>, label: (k: string) => { name: string; sub?: string }) => (
-    <Panel title={title}>
+    <Panel title={title} className="min-h-0">
       {entries.length === 0 ? (
         <p className="px-5 py-6 text-center text-ui text-muted">기록 없음</p>
       ) : (
-        <table className={T.table}>
-          <colgroup>
-            <col />
-            <col className="w-[52px]" />
-            <col className="w-[82px]" />
-            <col className="w-[82px]" />
-            <col className="w-[70px]" />
-            <col className="w-[64px]" />
-            <col className="w-[44px]" />
-          </colgroup>
-          <thead>
-            <tr className={T.headRow}>
-              {["", "요청", "입력 토큰", "출력 토큰", "추정 금액", "시간(중앙)", "오류"].map((h, i) => (
-                <th key={i} scope="col" className={T.th}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map(([k, g]) => {
-              const { name, sub } = label(k);
-              return (
-                <tr key={k} className="hover:bg-row-hover">
-                  <td className="border-b border-row-line px-3 py-1.5 align-middle">
-                    <span className="block truncate text-ui text-ink" title={sub ? `${name} · ${sub}` : name}>
-                      {name}
-                    </span>
-                    {sub && (
-                      <span className="block truncate text-xs text-muted-2" title={sub}>
-                        {sub}
+        <div className="max-h-[420px] min-h-0 flex-1 overflow-y-auto lg:max-h-none">
+          <table className={T.table}>
+            <colgroup>
+              <col />
+              <col className="w-[52px]" />
+              <col className="w-[82px]" />
+              <col className="w-[82px]" />
+              <col className="w-[70px]" />
+              <col className="w-[64px]" />
+              <col className="w-[44px]" />
+            </colgroup>
+            <thead>
+              <tr className={T.headRow}>
+                {["", "요청", "입력 토큰", "출력 토큰", "추정 금액", "시간(중앙)", "오류"].map((h, i) => (
+                  <th key={i} scope="col" className={`${T.th} sticky top-0 z-10 bg-thead`}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map(([k, g]) => {
+                const { name, sub } = label(k);
+                return (
+                  <tr key={k} className="hover:bg-row-hover">
+                    <td className="border-b border-row-line px-3 py-1.5 align-middle">
+                      <span className="block truncate text-ui text-ink" title={sub ? `${name} · ${sub}` : name}>
+                        {name}
                       </span>
-                    )}
-                  </td>
-                  <td className={`${T.td} font-mono text-ui`}>{g.n}</td>
-                  <td className={`${T.td} font-mono text-ui text-muted-2`}>{fmtInt(g.input)}</td>
-                  <td className={`${T.td} font-mono text-ui text-muted-2`}>{fmtInt(g.output)}</td>
-                  <td className={`${T.td} font-mono text-ui text-muted-2`}>{fmtUsd(g.usd)}</td>
-                  <td className={`${T.td} font-mono text-ui text-muted-2`} title="끝맺은 호출의 소요 시간 중앙값(2026-10-10부터 기록)">
-                    {fmtDur(medianMs(g.rows))}
-                  </td>
-                  <td className={`${T.td} font-mono text-ui ${g.errors ? "text-warn" : "text-muted"}`}>{g.errors}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      {sub && (
+                        <span className="block truncate text-xs text-muted-2" title={sub}>
+                          {sub}
+                        </span>
+                      )}
+                    </td>
+                    <td className={`${T.td} font-mono text-ui`}>{g.n}</td>
+                    <td className={`${T.td} font-mono text-ui text-muted-2`}>{fmtInt(g.input)}</td>
+                    <td className={`${T.td} font-mono text-ui text-muted-2`}>{fmtInt(g.output)}</td>
+                    <td className={`${T.td} font-mono text-ui text-muted-2`}>{fmtUsd(g.usd)}</td>
+                    <td className={`${T.td} font-mono text-ui text-muted-2`} title="끝맺은 호출의 소요 시간 중앙값(2026-10-10부터 기록)">
+                      {fmtDur(medianMs(g.rows))}
+                    </td>
+                    <td className={`${T.td} font-mono text-ui ${g.errors ? "text-warn" : "text-muted"}`}>{g.errors}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </Panel>
   );
@@ -231,95 +233,98 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
           { label: "진행 중", value: fmtInt(running), sub: stalled ? `끊긴 것 ${stalled}` : "끊긴 것 없음", tone: stalled ? "warn" : undefined, title: "진행 중 = 끝나지 않은 호출(1분 5회·동시 2건 제한에 셈), 끊긴 것 = 20분 넘게 끝맺지 못한 호출(함수가 시간 제한에서 끊김 추정 — 쓴 토큰을 모름)" },
         ]}
       />
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        {small("기능별", byMode, (k) => {
-          const [f, m] = k.split("|");
-          if (f === "report_block") return { name: FEATURE_LABEL[f] ?? f, sub: `${m === "ask" ? "질문" : "고치기"} · ${tierOf(f)}` };
-          return { name: FEATURE_LABEL[f] ?? f, sub: `${m ? `${MODE_LABEL[m] ?? m} · ` : ""}${tierOf(f)}` };
-        })}
-        {small("사용자별", byUser, (k) => ({ name: who.get(k) ?? "삭제된 사용자" }))}
+      {/* 한 화면 틀(lg 이상): 바깥 상자가 남는 높이를 채우고(basis-0 — 내용 높이로 커지지 않게) 두 패널이 나눠 가짐. 낮은 창은 min-h에서 멈추고 본문이 스크롤 */}
+      <div className="flex min-w-0 flex-col gap-4 lg:min-h-[400px] lg:grow lg:basis-0">
+        <div className="grid min-w-0 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
+          {small("기능별", byMode, (k) => {
+            const [f, m] = k.split("|");
+            if (f === "report_block") return { name: FEATURE_LABEL[f] ?? f, sub: `${m === "ask" ? "질문" : "고치기"} · ${tierOf(f)}` };
+            return { name: FEATURE_LABEL[f] ?? f, sub: `${m ? `${MODE_LABEL[m] ?? m} · ` : ""}${tierOf(f)}` };
+          })}
+          {small("사용자별", byUser, (k) => ({ name: who.get(k) ?? "삭제된 사용자" }))}
+        </div>
+        <Panel title="최근 기록" aside={list.length > 50 ? "최근 50건" : undefined} className="min-h-0 lg:flex-1">
+          {list.length === 0 ? (
+            <Empty title={loadError ? "AI 호출 기록을 읽지 못했습니다." : `${periodLabel(period)} AI 호출이 없습니다.`} />
+          ) : (
+            <div className="max-h-[420px] min-h-0 flex-1 overflow-auto lg:max-h-none">
+              <table className={`${T.table} min-w-[1210px]`}>
+                <colgroup>
+                  <col className="w-[104px]" />
+                  <col className="w-[140px]" />
+                  <col />
+                  <col className="w-[120px]" />
+                  <col className="w-[190px]" />
+                  <col className="w-[150px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[90px]" />
+                </colgroup>
+                <thead>
+                  <tr className={T.headRow}>
+                    {["시각", "사용자", "과제", "기능", "모델", "토큰(입력/출력/캐시쓰기)", "걸린 시간", "금액"].map((h) => (
+                      <th key={h} scope="col" className={`${T.th} sticky top-0 z-10 bg-thead`}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.slice(0, 50).map((r) => {
+                    const c = r.card_id ? card.get(r.card_id) : undefined;
+                    const usd = usdOf(r);
+                    return (
+                      <tr key={r.id} className={T.row}>
+                        <td className={`${T.td} font-mono text-xs text-muted`}>{fmtDateTime(r.created_at)}</td>
+                        <td className={`${T.td} truncate`}>{who.get(r.user_id) ?? "—"}</td>
+                        <td className={`${T.td} truncate`}>
+                          {c ? (
+                            <Link href={withReturn(`/cards/${c.uid}`, `/admin/usage?period=${period}`)} className="text-navy no-underline hover:underline" title={c.title}>
+                              {c.task_no} {c.title}
+                            </Link>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className={`${T.td} truncate`}>{modeText(r)}</td>
+                        <td className={`${T.td} truncate font-mono text-xs text-muted-2`} title={r.model ?? ""}>
+                          {r.model ?? "—"}
+                          <span className="ml-1 font-sans" title={`등급 ${tierOf(r.feature)} — lib/ai/models.ts의 기능 → 등급 표`}>
+                            <Tag tone="muted">{tierOf(r.feature)}</Tag>
+                          </span>
+                          {isCliModel(r.model) && (
+                            <span className="ml-1">
+                              <Tag tone="muted">API 환산</Tag>
+                            </span>
+                          )}
+                        </td>
+                        <td className={T.td}>
+                          {requestState(r, now) === "running" ? (
+                            <Tag tone="link">진행 중</Tag>
+                          ) : requestState(r, now) === "stalled" ? (
+                            <span title="20분 넘게 끝맺지 못한 호출(시간 제한에서 끊김 추정) — 이 사용자의 다음 호출 때 오류로 닫힘">
+                              <Tag tone="warn">끊김</Tag>
+                            </span>
+                          ) : r.status === "error" ? (
+                            <span title={r.error ?? ""}>
+                              <Tag tone="warn">오류</Tag>
+                            </span>
+                          ) : (
+                            <span className="font-mono text-xs text-muted-2">
+                              {fmtInt(r.input_tokens)} / {fmtInt(r.output_tokens)} / {fmtInt(r.cache_write_tokens)}
+                            </span>
+                          )}
+                        </td>
+                        <td className={`${T.td} font-mono text-xs text-muted-2`}>{fmtDur(r.duration_ms)}</td>
+                        <td className={`${T.td} font-mono text-xs text-muted-2`}>{r.status !== "ok" ? "—" : usd == null ? "모름" : fmtUsd(usd)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
       </div>
-      <Panel title="최근 기록" aside={list.length > 50 ? "최근 50건" : undefined}>
-        {list.length === 0 ? (
-          <Empty title={loadError ? "AI 호출 기록을 읽지 못했습니다." : `${periodLabel(period)} AI 호출이 없습니다.`} />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className={`${T.table} min-w-[1210px]`}>
-              <colgroup>
-                <col className="w-[104px]" />
-                <col className="w-[140px]" />
-                <col />
-                <col className="w-[120px]" />
-                <col className="w-[190px]" />
-                <col className="w-[150px]" />
-                <col className="w-[80px]" />
-                <col className="w-[90px]" />
-              </colgroup>
-              <thead>
-                <tr className={T.headRow}>
-                  {["시각", "사용자", "과제", "기능", "모델", "토큰(입력/출력/캐시쓰기)", "걸린 시간", "금액"].map((h) => (
-                    <th key={h} scope="col" className={T.th}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {list.slice(0, 50).map((r) => {
-                  const c = r.card_id ? card.get(r.card_id) : undefined;
-                  const usd = usdOf(r);
-                  return (
-                    <tr key={r.id} className={T.row}>
-                      <td className={`${T.td} font-mono text-xs text-muted`}>{fmtDateTime(r.created_at)}</td>
-                      <td className={`${T.td} truncate`}>{who.get(r.user_id) ?? "—"}</td>
-                      <td className={`${T.td} truncate`}>
-                        {c ? (
-                          <Link href={withReturn(`/cards/${c.uid}`, `/admin/usage?period=${period}`)} className="text-navy no-underline hover:underline" title={c.title}>
-                            {c.task_no} {c.title}
-                          </Link>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className={`${T.td} truncate`}>{modeText(r)}</td>
-                      <td className={`${T.td} truncate font-mono text-xs text-muted-2`} title={r.model ?? ""}>
-                        {r.model ?? "—"}
-                        <span className="ml-1 font-sans" title={`등급 ${tierOf(r.feature)} — lib/ai/models.ts의 기능 → 등급 표`}>
-                          <Tag tone="muted">{tierOf(r.feature)}</Tag>
-                        </span>
-                        {isCliModel(r.model) && (
-                          <span className="ml-1">
-                            <Tag tone="muted">API 환산</Tag>
-                          </span>
-                        )}
-                      </td>
-                      <td className={T.td}>
-                        {requestState(r, now) === "running" ? (
-                          <Tag tone="link">진행 중</Tag>
-                        ) : requestState(r, now) === "stalled" ? (
-                          <span title="20분 넘게 끝맺지 못한 호출(시간 제한에서 끊김 추정) — 이 사용자의 다음 호출 때 오류로 닫힘">
-                            <Tag tone="warn">끊김</Tag>
-                          </span>
-                        ) : r.status === "error" ? (
-                          <span title={r.error ?? ""}>
-                            <Tag tone="warn">오류</Tag>
-                          </span>
-                        ) : (
-                          <span className="font-mono text-xs text-muted-2">
-                            {fmtInt(r.input_tokens)} / {fmtInt(r.output_tokens)} / {fmtInt(r.cache_write_tokens)}
-                          </span>
-                        )}
-                      </td>
-                      <td className={`${T.td} font-mono text-xs text-muted-2`}>{fmtDur(r.duration_ms)}</td>
-                      <td className={`${T.td} font-mono text-xs text-muted-2`}>{r.status !== "ok" ? "—" : usd == null ? "모름" : fmtUsd(usd)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
     </Screen>
   );
 }

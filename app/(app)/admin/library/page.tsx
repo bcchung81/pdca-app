@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DocDelete, LibraryUpload } from "../../../../components/admin/library-upload";
 import { LinkTabs, NoAccess, PageHeader, Panel, Peek, Screen, T, Tag, Toolbar } from "../../../../components/ui/kit";
+import { atLeast } from "../../../../lib/auth/access.ts";
 import { requireAtLeast } from "../../../../lib/auth/dal.ts";
 import { fmtDate, fmtDateTime } from "../../../../lib/format.ts";
 import { harnessSources } from "../../../../lib/harness/source-info.ts";
@@ -24,10 +25,12 @@ const UPLOADED_ID = /^up-[0-9a-f]{8}$/;
 /** 올린 사람 기록이 없는 문서 — 화면 올리기는 늘 올린 사람을 남기므로 명령(pnpm knowledge:*·db:seed, 서비스 키)으로 적재한 것 */
 const BY_COMMAND = "명령 적재";
 
-/** 관리자 · 공통 자료·틀: 올리기 칸 + 공통 지식 문서 표(적재 검산), 기준 문서 고정 사본 */
+/** 성과관리팀(보기)·관리자(올리기·지우기) · 공통 자료·틀: 올리기 칸 + 공통 지식 문서 표(적재 검산), 기준 문서 고정 사본 */
 export default async function LibraryPage({ searchParams }: PageProps<"/admin/library">) {
-  const me = await requireAtLeast("admin", "/admin/library");
-  if (!me) return <NoAccess title="공통 자료·틀" need="관리자" />;
+  const me = await requireAtLeast("pmo", "/admin/library");
+  if (!me) return <NoAccess title="공통 자료·틀" need="성과관리팀" />;
+  // 쓰기(올리기·지우기)는 관리자만 — 서버 액션과 DB 정책이 따로 막음. 여기는 화면에서 숨기기만
+  const canWrite = atLeast(me.role, "admin");
   const sp = await searchParams;
   const tab = one(sp.tab) === "harness" ? "harness" : "knowledge";
   const docId = one(sp.doc);
@@ -39,7 +42,8 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
   const who = await loadWho(supabase, (docs ?? []).map((d) => d.uploaded_by));
   const byOf = (d: { uploaded_by: string | null }) => who(d.uploaded_by) ?? BY_COMMAND;
   const sources = harnessSources();
-  const sizes = tab === "knowledge" ? sharedSizeReport(await loadBundleChunks(supabase), []) : [];
+  // 크기 표는 올리기 칸에서만 쓰여 관리자가 아니면 읽지 않음
+  const sizes = tab === "knowledge" && canWrite ? sharedSizeReport(await loadBundleChunks(supabase), []) : [];
   const chunks = (facets ?? []).length;
   const unsearchable = (facets ?? []).filter((f) => !f.searchable).length;
   const warn = (d: { checks?: unknown }) => (Array.isArray(d.checks) ? (d.checks as Check[]).filter((c) => !c.ok) : []);
@@ -111,7 +115,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
                 <Link href={`/knowledge?doc=${peek.doc_id}`} className={`${T.btn} w-fit`}>
                   조각 보기 →
                 </Link>
-                {(UPLOADED_ID.test(peek.doc_id) || peek.doc_id === PEER_DOC_ID) && <DocDelete key={peek.doc_id} docId={peek.doc_id} title={peek.title} peer={peek.doc_id === PEER_DOC_ID} />}
+                {canWrite && (UPLOADED_ID.test(peek.doc_id) || peek.doc_id === PEER_DOC_ID) && <DocDelete key={peek.doc_id} docId={peek.doc_id} title={peek.title} peer={peek.doc_id === PEER_DOC_ID} />}
               </div>
             </div>
           </Peek>
@@ -134,7 +138,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
         )}
       </Toolbar>
 
-      {tab === "knowledge" && (
+      {tab === "knowledge" && canWrite && (
         <LibraryUpload sizes={sizes} peer={peerDoc ? { rows: peerDoc.chunk_count, fileName: peerDoc.file_name, updatedAt: fmtDateTime(peerDoc.updated_at) } : null} />
       )}
       {tab === "knowledge" && (
@@ -191,7 +195,7 @@ export default async function LibraryPage({ searchParams }: PageProps<"/admin/li
                 {(docs ?? []).length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted">
-                      아직 올린 문서가 없습니다. 위에 파일을 끌어 놓아 시작하세요.
+                      {canWrite ? "아직 올린 문서가 없습니다. 위에 파일을 끌어 놓아 시작하세요." : "아직 올린 문서가 없습니다."}
                     </td>
                   </tr>
                 )}

@@ -44,8 +44,8 @@ const SCREENS: Array<{ name: string; href: string; dept: Mark; pmo: Mark; admin:
   { name: "공통 지식 › 지적·과제 연결", href: "/links", dept: "—", pmo: "쓰기", admin: "쓰기", note: "적재가 만든 연결 초안 확정(확신도 높은 것은 일괄 확정). 자동 연결은 참고 초안이라 지적 연결은 확정하지 않아도 AI가 관련 자료를 빠짐없이 보고, 과제 대응은 원문을 대조한 뒤 확정" },
   { name: "사용자 › 사용자·담당 과제", href: "/users", dept: "—", pmo: "쓰기", admin: "쓰기", note: "부서 담당자 계정 추가·이름·팀 변경·사용 중지(삭제)·복구, 과제 담당자 지정(1명↔여러 과제, 과제↔여러 명). 성과관리팀·관리자 계정과 역할 변경은 관리자만" },
   { name: "사용자 › 일괄 등록", href: "/users/import", dept: "—", pmo: "쓰기", admin: "쓰기", note: "엑셀에서 이름·이메일·팀명 셀을 복사해 붙여넣으면 팀명을 카드가 연결된 팀과 견줘 자동 확정·추천하고, 확인한 줄만 반영(팀 과제 자동 매칭). 성과관리팀은 기관 메일만" },
-  { name: "관리 › AI 사용량", href: "/admin/usage", dept: "—", pmo: "—", admin: "보기", note: "달마다 호출·토큰·오류" },
-  { name: "관리 › 공통 자료·틀", href: "/admin/library", dept: "—", pmo: "—", admin: "쓰기", note: "붙임2(유관기관 평가보고서 정리) 올리기 → 월간 점검 ★사례제안, 공통 지식 적재 검산, 기준 문서 사본" },
+  { name: "관리 › AI 사용량", href: "/admin/usage", dept: "—", pmo: "보기", admin: "보기", note: "달마다 호출·토큰·오류" },
+  { name: "관리 › 공통 자료·틀", href: "/admin/library", dept: "—", pmo: "보기", admin: "쓰기", note: "붙임2(유관기관 평가보고서 정리) 올리기 → 월간 점검 ★사례제안, 공통 지식 적재 검산, 기준 문서 사본(올리기·지우기는 관리자)" },
 ];
 
 const MONTHLY = [
