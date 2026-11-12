@@ -15,7 +15,8 @@
 //     block-edit.ts blockEditPrompt(글 한도 = 블록 몫 — 「지금 줄 + 4줄」 상한 없음)로 보냄. 답은 블록 고치기 검증(verifyBlockEdit — 같은 종류·원문 대조)에 더해 같은 모양·칸 수,
 //     새 근거 밖 숫자 없음, 높이가 줄지 않고 분량 상한(배정 × (1 + MG_VOLUME_BAND)) 안일 때만 받음 — 반복 수치·문장을 하나도 못 고쳤으면 분량이 늘었을 때만 받음, 못 받은 블록은 그 전 글 그대로.
 //     라운드: 1회차 뒤 다시 재서 아직 배정 × MG_FILL.low 미만이면 2회차(MG_FILL.rounds) — 보강할 수 있는 블록 전부를 다시 고름(1회차에 몫을 다 쓴 블록·못 받은 블록도, 몫은 남은 분량을 다시 나눔).
-//     멈춤: 블록마다 시작 전 기한(canFixAgain — Vercel fixDeadlineMs, 로컬은 MG_FILL.maxSec), 호출 한도(startAiRequest 거절)면 그 라운드를 끝냄(기다리지 않음)
+//     멈춤: 블록마다 시작 전 기한(canFixAgain — Vercel fixDeadlineMs, 로컬은 MG_FILL.maxSec), 호출 한도(startAiRequest 거절)면 기한 안에서 MG_FILL.limitWaitSec 기다렸다 같은 블록을 다시 부르고
+//     (보강 한 번에 MG_FILL.limitWaits번까지 — 2026-11-12), 그래도 한도면 그 라운드를 끝냄
 //  4. 저장(saveFirstThenFill): 1차 초안 먼저 저장 → 보강 → 1차 저장의 updated_at 조건으로만 갱신(그 사이 사람이 고쳤으면 덮지 않고 건너뜀)
 // 2026-10-29 저녁(6-2 r9·r9b 흔들림 — 분량 88%·보강이 만든 반복 문장 5쌍·빠진 데이터 블록): ③ 보탤 사실에 연결 근거 조각(relevantRefs)의 문장·표 행을 더하고(linkedFacts — 사유는 아님, 재료만),
 //   블록 몫은 MG_FILL.shareMin 이상이 되는 최소 개수에 모으고(줄 수 적은 블록 먼저), 요청 글에 다른 블록의 수치·문장(되풀이 금지)을 주고, 새 반복을 만드는 판은 받지 않고,
@@ -664,6 +665,8 @@ export interface MgFillDeps {
   deadlineMs: number;
   /** 시험용 시계 */
   now?: () => number;
+  /** 호출 한도에 걸렸을 때 기다리기(시험용 — 없으면 setTimeout) */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface MgFillInput {
@@ -874,7 +877,7 @@ const addUsage = (a: Usage, b: Usage) => {
  * 분량 채움 보강: 빠진 구성안 블록도 1회차 사유·고를 블록도 없으면 null(보강 안 함). 먼저 빠진 블록(missingBlocks — 데이터 블록 먼저)마다 빈 모양을 구성안 자리에 끼워
  * fill.missing 요청으로 채우고 acceptMissing을 넘으면 넣음(못 받으면 끼우지 않은 초안 그대로 — 빈 모양이 남지 않음, 시간·호출 한도 멈춤은 라운드와 같음, 시간이면 라운드도 없음). 라운드(MG_FILL.rounds까지)마다 고른 블록을 하나씩 차례로(동시 2건 중 한 자리만 씀) — 블록마다 시작 전에
  * 기한 안에 한 번 더 부를 시간이 있는지(canFixAgain: 지금까지 + 직전 호출 ms × 1.1 ≤ 기한, 첫 블록은 1차 집필 ms로 어림. 기한 = deps.deadlineMs와 보강 시작 + MG_FILL.maxSec 중 이른 것) 보고,
- * 시간이 없으면 보강을 끝내고, 호출 한도에 걸리면 그 라운드를 끝냄(기다리지 않음). 앞 블록을 받은 초안 위에서 다음 블록 요청 글을 만듦.
+ * 시간이 없으면 보강을 끝내고, 호출 한도에 걸리면 기한 안에서 기다렸다 다시 부르고(MG_FILL.limitWaits번까지) 그래도 한도면 그 라운드를 끝냄. 앞 블록을 받은 초안 위에서 다음 블록 요청 글을 만듦.
  * 2회차는 1회차 뒤 다시 잰 어림이 아직 배정 × MG_FILL.low 미만일 때만 — 보강할 수 있는 블록 전부(pickFillTargets all: 1회차에 몫을 다 쓴 블록·못 받은 블록 포함)를
  * 남은 분량을 다시 나눈 새 몫으로 고름. 받기 조건(acceptFill — 높이 감소·배정 125% 초과·새 반복 거절)은 라운드마다 같음.
  * 보강 라운드 뒤(시간이 모자라 끝나지 않았으면) 반복 수치·문장이 남았으면 「반복 정리」 한 라운드(pickFillTargets repeat — 반복 블록만, 몫 0)
@@ -882,6 +885,25 @@ const addUsage = (a: Usage, b: Usage) => {
 export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, deps: MgFillDeps): Promise<MgFillRun | null> {
   const now = deps.now ?? Date.now;
   const deadline = Math.min(deps.deadlineMs, now() - deps.t0 + MG_FILL.maxSec * 1000);
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let waits: number = MG_FILL.limitWaits;
+  // 블록 하나 호출 — 호출 한도(stop)면 기한 안에서 1분 창이 지나길 기다렸다 같은 블록을 다시 부름(보강 한 번에 limitWaits번까지). ms = 마지막 시도의 호출 시간(기다린 시간 제외 — 다음 블록 어림용)
+  const callBlock = async (prompt: string, t: FillTarget): Promise<{ got: FillCall; ms: number }> => {
+    for (;;) {
+      const t1 = now();
+      let got: FillCall;
+      try {
+        got = await deps.call(prompt, t);
+      } catch (e) {
+        got = { ok: false, stop: false, message: e instanceof Error ? e.message : String(e) };
+      }
+      const ms = now() - t1;
+      const waitMs = MG_FILL.limitWaitSec * 1000;
+      if (got.ok || !got.stop || waits <= 0 || !canFixAgain(now() - deps.t0 + waitMs, last, deadline)) return { got, ms };
+      waits -= 1;
+      await sleep(waitMs);
+    }
+  };
   const outline = `${cardOutline(input.card)}\n${inspectionCardText(input.card)}`;
   // 원문 대조 글·근거 글은 블록 고치기(edit-actions.ts quoteHay·runDraftBlockEdit)와 같음
   const hay = evidenceKey(input.card, input.known, input.quoteOnly);
@@ -918,14 +940,7 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
     const t: FillTarget = { index: pos, why: "missing", boxes: [], share: null, facts: [], refFacts: [], repeats: [], sentences: [], conflicts: [], missing: { label: m.label, shape: shapeName(pb.kind, pb.variant), purpose: pb.purpose, materials } };
     // 글 한도는 블록 몫 없이(사람 블록 고치기와 같은 「지금 줄 + 4줄」 — 빈 모양이라 지금 줄은 1줄 안팎)
     const prompt = blockEditPrompt(deps.prompts, trial, { blockIndex: pos, kind: "edit", request: fillRequestText(deps.prompts, t), quote: "" }, evidence);
-    const t1 = now();
-    let got: FillCall;
-    try {
-      got = await deps.call(prompt, t);
-    } catch (e) {
-      got = { ok: false, stop: false, message: e instanceof Error ? e.message : String(e) };
-    }
-    const ms = now() - t1;
+    const { got, ms } = await callBlock(prompt, t);
     last = ms;
     if (!got.ok && got.stop) {
       rest(`호출 한도(${got.message})`);
@@ -961,14 +976,7 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
       const req = { blockIndex: t.index, kind: "edit" as const, request: fillRequestText(deps.prompts, t, blockRoom(cur, t.index, share), cur), quote: "" };
       // 글 한도의 여유는 블록 몫(배정이 없으면 블록 고치기와 같은 「지금 줄 수 안팎」)
       const prompt = blockEditPrompt(deps.prompts, cur, req, evidence, undefined, share);
-      const t1 = now();
-      let got: FillCall;
-      try {
-        got = await deps.call(prompt, t);
-      } catch (e) {
-        got = { ok: false, stop: false, message: e instanceof Error ? e.message : String(e) };
-      }
-      const ms = now() - t1;
+      const { got, ms } = await callBlock(prompt, t);
       last = ms;
       if (!got.ok && got.stop) {
         skipped = { why: "limit", blocks: rest(), message: got.message };

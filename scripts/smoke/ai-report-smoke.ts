@@ -15,6 +15,7 @@
 //  공통 지식 선별 방식 병행 비교(2026-10-26 — 지식공급 하이브리드 선별 계획 7단계, model-compare-run.ts 팔 sel이 부름): --select-dir <폴더>
 //   그 폴더의 선별 결과(selection.json·rules/*.md — scripts/lib/select-dir.ts)를 출처로 꽂음. 선별 방식은 환경변수 KNOWLEDGE_SELECT에 report가 있어야 켜짐(자식 환경에서 줌).
 //   선별되지 못해 통째로 넣기로 가면 경고를 찍고 meta.json select.fellBack = true
+//  --no-fix(2026-11-12 T1 — 첨부 있음/없음 대조를 실호출 2회로 묶으려고): 집필 자동 고치기를 하지 않음(기한 0 — trace.skipped = time). 운영은 고치기가 돎
 import { followupBasis } from "../../lib/ai/followup.ts";
 import { readResult } from "../../lib/inspections/model.ts";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -249,7 +250,7 @@ const own = sectionHints(card.data, prior, files, lens, actuals, 2026).filter((h
 console.log("이 과제만의 요소 후보:", own.map((h) => h.kind).join("·") || "없음");
 const t0 = Date.now();
 // --app은 서버 writeDraft와 같은 검증 인자(올해 실적 기준일 actuals.today까지)
-const { call, check: v, passes, usage, trace } = await callReportSectionFitted({ card: card.data, ctx, year: 2026, files, prior, siblings: layouts, lens, actuals, plan, kb }, (o) => verifySection(o, card.data, plan?.split?.chip ? { ...ctx, chip: plan.split.chip } : ctx, extraText, layouts, quoteOnly, 2026, own, plan ? (blocks) => applyPlanLayout(plan!, blocks) : undefined, { past, current }, app ? actuals.today : undefined));
+const { call, check: v, passes, usage, trace } = await callReportSectionFitted({ card: card.data, ctx, year: 2026, files, prior, siblings: layouts, lens, actuals, plan, kb }, (o) => verifySection(o, card.data, plan?.split?.chip ? { ...ctx, chip: plan.split.chip } : ctx, extraText, layouts, quoteOnly, 2026, own, plan ? (blocks) => applyPlanLayout(plan!, blocks) : undefined, { past, current }, app ? actuals.today : undefined), argv.includes("--no-fix") ? { deadlineMs: 0 } : {});
 const draftMs = Date.now() - t0;
 const fit = fitReport(v.spec);
 console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round((Date.now() - t0) / 1000), usage, fitPasses: passes, fit: `${fit.total}/${fit.budget}mm`, wrapped: fit.wrapped.length, ragged: fit.ragged.length, sparse: `${fit.sparse.length}/${fit.bullets}`, rows: fit.rows.map((r) => `${r.label || r.kinds} ${Math.round(r.mm)}`).join(" · "), story: v.spec.story, layout: siblingLayout(v.spec)?.signature, results: v.spec.results.length, figures: (v.spec.blocks ?? []).flatMap((b) => (b.figures ?? []).map((f) => `${f.kind}/${f.size}/${f.pos} ${f.desc}`)), unknownNumbers: v.unknownNumbers, yearIssues: v.yearIssues, composeIssues: v.composeIssues, trace, plan: plan ? planAdherence(plan, v.spec.blocks ?? []) : undefined, outlineSec, warnings: v.warnings }, null, 1));

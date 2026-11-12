@@ -292,11 +292,25 @@ export const NEEDS_MAX = 4;
  * opts.biz(주요사업): ②는 올해 실적 칸(actualStatCells)이 2개 미만일 때 자리표시로 채우라고 하지 않고 수치 띠를 빼고 다른 도식으로 바꾸라고 함 —
  * 경영관리는 수치 띠가 절을 닫는 추진성과인 경우가 많아 예전 문구 그대로
  */
+/** 경고에 쓰는 칸 이름 앞부분 글자 수(head가 빈 칸 — 경영관리 수치 띠는 head 없이 bullets[0] 성과 문장만 쓰는 칸이 있음) */
+const CELL_NAME_CHARS = 12;
+/**
+ * 수치 띠 칸 이름(경고용): head가 있으면 head, 비면 칸 글(bullets[0] → note) 앞 12자(강조·위첨자 표기를 걷음), 그것도 비면 「n번째 칸」.
+ * 2026-11-12: 경영관리 운영 경고 33건이 「시점이 없는 칸 1개()」·「( 시점 없음)」처럼 빈 괄호로 찍혔음
+ */
+function statCellName(c: { head: string; bullets: string[]; note: string }, i: number): string {
+  if (c.head.trim()) return c.head;
+  const text = (c.bullets.find((x) => x.trim()) ?? c.note).replace(/\*\*/g, "").replace(/\^\{([^}]*)\}/g, "$1").replace(/\s+/g, " ").trim();
+  if (!text) return `${i + 1}번째 칸`;
+  return text.length > CELL_NAME_CHARS ? `${text.slice(0, CELL_NAME_CHARS)}…` : text;
+}
+
 export function yearIssues(blocks: Array<{ kind: string; cells: Array<{ head: string; bullets: string[]; note: string }> }>, results: string[], allText: string, year: number, needsMax: number = NEEDS_MAX, opts: { biz?: boolean } = {}): string[] {
   const out: string[] = [];
   const yy = String(year % 100).padStart(2, "0");
   for (const b of blocks.filter((x) => x.kind === "stats")) {
-    const cells = b.cells.map((c) => ({ head: c.head, timing: timingOf({ note: c.note, text: `${c.head} ${c.bullets.join(" ")}` }, year) }));
+    // 칸 이름: 경영관리는 head가 비면 칸 글 앞부분(statCellName), 주요사업은 예전 그대로 head(출력 불변)
+    const cells = b.cells.map((c, i) => ({ head: opts.biz ? c.head : statCellName(c, i), timing: timingOf({ note: c.note, text: `${c.head} ${c.bullets.join(" ")}` }, year) }));
     const bare = cells.filter((c) => c.timing === "none");
     if (bare.length) out.push(`핵심 수치 띠: 시점이 없는 칸 ${bare.length}개(${bare.map((c) => c.head).join("·")}) — 칸 note에 그 수치의 시점(예: ’${yy}.8 기준·’${Number(yy) - 1}년·’${yy}년 목표)을 적습니다.`);
     if (opts.biz) {

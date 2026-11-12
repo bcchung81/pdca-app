@@ -1058,6 +1058,14 @@ test("resultExtras: 시점 라벨이 없는 막대는 버리고 경고", () => {
   assert.ok(r.warnings.some((w) => w.includes("시점 라벨")));
 });
 
+test("resultExtras: 「시행 후」·「적용 전」도 시점 라벨(2026-11-12 — 기존 vs 시행 후 막대가 빠졌음)", () => {
+  const r = resultExtras({ resultChart: { title: "개설 소요", series: [{ label: "기존 현장검사", value: "45,000건" }, { label: "시행 후", value: "150%" }], badge: "" } }, false, isKnown, "");
+  assert.ok(r.chart, "시행 후 라벨이면 남음");
+  assert.deepEqual(r.warnings, []);
+  const a = resultExtras({ resultChart: { title: "", series: [{ label: "적용 전", value: "45,000건" }, { label: "적용 후", value: "150%" }], badge: "" } }, false, isKnown, "");
+  assert.ok(a.chart, "적용 전/후 라벨이면 남음");
+});
+
 test("resultExtras: 근거에 없는 값이 있는 막대는 버리고 경고", () => {
   const r = resultExtras({ resultChart: { title: "", series: [{ label: "’25년", value: "45,000건" }, { label: "’26년", value: "99,999건" }], badge: "" } }, false, isKnown, "");
   assert.equal(r.chart, null);

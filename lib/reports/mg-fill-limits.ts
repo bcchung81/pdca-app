@@ -39,4 +39,12 @@ export const MG_FILL = {
    */
   avoidFigures: 20,
   avoidSentences: 8,
+  /**
+   * 호출 한도(startAiRequest 거절 — 1분 5회·동시 2건)에 걸렸을 때 기다렸다 같은 블록을 다시 부르기(2026-11-12 오픈 전 점검):
+   * 예전에는 그 라운드를 끝내(기다리지 않음) 일괄 초안(11-09 운영 경영관리 47장 — 같은 사용자가 집필을 동시에 여러 장)에서 16장·블록 62개가 「호출 한도」로 보강 없이 남았고
+   * 분량 배정 75% 미만 9장 중 6장이 그 카드였음(docs/analysis/team-2026-11-12/T2 — git 밖). 1분 창이 지나도록 limitWaitSec 기다린 뒤 같은 블록을 다시 부르고,
+   * 보강 한 번에 limitWaits번까지만(그 뒤 한도면 예전처럼 그 라운드를 끝냄). 기다림도 기한(canFixAgain — Vercel fixDeadlineMs·로컬 maxSec) 안에서만
+   */
+  limitWaitSec: 65,
+  limitWaits: 5,
 } as const;

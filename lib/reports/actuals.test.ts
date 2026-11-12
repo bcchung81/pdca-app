@@ -112,6 +112,16 @@ test("yearIssues: 핵심 수치 띠 칸에 시점이 없으면 칸별 경고, �
   assert.ok(out[1].includes("「올해 실적 재료」나 수치를 근거로 쓰는 첨부(이 과제 카드 전용 자료·연결 확정한 보고서 추가자료)의 올해 값으로, 둘 다 없으면 【확인: …】"), "교정 문구: 원장 재료 다음 근거 첨부(2026-11-03)");
 });
 
+test("yearIssues: head가 빈 수치 띠 칸은 칸 글 앞부분으로 이름을 대신함(경영관리 — 빈 괄호 「1개()」 방지), 주요사업은 예전 그대로", () => {
+  const noHead = [statsBlock([statsCell("", "", ["**정답셋 정확도** ^{측정}92.5% 향상"]), statsCell("", "", [""]), statsCell("97%")])];
+  const out = yearIssues(noHead, [], "", 2026);
+  assert.match(out[0], /시점이 없는 칸 3개\(정답셋 정확도 측정92…·2번째 칸·97%\)/, "강조·위첨자 표기를 걷고 12자 + …, 글이 없으면 칸 번호");
+  assert.match(out[1], /실적 칸이 없습니다\(정답셋 정확도 측정92… 시점 없음·2번째 칸 시점 없음·97% 시점 없음\)/);
+  assert.ok(!out.some((w) => /\(\)|\( /.test(w)), "빈 괄호 없음");
+  const biz = yearIssues(noHead, [], "", 2026, NEEDS_MAX, { biz: true });
+  assert.match(biz[0], /시점이 없는 칸 3개\(··97%\)/, "주요사업 출력은 그대로(head)");
+});
+
 test("yearIssues: 시점이 있고 올해·확인 칸이 하나라도 있으면 수치 띠 경고 없음", () => {
   const ok = [statsBlock([statsCell("40,000건", "’26.8 기준"), statsCell("97%", "’25년")])];
   assert.deepEqual(yearIssues(ok, [], "", 2026), []);

@@ -23,6 +23,9 @@
 //   HTML·<HTML>.json은 보강한 초안, <HTML>.meta.json fill에 보강 전후 높이·사유와 라운드별(rounds — 최대 2회) 고른 블록·사유(빈 칸·분량·반복·안 쓴 사실)·블록 몫·늘어난 mm·
 //   반복 수치 제거 결과(removed·kept)·성공/실패·시간·토큰(DB에 쓰지 않음). 반복 수치 남길 자리는 구성안 성과 배정(plan)을 봄. 호출 기록이 없어 호출 한도(startAiRequest)로는 멈추지 않음.
 //   --no-fill이면 보강 없이(1차 초안만 — 비교용, meta.fill.off)
+//  저장 초안 보강만(2026-11-12): --fill-saved = 운영에 저장된 초안·구성안을 읽어 보강(runMgFill)만 다시 돌림(저장 안 함 — 호출 한도로 보강이 멈췄던 초안이 기다림 고침 뒤 얼마나 차는지 보기).
+//   원장 보강 닫기(closed)·앱이 뺀 블록(dropped)은 저장 초안에 남지 않아 빈 목록으로 둠. HTML 경로에 초안, <HTML>.json·.meta.json(fill 전후)
+//  첨부 효과 대조(2026-11-12): --replan = --add-file과 같은 흐름(저장된 구성안 그대로 다시 집필)을 추가 파일 없이 — 같은 구성안의 「첨부 없음」 기준 초안(--add-file 결과와 견줌)
 //   빠진 구성안 블록(2026-10-29): 보강 맨 앞에 서버와 같게 집필이 빠뜨린 구성안 블록을 빈 모양으로 끼워 채움 — meta.fill.missing(구성안 블록 번호·라벨·모양·절·데이터 블록 여부),
 //   meta.fill.revived(블록마다 받음/못 받음·늘어난 mm·까닭·시간·토큰). 구성안 지킴 셈은 서버처럼 앱이 뺀 블록(droppedShapes)을 덜어냄
 import { createClient } from "@supabase/supabase-js";
@@ -283,8 +286,23 @@ if (partKey) {
   console.log(JSON.stringify({ sec: Math.round((Date.now() - t) / 1000), alts: res.map((r, i) => ({ no: i + 1, ...r, sig: undefined, same: same[i] === null ? null : same[i]! + 1 })) }, null, 1));
   process.exit(0);
 }
-if (addPaths.length) {
-  // 자료 반영 고치기: 저장된 구성안 그대로 + 구성안 뒤 추가된 자료·담당자 요청(서버 approveReportOutline → writeMgDraft revise)
+if (process.argv.includes("--fill-saved")) {
+  const { data: row } = await db.from("card_report_drafts").select("outline, spec, warnings, unknown_numbers").eq("card_id", card.id).eq("year", year).maybeSingle();
+  const plan = readComposition(row?.outline);
+  const saved = row?.spec as ReportSectionSpec | null | undefined;
+  if (!plan?.mg || !saved?.mg) throw new Error("저장된 경영관리 초안·구성안이 없음");
+  const out = args[1] ?? `/tmp/mg-fill-${id.replace(/\//g, "_")}.html`;
+  const v = { spec: saved, closed: [] as string[], droppedShapes: [] as Array<{ kind: string; variant: string }>, unknownNumbers: (row?.unknown_numbers ?? []) as string[], warnings: [] as string[] };
+  const t1 = Date.now();
+  const fin = await fillStep(v as unknown as ReturnType<typeof verifyMgDraft>, (row?.warnings ?? []) as string[], t1, 60_000, plan);
+  writeFileSync(out, sectionDocument(fin.spec, fin.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: "saved+fill" }));
+  writeFileSync(`${out}.json`, JSON.stringify(fin.spec, null, 1));
+  writeFileSync(`${out}.meta.json`, JSON.stringify({ warnings: fin.warnings, unknownNumbers: fin.unknownNumbers, fill: fin.meta, provider: aiProvider() }, null, 1));
+  console.log(JSON.stringify({ fill: { before: fin.meta.before, after: "after" in fin.meta ? fin.meta.after : null, target: fin.meta.target }, warnings: fin.warnings.filter((w) => /분량/.test(w)), html: out }, null, 1));
+  process.exit(0);
+}
+if (addPaths.length || process.argv.includes("--replan")) {
+  // 자료 반영 고치기(--replan이면 추가 파일 없이 — 첨부 없음 기준): 저장된 구성안 그대로 + 구성안 뒤 추가된 자료·담당자 요청(서버 approveReportOutline → writeMgDraft revise)
   const { data: row } = await db.from("card_report_drafts").select("outline").eq("card_id", card.id).eq("year", year).maybeSingle();
   const plan = readComposition(row?.outline);
   if (!plan?.mg) throw new Error("저장된 경영관리 구성안이 없음 — 앱에서 구성안을 만든 뒤 시험해 주세요");

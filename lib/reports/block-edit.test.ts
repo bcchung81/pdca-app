@@ -348,7 +348,8 @@ test("resultEditPrompt: 고치기는 result 절·질문은 resultAsk 절 + 근�
   assert.ok(edit.includes('"resultCards":[{"tag":"효율"'), "3칸도 보여 줌");
   assert.match(edit, new RegExp(`${RESULT_LIMITS.lines}줄까지`));
   assert.match(edit, /있음\(「50% 단축!」/);
-  assert.match(edit, /【확인: …】 자리표시는 지우지 않/);
+  // 자리표시: 근거에 값이 있으면 바꿔 넣고 없으면 남김(2026-11-12 — 예전 「지우지 않음」만이라 첨부로 채울 수 없었음)
+  assert.match(edit, /【확인: …】 자리표시는 그 값이 아래 근거\(카드·첨부 등\)에 있으면 적힌 시점·값 그대로 바꿔 넣고, 없으면 지우지 않/);
   assert.match(edit, /수치 표현을 다듬어 주세요/);
   assert.match(edit, /카드 글/);
   assert.doesNotMatch(edit, /\{\{\w+\}\}/);

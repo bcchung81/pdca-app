@@ -259,7 +259,7 @@ const okCall = (block: (b: Block) => Block, seen: string[] = []) => async (promp
 };
 const baseRows: Array<[MgPart, Block]> = [[A, bullets("추진내용", ["교육 체계 개편 추진"])], [B, bullets("추진성과", ["운영 개선"])]];
 const baseSpec = mgSpec(baseRows, 2);
-const deps = (call: (p: string, t: FillTarget) => Promise<FillCall>, o: Partial<{ t0: number; firstMs: number; deadlineMs: number; now: () => number }> = {}) => ({ prompts: P, call, t0: 0, firstMs: 0, deadlineMs: Infinity, now: () => 0, ...o });
+const deps = (call: (p: string, t: FillTarget) => Promise<FillCall>, o: Partial<{ t0: number; firstMs: number; deadlineMs: number; now: () => number; sleep: (ms: number) => Promise<void> }> = {}) => ({ prompts: P, call, t0: 0, firstMs: 0, deadlineMs: Infinity, now: () => 0, sleep: async () => {}, ...o });
 
 test("다시 쓰기: 받은 블록은 그 블록만 바뀌고(사람이 고친 블록 표시 없음) 높이가 늘며, 요청 글은 블록 고치기 edit 절 + fill 조각", async () => {
   const seen: string[] = [];
@@ -305,14 +305,19 @@ test("다시 쓰기: 근거 밖 숫자·종류 바꾸기·칸 수 바꾸기·바
   assert.ok(res(thrown!).length >= 2, "던진 블록 뒤 블록도 시도");
 });
 
-test("다시 쓰기: 호출 한도에 걸리면(stop) 남은 블록은 시작하지 않음, 기한(canFixAgain) 안에 한 번 더 부를 시간이 없으면 시작하지 않음", async () => {
+test("다시 쓰기: 호출 한도에 걸리면(stop) 기다렸다 같은 블록을 다시 부르고(보강 한 번에 limitWaits번까지), 그래도 한도면 남은 블록은 시작하지 않음, 기한(canFixAgain) 안에 한 번 더 부를 시간이 없으면 시작하지 않음", async () => {
   let calls = 0;
-  const limited = await runMgFill(mgSpec(baseRows, 3), input, deps(async () => {
-    calls += 1;
-    return { ok: false, stop: true, message: "요청이 너무 잦습니다." };
-  }));
-  // 한도는 그 라운드만 끝냄(기다리지 않음) — 아직 배정 × 0.9 미만이라 다음 라운드가 한 번씩 더 시도하고 또 걸리면 끝(라운드마다 한 번)
-  assert.equal(calls, MG_FILL.rounds);
+  const slept: number[] = [];
+  const limited = await runMgFill(mgSpec(baseRows, 3), input, deps(
+    async () => {
+      calls += 1;
+      return { ok: false, stop: true, message: "요청이 너무 잦습니다." };
+    },
+    { sleep: async (ms) => void slept.push(ms) },
+  ));
+  // 기다림을 다 쓴 뒤의 한도는 그 라운드만 끝냄 — 아직 배정 × 0.9 미만이라 다음 라운드가 한 번씩 더 시도하고 또 걸리면 끝(라운드마다 한 번)
+  assert.deepEqual(slept, Array.from({ length: MG_FILL.limitWaits }, () => MG_FILL.limitWaitSec * 1000));
+  assert.equal(calls, MG_FILL.rounds + MG_FILL.limitWaits);
   assert.deepEqual(limited!.rounds.map((r) => r.skipped?.why), Array.from({ length: MG_FILL.rounds }, () => "limit"));
   assert.equal(limited!.rounds[0].skipped?.blocks.length, limited!.rounds[0].targets.length);
   let timedCalls = 0;
@@ -322,6 +327,35 @@ test("다시 쓰기: 호출 한도에 걸리면(stop) 남은 블록은 시작하
   assert.equal(timed!.rounds[0].skipped?.why, "time");
   assert.equal(timed!.rounds.length, 1, "시간이 없으면 2회차도 없음");
   assert.equal(await runMgFill(mgSpec([[A, bullets("추진내용", ["교육 120명이 마침", "기관 23곳 참여"])]]), input, deps(async () => assert.fail("부르면 안 됨"))), null, "사유가 없으면 AI를 부르지 않음");
+});
+
+test("다시 쓰기: 호출 한도(일괄 초안에서 같은 사용자의 1분 5회)에 걸린 블록은 기다린 뒤 다시 불러 받음 — 기다린 시간은 다음 블록 어림(직전 호출 ms)에 넣지 않음, 기한 안에 기다릴 시간이 없으면 예전처럼 라운드를 끝냄", async () => {
+  const clock = { t: 0 };
+  let n = 0;
+  const run = (await runMgFill(baseSpec, input, deps(
+    async (_p, t) => {
+      n += 1;
+      if (n === 1) return { ok: false, stop: true, message: "요청이 너무 잦습니다. 1분 뒤 다시 시도해 주세요." };
+      clock.t += 1000;
+      const b = baseSpec.blocks![t.index];
+      return { ok: true, output: { block: out({ ...b, items: [...b.items, b.label === "추진내용" ? "직무교육 120명 수료로 현장 역량을 높임" : "참여 기관 23곳으로 늘려 협업 범위를 넓힘"] }), reply: "" }, usage, model: "fake" };
+    },
+    { now: () => clock.t, sleep: async (ms) => void (clock.t += ms) },
+  )))!;
+  const r1 = run.rounds[0];
+  assert.equal(r1.skipped, null, "한도에 걸려도 라운드를 끝내지 않음");
+  assert.ok(r1.results.length >= 2 && r1.results.every((r) => r.ok), JSON.stringify(r1.results));
+  assert.equal(r1.results[0].ms, 1000, "기다린 65초는 호출 시간이 아님");
+  // 기한(Vercel 690초)이 기다림 + 한 번 더 부를 시간보다 짧으면 기다리지 않음
+  // 지금 600초 · 호출마다 30초 — 부를 시간은 있지만(600 + 30 × 1.1 ≤ 690) 기다림 65초를 더하면 넘음
+  const tc = { t: 600_000 };
+  let m = 0;
+  const tight = (await runMgFill(baseSpec, input, deps(
+    async () => ((m += 1), (tc.t += 30_000), { ok: false, stop: true, message: "요청이 너무 잦습니다." }),
+    { now: () => tc.t, firstMs: 30_000, deadlineMs: 690_000, sleep: async () => assert.fail("기다리면 안 됨") },
+  )))!;
+  assert.equal(tight.rounds[0].skipped?.why, "limit");
+  assert.ok(m >= 1);
 });
 
 test("경고·저장 값: 보강한 블록·채운 mm(참고 「분량 보강」), 1차 유지 블록(참고 「분량 보강 실패」), 집필 때만 셈하는 1차 경고는 남기고 다시 점검 경고는 새로", async () => {

@@ -285,7 +285,9 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 카드의 국정과제 칸이 과제 이름뿐(56장 중 숫자 든 칸 4)이라 「기여를 근거 수치·실적으로」를 채울 근거가 없어 빠지는 것(근거 우선). 이름만 한 줄 남길지는 사용자 결정
   // 2026-11-10 국정과제 한 구절(사용자 결정): inputs.md 국정과제 줄 — 기여 수치가 근거에 없으면 번호·이름만 추진배경 불릿·추진성과 문장 안의 짧은 구절로(수치·기여 주장 없음, 소명 불릿 행은 계속 금지)
   // report-block@d35a938c → a713b0ac (report-draft@434b1eef → 5ed9e3ab, report-outline@3b9e6c1e → 24e40c57). 경영관리 판은 그대로(report-draft-mg/inputs.md를 따로 씀)
-  assert.equal(bp.version, "report-block@a713b0ac", "주요사업 블록 고치기 판은 분량 채움 보강으로는 안 바뀌고, 끼운 report-draft 조각(inputs·style·blocks)이 바뀌면 바뀜(2026-11-10 inputs.md 국정과제 한 구절)");
+  // 2026-11-12 T1 프롬프트 개선: 추진성과 고치기가 근거에 값이 있는 【확인】도 지우지 못하던 문구(request.md result·schema.md results)를 고침 →
+  // report-block@a713b0ac → 50a0e15b. report-draft·report-outline·경영관리 판은 그대로(추진성과 수치 되풀이 문구도 고쳤다가 실호출 2/2판에서 효과가 없어 되돌림)
+  assert.equal(bp.version, "report-block@50a0e15b", "주요사업 블록 고치기 판은 분량 채움 보강으로는 안 바뀌고, 끼운 report-draft 조각(inputs·style·blocks)이 바뀌면 바뀜(2026-11-10 inputs.md 국정과제 한 구절)");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {
@@ -364,7 +366,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-10 T1 틀 다양성: ④ 기존·개선형에 「바꾼 전후가 근거에 있을 때만 — 실적 수치만 늘었으면 ②」(report-draft-mg/stories.md — 운영 일괄에서 ④가 주 틀 23절, 2025 보고서 6%)로 판 바뀜
   // (@de6df39a → @41d95d8b — 블록 고치기 판 그대로, 주요사업 report-draft도 stories.md 「후보부터」 문장으로 바뀜 — 판 고정 시험은 없음)
   // 2026-11-10 T1 2단계: report-draft-mg/blocks.md compare:diag 줄 「절을 여는 블록은 주 틀의 여는 블록부터, 문제와 방향이 둘 이상 1:1일 때만 diag」(운영 일괄 47장 중 35장이 diag로 엶)·pdca.md 「문제 칸」 → 「문제를 적는 자리(칸·불릿 줄)」, blocks.md#choose 「절끼리 같은 모양(steps·table)을 되풀이하지 않음」(47장 중 25장이 되풀이 — steps:row 15)으로 판 바뀜(@41d95d8b → @f1307ca8), T3 리뷰 T1-X1 「닫는 블록(추진성과 행·추진실적 구분표)과 기본 구분표는 되풀이 금지에서 뺌」으로 @f1307ca8 → @173c8916
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@173c8916");
+  // 2026-11-12 T2 프롬프트 점검: role 6번 「칸을 채우려고 근거에 없는 사실을 덧붙이지 않음(원장·첨부의 다른 사실로 채움)」(근거 쓰는 법 › 칸 채우기와 부딪힘)·pdca.md 지적 한 줄 규칙 두 줄을 한 줄로(뜻 그대로)로 판 바뀜(@173c8916 → @4f34d551)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@4f34d551");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜
@@ -380,7 +383,9 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-04 이야기 틀 ⑬~⑮(끼운 report-draft-mg/stories.md, system 5번·request·schema story 「15종」)로 판 바뀜(@4915aa81 → @c2c704f7 — 주요사업 report-outline도 stories.md ⑬~⑯·「16종」으로 바뀜, 판 고정 시험은 없음)
   // 2026-11-10 T1 틀 다양성: 끼운 stories.md ④ 조건 + request storyHints 「후보 틀의 신호에 맞는 절이 있으면 그 절의 주 틀로, 안 쓰면 이유를 첫 절 why에」로 판 바뀜(@c2c704f7 → @7287517c)
   // 2026-11-10 T1 2단계: 끼운 blocks.md·pdca.md 위 두 문장 + request siblings.head 「다른 카드들이 여는 블록으로 쓴 모양은 피함」(같은 지표 형제와 여는 모양이 같은 카드 33/47) + system 5번 복합 도식 「절끼리 같은 모양을 되풀이하지 않음」으로 판 바뀜(@7287517c → @e20d3a25), T3 리뷰 T1-X1(끼운 blocks.md)·X2 「각 절의 여는 시각 블록만 견줌 — 주 틀의 여는 블록이 먼저, 피하려고 diag로 바꾸지 않음」으로 @e20d3a25 → @6f87cead
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@6f87cead");
+  // 2026-11-12 T2 프롬프트 점검: 끼운 pdca.md 지적 줄 합침(뜻 그대로), system 8번이 같은 글의 「PDCA 작성 기준」을 되풀이하던 문장을 가리킴으로 바꿔 판 바뀜(@6f87cead → @b255d08e)
+  // — 같은 날 시험한 절·블록 수 「분량 목표가 먼저」(PR1·PR2, @8915e4e8)는 추가 측정 5장에서 순효과가 갈려(얇은 카드 2장 감소) 사용자 결정으로 되돌림(오픈 뒤 재측정)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@b255d08e");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 반복 문장 보강 사유(report-block-mg/request.md fill.sentence·fill.sentence.item)로 블록 고치기 판만 바뀜(@e0653ee9 → @8302d6f6 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none)로 블록 고치기 판만 바뀜(@8302d6f6 → @0c7d879b — 집필·구성안·주요사업 판 그대로)
