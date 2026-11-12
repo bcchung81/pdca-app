@@ -13,7 +13,7 @@ import { FIT_TAG } from "../ui/status-tone.ts";
  * 모양은 과제원장 「AI 작성지원」(components/cards/ai-assist.tsx)과 같음: 오른쪽 말풍선(요청 종류 · 아래 줄) → AI 동그라미 + 답.
  * 마지막 차례에만 할 일(「채울 자료 N건 ▸」)과 다음 단추가 붙음(state — 부르는 쪽이 그림).
  */
-export function TurnView(props: { turn: ThreadTurn; state?: ReactNode; onGotoBlock: (j: number) => void; onOpenOutline: () => void; showOutlineLink: boolean }) {
+export function TurnView(props: { turn: ThreadTurn; state?: ReactNode; onGotoBlock: (j: number) => void; onOpenOutline: () => void; showOutlineLink: boolean; /** 참고한 주요사업 초안이 바뀜(경영관리 — 마지막 초안 차례에만) */ bizStale?: { text: string; title: string } | null }) {
   const t = props.turn;
   return (
     <li data-turn={t.key} className="flex min-w-0 flex-col gap-2.5">
@@ -34,6 +34,11 @@ export function TurnView(props: { turn: ThreadTurn; state?: ReactNode; onGotoBlo
             {t.stale && (
               <Tag tone="warnSolid" title="초안을 만든 뒤 원장 카드가 바뀌었습니다">
                 원장이 바뀜 — 다시 쓰기 권장
+              </Tag>
+            )}
+            {props.bizStale && (
+              <Tag tone="warnSolid" title={props.bizStale.title}>
+                {props.bizStale.text}
               </Tag>
             )}
             {t.olderEdits > 0 && <span className="text-xs text-muted-2">앞선 블록 고치기 {t.olderEdits}건은 「수정 이력」에</span>}

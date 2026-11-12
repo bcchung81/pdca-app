@@ -29,6 +29,14 @@ export function isCreditBalanceError(message: string): boolean {
   return /credit balance is too low/i.test(message);
 }
 
+/**
+ * 조직이 직접 정한 지출 한도에 닿아 거절된 오류 글인가(400 invalid_request_error 「You have reached your specified API usage limits」·
+ * 작업 공간이면 「… specified workspace API usage limits」 — platform.claude.com/docs/en/api/rate-limits, 2026-11-12)
+ */
+export function isSpendLimitError(message: string): boolean {
+  return /reached your specified (?:workspace )?API usage limits/i.test(message);
+}
+
 /** 쓸 API 키 목록 — 기본 키(ANTHROPIC_API_KEY) → 예비 1(ANTHROPIC_API_KEY_FALLBACK) → 예비 2(ANTHROPIC_API_KEY_FALLBACK2) 순. 공백 제거, 빈 값·같은 키 중복은 뺌 */
 export function apiKeysFrom(env: Record<string, string | undefined>): string[] {
   const keys = [env.ANTHROPIC_API_KEY, env.ANTHROPIC_API_KEY_FALLBACK, env.ANTHROPIC_API_KEY_FALLBACK2].map((k) => (k ?? "").trim()).filter(Boolean);

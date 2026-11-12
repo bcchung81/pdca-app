@@ -8,6 +8,7 @@ import { ATTACH_ACCEPT, ATTACH_LABEL, isAttachableName } from "../../lib/ai/writ
 import { FileDrop } from "../ui/file-drop";
 import { T } from "../ui/kit";
 import { useAsk } from "../ui/confirm-dialog";
+import { approxChars, bizNoParts, initialBiz, offKeysOf } from "../../lib/reports/biz-select.ts";
 
 /** 초안 근거로 고를 수 있는 첨부 자료 하나 */
 export interface SourceFile {
@@ -40,13 +41,45 @@ export const kb = (n: number | null) => (n == null ? "" : n >= 1024 * 1024 ? `${
 /** 읽은 글 수(1만 자 이상은 「1.1만 자」, 미만은 「n자」) */
 export const charsLabel = (n: number | null) => (n === null ? "" : n >= 10_000 ? `${(n / 10_000).toFixed(1)}만 자` : `${n}자`);
 
+/** 참고로 고를 수 있는 주요사업 경평 초안 하나(경영관리 카드일 때만 — 그 초안과 그 초안이 쓴 붙임을 참고 자료로 넣음) */
+export interface BizRef {
+  /** 주요사업 카드 id */
+  id: string;
+  /** 「주요사업N N-가」 */
+  taskId: string;
+  title: string;
+  team: string;
+  /** 그 초안을 마지막으로 저장한 시각 */
+  updatedAt: string;
+  /** 원장 + 초안 + 붙임 글 길이 어림 */
+  chars: number;
+  /** 그 초안에서 이미 「없는 숫자」인 것 수 */
+  unknownCount: number;
+  /** 추천 까닭: a = 이 카드 글이 인용 · b = 지침 13 연계 색인 */
+  reasons: Array<"a" | "b">;
+  /** 지난 경영관리 초안이 참고한 뒤 이 초안이 바뀜 */
+  stale: boolean;
+}
+
+/** MM-DD(서울) — 「판」 표시용 */
+const mmdd = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit" }).formatToParts(d);
+  return `${p.find((x) => x.type === "month")?.value}-${p.find((x) => x.type === "day")?.value}`;
+};
+
 /** 근거 고르기 재료(서버가 넘김) */
 export interface SourceProps {
   cardFiles: SourceFile[];
   /** null = 보고서 준비 전 */
   reportFiles: SourceFile[] | null;
   /** 지난 초안에 넣은 자료와 만든 시각(없으면 null — 모두 넣음) */
-  used: { card: string[]; report: string[]; at: string } | null;
+  used: { card: string[]; report: string[]; biz?: string[]; at: string } | null;
+  /** 참고할 주요사업 경평 초안 후보(경영관리 카드이고 읽을 수 있는 초안이 있을 때만 — 없으면 묶음을 그리지 않음) */
+  biz?: BizRef[];
+  /** 저장된 구성안 sources.biz(초안이 없을 때 첫 선택으로 이어받음 — 안 이으면 구성안에서 고른 것이 집필 요청의 off로 지워짐) */
+  outlineBiz?: string[];
   /** 보고서 추가자료를 올리는 화면 */
   reportHref: string | null;
   /** 전년도 경영실적보고서 같은 과제 절(과거 실적): 같은 주요사업 절 모두(닮은 순) · 처음 고른 것(지난 초안에 쓴 것, 없으면 자동) · 자동 */
@@ -64,6 +97,11 @@ export interface DraftSelection {
   /** 뺀 자료 열쇠(c:<id>·r:<id>) */
   off: Set<string>;
   toggle: (key: string) => void;
+  /** 고른 주요사업 경평 초안(기본은 비어 있음 — 사람이 고를 때만) */
+  biz: BizRef[];
+  /** 서버에 보낼 뺀 열쇠: off + 고르지 않은 주요사업 초안(b:<카드 id>) — pickOf의 off 인자 */
+  offKeys: string[];
+  toggleBiz: (id: string) => void;
   priorKeys: string[];
   setPriorKeys: Dispatch<SetStateAction<string[]>>;
 }
@@ -81,6 +119,8 @@ export function useDraftSelection(p: SourceProps): DraftSelection {
     return new Set([...p.cardFiles.filter(before).map((f) => `c:${f.id}`), ...(p.reportFiles ?? []).filter(before).map((f) => `r:${f.id}`)].filter((k) => !on.has(k)));
   });
   const [priorKeys, setPriorKeys] = useState<string[]>(() => p.prior.initial.slice(0, 2));
+  // 주요사업 초안: 기본은 비어 있음(지난 초안에 참고한 것만 이어 받음)
+  const [bizOn, setBizOn] = useState<Set<string>>(() => new Set(initialBiz(p)));
   const picked = (kind: "c" | "r", files: SourceFile[]) => files.filter((f) => f.attachable && !off.has(`${kind}:${f.id}`));
   const card = picked("c", p.cardFiles);
   const report = picked("r", p.reportFiles ?? []);
@@ -91,11 +131,21 @@ export function useDraftSelection(p: SourceProps): DraftSelection {
       else n.add(key);
       return n;
     });
-  return { card, report, count: card.length + report.length, off, toggle, priorKeys, setPriorKeys };
+  const cands = p.biz ?? [];
+  const biz = cands.filter((b) => bizOn.has(b.id));
+  const offKeys = offKeysOf(off, cands, bizOn, [...(p.used?.biz ?? []), ...(p.outlineBiz ?? [])]);
+  const toggleBiz = (id: string) =>
+    setBizOn((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  return { card, report, count: card.length + report.length, off, toggle, biz, offKeys, toggleBiz, priorKeys, setPriorKeys };
 }
 
 /** 넣을 근거 한 줄(요청 칸·근거 자료 패널 공용) — 사람이 고른 것만(자동으로 고르는 평가 근거 조각 수는 근거 자료 패널에만, 2026-11-04) */
-export const selectionLine = (sel: DraftSelection) => `카드 · 첨부 ${sel.count}건${sel.priorKeys.length ? ` · 전년 절 ${sel.priorKeys.length}` : ""}`;
+export const selectionLine = (sel: DraftSelection) => `카드 · 첨부 ${sel.count}건${sel.priorKeys.length ? ` · 전년 절 ${sel.priorKeys.length}` : ""}${sel.biz.length ? ` · 주요사업 초안 ${sel.biz.length}` : ""}`;
 
 /**
  * 경평 초안 과제별 초안 오른쪽 자리의 「근거 자료」 패널(과제원장 「자료」처럼 머리의 폴더 단추로 바꿔 열고 ✕·Esc로 탭에 돌아감):
@@ -106,6 +156,7 @@ export function DraftSources(props: SourceProps & { uid: string; canWrite: boole
   const [err, setErr] = useState<string | null>(null);
   const { ask, dialog: askDialog } = useAsk();
   const { sel, busy } = props;
+  const bizCands = props.biz ?? [];
   const priorOf = (key: string) => props.prior.options.find((o) => o.key === key);
 
   const list = (kind: "c" | "r", files: SourceFile[], removable: boolean) => (
@@ -186,7 +237,7 @@ export function DraftSources(props: SourceProps & { uid: string; canWrite: boole
           근거 자료
         </h3>
         <span className="flex shrink-0 items-center gap-2">
-          <span className="text-xs text-muted">첨부 {sel.count}건</span>
+          <span className="text-xs text-muted">첨부 {sel.count}건{sel.biz.length ? ` · 주요사업 초안 ${sel.biz.length}` : ""}</span>
           <button type="button" onClick={props.onClose} aria-label="근거 자료 닫기" title="닫고 탭으로 (Esc)" className="flex size-7 shrink-0 items-center justify-center rounded-md border border-field-line text-muted hover:border-navy">
             ✕
           </button>
@@ -266,6 +317,41 @@ export function DraftSources(props: SourceProps & { uid: string; canWrite: boole
             "평가위원이 점수를 주는 기준(편람 ②·평가방법·’26 대응방향·작성 착안사항)과 ’25 지적·실사 질의응답·유관기관 B+·B0 사례 — AI가 무엇을 앞세울지 정하는 잣대로 씁니다. 그 수치·다른 기관 사실은 KCA 실적으로 쓰지 않습니다.",
           )}
         </div>
+        {bizCands.length > 0 && (
+          <div data-biz-refs className="flex min-w-0 flex-col gap-1.5">
+            {head("주요사업 경평 초안(참고)", sel.biz.length ? `${sel.biz.length}건 · ${approxChars(sel.biz.reduce((n, b) => n + b.chars, 0))}` : "0건")}
+            <ul className="flex flex-col rounded-md border border-line">
+              {bizCands.map((b) => (
+                <li key={b.id} className="flex min-w-0 items-center gap-2 border-b border-row-line px-2.5 py-1.5 last:border-b-0">
+                  <input type="checkbox" aria-label={`주요사업 ${b.taskId} 초안 참고하기`} disabled={!props.canWrite || busy} checked={sel.biz.some((x) => x.id === b.id)} onChange={() => sel.toggleBiz(b.id)} className="size-4 shrink-0 accent-navy" />
+                  <span className="min-w-0 grow truncate text-ui" title={`${b.taskId} ${b.title}`}>
+                    {bizNoParts(b.taskId).group && <span className="text-xs text-muted-2">{bizNoParts(b.taskId).group} · </span>}
+                    {bizNoParts(b.taskId).no} {b.title}
+                  </span>
+                  {b.reasons.includes("a") && (
+                    <span className="shrink-0 rounded-chip bg-info-bg px-1 text-xs text-link" title="이 카드 글이 이 주요사업 과제번호를 인용합니다">
+                      이 카드가 인용
+                    </span>
+                  )}
+                  {b.reasons.includes("b") && (
+                    <span className="shrink-0 rounded-chip bg-info-bg px-1 text-xs text-link" title="지침 13의 경영관리 지표 ↔ 주요사업 연계 색인에 오른 과제입니다">
+                      지침 연계
+                    </span>
+                  )}
+                  {b.stale && (
+                    <span className="shrink-0 rounded-chip bg-warn-bg px-1 text-xs text-warn" title="지난 경영관리 초안이 참고한 뒤 이 주요사업 초안이 바뀌었습니다 — 다시 쓰면 지금 판을 참고합니다">
+                      참고 뒤 바뀜
+                    </span>
+                  )}
+                  <span className="shrink-0 font-mono text-xs text-muted-2" title={b.unknownCount ? `그 초안에서 이미 「없는 숫자」인 것 ${b.unknownCount}개 — 이 초안에서도 근거로 인정하지 않습니다` : undefined}>
+                    {b.team} · {mmdd(b.updatedAt)} 판 · {approxChars(b.chars)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {note("고른 주요사업 초안과 그 초안이 쓴 붙임을 참고로 넣음 — 출처를 밝혀 연계 성과로 씀", "고른 주요사업 경평 초안과 그 초안이 쓴 붙임(카드 전용 자료·보고서 추가자료)을 참고로 넣습니다 — 출처를 밝혀 연계 성과로 씁니다. 그 초안에서 이미 「없는 숫자」인 것은 여기서도 근거로 인정하지 않습니다.")}
+          </div>
+        )}
         <div className="flex min-w-0 flex-col gap-1.5">
           {head("카드 전용 자료", `${props.cardFiles.length}건`)}
           {props.cardFiles.length > 0 ? list("c", props.cardFiles, props.canWrite) : <p className="text-ui text-muted">아직 없습니다 — 실적 결과보고·보도자료·공문 등을 올리세요.</p>}

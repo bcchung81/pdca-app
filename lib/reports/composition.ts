@@ -113,7 +113,7 @@ export interface Composition {
   /** 만들 때의 머리 모드(사업 단위 조판 — 목차 순서로 앞 과제와 같은 대상사업·실행과제면 머리를 뺀 예산). 이 기능 전 구성안은 없음 = all */
   head?: HeadMode;
   /** 만들 때 쓴 근거(카드 전용 자료·보고서 추가자료 id·전년 절 키) — 승인 뒤 집필이 같은 근거를 씀 */
-  sources?: { card: string[]; report: string[]; prior: string[] };
+  sources?: { card: string[]; report: string[]; prior: string[]; biz?: string[] };
   /** 경영관리: 평가내용 → 대주제 → 절 골격(블록은 PlanBlock.at으로 절에 놓임, lib/reports/mg-outline.ts). 주요사업은 없음 */
   mg?: MgOutlineMeta;
   /** 만들 때 담당자가 고른 짜임(이야기 틀·구성 패턴·2025 예시 절·요청 글 — lib/reports/framework-pick.ts, 2026-10-12). 고르지 않았거나 이 기능 전 구성안은 없음 */

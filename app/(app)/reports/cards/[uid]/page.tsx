@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DraftWorkspace } from "../../../../../components/reports/draft-workspace";
+import { cardOutline } from "../../../../../lib/ai/writer.ts";
+import { mgLinkIndex } from "../../../../../lib/ai/run.ts";
 import { requireUser } from "../../../../../lib/auth/dal.ts";
 import { deptScope } from "../../../../../lib/auth/scope.ts";
 import { currentPeriod } from "../../../../../lib/cards/view.ts";
@@ -9,9 +11,10 @@ import { returnTarget, safeReturn, withReturn } from "../../../../../lib/nav/ret
 import { blockShapeCode, shapeMenu, shapeRules } from "../../../../../lib/reports/block-shape.ts";
 import { planMatch, readComposition } from "../../../../../lib/reports/composition.ts";
 import { LENS_LABEL } from "../../../../../lib/reports/lens.ts";
+import { loadBizRefs } from "../../../../../lib/reports/mg-biz-queries.ts";
 import { readSection } from "../../../../../lib/reports/section.ts";
 import { createClient } from "../../../../../lib/supabase/server.ts";
-import { cardCommentsOf, cardRefs, checkNeedsOf, menuOf, neighborsOf, outlineDataOf, priorChoices, sourceFilesOf, threadOf, usedOf } from "./derive.ts";
+import { bizChoicesOf, bizStaleLabel, bizStaleOf, cardCommentsOf, cardRefs, checkNeedsOf, menuOf, neighborsOf, outlineDataOf, priorChoices, sourceFilesOf, threadOf, usedOf } from "./derive.ts";
 import { loadCard, loadReportCardData } from "./load.ts";
 import { ReportCardPreview } from "./report-card-preview";
 import { ReportFontNotice } from "../../../../../components/reports/report-font-status";
@@ -58,6 +61,10 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
   const { cardFiles, reportFiles } = sourceFilesOf({ matRows, signed, report, reportMats }, card.id);
 
   const spec = readSection(draft?.spec);
+  // 경영관리 카드만: 참고할 주요사업 경평 초안 후보(그 카드를 읽을 수 있는 사람에게만 DB 함수가 돌려줌 — 없거나 오류면 빈 목록이라 주요사업 화면·권한 없는 사람은 그대로)
+  const bizRows = mg ? await loadBizRefs(supabase, card.id, year) : [];
+  const biz = bizChoicesOf(bizRows, { spec, cardText: mg ? cardOutline(card.data as Record<string, unknown>) : "", unitId: card.eval_unit_id, linkIndex: mg ? mgLinkIndex() : [] });
+  const bizStale = bizStaleLabel(bizStaleOf(spec, bizRows));
   // 구성안(재료표·짜임 — 담당자가 보고 고친 뒤 승인하면 그 짜임대로 집필)
   const composition = readComposition(draft?.outline);
   const outlineModule = composition?.module ?? spec?.module ?? 1;
@@ -105,7 +112,7 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
       toolbar={
         <>
           <ReportFontNotice />
-          <ReportToolbar spec={spec} draft={draft} composition={composition} stale={stale} unknown={unknown} />
+          <ReportToolbar spec={spec} draft={draft} composition={composition} stale={stale} unknown={unknown} bizStale={bizStale} />
         </>
       }
       toolbarEnd={<ReportToolbarEnd uid={uid} spec={spec} canWrite={canWrite} />}
@@ -123,6 +130,9 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
       cardFiles={cardFiles}
       reportFiles={reportFiles}
       used={usedOf(spec, draft)}
+      biz={biz}
+      outlineBiz={composition?.sources?.biz}
+      bizStale={bizStale}
       reportHref={own ? "/my/report" : deptView ? `/my/report${teamQs}` : null}
       deptView={deptView}
       prior={{ options: prior.options, initial: Array.isArray(spec?.priorKeys) ? spec.priorKeys : prior.auto, auto: prior.auto }}

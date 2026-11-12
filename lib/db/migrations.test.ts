@@ -1754,3 +1754,144 @@ test("공통 자료 읽기 범위(20261110100000 — 보안 점검 T4 H1): 외�
     await db.query("delete from auth.users where id = any($1)", [[fresh.outsider, fresh.noTeam]]); // 프로필은 연쇄 삭제
   }
 });
+
+test("주요사업 초안 참고(mg_biz_refs·mg_biz_ref_texts·mg_biz_stale, 20261112100000): 읽을 수 있는 경영관리 카드로 부를 때만(지정 부서 담당자·성과관리팀·관리자), 같은 팀 미지정·주요사업만 지정·주요사업 카드 id·anon은 빈 결과, 붙임은 그 주요사업 카드 소속만, 지문은 키 순서와 무관하고 내용이 바뀌면 다름, 낡음은 고른 것 중 바뀐·없어진 것만", { skip: NO_SEED_CARDS }, async () => {
+  const insp = await teamId("검사기획팀");
+  const lic = await teamId("자격기획팀");
+  const year = 2047;
+  // 주요사업 카드: 자격기획팀 둘(bizA·bizB)과 그 밖 하나(bizC — 초안은 구성안만)
+  const [bizA, bizB] = (await db.query<{ id: string }>("select id from public.cards where team_id = $1 and status = 'active' and eval_unit_id !~ '^MG-' order by id limit 2", [lic])).rows.map((r) => r.id);
+  const bizC = (await db.query<{ id: string }>("select id from public.cards where team_id = $1 and status = 'active' and eval_unit_id !~ '^MG-' order by id limit 1", [insp])).rows[0].id;
+  const bizAUnit = (await db.query<{ eval_unit_id: string }>("select eval_unit_id from public.cards where id = $1", [bizA])).rows[0].eval_unit_id;
+  // 시험용 경영관리 지표·카드 둘(같은 팀 검사기획팀): mg1은 inspector에게 지정, mg2는 미지정
+  const mg1 = "경영관리95/95-1";
+  const mg2 = "경영관리95/95-2";
+  const reportIds: number[] = [];
+  type Ref = { biz_card_id: string; uid: string; group_name: string; task_no: string; title: string; team_name: string; stamp: string; updated_at: string; unknown_count: number; file_count: number; chars: number };
+  type Text = { biz_card_id: string; data: unknown; spec: Record<string, unknown>; stamp: string; unknown_numbers: string[]; files: Array<{ kind: string; id: string; name: string; text: string }>; team_name: string };
+  type Stale = { card_id: string; biz_card_id: string; task_no: string; updated_at: string | null };
+  const refs = (user: keyof typeof users, card: string) => as(user, () => db.query<Ref>("select * from public.mg_biz_refs($1, $2)", [card, year])).then((r) => r.rows);
+  const texts = (user: keyof typeof users, card: string, ids: string[]) => as(user, () => db.query<Text>("select * from public.mg_biz_ref_texts($1, $2, $3)", [card, year, ids])).then((r) => r.rows);
+  const stale = (user: keyof typeof users, cards: string[]) => as(user, () => db.query<Stale>("select * from public.mg_biz_stale($1, $2)", [cards, year])).then((r) => r.rows);
+  const cardMaterial = async (cardId: string, name: string, text: string | null) =>
+    (await db.query<{ id: string }>("insert into public.card_materials (card_id, storage_path, file_name, parsed_text) values ($1, $2, $3, $4) returning id", [cardId, `mgbiz/${name}`, name, text])).rows[0].id;
+  const reportMaterial = async (reportId: number, name: string, text: string) =>
+    (await db.query<{ id: string }>("insert into public.report_materials (report_id, storage_path, file_name, parsed_text) values ($1, $2, $3, $4) returning id", [reportId, `mgbiz/${name}`, name, text])).rows[0].id;
+  try {
+    await db.query("insert into public.eval_units (id, track, name, sort) values ('MG-95', '경영관리', '시험 지표 95', 95)");
+    for (const [id, no] of [[mg1, "95-1"], [mg2, "95-2"]]) {
+      await db.query("insert into public.cards (id, eval_unit_id, task_no, title, team_id, edition, data) values ($1, 'MG-95', $2, '시험 경영관리 과제', $3, 'test', $4::jsonb)", [id, no, insp, JSON.stringify({ group: "경영관리95", taskNo: no })]);
+    }
+    await db.query("insert into public.card_assignees (card_id, user_id) values ($1, $2)", [mg1, users.inspector]);
+
+    // 붙임: bizA 소속 카드 자료(글 있음·글 없음), 다른 카드(bizB) 자료, bizA 평가단위 × 팀 × 연도 보고서 자료, 다른 팀 보고서 자료
+    const own = await cardMaterial(bizA, "a-own.pdf", "가 자료 글 123");
+    const empty = await cardMaterial(bizA, "a-empty.pdf", null);
+    const foreign = await cardMaterial(bizB, "b-own.pdf", "나 자료 글");
+    const repA = (await db.query<{ id: number }>("insert into public.reports (eval_unit_id, year, team_id) values ($1, $2, $3) returning id", [bizAUnit, year, lic])).rows[0].id;
+    const repX = (await db.query<{ id: number }>("insert into public.reports (eval_unit_id, year, team_id) values ($1, $2, $3) returning id", [bizAUnit, year, insp])).rows[0].id;
+    reportIds.push(repA, repX);
+    const repOwn = await reportMaterial(repA, "r-own.pdf", "보고서 자료 글");
+    const repOther = await reportMaterial(repX, "r-other.pdf", "다른 팀 보고서 글");
+    const specA = {
+      version: 3,
+      rows: [{ label: "본문", text: "실적 10건" }],
+      sources: [
+        { kind: "report", id: repOwn, name: "r-own.pdf" },
+        { kind: "card", id: own, name: "a-own.pdf" },
+        { kind: "card", id: empty, name: "a-empty.pdf" },
+        { kind: "card", id: foreign, name: "남의 카드 자료" },
+        { kind: "report", id: repOther, name: "남의 팀 보고서 자료" },
+        { kind: "prior", id: "rpt25-biz-x", name: "전년" },
+      ],
+    };
+    await db.query("insert into public.card_report_drafts (card_id, year, spec, unknown_numbers, model, source_rev) values ($1, $2, $3::jsonb, $4, 'm', 1)", [bizA, year, JSON.stringify(specA), ["99"]]);
+    // bizB는 키 순서를 일부러 바꿔 넣음
+    await db.query("insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, '{\"z\":\"x\",\"rows\":[],\"version\":3}'::jsonb, 'm', 1)", [bizB, year]);
+    await db.query("insert into public.card_report_drafts (card_id, year, outline, outline_status) values ($1, $2, '{\"version\":1}'::jsonb, 'draft')", [bizC, year]);
+
+    // 목록: 지정된 부서 담당자·성과관리팀·관리자는 받음(구성안만 있는 bizC는 빠짐), 본문 열 없음
+    const listed = await refs("inspector", mg1);
+    assert.deepEqual(listed.map((r) => r.biz_card_id).filter((id) => [bizA, bizB, bizC].includes(id)).sort(), [bizA, bizB].sort(), "초안(spec 객체) 있는 주요사업만");
+    assert.ok(listed.every((r) => !r.biz_card_id.startsWith("경영관리")), "경영관리 카드는 대상 아님");
+    assert.deepEqual(Object.keys(listed[0]).sort(), ["biz_card_id", "chars", "file_count", "group_name", "stamp", "task_no", "team_name", "title", "uid", "unknown_count", "updated_at"]);
+    const rowA = listed.find((r) => r.biz_card_id === bizA)!;
+    assert.equal(rowA.team_name, "자격기획팀");
+    assert.match(rowA.group_name, /^주요사업\d$/);
+    assert.equal(rowA.unknown_count, 1);
+    assert.equal(rowA.file_count, 2, "그 카드 소속·글 있는 붙임 둘(카드 자료·보고서 자료)");
+    // 글자 수: 원장 JSON + 초안 spec + 붙임 글자 수(parsed_chars, 없으면 글 길이) — 목록은 붙임 본문을 읽지 않음
+    const base = (await db.query<{ n: number }>("select (length(c.data::text) + length(d.spec::text))::int as n from public.cards c join public.card_report_drafts d on d.card_id = c.id and d.year = $2 where c.id = $1", [bizA, year])).rows[0].n;
+    assert.equal(rowA.chars, base + "가 자료 글 123".length + "보고서 자료 글".length, "parsed_chars가 없으면 글 길이");
+    await db.query("update public.card_materials set parsed_chars = 5000 where id = $1", [own]);
+    assert.equal((await refs("inspector", mg1)).find((r) => r.biz_card_id === bizA)!.chars, base + 5000 + "보고서 자료 글".length, "parsed_chars가 있으면 그 값");
+    for (const user of ["pmo", "admin"] as const) assert.equal((await refs(user, mg1)).length, listed.length, `${user}도 같은 목록`);
+
+    // 빈 결과: 같은 팀 미지정 카드, 주요사업만 지정된 담당자, 주요사업 카드 id, 보관한 경영관리 카드
+    assert.equal((await refs("inspector", mg2)).length, 0, "같은 팀이어도 지정 안 된 경영관리 카드");
+    assert.equal((await refs("license", mg1)).length, 0, "주요사업만 지정된 부서 담당자");
+    assert.equal((await refs("license", bizA)).length, 0, "주요사업 카드 id로 부르면 빈 결과");
+    assert.equal((await refs("pmo", bizA)).length, 0, "성과관리팀도 주요사업 카드 id로는 빈 결과");
+    assert.equal((await texts("license", mg1, [bizA])).length, 0);
+    assert.equal((await texts("inspector", mg2, [bizA])).length, 0);
+
+    // 글: 고른 것만, 붙임은 그 주요사업 카드 소속·글 있는 것만(sources 순서), 없는 숫자는 배열
+    const got = await texts("inspector", mg1, [bizA, bizC, "없는 카드"]);
+    assert.deepEqual(got.map((r) => r.biz_card_id), [bizA], "고른 것 중 초안 있는 것만");
+    assert.deepEqual(got[0].files.map((f) => [f.kind, f.id, f.name, f.text]), [
+      ["report", repOwn, "r-own.pdf", "보고서 자료 글"],
+      ["card", own, "a-own.pdf", "가 자료 글 123"],
+    ]);
+    assert.deepEqual(got[0].unknown_numbers, ["99"]);
+    assert.deepEqual(got[0].spec, specA);
+    assert.equal(got[0].stamp, rowA.stamp, "목록과 글의 지문이 같음");
+    assert.equal((await texts("inspector", mg1, Array.from({ length: 31 }, () => bizA))).length, 0, "30개를 넘으면 빈 결과");
+
+    // 지문: 키 순서만 다르면 같고 내용이 바뀌면 다름
+    const stampB = () => refs("pmo", mg1).then((rs) => rs.find((r) => r.biz_card_id === bizB)!.stamp);
+    const b0 = await stampB();
+    await db.query("update public.card_report_drafts set spec = '{\"version\":3,\"rows\":[],\"z\":\"x\"}'::jsonb where card_id = $1 and year = $2", [bizB, year]);
+    assert.equal(await stampB(), b0, "같은 내용이면 같은 지문");
+    await db.query("update public.card_report_drafts set spec = '{\"version\":3,\"rows\":[],\"z\":\"y\"}'::jsonb where card_id = $1 and year = $2", [bizB, year]);
+    const b1 = await stampB();
+    assert.notEqual(b1, b0, "spec이 바뀌면 다른 지문");
+
+    // 낡음: 경영관리 초안 둘이 bizA(지금 지문)·bizB(옛 지문)를 참고
+    const mgSpec = (stampA: string, stampB2: string) =>
+      JSON.stringify({ version: 1, blocks: [], sources: [{ kind: "biz", id: bizA, name: "주요사업 참고", stamp: stampA }, { kind: "biz", id: bizB, name: "주요사업 참고", stamp: stampB2 }, { kind: "card", id: own, name: "다른 종류는 안 봄" }] });
+    await db.query("insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, $3::jsonb, 'm', 1), ($4, $2, $3::jsonb, 'm', 1)", [mg1, year, mgSpec(rowA.stamp, b0), mg2]);
+    let s = await stale("inspector", [mg1, mg2, bizA]);
+    assert.deepEqual(s.map((r) => [r.card_id, r.biz_card_id]), [[mg1, bizB]], "읽을 수 있는 경영관리 카드에서 바뀐 것만(미지정 mg2·주요사업 id는 빠짐)");
+    assert.ok(s[0].updated_at, "지금 초안 갱신 시각");
+    assert.equal(s[0].task_no, (await db.query<{ task_no: string }>("select task_no from public.cards where id = $1", [bizB])).rows[0].task_no);
+    assert.deepEqual((await stale("pmo", [mg1, mg2])).map((r) => r.card_id), [mg1, mg2], "성과관리팀은 둘 다");
+    assert.equal((await stale("license", [mg1, mg2])).length, 0, "주요사업만 지정된 담당자는 빈 결과");
+    assert.equal((await stale("pmo", Array.from({ length: 301 }, () => mg1))).length, 0, "300장을 넘으면 빈 결과");
+
+    // bizA 초안이 바뀌면 bizA도, bizB 초안이 지워지면 updated_at null
+    await db.query("update public.card_report_drafts set spec = jsonb_set(spec, '{version}', '4') where card_id = $1 and year = $2", [bizA, year]);
+    await db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [bizB, year]);
+    s = await stale("inspector", [mg1]);
+    assert.deepEqual(s.map((r) => r.biz_card_id), [bizA, bizB].sort());
+    assert.equal(s.find((r) => r.biz_card_id === bizB)!.updated_at, null, "초안이 없어지면 updated_at null");
+    assert.ok(s.find((r) => r.biz_card_id === bizA)!.updated_at);
+
+    // anon은 실행 권한 없음, 내부 함수는 로그인 사용자도 직접 못 부름
+    await db.exec("set role anon");
+    try {
+      await rejects(() => db.query("select 1 from public.mg_biz_refs($1, $2)", [mg1, year]), /permission denied/);
+      await rejects(() => db.query("select 1 from public.mg_biz_stale($1, $2)", [[mg1], year]), /permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
+    await rejects(() => as("pmo", () => db.query("select 1 from private.mg_biz_files($1, $2, '[]'::jsonb)", [bizA, year])), /permission denied/);
+  } finally {
+    await db.query("delete from public.card_report_drafts where year = $1", [year]);
+    await db.query("delete from public.report_materials where storage_path like 'mgbiz/%'");
+    await db.query("delete from public.card_materials where storage_path like 'mgbiz/%'");
+    if (reportIds.length) await db.query("delete from public.reports where id = any($1)", [reportIds]);
+    await db.query("delete from public.card_assignees where card_id = any($1)", [[mg1, mg2]]);
+    await db.query("delete from public.cards where id = any($1)", [[mg1, mg2]]);
+    await db.query("delete from public.eval_units where id = 'MG-95'");
+  }
+});

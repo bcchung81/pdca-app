@@ -118,8 +118,18 @@ const DRAFT_EXPECT_MG: Partial<Record<DraftRunKind, ProgressExpect>> = {
   revise: { min: 60, max: 180 + MG_FILL_SEC },
 };
 
-/** 경평 초안 요청의 보통 걸리는 시간(진행 줄·단추 글이 함께 씀) */
-export const draftExpect = (kind: DraftRunKind, mg = false): ProgressExpect => (mg ? DRAFT_EXPECT_MG[kind] : undefined) ?? DRAFT_EXPECT[kind];
+// 경영관리에 주요사업 초안(+ 그 붙임)을 참고로 넣으면 요청 글이 길어져 더 걸림 — 2026-11-12 실호출(주요사업 초안 2건 참고) 구성안+집필+보강 총 633.8초(제한 900초로만 성공).
+// 단계별 시간은 기록이 없어 구성안·집필 위쪽만 넓힘(어림 — 단계별 실측이 쌓이면 맞춤)
+const DRAFT_EXPECT_MG_BIZ: Partial<Record<DraftRunKind, ProgressExpect>> = {
+  outline: { min: 120, max: 420 },
+  story: { min: 120, max: 420 },
+  again: { min: 120, max: 420 },
+  plan: { min: 120, max: 300 + MG_FILL_SEC },
+  revise: { min: 120, max: 300 + MG_FILL_SEC },
+};
+
+/** 경평 초안 요청의 보통 걸리는 시간(진행 줄·단추 글이 함께 씀). biz = 경영관리에 주요사업 초안을 참고로 넣음(있을 때만 늘림) */
+export const draftExpect = (kind: DraftRunKind, mg = false, biz = false): ProgressExpect => (mg && biz ? DRAFT_EXPECT_MG_BIZ[kind] : undefined) ?? (mg ? DRAFT_EXPECT_MG[kind] : undefined) ?? DRAFT_EXPECT[kind];
 /** 단추·안내 글의 시간(「5~8분」 — 「보통」 없이) */
 export const rangeText = (e: ProgressExpect) => expectLabel(e).replace(/^보통 /, "");
 const DRAFT_TITLE: Record<DraftRunKind, string> = {
@@ -160,6 +170,8 @@ export function draftProgress(
     alts?: number;
     /** 선별 방식이 실제로 적용될 때 고른 원문 수(서버 getReportSelectPreview — 없으면 통째로 넣기) */
     selected?: number;
+    /** 참고로 넣는 주요사업 초안 과제번호(「3-나」 — 서버가 실제로 넣는 선택만, 경영관리) */
+    biz?: string[];
     /** 구성안 뒤 추가된 첨부 이름(plan·revise) */
     added?: string[];
     /** 담당자 요청 글이 있음(plan·revise) */
@@ -171,6 +183,7 @@ export function draftProgress(
     { label: "올해 실적", detail: "원장 정량 성과 칸·예상 칸의 올해 실적" },
   ];
   if (o.files.length) sources.push({ label: `첨부 ${o.files.length}건`, detail: o.files.join(" · ") });
+  if (o.mg && o.biz?.length) sources.push({ label: `주요사업 초안 ${o.biz.length}건`, detail: `${o.biz.join("·")} — 고른 주요사업 경평 초안과 그 초안이 쓴 붙임(출처를 밝혀 연계 성과로 씀, 그 초안에서 이미 「없는 숫자」인 것은 근거 아님)` });
   if (o.added?.length) sources.push({ label: `새 자료 ${o.added.length}건`, detail: `구성안 뒤 추가된 자료(첨부 중) — ${o.added.join(" · ")} · 짜임은 그대로 두고 같은 블록의 사실·빈 칸·추진성과를 채우는 데 먼저 씀` });
   if (o.request) sources.push({ label: "담당자 요청", detail: "요청 칸 글 — 쓰는 방향에 대한 지시로만 씀(근거 아님)" });
   if (o.prior.length) sources.push({ label: `전년 절 ${o.prior.length}`, detail: `2025 경영실적보고서 같은 과제 절 — ${o.prior.join(" · ")}` });
@@ -185,7 +198,7 @@ export function draftProgress(
   if (o.mg && (kind === "plan" || kind === "revise"))
     sources.push({ label: "분량 보강", detail: `초안을 쓴 뒤 먼저 저장하고, 분량이 배정의 ${Math.round(MG_FILL.low * 100)}%보다 적거나 나란한 칸이 비거나 초안에 안 쓴 원장 성과·같은 수치 되풀이(반복 수치)가 있으면 보강할 수 있는 블록을 모두 하나씩 다시 쓰고, 아직 배정의 ${Math.round(MG_FILL.low * 100)}%에 못 미치면 한 번 더(최대 ${MG_FILL.rounds}회·${Math.round(MG_FILL.maxSec / 60)}분 안 — 블록 고치기와 같은 근거·검증, 받지 못한 블록은 1차 글 그대로)` });
   sources.push(reportKnowledge(o.selected, " — 평가 근거·전년 절은 그중 이 과제에 맞게 고른 것"));
-  return { title: DRAFT_TITLE[kind], expect: draftExpect(kind, o.mg), sources };
+  return { title: DRAFT_TITLE[kind], expect: draftExpect(kind, o.mg, Boolean(o.mg && o.biz?.length)), sources };
 }
 
 /** 백그라운드 작업 종류 → 경평 초안 진행 줄 종류 */

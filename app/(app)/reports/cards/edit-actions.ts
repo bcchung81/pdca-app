@@ -21,6 +21,7 @@ import { createClient } from "../../../../lib/supabase/server.ts";
 import { recheckMgSection } from "../../../../lib/reports/mg-draft.ts";
 import { type DraftSources, type Prepared, beginAi, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
 import { type DraftPick, mergeSources, readPick, specSources, withFileSources } from "../../../../lib/reports/draft-sources.ts";
+import { withBizSources } from "../../../../lib/reports/mg-biz.ts";
 
 // ---------------------------------------------------------------------------
 // 블록 고치기(드래그 「AI 수정 요청」·「질문」 — lib/reports/block-edit.ts, 2026-09-27 사용자 결정 「블록 단위 · 이력은 DB · 도구줄은 수정 요청·질문」)
@@ -71,7 +72,8 @@ type EditLog = { blockIndex: number; kind: "edit" | "undo"; request: string; quo
 
 async function saveEditedDraft(p: Prepared, edited: ReportSectionSpec, version: string, edit: EditLog | EditLog[] | null): Promise<{ ok: true; version: string; editId: number | null; unknown: number; fit: ReportSectionSpec["fit"] | null } | { ok: false; message: string; conflict?: boolean }> {
   // 블록 고치기에 새로 고른 자료를 넣었으면 초안 근거 목록에도 더함(다음 직접 고침·되돌리기의 숫자 대조 근거)
-  const spec: ReportSectionSpec = { ...edited, sources: withFileSources(edited.sources, p.files) };
+  // 새로 쓴 첨부·새로 고른 주요사업 초안(경영관리 — 그때 지문)을 초안 근거 목록에 더함(다음 직접 고침·되돌리기의 숫자 대조가 그 자료를 근거로 씀)
+  const spec: ReportSectionSpec = { ...edited, sources: withBizSources(withFileSources(edited.sources, p.files), p.biz?.sources ?? []) };
   const checked = recheck(p, spec);
   const { data: saved, error } = await p.supabase
     .from("card_report_drafts")
@@ -112,7 +114,7 @@ export async function runDraftBlockEdit(uid: string, raw: { blockIndex: number; 
   const mg = Boolean(d.spec.mg);
   // 고치기는 요청이 모양을 말하면 모양도 바꿀 수 있음(2026-10-12) — 바꿀 수 있는 모양·근거 조건은 코드가 셈
   const rules = req.kind === "edit" ? rulesOf(d, p) : undefined;
-  const prompt = blockEditPrompt((mg ? reportBlockPromptsMg() : reportBlockPrompts()).prompts, d.spec, req, { card: `${cardOutline(p.card.data)}\n${inspectionCardText(p.card.data)}`, extra: p.known }, rules);
+  const prompt = blockEditPrompt((mg ? reportBlockPromptsMg() : reportBlockPrompts()).prompts, d.spec, req, { card: `${cardOutline(p.card.data)}\n${inspectionCardText(p.card.data)}`, extra: p.promptKnown ?? p.known }, rules);
   const mode = `${req.kind}+b${req.blockIndex + 1}${p.files.length ? `+${p.files.length}f` : ""}`;
   const ai = await beginAi(p, "report_block", mode);
   if (!ai.ok) return { ok: false, message: ai.message };
@@ -157,7 +159,7 @@ export async function runDraftBlockEdit(uid: string, raw: { blockIndex: number; 
  * 사람이 고친 블록 표시(humanEdits)에는 넣지 않음(추진성과 직접 고치기와 같게)
  */
 async function runResultEdit(uid: string, d: NonNullable<Awaited<ReturnType<typeof loadDraftForEdit>>>, p: Prepared, req: BlockEditRequest): Promise<DraftBlockResult> {
-  const prompt = resultEditPrompt(reportBlockPrompts().prompts, d.spec, req, { card: `${cardOutline(p.card.data)}\n${inspectionCardText(p.card.data)}`, extra: p.known });
+  const prompt = resultEditPrompt(reportBlockPrompts().prompts, d.spec, req, { card: `${cardOutline(p.card.data)}\n${inspectionCardText(p.card.data)}`, extra: p.promptKnown ?? p.known });
   const ai = await beginAi(p, "report_block", `${req.kind}+result${p.files.length ? `+${p.files.length}f` : ""}`);
   if (!ai.ok) return { ok: false, message: ai.message };
   const t0 = Date.now();
@@ -233,7 +235,7 @@ export async function previewBlockShapes(uid: string, raw: { blockIndex: number;
   if (typeof req === "string") return { ok: false, message: req };
   const before = d.spec.blocks![req.blockIndex];
   const mg = Boolean(d.spec.mg);
-  const prompt = blockShapesPrompt((mg ? reportBlockPromptsMg() : reportBlockPrompts()).prompts, d.spec, req, { card: `${cardOutline(p.card.data)}\n${inspectionCardText(p.card.data)}`, extra: p.known }, rules);
+  const prompt = blockShapesPrompt((mg ? reportBlockPromptsMg() : reportBlockPrompts()).prompts, d.spec, req, { card: `${cardOutline(p.card.data)}\n${inspectionCardText(p.card.data)}`, extra: p.promptKnown ?? p.known }, rules);
   const ai = await beginAi(p, "report_block", `shape+b${req.blockIndex + 1}${p.files.length ? `+${p.files.length}f` : ""}`);
   if (!ai.ok) return { ok: false, message: ai.message };
   const t0 = Date.now();

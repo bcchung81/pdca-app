@@ -29,6 +29,8 @@ import { isMgmtCard } from "../../../../lib/cards/mgmt-card.ts";
 import { type MgDraftContext, mgCardAsOf, mgMarkers } from "../../../../lib/reports/mg-draft.ts";
 import { type MgSibling, defaultEvals, mgSiblingOf } from "../../../../lib/reports/mg-outline.ts";
 import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../../../lib/reports/mg-queries.ts";
+import { BIZ_TEXT_MAX, type BizRefText, loadBizRefTexts } from "../../../../lib/reports/mg-biz-queries.ts";
+import { type BizMaterials, bizMaterials, bizMissing } from "../../../../lib/reports/mg-biz.ts";
 import { MGMT_INDICATORS } from "../../../../lib/tracks/mgmt-units.ts";
 import { type FollowupBasis, followupBasis } from "../../../../lib/ai/followup.ts";
 import { readResult } from "../../../../lib/inspections/model.ts";
@@ -43,6 +45,8 @@ export interface DraftSources {
   report: string[];
   /** 전년도 보고서 같은 과제 절(조각 키, 최대 2개). 없으면(undefined) 자동으로 고름, 빈 배열이면 넣지 않음 */
   prior?: string[];
+  /** 경영관리만: 참고할 주요사업 경평 초안(주요사업 카드 id — 2026-11-12). 주요사업 카드는 무시 */
+  biz?: string[];
 }
 
 /** 부서 잠금 안내(최종 판정은 DB 트리거 guard_card_report_draft) — 제출·승인 중 부서는 과제별 초안·구성안·블록 고치기·BP를 못 바꿈 */
@@ -97,7 +101,17 @@ export interface Prepared {
   splitSiblings: SplitSibling[];
   /** 시작할 때 읽은 초안 행의 updated_at(없던 행이면 null) — AI 결과를 저장할 때 그 사이 사람이 고쳤으면 덮지 않음(saveDraftRow) */
   base: string | null;
+  /**
+   * 경영관리: 사람이 고른 주요사업 경평 초안·원장·붙임(lib/reports/mg-biz.ts — 2026-11-12). 없으면 null(주요사업 카드는 늘 null).
+   * docs는 이 카드 첨부(files·picked)와 따로 둠 — 초안 근거 목록(spec.sources)에는 biz 항목(sources)만 적음
+   */
+  biz: BizMaterials | null;
+  /** 블록 고치기·분량 보강의 근거 글(AI가 읽음) — 주요사업 초안을 골랐으면 known의 가린 사본 대신 원문. 없으면 known */
+  promptKnown?: string;
 }
+
+/** 경영관리 AI 호출에 넣는 첨부: 이 카드 첨부 + 고른 주요사업 자료(요청 「[첨부 N]」 번호 순서 — 구성안 재료 정리도 같은 목록). kind는 AI 호출 글에 안 쓰여 card로 둠(초안 근거 목록에는 안 들어감) */
+export const mgAiFiles = (p: Pick<Prepared, "files" | "biz">): DraftFile[] => (p.biz?.docs.length ? [...p.files, ...p.biz.docs.map((d) => ({ ...d, kind: "card" as const }))] : p.files);
 
 /**
  * 이 과제의 최종 점검표(보완 점검과 같은 규칙 — 부서에 보낸·확인한 것 중 점검월이 가장 늦은 1건, 초안 제외)의 미흡 행 — 원장 → 종합점검 → 경평 구성안(2026-10-09).
@@ -179,7 +193,7 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
   const skipped = [...cardText.failed, ...reportText.failed].map((f) => `「${f.name}」(${f.error})`);
 
   // 경영관리 카드: 대상사업·실행과제·목차·형제 짜임·주요사업 전년 절(rpt25-biz) 대신 지표의 전년 보고서 골격(rpt25-mg)으로 — 평가 근거·공통 지식 묶음은 같은 함수가 트랙으로 가름
-  if (isMgmtCard(card.data)) return prepareMgDraft({ me, supabase, card, year, picked, files, skipped, base });
+  if (isMgmtCard(card.data)) return prepareMgDraft({ me, supabase, card, year, picked, files, skipped, base }, bizIdsOf(sources?.biz));
   const { data: sib } = await supabase.from("cards").select("id, task_no, tb:data->>targetBusiness, etn:data->>executionTaskNo, et:data->>executionTask").eq("eval_unit_id", card.eval_unit_id).eq("status", "active");
   const siblings: SiblingCard[] = (sib ?? []).map((c: { id: string; task_no: string; tb: string | null; etn: string | null; et: string | null }) => ({
     id: c.id,
@@ -225,7 +239,7 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
   // 도식 후보 중 이 과제만의 요소 — 초안이 하나도 안 쓰면 짜임 문제로 고치기
   const own = sectionHints(card.data, prior, files, lens, actuals, year).filter((h) => h.own);
   const mode = `${ctx.module}p${files.length ? `+${files.length}f` : ""}${prior.length ? `+${prior.length}prior` : ""}${lens.length ? `+${lens.length}lens` : ""}`;
-  return { ok: true, me, supabase, card, year, picked, files, skipped, ctx, prior, siblingsLayout, lens, actuals, known, quoteOnly, years: { past, current }, own, mode, kb, mg: null, mgSiblings: [], splitSiblings, base };
+  return { ok: true, me, supabase, card, year, picked, files, skipped, ctx, prior, siblingsLayout, lens, actuals, known, quoteOnly, years: { past, current }, own, mode, kb, mg: null, mgSiblings: [], splitSiblings, base, biz: null };
 }
 
 /**
@@ -233,16 +247,17 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
  * 숫자 근거 = 카드·첨부·실사 답변 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치 — loadMgNumberEvidence). 판면은 맞추지 않고 분량 목표(목차·쪽 배정 쪽수 — loadMgCardPages, 2026-10-12 D1)만 요청·경고에 쓰며,
  * 형제 짜임은 같은 지표 다른 카드의 구성안 절(loadMgSiblings — 주요사업의 형제 초안 짜임과 다름)
  */
-async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "year" | "picked" | "files" | "skipped" | "base">): Promise<{ ok: true } & Prepared> {
+async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "year" | "picked" | "files" | "skipped" | "base">, bizIds: string[] = []): Promise<{ ok: true } & Prepared> {
   const { supabase, card, files } = x;
   const data = card.data as { taskNo?: string };
-  const [prior, numbers, lens, kb, mgSiblings, pages] = await Promise.all([
+  const [prior, numbers, lens, kb, mgSiblings, pages, bizRefs] = await Promise.all([
     loadMgPrior(supabase, card.eval_unit_id),
     loadMgNumberEvidence(supabase, card.eval_unit_id),
     loadLens(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }),
     loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "report"),
     loadMgSiblings(supabase, card, x.year),
     loadMgCardPages(supabase, card, x.year),
+    loadBizRefsChunked(supabase, card.id, x.year, bizIds),
   ]);
   const taskNo = String(data.taskNo ?? "");
   const mg: MgDraftContext = {
@@ -257,11 +272,26 @@ async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "ye
   };
   const actuals = yearActuals(card.data, isoDay(), { wide: true });
   const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
-  // 숫자 근거 = 카드·첨부·실사 답변 + 이 과제에 연결된 공통 지식 조각 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치)
-  const known = [ev.known, numbers].join("\n");
+  // 주요사업 초안 참고(2026-11-12): 원장·붙임·초안 글 모두 숫자 근거 — 초안 글은 그 초안의 없는 숫자를 가린 사본(AI가 보는 글은 원문), 인용 대조는 원문. 못 읽은 주요사업은 경고만
+  const biz = bizIds.length ? bizMaterials(bizRefs) : null;
+  const skipped = bizIds.length ? [...x.skipped, ...bizMissing(bizIds, bizRefs)] : x.skipped;
+  // 숫자 근거 = 카드·첨부·실사 답변 + 이 과제에 연결된 공통 지식 조각 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치) (+ 고른 주요사업 자료)
+  const known = [ev.known, numbers, ...(biz ? [biz.known] : [])].join("\n");
+  const quoteOnly = biz ? [ev.quoteOnly, biz.quote].join("\n") : ev.quoteOnly;
+  const promptKnown = biz ? [ev.known, numbers, biz.prompt].join("\n") : undefined;
   const ctx = sectionContext(card.data, [], null);
-  const mode = `mg${files.length ? `+${files.length}f` : ""}+${prior.length}prior${lens.length ? `+${lens.length}lens` : ""}`;
-  return { ok: true, ...x, ctx, prior: [], siblingsLayout: [], lens, actuals, known, quoteOnly: ev.quoteOnly, own: [], mode, kb, mg, mgSiblings, splitSiblings: [] };
+  const mode = `mg${files.length ? `+${files.length}f` : ""}+${prior.length}prior${lens.length ? `+${lens.length}lens` : ""}${biz?.sources.length ? `+${biz.sources.length}biz` : ""}`;
+  return { ok: true, ...x, skipped, ctx, prior: [], siblingsLayout: [], lens, actuals, known, quoteOnly, own: [], mode, kb, mg, mgSiblings, splitSiblings: [], biz, ...(promptKnown ? { promptKnown } : {}) };
+}
+
+/** 받은 주요사업 카드 id(공개 API처럼 — 문자열 id만, 같은 것은 한 번) */
+const bizIdsOf = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && x.length > 0 && x.length <= 80))] : []);
+
+/** 고른 주요사업 초안 읽기(사용자 권한 — DB 함수가 이 경영관리 카드를 읽을 수 있는지 판정). DB 함수 한 번 상한(BIZ_TEXT_MAX)씩 나눠 읽음 — 장 수 상한은 없음(넘치면 checkBudget이 멈춤) */
+async function loadBizRefsChunked(supabase: Prepared["supabase"], cardId: string, year: number, ids: string[]): Promise<BizRefText[]> {
+  const out: BizRefText[] = [];
+  for (let i = 0; i < ids.length; i += BIZ_TEXT_MAX) out.push(...(await loadBizRefTexts(supabase, cardId, year, ids.slice(i, i + BIZ_TEXT_MAX))));
+  return out;
 }
 
 /** AI 호출 직전: 진행 중 호출도 세는 1분 5회·동시 실행 제한과 호출 기록 시작(lib/ai/request-log.ts — 다른 AI 기능과 합산) */

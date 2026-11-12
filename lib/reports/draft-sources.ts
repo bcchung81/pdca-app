@@ -2,6 +2,7 @@
 // 구성안대로 집필·자료 반영 고치기·블록 고치기·모양 바꾸기는 저장된 근거(구성안 sources·초안 spec.sources)에 지금 고른 근거(새 첨부 포함)를 더해 씀 —
 // 사람이 뺀 자료(근거 자료 패널·첨부 칩 ✕)는 저장된 근거에 있어도 넣지 않음. 전년 절은 저장된 것 그대로(구성안·초안의 짜임 근거라 바꾸지 않음).
 // 받은 id가 이 카드의 자료인지는 서버(app/(app)/reports/cards/draft-prepare.ts prepareDraft — card_materials.card_id·같은 보고서)가 DB로 다시 확인함.
+// biz(2026-11-12 — 경영관리 초안의 「주요사업 초안 참고」): 사람이 고른 주요사업 카드 id. card·report처럼 합치고 빼지만 찾지 못해도 거절하지 않음(서버가 경고만 — lib/reports/mg-biz.ts).
 
 /** 근거 id(카드 전용 자료·보고서 추가자료·전년 절 조각 키) — draft-prepare.ts DraftSources와 같은 모양 */
 export interface SourceIds {
@@ -9,13 +10,17 @@ export interface SourceIds {
   report: string[];
   /** 없으면(undefined) 서버가 자동으로 고름 */
   prior?: string[];
+  /** 경영관리만: 참고할 주요사업 경평 초안(주요사업 카드 id). 없으면 고르지 않음 */
+  biz?: string[];
 }
 
 /** 화면이 보내는 지금 고른 근거: 넣을 자료(빼지 않은 것) + 뺀 자료 */
 export interface DraftPick {
   card: string[];
   report: string[];
-  off?: { card: string[]; report: string[] };
+  /** 경영관리만: 고른 주요사업 경평 초안(주요사업 카드 id) */
+  biz?: string[];
+  off?: { card: string[]; report: string[]; biz?: string[] };
 }
 
 /** 받은 근거 고르기 상한(자료 수·id 길이 — 서버가 받는 값의 크기만 막음) */
@@ -27,21 +32,25 @@ const ids = (v: unknown): string[] => (Array.isArray(v) ? [...new Set(v.filter((
 /** 서버 액션이 받은 값(공개 API처럼 — 모양이 틀리면 없는 것으로) */
 export function readPick(v: unknown): DraftPick | undefined {
   if (!v || typeof v !== "object") return undefined;
-  const o = v as { card?: unknown; report?: unknown; off?: { card?: unknown; report?: unknown } | null };
-  const off = o.off && typeof o.off === "object" ? { card: ids(o.off.card), report: ids(o.off.report) } : undefined;
-  return { card: ids(o.card), report: ids(o.report), ...(off ? { off } : {}) };
+  const o = v as { card?: unknown; report?: unknown; biz?: unknown; off?: { card?: unknown; report?: unknown; biz?: unknown } | null };
+  const offBiz = o.off && typeof o.off === "object" ? ids(o.off.biz) : [];
+  const off = o.off && typeof o.off === "object" ? { card: ids(o.off.card), report: ids(o.off.report), ...(offBiz.length ? { biz: offBiz } : {}) } : undefined;
+  const biz = ids(o.biz);
+  return { card: ids(o.card), report: ids(o.report), ...(biz.length ? { biz } : {}), ...(off ? { off } : {}) };
 }
 
-/** 고른 상태 → 보낼 값(화면: sel.card·sel.report는 넣을 자료, off는 「c:<id>」·「r:<id>」 열쇠) */
-export function pickOf(card: string[], report: string[], off: Iterable<string>): DraftPick {
+/** 고른 상태 → 보낼 값(화면: sel.card·sel.report는 넣을 자료, off는 「c:<id>」·「r:<id>」·「b:<주요사업 카드 id>」 열쇠, biz = 고른 주요사업 초안 — 경영관리만) */
+export function pickOf(card: string[], report: string[], off: Iterable<string>, biz: string[] = []): DraftPick {
   const keys = [...off];
-  return { card, report, off: { card: keys.filter((k) => k.startsWith("c:")).map((k) => k.slice(2)), report: keys.filter((k) => k.startsWith("r:")).map((k) => k.slice(2)) } };
+  const of = (head: string) => keys.filter((k) => k.startsWith(head)).map((k) => k.slice(head.length));
+  const offBiz = of("b:");
+  return { card, report, ...(biz.length ? { biz } : {}), off: { card: of("c:"), report: of("r:"), ...(offBiz.length ? { biz: offBiz } : {}) } };
 }
 
 export interface MergedSources {
   sources: SourceIds;
-  /** 저장된 근거에 없던 자료(새로 더해짐) */
-  added: { card: string[]; report: string[] };
+  /** 저장된 근거에 없던 자료(새로 더해짐) — biz는 있을 때만 */
+  added: { card: string[]; report: string[]; biz?: string[] };
   /** 저장된 근거 중 남긴 것 수(뺀 자료 제외) */
   kept: number;
 }
@@ -51,9 +60,10 @@ export interface MergedSources {
  * 순서는 저장된 근거 먼저, 그 뒤 새 자료(요청 글의 첨부 번호가 예전과 같게)
  */
 export function mergeSources(saved: SourceIds | null | undefined, pick: DraftPick | null | undefined): MergedSources {
-  const base = { card: saved?.card ?? [], report: saved?.report ?? [] };
+  const savedBiz = saved?.biz ?? [];
+  const base = { card: saved?.card ?? [], report: saved?.report ?? [], ...(savedBiz.length ? { biz: savedBiz } : {}) };
   const prior = saved?.prior ? { prior: saved.prior } : {};
-  if (!pick) return { sources: { ...base, ...prior }, added: { card: [], report: [] }, kept: base.card.length + base.report.length };
+  if (!pick) return { sources: { ...base, ...prior }, added: { card: [], report: [] }, kept: base.card.length + base.report.length + savedBiz.length };
   const one = (old: string[], now: string[], off: string[] = []) => {
     const out = new Set(off);
     const had = new Set(old);
@@ -62,11 +72,17 @@ export function mergeSources(saved: SourceIds | null | undefined, pick: DraftPic
   };
   const c = one(base.card, pick.card, pick.off?.card);
   const r = one(base.report, pick.report, pick.off?.report);
-  return { sources: { card: c.all, report: r.all, ...prior }, added: { card: c.added, report: r.added }, kept: c.kept + r.kept };
+  const b = one(savedBiz, pick.biz ?? [], pick.off?.biz);
+  return {
+    sources: { card: c.all, report: r.all, ...(b.all.length ? { biz: b.all } : {}), ...prior },
+    added: { card: c.added, report: r.added, ...(b.added.length ? { biz: b.added } : {}) },
+    kept: c.kept + r.kept + b.kept,
+  };
 }
 
 /**
  * 찾지 못한 자료 id — 이 카드의 자료가 아니거나(다른 카드·다른 보고서 id) 지워진 것. loose에 든 id(저장된 근거 — 그 뒤 지웠을 수 있음)는 빼고 셈.
+ * biz(주요사업 초안)는 셈하지 않음 — 못 찾으면 서버가 경고만 남기고 씀(draft-prepare.ts prepareMgDraft).
  * 서버는 하나라도 있으면 아무것도 쓰지 않고 거절함(draft-prepare.ts prepareDraft)
  */
 export function missingSources(want: Pick<SourceIds, "card" | "report">, found: Pick<SourceIds, "card" | "report">, loose?: Pick<SourceIds, "card" | "report"> | true): string[] {
@@ -81,7 +97,8 @@ export function missingSources(want: Pick<SourceIds, "card" | "report">, found: 
 /** 초안 spec의 근거 목록 → id(블록 고치기·모양 바꾸기가 쓰는 저장된 근거) */
 export function specSources(sources: Array<{ kind: string; id: string }> | undefined, priorKeys?: string[]): SourceIds {
   const s = sources ?? [];
-  return { card: s.filter((x) => x.kind === "card").map((x) => x.id), report: s.filter((x) => x.kind === "report").map((x) => x.id), prior: priorKeys ?? s.filter((x) => x.kind === "prior").map((x) => x.id) };
+  const biz = s.filter((x) => x.kind === "biz").map((x) => x.id);
+  return { card: s.filter((x) => x.kind === "card").map((x) => x.id), report: s.filter((x) => x.kind === "report").map((x) => x.id), prior: priorKeys ?? s.filter((x) => x.kind === "prior").map((x) => x.id), ...(biz.length ? { biz } : {}) };
 }
 
 /**

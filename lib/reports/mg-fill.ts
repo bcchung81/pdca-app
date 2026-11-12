@@ -675,6 +675,8 @@ export interface MgFillInput {
   known: string;
   /** 인용 대조에만 쓰는 글(평가 기준·지적) */
   quoteOnly: string;
+  /** 블록 요청의 근거 글(AI가 읽음) — 주요사업 초안을 골랐으면 known의 가린 사본 대신 원문(draft-prepare.ts promptKnown, 2026-11-12). 없으면 known */
+  promptKnown?: string;
   year?: number;
   today?: string;
   /** 추진성과 원장 보강으로 채운 절 열쇠(verifyMgDraft closed) */
@@ -908,7 +910,7 @@ export async function runMgFill(spec: ReportSectionSpec, input: MgFillInput, dep
   // 원문 대조 글·근거 글은 블록 고치기(edit-actions.ts quoteHay·runDraftBlockEdit)와 같음
   const hay = evidenceKey(input.card, input.known, input.quoteOnly);
   const found = (q: string) => quoteFoundIn(hay, q);
-  const evidence = { card: outline, extra: input.known };
+  const evidence = { card: outline, extra: input.promptKnown ?? input.known };
   const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
   const first = mgFillReasons(spec, input.card, input.plan, input.refs);
   const rounds: FillRound[] = [];

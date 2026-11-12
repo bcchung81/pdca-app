@@ -28,6 +28,8 @@ export interface SubmitCard {
   dataRev: number | null;
   /** 동료 담당 과제(같은 팀이지만 부르는 사람이 읽을 수 없는 과제 — report_submit_cards가 판정 재료만 줌, 제목·uid·본문 없음) */
   peer?: boolean;
+  /** 경영관리: 이 초안이 참고한 주요사업 초안 중 그 뒤 바뀐(지워진) 과제번호(「3-나」) — 확인할 것으로만 알림(제출을 막지 않음). 없으면 비움 */
+  bizStale?: string[];
   /** 경영관리: 원장 정량 성과 줄 중 연도 언급 없이 올해 실적 재료로 받은 것(undatedOutcomeLines) — 자료 요청이 「기준 시점·출처 확인」으로 올림 */
   undatedOutcome?: string[];
   draft: {
@@ -67,6 +69,8 @@ export interface CardSubmitRow {
   humanEdits: number;
   /** 동료 담당 과제(SubmitCard.peer) */
   peer?: boolean;
+  /** 참고한 주요사업 초안이 바뀜(SubmitCard.bizStale — 있을 때만) */
+  bizStale?: string[];
 }
 
 export function cardSubmitRow(c: SubmitCard): CardSubmitRow {
@@ -88,6 +92,7 @@ export function cardSubmitRow(c: SubmitCard): CardSubmitRow {
     unknown: spec ? c.draft?.unknownNumbers.length ?? 0 : 0,
     humanEdits: spec?.humanEdits?.length ?? 0,
     ...(c.peer ? { peer: true } : {}),
+    ...(c.bizStale?.length ? { bizStale: c.bizStale } : {}),
   };
 }
 
@@ -115,6 +120,8 @@ export function submitReadiness(cards: SubmitCard[]): SubmitReadiness {
   const checks: string[] = [];
   const stale = drafted.filter((r) => r.state === "stale");
   if (stale.length) checks.push(`다시 만들기 권장 ${stale.length}건(초안 뒤 원장이 바뀜): ${list(stale)}`);
+  const bizStale = drafted.filter((r) => r.bizStale?.length);
+  if (bizStale.length) checks.push(`참고한 주요사업 초안이 바뀜 ${bizStale.length}건: ${bizStale.map((r) => `${r.taskNo}(${r.bizStale!.join("·")})`).join("·")}`);
   const needs = drafted.filter((r) => r.needs);
   if (needs.length) checks.push(`채울 올해 값 【확인】 ${needs.reduce((n, r) => n + r.needs, 0)}곳: ${list(needs)}`);
   const figs = drafted.filter((r) => r.figures);

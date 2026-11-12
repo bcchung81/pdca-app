@@ -104,6 +104,8 @@ export function DraftWorkspace(
     cardHref: string;
     /** 관리자(짜임 고르기의 여러 안 비용 어림) */
     admin?: boolean;
+    /** 참고한 주요사업 경평 초안이 바뀜(경영관리 — 대화의 마지막 초안 차례 표지, 도구줄은 서버가 따로 그림) */
+    bizStale?: { text: string; title: string } | null;
     /** 왼쪽 도구줄 칩(서버가 그림: 과제·판면·반영 근거·상태)과 오른쪽 끝(BP·내려받기) */
     toolbar: ReactNode;
     toolbarEnd: ReactNode;
@@ -145,7 +147,8 @@ export function DraftWorkspace(
   const pick = pickOf(
     sel.card.map((f) => f.id),
     sel.report.map((f) => f.id),
-    sel.off,
+    sel.offKeys,
+    sel.biz.map((b) => b.id),
   );
   // 초안 근거에 없던 지금 고른 첨부(블록 고치기·모양 바꾸기 진행 줄 「새 자료」 — 서버 loadDraftForEdit와 같은 합치기)
   const sinceDraft = mergeSources(props.used, pick).added;
@@ -167,7 +170,7 @@ export function DraftWorkspace(
       alts: n,
     });
   /** 여러 안 시작(누른 처리기에서 — 서버 호출은 startAlts가 한 번) */
-  const openAlts = (cands: FrameChoice[], request: string, o: { sources?: { card: string[]; report: string[]; prior?: string[] }; part?: string; confirm: string | null }) =>
+  const openAlts = (cands: FrameChoice[], request: string, o: { sources?: { card: string[]; report: string[]; prior?: string[]; biz?: string[] }; part?: string; confirm: string | null }) =>
     setAlts(startAlts(props.uid, { alts: cands, request, sources: o.sources, part: o.part, confirm: o.confirm, progress: altProgress(cands.length, o.sources) }));
   // 오른쪽 창의 내용을 여는 곳은 모두 이것으로 — 접혀 있으면 먼저 펼침(k가 null이면 대화로)
   const openSide = (k: Other | null) => {
@@ -647,6 +650,8 @@ export function DraftWorkspace(
                 prior={props.prior}
                 mg={props.mg}
                 admin={props.admin}
+                bizStale={props.bizStale}
+                biz={props.biz}
               />
             </div>
             {/* 구성안 고치기(답의 「구성안 고치기」 — 블록 편집·도식 고르기·재료표·짜임 갤러리·경영관리 절 목록, 기능은 예전 구성안 패널 그대로) */}

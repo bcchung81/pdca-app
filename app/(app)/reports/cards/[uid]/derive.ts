@@ -1,9 +1,11 @@
 // 과제별 초안 화면의 파생 값 계산(순수 — 조회는 load.ts, 그리기는 report-card-*.tsx). 동작은 page.tsx에서 옮기기 전과 같음
 import type { OutlineData } from "../../../../../components/reports/outline-panel";
-import type { SourceFile } from "../../../../../components/reports/draft-workbench";
+import type { BizRef, SourceFile } from "../../../../../components/reports/draft-workbench";
 import type { MenuItem } from "../../../../../components/reports/draft-workspace";
 import { isMgmtCard } from "../../../../../lib/cards/mgmt-card.ts";
-import { compareTaskNo } from "../../../../../lib/cards/view.ts";
+import { compareTaskNo, compareUnitId } from "../../../../../lib/cards/view.ts";
+import { type LinkIndexRow, bizTaskIdsIn } from "../../../../../lib/inspections/biz-links.ts";
+import type { BizRefRow } from "../../../../../lib/reports/mg-biz-queries.ts";
 import { kpiGaps, needsIn, yearActuals } from "../../../../../lib/reports/actuals.ts";
 import { FIGURE_KINDS, FIGURE_LABEL, figuresOf } from "../../../../../lib/reports/blocks.ts";
 import { type Composition, MATERIAL_KINDS, MATERIAL_LABEL, RESULT_SHAPES, RESULT_SHAPE_LABEL, editOf } from "../../../../../lib/reports/composition.ts";
@@ -94,10 +96,69 @@ export function sourceGroups(spec: ReportSectionSpec | null) {
   };
 }
 
-/** 근거 창에 넘기는 「이 초안이 쓴 첨부」 */
+/** 근거 창에 넘기는 「이 초안이 쓴 첨부」(biz = 참고한 주요사업 경평 초안의 카드 id) */
 export function usedOf(spec: ReportSectionSpec | null, draft: DraftRow | null) {
   const sources = spec?.sources;
-  return spec && draft?.updated_at ? (sources ? { card: sources.filter((s) => s.kind === "card").map((s) => s.id), report: sources.filter((s) => s.kind === "report").map((s) => s.id), at: String(draft.updated_at) } : null) : null;
+  return spec && draft?.updated_at
+    ? sources
+      ? { card: sources.filter((s) => s.kind === "card").map((s) => s.id), report: sources.filter((s) => s.kind === "report").map((s) => s.id), biz: sources.filter((s) => s.kind === "biz").map((s) => s.id), at: String(draft.updated_at) }
+      : null
+    : null;
+}
+
+/**
+ * 참고할 주요사업 경평 초안 후보(경영관리 카드일 때만 데이터가 있음 — 없으면 빈 목록이라 화면이 묶음을 그리지 않음).
+ * 추천 까닭: (a) 이 카드 글(cardOutline)이 인용한 주요사업 번호 (b) 지침 13 연계 색인의 이 지표 행. 정렬: 추천 → 주요사업 번호(숫자 순 — localeCompare 글자 순 금지).
+ * 낡음 = 지난 초안이 참고한 지문(spec.sources의 biz stamp)이 지금과 다름
+ */
+export function bizChoicesOf(rows: BizRefRow[], o: { spec: ReportSectionSpec | null; cardText: string; unitId: string; linkIndex: LinkIndexRow[] }): BizRef[] {
+  if (!rows.length) return [];
+  const cited = new Set(bizTaskIdsIn(o.cardText));
+  const linked = new Set(o.linkIndex.find((r) => r.unit === o.unitId)?.ids ?? []);
+  const saved = new Map((o.spec?.sources ?? []).filter((s) => s.kind === "biz").map((s) => [s.id, s.stamp] as const));
+  return rows
+    .map((r): BizRef => ({
+      id: r.cardId,
+      taskId: r.taskId,
+      title: r.title,
+      team: r.team,
+      updatedAt: r.updatedAt,
+      chars: r.chars,
+      unknownCount: r.unknownCount,
+      reasons: [...(cited.has(r.taskId) ? (["a"] as const) : []), ...(linked.has(r.taskId) ? (["b"] as const) : [])],
+      stale: Boolean(saved.get(r.cardId)) && saved.get(r.cardId) !== r.stamp,
+    }))
+    .sort((a, b) => Number(b.reasons.length > 0) - Number(a.reasons.length > 0) || compareUnitId(a.taskId.split(" ")[0], b.taskId.split(" ")[0]) || compareTaskNo(a.taskId.split(" ")[1] ?? "", b.taskId.split(" ")[1] ?? ""));
+}
+
+/** 이 경영관리 초안이 참고한 주요사업 초안 중 그 뒤 바뀐(또는 지워진) 것 — 도구줄·대화 표지용. 참고한 것이 없으면 빈 목록 */
+export interface BizStaleItem {
+  cardId: string;
+  /** 「3-나」 */
+  taskNo: string;
+  /** 바뀐 날짜(지워졌으면 null) */
+  at: string | null;
+}
+export function bizStaleOf(spec: ReportSectionSpec | null, rows: BizRefRow[]): BizStaleItem[] {
+  const now = new Map(rows.map((r) => [r.cardId, r] as const));
+  const out: BizStaleItem[] = [];
+  for (const s of spec?.sources ?? []) {
+    if (s.kind !== "biz") continue;
+    const cur = now.get(s.id);
+    if (cur && cur.stamp === s.stamp) continue;
+    out.push({ cardId: s.id, taskNo: cur?.taskNo ?? /\d{1,2}-[가-힣]/.exec(s.name)?.[0] ?? s.name, at: cur?.updatedAt ?? null });
+  }
+  return out.sort((a, b) => compareTaskNo(a.taskNo, b.taskNo));
+}
+
+/** 낡음 표지 글·title(도구줄·대화 공용 — 「3-나 외 2」) */
+export function bizStaleLabel(items: BizStaleItem[]): { text: string; title: string } | null {
+  if (!items.length) return null;
+  const first = items[0].taskNo;
+  return {
+    text: `참고한 주요사업 초안이 바뀜 — ${first}${items.length > 1 ? ` 외 ${items.length - 1}` : ""}`,
+    title: items.map((i) => `${i.taskNo}: ${i.at ? `${fmtDateTime(i.at)}에 바뀜` : "지워짐"}`).join("\n"),
+  };
 }
 
 /**

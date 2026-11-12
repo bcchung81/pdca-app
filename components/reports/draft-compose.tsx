@@ -118,20 +118,25 @@ export function DraftCompose(props: {
   /** 구성안 고치기 창 단추(짜임 바꾸기·다시 만들기·승인하고 집필·절 다시 짜기)로 도는 요청 — 같은 대화에 차례로 보임(frame = 그 요청에 넣은 구성 패턴·예시 절 이름, part = 경영관리 절 하나) */
   outlineRun: { busy: string | null; at: number; msg: DraftMsg; frame?: { pattern?: string; example?: string } | null; part?: boolean };
   /** 짜임 고르기에서 「여러 안 비교」(지금 고른 근거로 — 작업 공간이 대화 창을 엶) */
-  onAlts?: (alts: FrameChoice[], request: string, sources: { card: string[]; report: string[]; prior: string[] }) => void;
+  onAlts?: (alts: FrameChoice[], request: string, sources: { card: string[]; report: string[]; prior: string[]; biz?: string[] }) => void;
   /** 구성안에 저장된 근거(구성안대로 집필·자료 반영 고치기는 여기에 지금 고른 첨부를 더함, 구성안 고치기 창의 다시 만들기는 그대로 씀 — 없으면 옛 구성안: 첨부 없이 전년 절 자동) */
-  outlineSources: { card: string[]; report: string[]; prior: string[] } | null;
+  outlineSources: { card: string[]; report: string[]; prior: string[]; biz?: string[] } | null;
   /** 전년 절 이름·자동으로 고르는 절 */
   prior: SourceProps["prior"];
   /** 경영관리 카드(평가내용 → 대주제 → 절): 바로 만들기·구성안 전 틀 고르기 없음 — 구성안에서 절마다 틀을 고름 */
   mg?: boolean;
   /** 관리자(짜임 고르기의 여러 안 비용 어림을 보임) */
   admin?: boolean;
+  /** 참고할 주요사업 초안 후보(진행 줄 「주요사업 초안」의 과제번호를 찾음)*/
+  biz?: Array<{ id: string; taskId: string }>;
+  /** 참고한 주요사업 경평 초안이 바뀜(경영관리 — 마지막 초안 차례에 표지) */
+  bizStale?: { text: string; title: string } | null;
   /** 끝난 여러 안 작업을 비교 창으로 다시 엶(다른 화면에 갔다 온 뒤 — 대화의 「여러 안 보기」) */
   onOpenAlts?: (requestId: number) => void;
 }) {
   const router = useRouter();
   const { sel, busy, thread } = props;
+  const hasBiz = sel.biz.length > 0;
   // 기본 요청 종류: 구성안대로 쓴 초안이 있으면 「고치기」(자료 반영 고치기), 구성안이 있으면 「집필」, 없으면 「구성안」.
   // 기본이 바뀌면(구성안·초안이 새로 생기면 — 만들기 뒤 새로 고침) 기본을 따르던 요청 종류를 새 기본으로 옮김
   const defaultMode: DraftMode = props.hasOutline ? (props.hasSpec && props.draftFromOutline ? "revise" : "plan") : "outline";
@@ -152,11 +157,11 @@ export function DraftCompose(props: {
 
   const story = props.currentStory ? `(${props.currentStory})` : "";
   const MODES: Array<[DraftMode, string, string]> = [
-    ...(defaultMode === "revise" ? [["revise", "자료 반영 고치기", `지금 구성안${story}의 뼈대는 그대로 두고, 그 뒤에 고른 첨부와 요청 글을 더해 초안을 다시 씁니다(${rangeText(draftExpect("revise", props.mg))})`] as [DraftMode, string, string]] : []),
-    ...(props.hasOutline ? [["plan", "구성안대로 집필", `지금 구성안${story}의 순서·그림 배치대로 초안을 씁니다. 그 뒤에 고른 첨부와 요청 글도 넣고, 구성안은 승인됩니다(${rangeText(draftExpect("plan", props.mg))})`] as [DraftMode, string, string]] : []),
+    ...(defaultMode === "revise" ? [["revise", "자료 반영 고치기", `지금 구성안${story}의 뼈대는 그대로 두고, 그 뒤에 고른 첨부와 요청 글을 더해 초안을 다시 씁니다(${rangeText(draftExpect("revise", props.mg, hasBiz))})`] as [DraftMode, string, string]] : []),
+    ...(props.hasOutline ? [["plan", "구성안대로 집필", `지금 구성안${story}의 순서·그림 배치대로 초안을 씁니다. 그 뒤에 고른 첨부와 요청 글도 넣고, 구성안은 승인됩니다(${rangeText(draftExpect("plan", props.mg, hasBiz))})`] as [DraftMode, string, string]] : []),
     props.mg
-      ? ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `초안을 쓰기 전에 글의 뼈대(이 카드가 들어갈 평가내용·절과 절마다 쓸 내용 순서)를 먼저 만듭니다. 보고 고친 뒤 승인하면 그대로 초안을 씁니다(${rangeText(draftExpect("outline", true))})`]
-      : ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `초안을 쓰기 전에 글의 뼈대(쓸 근거·평가 논점·내용 순서·그림 자리)를 먼저 만듭니다. 보고 고친 뒤 승인하면 그대로 초안을 씁니다(${rangeText(draftExpect("outline", props.mg))})`],
+      ? ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `초안을 쓰기 전에 글의 뼈대(이 카드가 들어갈 평가내용·절과 절마다 쓸 내용 순서)를 먼저 만듭니다. 보고 고친 뒤 승인하면 그대로 초안을 씁니다(${rangeText(draftExpect("outline", true, hasBiz))})`]
+      : ["outline", props.hasOutline ? "구성안 다시 만들기" : "구성안 만들기", `초안을 쓰기 전에 글의 뼈대(쓸 근거·평가 논점·내용 순서·그림 자리)를 먼저 만듭니다. 보고 고친 뒤 승인하면 그대로 초안을 씁니다(${rangeText(draftExpect("outline", props.mg, hasBiz))})`],
     // 경영관리는 평가내용·대주제·절을 먼저 정해야 해 구성안 없이 바로 쓰지 않음(서버 runReportSectionDraft도 막음)
     ...(props.mg ? [] : [["draft", props.hasSpec ? "바로 다시 만들기" : "바로 만들기", props.hasOutline ? `구성안을 쓰지 않고 AI가 뼈대를 새로 정해 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})` : `구성안 없이 한 번에 초안을 씁니다(${rangeText(draftExpect("draft"))})`] as [DraftMode, string, string]]),
   ];
@@ -170,6 +175,7 @@ export function DraftCompose(props: {
 
   // 대화 차례 열쇠(서버가 새 기록을 내려주면 바뀜 — 끝난 요청의 말풍선을 서버 차례가 이어받을 때를 앎)
   const sig = thread.turns.map((t) => t.key).join("|");
+  const lastDraftAt = thread.turns.map((t) => t.kind).lastIndexOf("draft");
   const [live, setLive] = useState<Live | null>(null);
   const [liveSeq, setLiveSeq] = useState(0);
   // 구성안 고치기 창에서 도는 요청: 시작·끝을 그리는 중에 대화 차례로 옮김(창은 닫히고 대화에서 진행 줄을 봄)
@@ -219,9 +225,12 @@ export function DraftCompose(props: {
   const pick = pickOf(
     sel.card.map((f) => f.id),
     sel.report.map((f) => f.id),
-    sel.off,
+    sel.offKeys,
+    sel.biz.map((b) => b.id),
   );
   const merged = mergeSources(src, pick);
+  // 진행 줄 「주요사업 초안」: 서버가 실제로 넣는 선택만(후보 목록에 있는 것 — 지워진 것은 offKeys로 빠짐), 과제번호만 적음
+  const bizNo = (ids: string[]) => ids.map((id) => props.biz?.find((b) => b.id === id)?.taskId.replace(/^주요사업\d+\s*/, "")).filter((x): x is string => Boolean(x));
   const planFiles = [...namesOf(props.cardFiles, merged.sources.card), ...namesOf(props.reportFiles ?? [], merged.sources.report)];
   const addedFiles = [...namesOf(props.cardFiles, merged.added.card), ...namesOf(props.reportFiles ?? [], merged.added.report)];
   // 이번 요청에 요청 글을 보냈는지(진행 줄 「담당자 요청」 — 보낼 때 정함)
@@ -238,10 +247,10 @@ export function DraftCompose(props: {
     draftProgress(
       running.kind,
       running.kind === "outline" || running.kind === "draft"
-        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: running.own && running.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
+        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, biz: bizNo(sel.biz.map((b) => b.id)), selected: picked, frame: running.own && running.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
         : running.kind === "plan" || running.kind === "revise"
           ? { files: planFiles, added: addedFiles, request: running.own && sentRequest, prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked }
-          : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, frame: running.own ? undefined : (props.outlineRun.frame ?? undefined) },
+          : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, biz: bizNo(src?.biz ?? []), selected: picked, frame: running.own ? undefined : (props.outlineRun.frame ?? undefined) },
     );
 
   // 스크롤(과제원장 AI 작성지원과 같음): 요청을 보내면 맨 아래(말풍선 + 진행 줄), 끝나 새 차례가 오면 마지막 답의 첫머리, 창을 열면 마지막 답의 첫머리.
@@ -309,7 +318,7 @@ export function DraftCompose(props: {
 
   const { ask, dialog: askDialog } = useAsk();
   const doSend = async (m: DraftMode) => {
-    const sources = { card: sel.card.map((f) => f.id), report: sel.report.map((f) => f.id), prior: sel.priorKeys };
+    const sources = { card: sel.card.map((f) => f.id), report: sel.report.map((f) => f.id), prior: sel.priorKeys, ...(sel.biz.length ? { biz: sel.biz.map((x) => x.id) } : {}) };
     // 요청 글은 요청 칸이 그 종류일 때 쓴 것만(답의 단추가 다른 종류를 보내면 다른 종류에 쓴 메모를 넣지 않음), 바로 만들기는 받지 않음
     const own = m === mode && m !== "draft";
     const request = own ? memo.trim() : "";
@@ -463,6 +472,7 @@ export function DraftCompose(props: {
                   onGotoBlock={props.onGotoBlock}
                   onOpenOutline={props.onOpenOutline}
                   showOutlineLink={t.kind === "outline" && t.key === lastOutlineKey && i < thread.turns.length - 1}
+                  bizStale={t.kind === "draft" && i === lastDraftAt ? props.bizStale : null}
                 />
               ))}
             </ol>
@@ -529,7 +539,7 @@ export function DraftCompose(props: {
           below={
             <>
               <section aria-label="초안 근거" className="flex min-w-0 items-center gap-2 text-xs">
-                <span className="min-w-0 truncate text-muted-2" title={`넣을 근거 — 원장 카드는 늘 넣음 · 보내면 ${rangeText(draftExpect(mode, props.mg))}`}>
+                <span className="min-w-0 truncate text-muted-2" title={`넣을 근거 — 원장 카드는 늘 넣음 · 보내면 ${rangeText(draftExpect(mode, props.mg, hasBiz))}`}>
                   초안 근거 — {selectionLine(sel)}
                 </span>
                 <button type="button" onClick={props.onOpenSources} className="shrink-0 text-link hover:underline">
@@ -637,7 +647,7 @@ export function DraftCompose(props: {
         onAlts={(cands) => {
           // 여러 안의 요청 글 = 요청 칸 메모(이 창에는 요청 칸이 따로 없음), 근거 = 지금 고른 근거. 사람이 고친 구성안을 덮을지는 안을 고를 때 물음
           setGallery(false);
-          props.onAlts?.(cands, memo.trim(), { card: sel.card.map((f) => f.id), report: sel.report.map((f) => f.id), prior: sel.priorKeys });
+          props.onAlts?.(cands, memo.trim(), { card: sel.card.map((f) => f.id), report: sel.report.map((f) => f.id), prior: sel.priorKeys, ...(sel.biz.length ? { biz: sel.biz.map((x) => x.id) } : {}) });
         }}
         onClose={() => setGallery(false)}
       />

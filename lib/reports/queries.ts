@@ -1,7 +1,9 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { compareTaskNo } from "../cards/view.ts";
 import { undatedOutcomeLines } from "./actuals.ts";
+import { loadBizStale } from "./mg-biz-queries.ts";
 import type { MaterialMatch } from "./material-match.ts";
 import type { ReportStatus } from "./model.ts";
 import { readSection } from "./section.ts";
@@ -233,6 +235,11 @@ export async function loadSubmitCards(supabase: SupabaseClient, year: number, fi
     : [{ data: [] as OutlineDbRow[] }, { data: [] as DraftDbRow[] }];
   const inc = new Map(((outline ?? []) as OutlineDbRow[]).map((o) => [o.card_id, o]));
   const dr = new Map(((drafts ?? []) as DraftDbRow[]).map((d) => [d.card_id, d]));
+  // 경영관리: 참고한 주요사업 초안이 그 뒤 바뀐 것(DB 함수가 읽을 수 있는 경영관리 카드만 돌려줌 — 주요사업은 부르지 않음)
+  const bizStale = new Map<string, string[]>();
+  if (track === "경영관리") {
+    for (const b of await loadBizStale(supabase, ids, year)) bizStale.set(b.cardId, [...new Set([...(bizStale.get(b.cardId) ?? []), b.taskNo])].sort(compareTaskNo));
+  }
   const out = new Map<string, SubmitCard[]>();
   const sorted = [...cardRows].sort((a, b) => (inc.get(a.id)?.sort ?? 1e9) - (inc.get(b.id)?.sort ?? 1e9) || String(a.task_no).localeCompare(String(b.task_no), "ko", { numeric: true }));
   for (const c of sorted) {
@@ -245,6 +252,7 @@ export async function loadSubmitCards(supabase: SupabaseClient, year: number, fi
       included: inc.get(c.id)?.included !== false,
       pages: inc.has(c.id) ? Number(inc.get(c.id)?.pages) : null,
       dataRev: c.data_rev ?? null,
+      ...(bizStale.get(c.id) ? { bizStale: bizStale.get(c.id) } : {}),
       ...(track === "경영관리" ? { undatedOutcome: undatedOutcomeLines({ outcome: { quantitative: c.outcome } }, year) } : {}),
       draft: d ? { spec: d.spec ? readSection(d.spec) : null, sourceRev: d.source_rev ?? null, unknownNumbers: Array.isArray(d.unknown_numbers) ? d.unknown_numbers : [], outlineOnly: !d.spec && Boolean(d.outline), outline: d.outline ?? null } : null,
     };

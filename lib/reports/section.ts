@@ -146,10 +146,17 @@ export interface ReportSectionSpec {
 
 /** 초안 근거로 넣은 첨부 자료 하나 */
 export interface ReportSource {
-  /** card = 카드 전용 자료, report = 보고서 추가자료, prior = 전년도 경영실적보고서 같은 과제 절(공통 지식 rpt25-biz, id = 조각 키), lens = 평가 기준·평가위원 관점 조각(공통 지식, id = 조각 키) */
-  kind: "card" | "report" | "prior" | "lens";
+  /**
+   * card = 카드 전용 자료, report = 보고서 추가자료, prior = 전년도 경영실적보고서 같은 과제 절(공통 지식 rpt25-biz, id = 조각 키), lens = 평가 기준·평가위원 관점 조각(공통 지식, id = 조각 키),
+   * biz = 경영관리 초안이 참고한 주요사업 경평 초안(id = 주요사업 카드 id — 그 원장·붙임 포함, 주요사업 하나당 한 줄, lib/reports/mg-biz.ts)
+   */
+  kind: "card" | "report" | "prior" | "lens" | "biz";
   id: string;
   name: string;
+  /** biz만: 쓸 때 그 주요사업 초안의 지문(DB md5(spec::text)) — 지금 지문과 다르면 「참고한 주요사업 초안이 바뀜」 */
+  stamp?: string;
+  /** biz만: 쓸 때 그 주요사업 초안의 updated_at */
+  at?: string;
 }
 
 /** 프롬프트에 넣는 첨부 자료 — 앱이 kordoc으로 뽑은 전체 글(자르지 않음, PDF 원본은 보내지 않음: 참고자료 설계 1단계·D2) */
@@ -158,9 +165,9 @@ export interface ReportFile {
   text: string;
   /**
    * 이 과제와 맺는 관계(참고자료 3단계): card = 이 과제 카드 전용 자료 · matched = 사람이 이 과제에 연결(확정)한 보고서 추가자료 ·
-   * same-report = 연결하지 않은 같은 보고서 자료. 비우면 card(옛 호출·시험)
+   * same-report = 연결하지 않은 같은 보고서 자료 · biz = 경영관리 초안이 참고한 주요사업의 원장·붙임 · biz-draft = 그 주요사업 경평 초안 글(lib/reports/mg-biz.ts). 비우면 card(옛 호출·시험)
    */
-  relation?: "card" | "matched" | "same-report";
+  relation?: "card" | "matched" | "same-report" | "biz" | "biz-draft";
   /** 수치를 숫자 근거로 인정하는 자료인가 — false면 인용 대조에만 씀(다른 과제 수치가 섞이는 것을 막음). 비우면 인정 */
   numberEvidence?: boolean;
 }

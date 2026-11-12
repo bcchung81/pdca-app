@@ -273,3 +273,16 @@ test("withTeamCards: 내 과제가 팀 전체와 같으면(성과관리팀·관�
 test("REVIEW_NOTE_MAX: 성과관리팀 검토 메모 상한은 2000(reports.review_note check와 같음)", () => {
   assert.equal(REVIEW_NOTE_MAX, 2000);
 });
+
+test("submitReadiness: 참고한 주요사업 초안이 바뀜 — 확인할 것 한 줄(제출을 막지 않음), 없으면 줄도 키도 없음", () => {
+  const plain = cardSubmitRow(card({ draft: { spec: spec(), sourceRev: 1, unknownNumbers: [] } }));
+  assert.equal("bizStale" in plain, false, "주요사업 줄은 키가 늘지 않음");
+  const mg = card({ id: "mg-1", uid: "mg-1", taskNo: "13-4", bizStale: ["3-나", "5-가"], draft: { spec: spec(), sourceRev: 1, unknownNumbers: [] } });
+  assert.deepEqual(cardSubmitRow(mg).bizStale, ["3-나", "5-가"]);
+  const r = submitReadiness([mg]);
+  assert.equal(r.ready, true, "막지 않음");
+  assert.deepEqual(r.checks, ["참고한 주요사업 초안이 바뀜 1건: 13-4(3-나·5-가)"]);
+  // 초안이 없는 과제의 표지는 확인 목록에 넣지 않음(초안이 없다는 것이 먼저)
+  const none = submitReadiness([card({ id: "mg-2", uid: "mg-2", taskNo: "13-5", bizStale: ["3-나"], draft: null })]);
+  assert.deepEqual(none.checks, []);
+});

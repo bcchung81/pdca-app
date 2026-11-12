@@ -28,6 +28,9 @@
 //  첨부 효과 대조(2026-11-12): --replan = --add-file과 같은 흐름(저장된 구성안 그대로 다시 집필)을 추가 파일 없이 — 같은 구성안의 「첨부 없음」 기준 초안(--add-file 결과와 견줌)
 //   빠진 구성안 블록(2026-10-29): 보강 맨 앞에 서버와 같게 집필이 빠뜨린 구성안 블록을 빈 모양으로 끼워 채움 — meta.fill.missing(구성안 블록 번호·라벨·모양·절·데이터 블록 여부),
 //   meta.fill.revived(블록마다 받음/못 받음·늘어난 mm·까닭·시간·토큰). 구성안 지킴 셈은 서버처럼 앱이 뺀 블록(droppedShapes)을 덜어냄
+//  주요사업 초안 참고(2026-11-12): --biz <주요사업 카드 id,…> = 그 주요사업들의 경평 초안·원장·붙임(초안 근거 목록의 card·report 자료)을 서버(prepareMgDraft → lib/reports/mg-biz.ts bizMaterials)와 같게
+//   이 카드 첨부 뒤 자료로 넣고 숫자 근거(그 초안의 없는 숫자는 가림)·인용 대조에 더함. 서비스 키로 직접 읽음(DB 함수 mg_biz_ref_texts는 auth.uid()가 없어 빈 결과) —
+//   지문(stamp)은 JSON 글의 md5(DB md5(spec::text)와 다를 수 있음 — 스모크 표시용). --dry면 요청 자료 블록 크기 전후·주요사업 자료별 글자 수·가린 숫자 수만
 import { createClient } from "@supabase/supabase-js";
 import { loadCardBundle, setSelectionSource } from "../../lib/ai/context.ts";
 import { selectionFromDir } from "../lib/select-dir.ts";
@@ -66,11 +69,14 @@ import { fillFrom } from "../../lib/prompts/template.ts";
 import { readAttachment } from "../../lib/ai/attachments.ts";
 import type { PlanRevise } from "../../lib/reports/draft-sources.ts";
 import { basename } from "node:path";
+import { createHash } from "node:crypto";
+import { type BizRefText, taskIdOf } from "../../lib/reports/mg-biz-queries.ts";
+import { bizMaterials, bizMissing, withoutBizFiles } from "../../lib/reports/mg-biz.ts";
 
 // 값을 받는 옵션(--part·--story)의 값은 위치 인자에서 뺌
 const flagValue = (name: string) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined);
 // --add-file은 여러 번 줄 수 있어 모든 자리의 값을 뺌
-const valued = new Set([...["--part", "--story", "--json", "--pattern", "--example", "--request", "--alts", "--select-dir"].flatMap((f) => (process.argv.includes(f) ? [process.argv.indexOf(f) + 1] : [])), ...process.argv.flatMap((a, i) => (a === "--add-file" ? [i + 1] : []))]);
+const valued = new Set([...["--part", "--story", "--json", "--pattern", "--example", "--request", "--alts", "--select-dir", "--biz"].flatMap((f) => (process.argv.includes(f) ? [process.argv.indexOf(f) + 1] : [])), ...process.argv.flatMap((a, i) => (a === "--add-file" ? [i + 1] : []))]);
 const addPaths = process.argv.flatMap((a, i) => (a === "--add-file" && process.argv[i + 1] ? [process.argv[i + 1]] : []));
 const args = process.argv.slice(2).filter((a, i) => !a.startsWith("--") && !valued.has(i + 2));
 const dry = process.argv.includes("--dry");
@@ -89,7 +95,7 @@ if (error || !card) throw new Error(`카드를 읽지 못함: ${error?.message}`
 const indicator = MGMT_INDICATORS.find((u) => u.id === card.eval_unit_id);
 if (!indicator) throw new Error(`경영관리 카드가 아님: ${card.eval_unit_id}`);
 // --files: 서버(prepareDraft)와 같은 첨부 — 읽은 글이 준비된 행만, 준비 안 된 행은 이름만 출력(파싱·DB 쓰기 없음)
-type SmokeFile = { id: string; kind: "card" | "report"; name: string; text: string; relation: "card" | "matched" | "same-report"; numberEvidence: boolean };
+type SmokeFile = { id: string; kind: "card" | "report"; name: string; text: string; relation: "card" | "matched" | "same-report" | "biz" | "biz-draft"; numberEvidence: boolean };
 const files: SmokeFile[] = [];
 // 읽기 실패한 저장본 — 서버 prepareDraft의 skipped와 같은 표기(초안 경고 「첨부: AI가 읽지 못해 빼고 썼습니다」)
 const skipped: string[] = [];
@@ -121,9 +127,69 @@ const ctx: MgDraftContext = { unit: card.eval_unit_id, indicator: indicator.name
 const actuals = yearActuals(card.data, isoDay(), { wide: true });
 const numbers = await loadMgNumberEvidence(db, card.eval_unit_id);
 const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
+// --biz: 주요사업 초안 참고(서버 prepareMgDraft와 같은 bizMaterials — 읽기는 서비스 키로 DB 함수 mg_biz_ref_texts와 같은 범위)
+const bizIds = [...new Set((flagValue("--biz") ?? "").split(",").map((x) => x.trim()).filter(Boolean))];
+async function loadBizSmoke(ids: string[]): Promise<BizRefText[]> {
+  const out: BizRefText[] = [];
+  for (const bid of ids) {
+    const { data: c } = await db.from("cards").select("id, eval_unit_id, task_no, title, data, status, team_id").eq("id", bid).maybeSingle();
+    if (!c || c.status !== "active" || /^MG-/.test(c.eval_unit_id)) {
+      console.log(`주요사업 건너뜀 ${bid} — ${!c ? "카드 없음" : c.status !== "active" ? "보관한 카드" : "경영관리 카드"}`);
+      continue;
+    }
+    const { data: d } = await db.from("card_report_drafts").select("spec, unknown_numbers, updated_at").eq("card_id", c.id).eq("year", year).maybeSingle();
+    if (!d?.spec || typeof d.spec !== "object" || Array.isArray(d.spec)) {
+      console.log(`주요사업 건너뜀 ${bid} — ${year} 경평 초안 없음`);
+      continue;
+    }
+    const used = ((d.spec as { sources?: Array<{ kind: string; id: string }> }).sources ?? []).filter((x) => x.kind === "card" || x.kind === "report");
+    const fileRows: BizRefText["files"] = [];
+    const cardIds = used.filter((x) => x.kind === "card").map((x) => x.id);
+    if (cardIds.length) {
+      const { data: m } = await db.from("card_materials").select("id, file_name, parsed_text").eq("card_id", c.id).in("id", cardIds).not("parsed_text", "is", null);
+      fileRows.push(...(m ?? []).map((r: { id: string; file_name: string; parsed_text: string }) => ({ kind: "card" as const, id: String(r.id), name: r.file_name, text: r.parsed_text })));
+    }
+    const repIds = used.filter((x) => x.kind === "report").map((x) => x.id);
+    if (repIds.length) {
+      const { data: rep } = await db.from("reports").select("id").eq("eval_unit_id", c.eval_unit_id).eq("team_id", c.team_id).eq("year", year).maybeSingle();
+      const { data: m } = rep ? await db.from("report_materials").select("id, file_name, parsed_text").eq("report_id", rep.id).in("id", repIds).not("parsed_text", "is", null) : { data: [] };
+      fileRows.push(...(m ?? []).map((r: { id: string; file_name: string; parsed_text: string }) => ({ kind: "report" as const, id: String(r.id), name: r.file_name, text: r.parsed_text })));
+    }
+    out.push({
+      cardId: c.id,
+      taskId: taskIdOf(c.data?.group, c.task_no),
+      taskNo: c.task_no,
+      title: c.title,
+      team: "",
+      data: c.data,
+      spec: d.spec,
+      stamp: createHash("md5").update(JSON.stringify(d.spec)).digest("hex"),
+      updatedAt: d.updated_at,
+      unknownNumbers: (d.unknown_numbers ?? []).map(String),
+      files: fileRows,
+    });
+  }
+  return out;
+}
+const bizRefs = bizIds.length ? await loadBizSmoke(bizIds) : [];
+const biz = bizIds.length ? bizMaterials(bizRefs) : null;
+if (biz) skipped.push(...bizMissing(bizIds, bizRefs));
+// AI에 넣는 첨부 = 이 카드 첨부 + 주요사업 자료(서버 mgAiFiles와 같은 순서). 도식 후보는 이 카드 첨부만
+const aiFiles: SmokeFile[] = [...files, ...(biz?.docs ?? []).map((d) => ({ id: d.id, kind: "card" as const, name: d.name, text: d.text, relation: d.relation, numberEvidence: true }))];
+// 요청 글 첨부(예전 연기 시험처럼 이 카드 첨부는 이름·글만 — 주요사업 자료만 관계 문구가 달라 relation을 넘김)
+const reqFiles = aiFiles.map((f) => (f.relation === "biz" || f.relation === "biz-draft" ? { name: f.name, text: f.text, relation: f.relation } : { name: f.name, text: f.text }));
+// 숫자 근거·인용 대조(서버 prepareMgDraft와 같음 — 주요사업 초안 글은 그 초안의 없는 숫자를 가린 사본, 인용은 원문)·블록 요청 근거 글(원문)
+const knownAll = [ev.known, numbers, ...(biz ? [biz.known] : [])].join("\n");
+const quoteAll = biz ? [ev.quoteOnly, biz.quote].join("\n") : ev.quoteOnly;
+const promptKnown = biz ? [ev.known, numbers, biz.prompt].join("\n") : undefined;
+if (biz) {
+  console.log(`주요사업 참고 ${bizRefs.length}/${bizIds.length}건 — ${bizRefs.map((r) => `${r.taskId} 「${r.title}」(초안 없는 숫자 ${r.unknownNumbers.length}개·붙임 ${r.files.length}건)`).join(" · ") || "없음"}`);
+  console.log(`주요사업 자료 ${biz.docs.length}건: ${biz.docs.map((d) => `[${d.relation}] 「${d.name}」 ${d.text.length}자`).join(" · ")} · 합계 ${biz.docs.reduce((n, d) => n + d.text.length, 0)}자`);
+}
 const draft = reportDraftPromptsMg().prompts;
 const outline = reportOutlinePromptsMg().prompts;
-const request = mgMaterialsPrompt(draft, card.data, ctx, year, ctx.evals, files.map((f) => ({ name: f.name, text: f.text })), lens, actuals);
+const request = mgMaterialsPrompt(draft, card.data, ctx, year, ctx.evals, reqFiles, lens, actuals);
+if (biz) console.log(`요청 자료 블록 — 주요사업 자료 없이 ${mgMaterialsPrompt(draft, card.data, ctx, year, ctx.evals, files.map((f) => ({ name: f.name, text: f.text })), lens, actuals).length}자 → 넣고 ${request.length}자`);
 // 같은 지표 다른 카드의 구성안 절(겹침 점검·요청 — 2026-10-09)과 도식 후보
 const { data: sibRows } = await db.from("card_report_drafts").select("outline, cards!inner(task_no, eval_unit_id)").eq("year", year).eq("cards.eval_unit_id", card.eval_unit_id).neq("card_id", card.id).not("outline", "is", null);
 // 서버 loadMgSiblings와 같게 과제번호 순 12장까지
@@ -138,7 +204,7 @@ const inspection = followupBasis(ins ? { period: ins.period, status: ins.status,
 // 서버 callReportOutlineMg와 같은 순서: 분량 목표 · 닫기 관례 · 절 성과 재료 · 수치 묶음 재료(2026-10-29 — 연결 조각 표도 서버와 같은 kb의 relevantRefs)
 const outcomes = ledgerOutcomeItems(card.data, cleanLine, Infinity);
 const volumeClose = [mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, prior, indicator.name), mgOutcomePrompt(outline, outcomes), mgBundlePrompt(outline, [...cardBundles(card.data, actuals), ...linkedBundles(relevantRefs(kb))])].filter(Boolean).join("\n\n");
-const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files, siblings });
+const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files: withoutBizFiles(reqFiles), siblings });
 // 갈래 축 사전(서버 callReportOutlineMg와 같은 절 — 전체 구성안만, 2026-10-13)
 const splitHead = splitHeadPrompt(outline, "mg");
 const extra = [mgDiagramPrompt(outline, hints), mgSiblingsPrompt(outline, siblings), outlineInspectionPrompt(outline, inspection), storyHints, volumeClose, splitHead].filter(Boolean).join("\n\n");
@@ -156,7 +222,7 @@ console.log(`같은 지표 다른 카드 갈래 축: ${siblings.filter((x) => x.
 console.log(storyHints ? `틀 후보 —\n${storyHints}` : "틀 후보 없음");
 console.log(`도식 후보 ${hints.map((h) => h.kind).join("·") || "없음"} · 같은 지표 다른 카드 구성안 ${siblings.length}장(${siblings.map((s) => s.taskNo).join("·") || "—"})`);
 // 근거 글: --files면 서버(runReportOutlineMg)와 같게 known = 첨부·실사·계량 입력 + 2025 보고서·핵심공통항목, 아니면 예전 시험 그대로
-const evidenceArgs: [string, string] = withFiles ? [[ev.known, numbers].join("\n"), ev.quoteOnly] : [prior.map((s) => s.text).join("\n"), lens.map((x) => x.text).join("\n")];
+const evidenceArgs: [string, string] = withFiles || biz ? [knownAll, quoteAll] : [prior.map((s) => s.text).join("\n"), lens.map((x) => x.text).join("\n")];
 const close = mgCloseRule(prior);
 console.log(`분량 목표 ${ctx.pages ?? "없음"}쪽 · 닫기 관례 ${close.strict ? "엄격" : "기본"}(2025 절 ${close.total}개 중 「추진성과」 행 ${close.closed}개) · 구성안 요청의 분량·닫기 절 ${volumeClose.length}자`);
 // 분량 채움 보강(서버 writeMgDraft와 같은 runMgFill → mgFillPatch, 저장 안 함 — 2026-10-29). --no-fill이면 보강 없이 1차 초안 그대로(비교용)
@@ -164,7 +230,7 @@ const noFill = process.argv.includes("--no-fill");
 // 함수 안에서는 위의 카드 null 확인이 이어지지 않아 값을 따로 둠
 const cardData = card.data;
 async function fillStep(v: ReturnType<typeof verifyMgDraft>, warnings: string[], t0: number, firstMs: number, plan: FillPlan) {
-  const input: MgFillInput = { card: cardData, known: [ev.known, numbers].join("\n"), quoteOnly: ev.quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes, refs: relevantRefs(kb) };
+  const input: MgFillInput = { card: cardData, known: knownAll, quoteOnly: quoteAll, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes, refs: relevantRefs(kb), ...(promptKnown ? { promptKnown } : {}) };
   // 빠진 구성안 블록(서버와 같은 missingBlocks — 앱이 뺀 블록·원장 보강한 추진성과 제외, 데이터 블록 먼저)
   const missing = missingBlocks(v.spec, plan, v.droppedShapes, v.closed).map((m) => ({ plan: m.plan + 1, label: m.label, shape: m.shape, part: m.at, data: m.data }));
   const brief = (r: MgFillReasons) => ({ short: r.short, hollow: r.hollow.map((h) => h.index + 1), facts: r.facts, refFacts: r.refFacts.length, repeats: r.repeats.map((x) => ({ figure: x.figure, keep: x.keep + 1, others: x.others.map((i) => i + 1) })), sentences: r.sentences.map((x) => ({ block: x.index + 1, keep: x.keep < 0 ? "상자" : x.keep + 1, text: x.text })) });
@@ -266,7 +332,7 @@ if (partKey) {
     redos.map(async ({ f, story, redo }) => {
       const t0 = Date.now();
       try {
-        const call = await callReportOutlineMg({ card: card.data, ctx, year, files, lens, actuals, kb, siblings, hints, inspection, part: redo, memo });
+        const call = await callReportOutlineMg({ card: card.data, ctx, year, files: aiFiles, lens, actuals, kb, siblings, hints, inspection, part: redo, memo });
         const { hayKey, known } = evidenceOf(card.data, ...evidenceArgs);
         // 갈래 축은 카드 것(서버 mgPartMerge와 같음) — 새 절 칩은 그 축으로 검증
         const cleaned = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, axis: saved.mg?.axis ?? "" });
@@ -309,7 +375,7 @@ if (addPaths.length || process.argv.includes("--replan")) {
   const had = new Set([...(plan.sources?.card ?? []).map((x) => `card:${x}`), ...(plan.sources?.report ?? []).map((x) => `report:${x}`)]);
   const revise: PlanRevise = { added: files.filter((f) => !had.has(`${f.kind}:${f.id}`)).map((f) => f.name), request: (flagValue("--request") ?? "").trim().slice(0, 500) };
   const evals = [...new Set(plan.mg.parts.map((p) => p.evalNo))];
-  const draftAsk = `${mgMaterialsPrompt(draft, card.data, ctx, year, evals.length ? evals : ctx.evals, files.map((f) => ({ name: f.name, text: f.text })), lens, actuals)}\n\n${mgPlanPrompt(draft, plan, ctx, revise)}`;
+  const draftAsk = `${mgMaterialsPrompt(draft, card.data, ctx, year, evals.length ? evals : ctx.evals, reqFiles, lens, actuals)}\n\n${mgPlanPrompt(draft, plan, ctx, revise)}`;
   console.log(`자료 반영 고치기 — 구성안 절 ${plan.mg.parts.length}개·블록 ${plan.blocks.length}개 · 구성안 뒤 추가된 자료 ${revise.added.length}건(${revise.added.join(" · ") || "없음"}) · 담당자 요청 ${revise.request ? `${revise.request.length}자` : "없음"} · 집필 요청 글 ${draftAsk.length}자 · ${draft.version}`);
   if (dry) {
     const plain = mgPlanPrompt(draft, plan, ctx);
@@ -317,10 +383,10 @@ if (addPaths.length || process.argv.includes("--replan")) {
     process.exit(0);
   }
   const t1 = Date.now();
-  const dcall = await callReportDraftMg({ card: card.data, ctx, year, files, lens, actuals, kb, plan, revise });
+  const dcall = await callReportDraftMg({ card: card.data, ctx, year, files: aiFiles, lens, actuals, kb, plan, revise });
   const draftMs = Date.now() - t1;
   // 서버 writeMgDraft와 같은 검증 인자(숫자 근거 = 카드·첨부(추가 자료 포함)·실사 답변 + 그 지표 2025 보고서·핵심공통항목)
-  const v = verifyMgDraft(dcall.output, card.data, plan, ctx, [ev.known, numbers].join("\n"), ev.quoteOnly, year, actuals.today);
+  const v = verifyMgDraft(dcall.output, card.data, plan, ctx, knownAll, quoteAll, year, actuals.today);
   const out = args[1] ?? `/tmp/mg-revise-${id.replace(/\//g, "_")}.html`;
   // 서버 writeMgDraft와 같은 셈(앱이 뺀 블록 droppedShapes를 덜어냄)·같은 글
   const adherence = planAdherence(plan, v.spec.blocks ?? [], v.droppedShapes);
@@ -329,11 +395,12 @@ if (addPaths.length || process.argv.includes("--replan")) {
   if (planWarning) draftWarnings.push(planWarning);
   // 서버와 같게 1차 초안 뒤 분량 채움 보강(저장 안 함 — 파일은 보강한 초안)
   const fin = await fillStep(v, draftWarnings, t1, draftMs, plan);
+  console.log(`단계 시간 — 구성안 안 함(저장된 구성안) · 집필 ${Math.round(draftMs / 1000)}초(출력 ${dcall.usage.output}토큰) · 보강 ${fin.meta.off ? "안 함" : `${Math.round((fin.meta.ms ?? 0) / 1000)}초`}`);
   writeFileSync(out, sectionDocument(fin.spec, fin.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: modelLabel(dcall) }));
   writeFileSync(`${out}.json`, JSON.stringify(fin.spec, null, 1));
   const meta = {
     revise,
-    files: files.map((f) => ({ kind: f.kind, name: f.name, chars: f.text.length, relation: f.relation, local: f.id.startsWith("local:") })),
+    files: aiFiles.map((f) => ({ kind: f.kind, name: f.name, chars: f.text.length, relation: f.relation, local: f.id.startsWith("local:") })),
     warnings: fin.warnings,
     unknownNumbers: fin.unknownNumbers,
     adherence,
@@ -371,8 +438,10 @@ if (dry) {
   process.exit(0);
 }
 const t0 = Date.now();
-const call = await callReportOutlineMg({ card: card.data, ctx, year, files, lens, actuals, kb, siblings, hints, inspection });
+const call = await callReportOutlineMg({ card: card.data, ctx, year, files: aiFiles, lens, actuals, kb, siblings, hints, inspection });
 const outlineMs = Date.now() - t0;
+// 단계별 시간(다음 측정용 — 2026-11-12 CLI 제한 결정): 구성안 초·출력 토큰을 집필 전에 먼저 찍음(집필이 멈춰도 남게)
+console.log(`단계 시간 — 구성안 ${Math.round(outlineMs / 1000)}초 · 출력 ${call.usage.output}토큰(입력 ${call.usage.input}·캐시 읽기 ${call.usage.cacheRead})`);
 const { hayKey, known } = evidenceOf(card.data, ...evidenceArgs);
 const cleaned = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
 // 데이터 블록 넣기(S2 — 서버 runReportOutlineMg와 같음)
@@ -387,10 +456,10 @@ if (withDraft) {
   // 집필(서버 writeMgDraft와 같은 숫자 근거: 카드·첨부·실사 답변 + 그 지표 2025 보고서 전 장·핵심공통항목)
   const t1 = Date.now();
   const plan = { ...composition, memo: "", module: 1, head: "all" as const };
-  const dcall = await callReportDraftMg({ card: card.data, ctx, year, files, lens, actuals, kb, plan });
+  const dcall = await callReportDraftMg({ card: card.data, ctx, year, files: aiFiles, lens, actuals, kb, plan });
   const draftMs = Date.now() - t1;
   // --app은 서버 writeMgDraft와 같은 검증 인자(올해 실적 기준일 actuals.today까지)
-  const v = verifyMgDraft(dcall.output, card.data, plan, ctx, [ev.known, numbers].join("\n"), ev.quoteOnly, year, app ? actuals.today : undefined);
+  const v = verifyMgDraft(dcall.output, card.data, plan, ctx, knownAll, quoteAll, year, app ? actuals.today : undefined);
   const out = args[1] ?? `/tmp/mg-draft-${id.replace(/\//g, "_")}.html`;
   // 앱이 저장할 경고 — 서버 writeMgDraft와 같은 순서·문구(검증 경고 + 첨부 읽기 실패 + 구성안 지킴), --app은 그 뒤 분량 채움 보강까지(서버와 같음 — 저장 안 함)
   // 서버 writeMgDraft와 같은 셈(앱이 뺀 블록 droppedShapes를 덜어냄)·같은 글
@@ -399,14 +468,16 @@ if (withDraft) {
   const planWarning = mgAdherenceWarning(adherence);
   if (planWarning) draftWarnings.push(planWarning);
   const fin = app ? await fillStep(v, draftWarnings, t1, draftMs, plan) : { spec: v.spec, warnings: v.warnings, unknownNumbers: v.unknownNumbers, meta: null };
+  const fillMs = fin.meta && !fin.meta.off ? fin.meta.ms : null;
+  console.log(`단계 시간 — 구성안 ${Math.round(outlineMs / 1000)}초(출력 ${call.usage.output}토큰) · 집필 ${Math.round(draftMs / 1000)}초(출력 ${dcall.usage.output}토큰) · 보강 ${fillMs == null ? "안 함" : `${Math.round(fillMs / 1000)}초`} · 합 ${Math.round((Date.now() - t0) / 1000)}초`);
   writeFileSync(out, sectionDocument(fin.spec, fin.unknownNumbers, { year, generatedAt: new Date().toISOString(), model: modelLabel(dcall) }));
   const jsonOut = flagValue("--json");
-  if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ card: id, year, files: files.map((f) => ({ kind: f.kind, name: f.name, chars: f.text.length, relation: f.relation })), composition, spec: fin.spec, unknownNumbers: fin.unknownNumbers, warnings: fin.warnings }, null, 1));
+  if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ card: id, year, files: aiFiles.map((f) => ({ kind: f.kind, name: f.name, chars: f.text.length, relation: f.relation })), biz: biz?.sources ?? [], composition, spec: fin.spec, unknownNumbers: fin.unknownNumbers, warnings: fin.warnings }, null, 1));
   if (app && fin.meta) {
     writeFileSync(`${out}.json`, JSON.stringify(fin.spec, null, 1));
     writeFileSync(`${out}.outline.json`, JSON.stringify(plan, null, 1));
     const evals = [...new Set((plan.mg?.parts ?? []).map((p) => p.evalNo))];
-    const draftAsk = `${mgMaterialsPrompt(draft, card.data, ctx, year, evals.length ? evals : ctx.evals, files.map((f) => ({ name: f.name, text: f.text })), lens, actuals)}\n\n${mgPlanPrompt(draft, plan, ctx)}`;
+    const draftAsk = `${mgMaterialsPrompt(draft, card.data, ctx, year, evals.length ? evals : ctx.evals, reqFiles, lens, actuals)}\n\n${mgPlanPrompt(draft, plan, ctx)}`;
     const meta = {
       warnings: fin.warnings,
       unknownNumbers: fin.unknownNumbers,

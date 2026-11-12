@@ -29,7 +29,7 @@ import type { MgDraftContext } from "../../../../lib/reports/mg-draft.ts";
 import { addMgDataBlocks } from "../../../../lib/reports/mg-data-blocks.ts";
 import { mgPdcaSkeleton } from "../../../../lib/reports/mg-pdca.ts";
 import { type MgOutlineOutput, type MgPartRedo, applyMgCompositionEdit, cleanMgComposition, isMgMainStory, mgCompositionIssues, mgHintOptions, mgOutlineOutSchema, mgOverlapIssues, mgPartLabel, mgPartRedo, replaceMgPart } from "../../../../lib/reports/mg-outline.ts";
-import { type AiReq, DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginJob, launchReportJob, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
+import { type AiReq, DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginJob, launchReportJob, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, mgAiFiles, prepareDraft, refresh } from "./draft-prepare.ts";
 import { writeDraft } from "./draft-write.ts";
 import { type DraftPick, type PlanRevise, mergeSources, readPick } from "../../../../lib/reports/draft-sources.ts";
 
@@ -58,8 +58,13 @@ async function frameInputOf(supabase: Prepared["supabase"], f: FrameChoice, mg: 
   return { ok: true, input: { pattern: f.pattern ? patternOf(f.pattern) : null, example }, frame: { ...f, example: { key: example.key, title: example.title } } };
 }
 
-/** 이 구성안을 만든 근거(승인 뒤 집필이 같은 근거를 씀) */
-const sourcesOf = (p: Prepared) => ({ card: p.picked.filter((x) => x.kind === "card").map((x) => x.id), report: p.picked.filter((x) => x.kind === "report").map((x) => x.id), prior: p.prior.map((x) => x.section.key) });
+/** 이 구성안을 만든 근거(승인 뒤 집필이 같은 근거를 씀) — 경영관리는 고른 주요사업 초안(biz — 읽은 것만)도 */
+const sourcesOf = (p: Prepared) => ({
+  card: p.picked.filter((x) => x.kind === "card").map((x) => x.id),
+  report: p.picked.filter((x) => x.kind === "report").map((x) => x.id),
+  prior: p.prior.map((x) => x.section.key),
+  ...(p.biz?.sources.length ? { biz: p.biz.sources.map((x) => x.id) } : {}),
+});
 
 /** 주요사업 구성안 한 번(AI — 저장 안 함, 기록 끝맺기는 부르는 쪽) */
 const callBizOutline = (p: Prepared, inspection: FollowupBasis | null, o: { memo: string; story?: Story; frame?: FrameInput }) =>
@@ -129,17 +134,19 @@ async function runReportOutlineMg(p0: Prepared & { mg: MgDraftContext }, memo?: 
 
 /** 경영관리 구성안 본문(after 안) */
 async function runReportOutlineMgWork(p: Prepared & { mg: MgDraftContext }, ai: AiReq, memo?: string): Promise<ReportDraftState> {
-  const { supabase, card, year, picked, files, lens, actuals, known, quoteOnly } = p;
+  const { supabase, card, year, files, lens, actuals, known, quoteOnly } = p;
+  // AI·재료 정리는 이 카드 첨부 + 고른 주요사업 자료(같은 「[첨부 N]」 번호), 도식 후보(이 과제만의 요소 신호)는 이 카드 첨부만
+  const aiFiles = mgAiFiles(p);
   const t0 = Date.now();
   try {
     // 도식 후보(카드·첨부·추천 평가내용의 2025 절 신호 — diagramHints 경영관리 신호 포함)와 같은 지표 다른 카드의 구성안 절을 요청에 넣음
     const hints = sectionHints(card.data, [], files, lens, actuals, year, mgHintOptions(p.mg));
     const inspection = await loadInspectionBasis(supabase, card.id);
-    const oc = await callReportOutlineMg({ card: card.data, ctx: p.mg, year, files, lens, actuals, memo: memo?.slice(0, 500), kb: p.kb, siblings: p.mgSiblings, hints, inspection });
+    const oc = await callReportOutlineMg({ card: card.data, ctx: p.mg, year, files: aiFiles, lens, actuals, memo: memo?.slice(0, 500), kb: p.kb, siblings: p.mgSiblings, hints, inspection });
     await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
     const { hayKey, known: numbers } = evidenceOf(card.data, known, quoteOnly);
     // 요청에 준 절 성과 재료를 구성안에 남김(구성안 점검 「성과 배정」 — mg-outline.ts mgOutcomeIssues)
-    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity), files });
+    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity), files: aiFiles });
     // 수치 묶음 재료를 맡은 절에 데이터 블록이 없으면 하나 넣음(S2 — lib/reports/mg-data-blocks.ts, 연기 시험과 같음)
     const data = addMgDataBlocks(cleaned.composition, p.mg.pages);
     const composition: Composition = {
@@ -147,7 +154,7 @@ async function runReportOutlineMgWork(p: Prepared & { mg: MgDraftContext }, ai: 
       memo: (memo ?? "").slice(0, 500),
       module: 1,
       head: "all",
-      sources: { card: picked.filter((x) => x.kind === "card").map((x) => x.id), report: picked.filter((x) => x.kind === "report").map((x) => x.id), prior: [] },
+      sources: sourcesOf(p),
     };
     const saved = await saveOutlineRow(supabase, card.id, year, composition, [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, p.mgSiblings), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))], modelLabel(oc), p.base);
     if (!saved.ok) {
@@ -167,14 +174,14 @@ type MgPrepared = Prepared & { mg: MgDraftContext };
 /** 경영관리 절 하나 다시 짜기(AI — 저장 안 함, 기록 끝맺기는 부르는 쪽) */
 function callMgPart(p: MgPrepared, inspection: FollowupBasis | null, redo: MgPartRedo, memo: string) {
   const hints = sectionHints(p.card.data, [], p.files, p.lens, p.actuals, p.year, mgHintOptions(p.mg));
-  return callReportOutlineMg({ card: p.card.data, ctx: p.mg, year: p.year, files: p.files, lens: p.lens, actuals: p.actuals, kb: p.kb, siblings: p.mgSiblings, hints, inspection, part: redo, memo });
+  return callReportOutlineMg({ card: p.card.data, ctx: p.mg, year: p.year, files: mgAiFiles(p), lens: p.lens, actuals: p.actuals, kb: p.kb, siblings: p.mgSiblings, hints, inspection, part: redo, memo });
 }
 
 /** 다시 짠 절 답 → 지금 구성안에 합친 구성안·경고(replaceMgPart — 그 절 블록만 바뀜) */
 function mgPartMerge(p: MgPrepared, o: LoadedOutline, out: MgOutlineOutput, key: string, story: MgMainStory | undefined, frame: OutlineFrame | undefined) {
   const { hayKey, known } = evidenceOf(p.card.data, p.known, p.quoteOnly);
   // 갈래 축은 카드 것(절 다시 짜기에서 안 바뀜) — 새 절 칩은 그 축으로 검증
-  const cleaned = cleanMgComposition(out, hayKey, known, { indicator: p.mg.indicator, prior: p.mg.prior, axis: o.outline.mg?.axis ?? "", files: p.files });
+  const cleaned = cleanMgComposition(out, hayKey, known, { indicator: p.mg.indicator, prior: p.mg.prior, axis: o.outline.mg?.axis ?? "", files: mgAiFiles(p) });
   const merged = replaceMgPart(o.outline, cleaned.composition, key, { story, frame });
   // 다시 짠 절에 데이터 블록이 없으면 그 절에만 넣음(S2 — 다른 절의 사람 편집은 건드리지 않음)
   const data = merged.changed ? addMgDataBlocks(merged.composition, p.mg.pages, key) : { composition: merged.composition, notes: [] };
@@ -583,7 +590,9 @@ export async function approveReportOutline(uid: string, opts?: { pick?: DraftPic
   const p = await prepareDraft(uid, pick ? merged.sources : saved, pick ? { loose: saved ?? { card: [], report: [] } } : {});
   if (!p.ok) return p;
   const isNew = (kind: "card" | "report", id: string) => (kind === "card" ? merged.added.card : merged.added.report).includes(id);
-  const revise: PlanRevise = { added: p.files.filter((f) => isNew(f.kind, f.id)).map((f) => f.name), request: requestText(opts?.request) };
+  // 구성안 뒤 고른 주요사업 초안(biz)도 「구성안 뒤 추가된 자료」로 이름을 알림(원장·초안·붙임 — 요청의 [첨부 N] 이름)
+  const newBiz = new Set(merged.added.biz ?? []);
+  const revise: PlanRevise = { added: [...p.files.filter((f) => isNew(f.kind, f.id)).map((f) => f.name), ...(p.biz?.docs ?? []).filter((d) => newBiz.has(d.id.slice(0, d.id.indexOf("#")))).map((d) => d.name)], request: requestText(opts?.request) };
   const plan: Composition = pick ? { ...o.outline, sources: sourcesOf(p) } : o.outline;
   // 시작만 하고 돌려줌(집필·저장은 after — 작업 종류 plan·revise는 진행 표시 이름만 다름)
   return writeDraft(p, plan, revise, opts?.revise ? "revise" : "plan");

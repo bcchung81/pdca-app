@@ -36,12 +36,13 @@ import type { FollowupBasis } from "./followup.ts";
 import { type ChatRequest, type ChatResult, chatPrompt } from "./chat.ts";
 import type { DescribeInput } from "./describe.ts";
 import { type MatchResult, matchPrompt, matchShared } from "./match.ts";
-import { apiErrorKind, apiErrorMessage, shouldRetryApi } from "./api-errors.ts";
+import { apiErrorKind, apiErrorMessage, shouldRetryApi, switchesKey } from "./api-errors.ts";
 import { canFixAgain, draftScore, fixDeadlineMs, shouldFix } from "./fix-policy.ts";
 import { type AiFeature, type Effort, FEATURE_MAX_TOKENS, specForFeature } from "./models.ts";
 import { isMgmtCard } from "../cards/mgmt-card.ts";
 import { type LinkIndexRow, parseLinkIndex } from "../inspections/biz-links.ts";
 import { type MgDraftContext, type MgDraftOutput, mgMaterialsPrompt, mgPlanPrompt, mgVolumePrompt } from "../reports/mg-draft.ts";
+import { withoutBizFiles } from "../reports/mg-biz.ts";
 import type { PlanRevise } from "../reports/draft-sources.ts";
 import type { UnitAiOutput } from "../reports/unit-parts-ai.ts";
 import { cardBundles, linkedBundles } from "../reports/mg-bundles.ts";
@@ -97,7 +98,7 @@ export type Usage = { input: number; output: number; cacheRead: number; cacheWri
 
 /** API 클라이언트 시간 제한 — 가장 긴 호출(구성안·집필, effort xhigh 시절 출력 5~7만 토큰 ≈ 6~9분 — 2026-10-10 B4로 high, `CLAUDE_EFFORT_HEAVY=xhigh`로 되돌릴 수 있음)보다 길게, 함수 제한(800초)보다는 짧게 */
 const API_TIMEOUT_MS = 12 * 60_000;
-/** 크레딧이 소진돼 거절된 API 키(함수 인스턴스 메모리 — 인스턴스가 재사용되는 동안 유지, 성공하면 지움) */
+/** 크레딧 소진·월 지출 한도로 거절된 API 키(함수 인스턴스 메모리 — 인스턴스가 재사용되는 동안 유지, 성공하면 지움) */
 const exhaustedKeys = new Set<string>();
 /** 스트림 도중 과부하·연결 끊김 재시도 전 대기 */
 const RETRY_DELAY_MS = 3_000;
@@ -154,10 +155,10 @@ async function structuredApi<T extends z.ZodType>(opts: {
         break;
       } catch (e) {
         const kind = apiErrorKind(e);
-        // 크레딧 부족은 요청을 처리하기 전에 거절돼 과금이 없으므로 같은 요청을 예비 키로 다시 보내도 됨 — 새 키는 시각·시도 횟수를 새로 시작
-        if (kind === "credit" && k + 1 < keys.length) {
+        // 크레딧 부족·월 지출 한도(2026-11-12)는 요청을 처리하기 전에 거절돼 과금이 없으므로 같은 요청을 예비 키로 다시 보내도 됨 — 새 키는 시각·시도 횟수를 새로 시작
+        if (switchesKey(kind) && k + 1 < keys.length) {
           exhaustedKeys.add(key);
-          console.warn(`structuredApi: ${opts.feature} ${["기본", "예비 1", "예비 2"][allKeys.indexOf(key)] ?? "예비"} 키 크레딧 부족 — 다음 키로 전환`);
+          console.warn(`structuredApi: ${opts.feature} ${["기본", "예비 1", "예비 2"][allKeys.indexOf(key)] ?? "예비"} 키 ${kind === "spend" ? "월 사용 한도" : "크레딧 부족"} — 다음 키로 전환`);
           break;
         }
         if (!shouldRetryApi(kind, Date.now() - t0, attempt)) throw e;
@@ -576,7 +577,8 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
       // 갈래 축 사전(카드 하나에 축 하나 — 전체 구성안만, 절 다시 짜기는 part.split 줄로 카드 축을 알림, 2026-10-13)
       input.part ? "" : splitHeadPrompt(prompts, "mg"),
       // 이야기 틀 후보(카드 단위 3개 — lib/reports/story-hints-mg.ts, 2026-10-12 C5) — 전체 구성안만
-      input.part ? "" : mgStoryHintsFor(prompts, { card: input.card, ctx: input.ctx, files, siblings: input.siblings }),
+      // 신호는 이 카드 글·이 카드 첨부만(고른 주요사업 자료는 뺌 — lib/reports/mg-biz.ts withoutBizFiles, 2026-11-12)
+      input.part ? "" : mgStoryHintsFor(prompts, { card: input.card, ctx: input.ctx, files: withoutBizFiles(files), siblings: input.siblings }),
       // 분량 목표(배정 쪽 — 전체 구성안만)·이 지표의 닫기 관례(2026-10-12 사용자 결정 D1·D2)
       input.part ? "" : mgVolumePrompt(prompts, input.ctx.pages),
       mgClosePrompt(prompts, input.ctx.prior, input.ctx.indicator),
@@ -589,7 +591,8 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
       .filter(Boolean)
       .join("\n\n");
   // 요청이 주요사업의 약 두 배(지표 공통 지식 ③에 전년 보고서·실사 답변이 다 들어감 — 8-1 실측 약 17.7만 자)라 CLI 제한을 집필과 같게
-  const r = await reportStructured("report_outline", outlineSystem(prompts), schema, input.files ?? [], ask, input.kb, { kbp: draft, timeoutMs: 600_000 });
+  // CLI 제한 15분 — 2026-11-12 측정: 참고 없음 구성안 출력 약 6만 토큰으로 10분 근처, 주요사업 2건 참고 시 10분 초과 2회·900초 제한으로 총 633.8초 성공 — 로컬 CLI만, Vercel은 api(환경변수 CLAUDE_CLI_TIMEOUT_MS가 앞섬)
+  const r = await reportStructured("report_outline", outlineSystem(prompts), schema, input.files ?? [], ask, input.kb, { kbp: draft, timeoutMs: 900_000 });
   return { ...r, promptVersion: prompts.version };
 }
 
@@ -601,7 +604,8 @@ export async function callReportDraftMg(input: MgReportInput & { plan: Compositi
   const { prompts, schema } = reportDraftPromptsMg();
   const evals = [...new Set((input.plan.mg?.parts ?? []).map((p) => p.evalNo))];
   const ask = (files: ReportFile[]) => `${mgMaterialsPrompt(prompts, input.card, input.ctx, input.year, evals.length ? evals : input.ctx.evals, files, input.lens ?? [], input.actuals)}\n\n${mgPlanPrompt(prompts, input.plan, input.ctx, input.revise)}`;
-  const r = await reportStructured("report_section", reportSystem(prompts), schema, input.files ?? [], ask, input.kb, { kbp: prompts, timeoutMs: 600_000 });
+  // CLI 제한 15분 — 2026-11-12 측정: 참고 없음 구성안 출력 약 6만 토큰으로 10분 근처, 주요사업 2건 참고 시 10분 초과 2회·900초 제한으로 총 633.8초 성공 — 로컬 CLI만, Vercel은 api(환경변수 CLAUDE_CLI_TIMEOUT_MS가 앞섬)
+  const r = await reportStructured("report_section", reportSystem(prompts), schema, input.files ?? [], ask, input.kb, { kbp: prompts, timeoutMs: 900_000 });
   return { ...r, promptVersion: prompts.version };
 }
 

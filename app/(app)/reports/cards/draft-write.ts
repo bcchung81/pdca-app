@@ -14,7 +14,7 @@ import { relevantRefs } from "../../../../lib/knowledge/bundle.ts";
 import { mgPartLabel } from "../../../../lib/reports/mg-outline.ts";
 import type { PlanRevise } from "../../../../lib/reports/draft-sources.ts";
 import type { JobKind } from "../../../../lib/ai/jobs.ts";
-import { type Prepared, type ReportDraftState, type ReportJob, beginAi, beginJob, launchReportJob, logAiError } from "./draft-prepare.ts";
+import { type Prepared, type ReportDraftState, type ReportJob, beginAi, beginJob, launchReportJob, logAiError, mgAiFiles } from "./draft-prepare.ts";
 
 /** 호출 기록 mode 꼬리(구성안 뒤 추가된 자료 수·담당자 요청 있음) */
 const reviseTag = (r?: PlanRevise | null) => `${r?.added.length ? `+${r.added.length}new` : ""}${r?.request.trim() ? "+req" : ""}`;
@@ -60,7 +60,7 @@ async function writeMgDraftWork(p: Prepared & { mg: MgDraftContext }, r: ReportJ
   const ai = r.ai;
   const t0 = Date.now();
   try {
-    const call = await callReportDraftMg({ card: card.data, ctx: p.mg, year, files, lens, actuals, kb: p.kb, plan, revise });
+    const call = await callReportDraftMg({ card: card.data, ctx: p.mg, year, files: mgAiFiles(p), lens, actuals, kb: p.kb, plan, revise });
     const firstMs = Date.now() - t0;
     // 토큰은 검증 전에 기록(검증이 예외를 던져도 쓴 토큰이 남음)
     await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: firstMs } });
@@ -75,6 +75,8 @@ async function writeMgDraftWork(p: Prepared & { mg: MgDraftContext }, r: ReportJ
       plan: { story: "", matched: adherence.matched, total: adherence.total, ...(r.job.kind === "revise" ? { revise: true as const } : {}) },
       sources: [
         ...files.map((x): ReportSource => ({ kind: x.kind, id: x.id, name: x.name })),
+        // 고른 주요사업 초안 — 하나당 한 줄(그때 지문·갱신 시각, 붙임은 따로 적지 않음 — lib/reports/mg-biz.ts)
+        ...(p.biz?.sources ?? []),
         ...p.mg.prior.filter((s) => evals.has(s.evalNo)).map((s): ReportSource => ({ kind: "prior", id: s.key, name: `2025 보고서 ${mgPartLabel(s)}` })),
         ...lens.map((x): ReportSource => ({ kind: "lens", id: x.key, name: `${LENS_LABEL[x.group]} · ${x.title}` })),
       ],
@@ -84,7 +86,7 @@ async function writeMgDraftWork(p: Prepared & { mg: MgDraftContext }, r: ReportJ
     const row: Record<string, unknown> = { card_id: card.id, year, spec, warnings, unknown_numbers: v.unknownNumbers, model: modelLabel(call), source_rev: card.data_rev, created_by: me.id, outline: plan, outline_status: "approved", outline_approved_by: me.id, outline_approved_at: new Date().toISOString() };
     // 1차 초안을 먼저 저장한 뒤 분량 채움 보강(사유가 없으면 보강 없이 1차만) — 보강 판은 1차 저장 버전 조건으로만 씀(자료 반영 고치기도 이 경로)
     // 빠진 구성안 블록 되살리기는 앱이 뺀 블록(droppedShapes)을 빼고 셈(구성안 지킴 셈과 같음), 보탤 재료는 숫자 근거(known)와 같은 연결 조각(relevantRefs)
-    const fillIn: MgFillInput = { card: card.data, known, quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes, refs: relevantRefs(p.kb) };
+    const fillIn: MgFillInput = { card: card.data, known, quoteOnly, year, today: actuals.today, closed: v.closed, plan, dropped: v.droppedShapes, refs: relevantRefs(p.kb), ...(p.promptKnown ? { promptKnown: p.promptKnown } : {}) };
     const saved = await saveFirstThenFill<MgFillRun>(supabase, { cardId: card.id, year }, row, p.base, async () => {
       const run = await runMgFill(spec, fillIn, { prompts: reportBlockPromptsMg().prompts, call: fillCall(p), t0, firstMs, deadlineMs: fixDeadlineMs() });
       if (!run) return null;

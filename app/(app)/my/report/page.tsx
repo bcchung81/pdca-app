@@ -122,7 +122,16 @@ function DraftTable({ rows, teamQs, from, preview }: { rows: CardSubmitRow[]; te
                   </td>
                   <td className={`${T.td} font-mono text-xs text-muted-2`}>{r.included ? (r.pages !== null ? `${r.pages}쪽` : "—") : "제외"}</td>
                   <td className={T.td}>
-                    <Tag tone={DRAFT_TONE[r.state]}>{DRAFT_STATE_LABEL[r.state]}</Tag>
+                    {r.bizStale && r.bizStale.length > 0 ? (
+                      <div className="flex flex-col items-start gap-0.5">
+                        <Tag tone={DRAFT_TONE[r.state]}>{DRAFT_STATE_LABEL[r.state]}</Tag>
+                        <Tag tone="warn" title={`참고한 주요사업 초안이 그 뒤 바뀜: ${r.bizStale.join("·")}`}>
+                          참고 초안 바뀜
+                        </Tag>
+                      </div>
+                    ) : (
+                      <Tag tone={DRAFT_TONE[r.state]}>{DRAFT_STATE_LABEL[r.state]}</Tag>
+                    )}
                   </td>
                   <td className={T.td}>{!has ? null : r.fitPct === null ? <span className="text-xs text-muted-2">—</span> : fitTag(r.fitPct)}</td>
                   <td className={`${T.td} text-center font-mono text-xs`}>{has ? r.needs + r.figures : null}</td>

@@ -138,3 +138,19 @@ test("경영관리 집필 진행 줄(2026-10-29): 「분량 보강」 단계는 
   }
   assert.ok(!draftProgress("outline", { files: [], prior: [], lens: 0, mg: true }).sources.some((s) => s.label === "분량 보강"), "구성안 요청은 없음");
 });
+
+test("경영관리 주요사업 초안 참고: 진행 줄 「넣은 자료」에 실제 고른 것만, 예상 시간은 biz가 있을 때만 늘림(실호출 633.8초 근거)", () => {
+  const withBiz = draftProgress("plan", { files: [], prior: [], lens: 0, mg: true, biz: ["3-나", "5-가"] });
+  const line = withBiz.sources.find((x) => x.label.startsWith("주요사업 초안"));
+  assert.equal(line?.label, "주요사업 초안 2건");
+  assert.match(line?.detail ?? "", /^3-나·5-가/);
+  assert.ok(withBiz.expect.max > draftExpect("plan", true).max, "biz가 있으면 지금 경영관리 값보다 늘림");
+  assert.ok(draftExpect("outline", true, true).max > draftExpect("outline", true).max);
+  // 고른 것이 없거나 주요사업 트랙이면 줄·시간 그대로
+  const none = draftProgress("plan", { files: [], prior: [], lens: 0, mg: true, biz: [] });
+  assert.ok(!none.sources.some((x) => x.label.startsWith("주요사업 초안")));
+  assert.deepEqual(none.expect, draftExpect("plan", true));
+  const biz = draftProgress("plan", { files: [], prior: [], lens: 0, biz: ["3-나"] });
+  assert.ok(!biz.sources.some((x) => x.label.startsWith("주요사업 초안")), "주요사업 카드는 안 그림");
+  assert.deepEqual(biz.expect, draftExpect("plan"));
+});

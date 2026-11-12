@@ -162,6 +162,8 @@ export const MG_REQUEST_SECTIONS = [
   "files.relation.card",
   "files.relation.matched",
   "files.relation.same",
+  "files.relation.biz",
+  "files.relation.biz-draft",
   "plan.head",
   "plan.conflict.head",
   "plan.conflict.item",

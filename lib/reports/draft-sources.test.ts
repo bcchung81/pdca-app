@@ -89,3 +89,28 @@ test("집필 요청(주요사업·경영관리): 구성안 뒤 추가된 자료�
     assert.equal(render({ added: [], request: "" }), base, `${name}: 둘 다 없으면 바이트까지 같음`);
   }
 });
+
+test("biz(주요사업 초안 참고 — 경영관리): 합치기·빼기는 card·report와 같고, 없으면 예전 모양 그대로, 못 찾아도 거절 셈에 안 듦", () => {
+  const saved = { card: ["c1"], report: [], prior: [], biz: ["주요사업3/3-나"] };
+  // 새로 고른 주요사업은 뒤에, 뺀 것(b: 열쇠)은 저장된 근거에 있어도 뺌
+  const m = mergeSources(saved, { card: ["c1"], report: [], biz: ["주요사업4/4-가"], off: { card: [], report: [], biz: ["주요사업3/3-나"] } });
+  assert.deepEqual(m.sources, { card: ["c1"], report: [], biz: ["주요사업4/4-가"], prior: [] });
+  assert.deepEqual(m.added, { card: [], report: [], biz: ["주요사업4/4-가"] });
+  assert.equal(m.kept, 1);
+  assert.deepEqual(mergeSources(saved, { card: ["c1"], report: [] }).sources.biz, ["주요사업3/3-나"], "고른 값에 biz가 없으면 저장된 것 그대로");
+  assert.deepEqual(mergeSources(saved, undefined).sources.biz, ["주요사업3/3-나"]);
+  assert.equal(mergeSources(saved, undefined).kept, 2);
+  assert.equal("biz" in mergeSources({ card: [], report: [] }, { card: [], report: [] }).sources, false, "주요사업을 안 고르면 예전 모양");
+  // 찾지 못한 주요사업 id는 거절 셈에 안 듦(서버가 경고만)
+  const want = { card: ["c1"], report: [], biz: ["없는 카드"] };
+  assert.deepEqual(missingSources(want, { card: ["c1"], report: [] }), []);
+});
+
+test("readPick·pickOf: biz·off.biz는 문자열 id만, 「b:」 열쇠를 나눔 — biz가 없으면 예전 모양", () => {
+  assert.deepEqual(readPick({ card: [], report: [], biz: ["주요사업3/3-나", 3, "", "x".repeat(81)], off: { card: [], report: [], biz: ["주요사업4/4-가", null] } }), { card: [], report: [], biz: ["주요사업3/3-나"], off: { card: [], report: [], biz: ["주요사업4/4-가"] } });
+  assert.deepEqual(readPick({ card: [], report: [], biz: "x" }), { card: [], report: [] });
+  assert.equal(readPick({ card: [], report: [], biz: Array.from({ length: 400 }, (_, i) => `b${i}`) })?.biz?.length, 300);
+  assert.deepEqual(pickOf(["c1"], [], new Set(["c:c2", "b:주요사업4/4-가"]), ["주요사업3/3-나"]), { card: ["c1"], report: [], biz: ["주요사업3/3-나"], off: { card: ["c2"], report: [], biz: ["주요사업4/4-가"] } });
+  assert.deepEqual(pickOf(["c1"], [], []), { card: ["c1"], report: [], off: { card: [], report: [] } });
+  assert.deepEqual(specSources([{ kind: "card", id: "c1" }, { kind: "biz", id: "주요사업3/3-나" }]).biz, ["주요사업3/3-나"]);
+});

@@ -11,7 +11,7 @@ import { sourceGroups } from "./derive.ts";
 import type { DraftRow } from "./load.ts";
 
 /** 왼쪽 도구줄 칩(과제원장 편집기 도구줄 자리): 과제 · 어느 길로 쓰였는지 · 판면 어림 · 반영 근거 · 상태 */
-export function ReportToolbar({ spec, draft, composition, stale, unknown }: { spec: ReportSectionSpec | null; draft: DraftRow | null; composition: Composition | null; stale: boolean; unknown: string[] }) {
+export function ReportToolbar({ spec, draft, composition, stale, unknown, bizStale }: { spec: ReportSectionSpec | null; draft: DraftRow | null; composition: Composition | null; stale: boolean; unknown: string[]; bizStale?: { text: string; title: string } | null }) {
   if (!spec) {
     return <span className="text-xs text-muted">{composition ? `초안 없음 · 구성안 ${draft?.outline_status === "approved" ? "승인" : "확인 전"}` : "초안 없음"}</span>;
   }
@@ -34,6 +34,11 @@ export function ReportToolbar({ spec, draft, composition, stale, unknown }: { sp
       {stale && (
         <Tag tone="warnSolid" title="초안을 만든 뒤 원장 카드가 바뀌었습니다">
           원장이 바뀜 — 다시 만들기 권장
+        </Tag>
+      )}
+      {bizStale && (
+        <Tag tone="warnSolid" title={bizStale.title}>
+          {bizStale.text}
         </Tag>
       )}
       {unknown.length > 0 && (

@@ -55,6 +55,8 @@ export interface ReviewCard {
   needs: number;
   figures: number;
   unknown: number;
+  /** 경영관리: 참고한 주요사업 초안이 바뀐 과제번호(「3-나」 — 없으면 비움, 주요사업은 늘 비어 줄이 그대로) */
+  bizStale?: string[];
   /** blockMarks를 켠 sectionHtml — data-block마다 클릭해 그 블록에 코멘트를 답니다 */
   html: string | null;
   cardHref: string;
@@ -243,6 +245,11 @@ export function ReviewBoard({
                   )}
                   {c.needs + c.figures > 0 && <Tag tone="warn">채울 자료 {c.needs + c.figures}</Tag>}
                   {c.unknown > 0 && <Tag tone="warnSolid">근거에 없는 숫자 {c.unknown}</Tag>}
+                  {c.bizStale && c.bizStale.length > 0 && (
+                    <Tag tone="warnSolid" title={`참고한 주요사업 초안이 그 뒤 바뀜: ${c.bizStale.join("·")} — 제출을 막지는 않습니다`}>
+                      주요사업 초안 바뀜 {c.bizStale.length}
+                    </Tag>
+                  )}
                   {cnt.total > 0 && (
                     <Tag tone={cnt.open ? "warnSolid" : "muted"} title={`코멘트 ${cnt.total}건 · 미해결 ${cnt.open}건`}>
                       코멘트 {cnt.total}
