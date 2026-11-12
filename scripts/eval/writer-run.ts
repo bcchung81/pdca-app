@@ -7,11 +7,14 @@
 //  - 공통 지식 = loadCardBundle(db, card, "card", "writer") — 선별 여부는 환경변수(KNOWLEDGE_SELECT)가 정함. 여기서 바꾸지 않음.
 // Claude는 로컬 CLI로만(AI_PROVIDER=cli, ANTHROPIC_API_KEY 비움). 운영 DB는 읽기만, ai_requests에도 쓰지 않음(기록 없는 callWriter).
 // 실행: node --conditions=react-server --env-file=.env.local scripts/eval/writer-run.ts --out <폴더> --cards <id,…> --modes improve,discover,reflect,followup [--label base] [--concurrency 2] [--dry]
+//  --no-materials: 카드 전용 자료(DB)를 넣지 않음 — 첨부 있음/없음 대조용
+//  --attach <카드 id>=<파일>[+<파일>…][,<카드 id>=…]: 이 컴퓨터의 파일을 서버와 같은 읽기(kordoc, lib/ai/attachments.ts readAttachment)로 읽어 그 카드의 첨부 뒤에 더함(DB·저장소에 올리지 않음)
 //  결과: <out>/writer/<label>/<cards.uid>/<mode>.json — 이미 있으면 건너뜀(이어 하기). 진행 줄 <out>/writer/run.txt
 //  --dry: AI를 부르지 않고 할 일 목록과 요청 글 크기만(파일 안 씀)
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
+import { readAttachment } from "../../lib/ai/attachments.ts";
 import { loadCardBundle } from "../../lib/ai/context.ts";
 import { type FollowupBasis, followupBasis } from "../../lib/ai/followup.ts";
 import { MATERIAL_COLS, type MaterialDoc, type MaterialRow, fileRefs, materialState } from "../../lib/ai/material-text.ts";
@@ -48,6 +51,15 @@ if (badModes.length) throw new Error(`모르는 요청 종류: ${badModes.join("
 const label = flag("--label") ?? "base";
 const concurrency = Math.max(1, Number(flag("--concurrency") ?? 2) || 2);
 const dry = argv.includes("--dry");
+const noMaterials = argv.includes("--no-materials");
+/** --attach 카드 id → 로컬 파일 경로들 */
+const attachMap = new Map<string, string[]>(
+  list("--attach").map((pair) => {
+    const at = pair.indexOf("=");
+    if (at < 1) throw new Error(`--attach 형식: <카드 id>=<파일>[+<파일>] — ${pair}`);
+    return [pair.slice(0, at), pair.slice(at + 1).split("+").filter(Boolean)];
+  }),
+);
 const out = resolve(outArg);
 const runDir = join(out, "writer");
 const labelDir = join(runDir, label);
@@ -72,11 +84,12 @@ async function loadCard(id: string): Promise<CardRow> {
   if (card.status !== "active") throw new Error(`보관한 카드 ${id}`);
   const { data: mats, error: me } = await db.from("card_materials").select(MATERIAL_COLS).eq("card_id", card.id).order("created_at");
   if (me) throw new Error(`카드 전용 자료를 읽지 못함 ${id}: ${me.message}`);
-  const rows = (mats ?? []) as MaterialRow[];
+  const rows = noMaterials ? [] : ((mats ?? []) as MaterialRow[]);
   const files = rows.filter((r) => materialState(r) === "ready").map((r): MaterialDoc => ({ id: String(r.id), kind: "card", name: r.file_name, text: r.parsed_text ?? "" }));
   const skipped = rows.filter((r) => materialState(r) !== "ready").map((r) => `「${r.file_name}」(${materialState(r) === "failed" ? (r.parse_error ?? "읽기 실패") : "저장본 없음·판 다름 — 서버라면 이때 읽음"})`);
   // 서버와 같음: 보낸·확인한 것 중 점검월이 가장 늦은 1건(초안 제외)
   const { data: ins } = await db.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
+  for (const path of attachMap.get(id) ?? []) files.push(await readAttachment(new Uint8Array(readFileSync(path)), basename(path)));
   const followup = followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
   const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "card", "writer");
   return { id: card.id, uid: card.uid, evalUnitId: card.eval_unit_id, data: card.data, files, skipped, followup, kb };

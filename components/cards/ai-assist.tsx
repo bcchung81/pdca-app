@@ -639,6 +639,8 @@ export function AiAssist(props: {
                     {() =>
                       docs.map((d) => {
                         const failed = d.parseStatus === "failed";
+                        // 보류(그림 설명을 아직 못 만듦 등 — 사유가 있음): 요청 때 서버가 다시 읽어 보고, 그래도 못 읽으면 답에 「AI가 못 읽어 뺀 자료」로 알림
+                        const held = d.parseStatus === "pending" && Boolean(d.parseError);
                         const checked = !failed && !off.has(d.id);
                         return (
                           <button
@@ -656,11 +658,11 @@ export function AiAssist(props: {
                               })
                             }
                             className="flex min-w-0 items-center gap-2 px-3 py-1.5 text-left text-xs text-ink hover:bg-thead disabled:cursor-not-allowed disabled:text-muted"
-                            title={failed ? `${d.fileName} — AI가 못 읽음: ${d.parseError ?? ""}` : d.fileName}
+                            title={failed ? `${d.fileName} — AI가 못 읽음: ${d.parseError ?? ""}` : held ? `${d.fileName} — 아직 못 읽음(요청 때 다시 읽어 봄): ${d.parseError}` : d.fileName}
                           >
                             <span className="flex size-4 shrink-0 items-center justify-center rounded-chip border border-field-line">{checked && "✓"}</span>
                             <span className="min-w-0 grow truncate">{d.fileName}</span>
-                            {failed ? <span className="shrink-0 text-xs text-warn">AI가 못 읽음</span> : <span className="shrink-0 font-mono text-xs text-muted">{sizeLabel(d.bytes)}{d.chars !== null ? ` · ${charsLabel(d.chars)}` : ""}</span>}
+                            {failed ? <span className="shrink-0 text-xs text-warn">AI가 못 읽음</span> : held ? <span className="shrink-0 text-xs text-warn">읽기 보류</span> : <span className="shrink-0 font-mono text-xs text-muted">{sizeLabel(d.bytes)}{d.chars !== null ? ` · ${charsLabel(d.chars)}` : ""}</span>}
                           </button>
                         );
                       })

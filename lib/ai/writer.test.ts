@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { readCliResult } from "./cli-result.ts";
-import { ASSIST_TEXT_MAX, SUGGESTION_MAX, WRITER_MODES, type WriterResult, WriterResultSchema, cardOutline, flattenHtmlTables, isAttachableName, knowledgeBlock, noRequirementResult, userPrompt, verifyResult } from "./writer.ts";
+import { ASSIST_TEXT_MAX, SUGGESTION_MAX, WRITER_MODES, type WriterResult, WriterResultSchema, cardOutline, flattenHtmlTables, isAttachableName, knowledgeBlock, noRequirementResult, oneClosingNote, userPrompt, verifyResult } from "./writer.ts";
 import { emptyResult } from "../inspections/model.ts";
 import { followupBasis } from "./followup.ts";
 import { fileRefs } from "./material-text.ts";
@@ -223,4 +223,14 @@ test("보완 요구가 0건이면 AI 없이 코드가 만든 결과(항목 0건,
   assert.equal(r.followup?.counts.total, 0);
   assert.ok(r.headline.includes("보완 요구가 없습니다"));
   assert.deepEqual(r.suggestions, []);
+});
+
+test("실적 반영 끝맺음 확인 문장은 한 번만 남김(바꿔 쓴 꼴이 같이 와도 마지막 하나)", () => {
+  const twice = "◆ 요약\n▸ 귀띔\n이 초안이 원본자료 수치와 일치하는지 확인 후 카드에 반영하십시오.\n이 초안의 수치가 원본자료와 일치하는지 확인 후 카드에 반영하십시오.";
+  assert.equal(oneClosingNote(twice), "◆ 요약\n▸ 귀띔\n이 초안의 수치가 원본자료와 일치하는지 확인 후 카드에 반영하십시오.");
+  // 한 번뿐이거나 다른 확인 요청(「반드시 확인하십시오」)은 그대로
+  const once = "▸ 확인 요청: 실측 원본과 일치하는지 반드시 확인하십시오.\n○ 이 초안의 수치가 원본자료와 일치하는지 확인 후 카드에 반영하십시오.";
+  assert.equal(oneClosingNote(once), once);
+  const raw: WriterResult = { headline: "h", summary: twice, citations: [], suggestions: [], monthly_row: null, need_input: null, followup: null };
+  assert.equal(verifyResult(raw, {}, []).summary.match(/카드에 반영하십시오/g)?.length, 1);
 });

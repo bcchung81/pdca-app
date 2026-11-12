@@ -293,6 +293,21 @@ export interface VerifiedResult {
 
 const PATH_RE = /^(title|deptText|@person|overview\.cells\.\d+|kpi\.(categoriesText|rows\.\d+\.(nameRaw|formula|prev|target|expected))|strategy\.(esgText|ai\.text|nationalAgenda\.\d+\.title)|(act\.(findings|selfAssessment)|plan\.lines|feedback\.rows\.\d+\.(self|plan)|findings\.rows\.\d+\.(finding|plan)|do\.lines|check\.items|outcome\.(quantitative|qualitative)|do\.monthly\.\d+\.items)(\.\d+\.table\.rows\.\d+\.\d+\.lines)*\.\d+|do\.monthly\.\d+\.period)$/;
 
+/** 실적 반영 끝맺음 확인 문장(지침 09·08 절대원칙 — 「이 초안의 수치가 원본자료와 일치하는지 확인 후 카드에 반영하십시오.」)과 그 바꿔 쓴 꼴 */
+const CLOSING_NOTE = /원본\s*자료.{0,12}일치하는지\s*확인\s*후\s*카드에\s*반영/;
+
+/**
+ * summary에서 끝맺음 확인 문장 줄이 둘 이상이면 마지막 하나만 남김. 적응문과 지침이 문구를 조금 달리 적었을 때
+ * 모델이 두 문장을 연달아 붙인 일이 있었음(2026-11-12 T4 종단 시험) — 프롬프트를 한 문장으로 맞췄고, 여기서 한 번 더 막음
+ */
+export function oneClosingNote(summary: string): string {
+  const lines = summary.split("\n");
+  const hits = lines.flatMap((l, i) => (CLOSING_NOTE.test(l) ? [i] : []));
+  if (hits.length < 2) return summary;
+  const drop = new Set(hits.slice(0, -1));
+  return lines.filter((_, i) => !drop.has(i)).join("\n");
+}
+
 export function verifyResult(result: WriterResult, card: Json, refs: KnowledgeRef[], followup?: FollowupBasis | null): VerifiedResult {
   const byKey = new Map(refs.map((r) => [r.key, r]));
   const citations = result.citations
@@ -319,7 +334,7 @@ export function verifyResult(result: WriterResult, card: Json, refs: KnowledgeRe
     });
   return {
     headline: result.headline,
-    summary: result.summary,
+    summary: oneClosingNote(result.summary),
     citations,
     suggestions: suggestions.slice(0, SUGGESTION_MAX),
     monthlyRow: result.monthly_row,
