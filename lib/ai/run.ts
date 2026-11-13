@@ -36,7 +36,7 @@ import type { FollowupBasis } from "./followup.ts";
 import { type ChatRequest, type ChatResult, chatPrompt } from "./chat.ts";
 import type { DescribeInput } from "./describe.ts";
 import { type MatchResult, matchPrompt, matchShared } from "./match.ts";
-import { apiErrorKind, apiErrorMessage, shouldRetryApi, switchesKey } from "./api-errors.ts";
+import { API_TOTAL_MS, apiErrorKind, apiErrorMessage, deadlinePassed, remainingMs, shouldRetryApi, switchesKey } from "./api-errors.ts";
 import { canFixAgain, draftScore, fixDeadlineMs, shouldFix } from "./fix-policy.ts";
 import { type AiFeature, type Effort, FEATURE_MAX_TOKENS, specForFeature } from "./models.ts";
 import { isMgmtCard } from "../cards/mgmt-card.ts";
@@ -96,8 +96,11 @@ export const commentSystemMg = (track: TrackSpec) => cardSystem(commentPromptsMg
 /** 토큰 사용량. cacheWrite = 캐시 쓰기 전체(5분+1시간), cacheWrite1h = 그중 1시간 캐시 몫(단가가 입력의 2배 — lib/ai/pricing.ts) */
 export type Usage = { input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h: number };
 
-/** API 클라이언트 시간 제한 — 가장 긴 호출(구성안·집필, effort xhigh 시절 출력 5~7만 토큰 ≈ 6~9분 — 2026-10-10 B4로 high, `CLAUDE_EFFORT_HEAVY=xhigh`로 되돌릴 수 있음)보다 길게, 함수 제한(800초)보다는 짧게 */
-const API_TIMEOUT_MS = 12 * 60_000;
+/**
+ * API 클라이언트 시간 제한(응답 시작 전 대기 — SDK timeout은 응답 머리까지만). 호출 전체 마감 `API_TOTAL_MS`(770초, lib/ai/api-errors.ts)와 같은 값으로 두고,
+ * 스트림 생성 시간까지의 전체는 아래 structuredApi가 마감 signal로 묶음. 가장 긴 호출(구성안·집필 출력 5~7만 토큰 ≈ 6~9분, 실측 438·440초)보다 길게
+ */
+const API_TIMEOUT_MS = API_TOTAL_MS;
 /** 크레딧 소진·월 지출 한도로 거절된 API 키(함수 인스턴스 메모리 — 인스턴스가 재사용되는 동안 유지, 성공하면 지움) */
 const exhaustedKeys = new Set<string>();
 /** 스트림 도중 과부하·연결 끊김 재시도 전 대기 */
@@ -142,6 +145,8 @@ async function structuredApi<T extends z.ZodType>(opts: {
   };
   // 키 순서: 기본 키가 늘 먼저 — 번갈아 쓰지 않음(프롬프트 캐시가 조직 단위라 키를 오가면 캐시가 끊김). 크레딧 부족으로 거절된 키만 뒤로 보냄
   const keys = keyOrder(allKeys, exhaustedKeys);
+  // 호출 전체 마감(키 교차·재시도 포함, 첫 시도 시작부터) — 시도마다 남은 시간만큼의 signal을 SDK에 넘겨 스트림 생성 중에도 끊음
+  const startedAt = Date.now();
   let response: Awaited<ReturnType<ReturnType<Anthropic["messages"]["stream"]>["finalMessage"]>> | undefined;
   for (let k = 0; !response; k++) {
     const key = keys[k];
@@ -149,8 +154,10 @@ async function structuredApi<T extends z.ZodType>(opts: {
     const client = new Anthropic({ apiKey: key, maxRetries: 2, timeout: API_TIMEOUT_MS });
     const t0 = Date.now();
     for (let attempt = 0; ; attempt++) {
+      // 마감이 지났으면 다음 키·재시도를 시작하지 않고 시간 초과로 끝냄(apiErrorKind가 APIUserAbortError를 timeout으로 분류)
+      if (deadlinePassed(startedAt, Date.now())) throw new Anthropic.APIUserAbortError();
       try {
-        response = await client.messages.stream(params).finalMessage();
+        response = await client.messages.stream(params, { signal: AbortSignal.timeout(remainingMs(startedAt, Date.now())) }).finalMessage();
         exhaustedKeys.delete(key);
         break;
       } catch (e) {

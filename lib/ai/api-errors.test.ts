@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
-import { apiErrorKind, apiErrorMessage, shouldRetryApi, switchesKey } from "./api-errors.ts";
+import { API_TOTAL_MS, apiErrorKind, apiErrorMessage, deadlinePassed, remainingMs, shouldRetryApi, switchesKey } from "./api-errors.ts";
 import { keyOrder } from "./provider.ts";
 
 const gen = (status: number, type?: string) => Anthropic.APIError.generate(status, type ? { type: "error", error: { type, message: type } } : {}, "msg", new Headers());
@@ -85,4 +85,23 @@ test("키 교차: 크레딧 부족처럼 월 지출 한도(spend)도 그 키를 
   assert.deepEqual(keyOrder(keys, exhausted), ["fb1", "fb2", "main"], "다음 요청부터 한도 닿은 키는 뒤로");
   // 마지막 키까지 spend면 그 오류 그대로 → 안내 문구
   assert.equal(apiErrorKind(spendCap(429)), "spend");
+});
+
+test("호출 전체 마감 — 마감 signal로 멈춘 APIUserAbortError는 timeout이고 재시도·키 전환 대상이 아님", () => {
+  const kind = apiErrorKind(new Anthropic.APIUserAbortError());
+  assert.equal(kind, "timeout");
+  assert.match(apiErrorMessage(kind!), /시간/);
+  assert.equal(shouldRetryApi(kind, 1_000, 0), false);
+  assert.equal(switchesKey(kind), false);
+});
+
+test("remainingMs·deadlinePassed: 770초 마감 — 시작·경과·0 이하", () => {
+  assert.equal(API_TOTAL_MS, 770_000);
+  assert.equal(remainingMs(1_000, 1_000), 770_000, "시작 직후 = 전체");
+  assert.equal(remainingMs(1_000, 1_000 + 440_000), 330_000, "경과만큼 줄어듦");
+  assert.equal(remainingMs(0, 770_000), 0, "딱 마감");
+  assert.equal(remainingMs(0, 900_000), 0, "넘으면 음수가 아니라 0");
+  assert.equal(deadlinePassed(0, 769_999), false);
+  assert.equal(deadlinePassed(0, 770_000), true);
+  assert.equal(deadlinePassed(0, 1_000, 500), true, "총 시간을 따로 줄 수 있음");
 });

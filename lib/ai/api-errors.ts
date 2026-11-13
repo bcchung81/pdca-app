@@ -12,6 +12,8 @@ const SPEND_CODE = "enforced_spend_limit_reached";
 
 /** SDK 오류 → 종류(SDK 오류가 아니면 null). 스트림 도중 오류는 상태 코드 없이 본문 error.type(overloaded_error 등)만 옴 — 지출 한도도 본문(details.error_code·메시지)으로 가름 */
 export function apiErrorKind(e: unknown): ApiErrorKind | null {
+  // 호출 전체 마감(API_TOTAL_MS)을 signal로 넘겨 멈춘 경우 — 우리 말고는 이 호출을 끊는 이가 없으므로 시간 초과(APIError의 하위 클래스라 APIError 판정보다 먼저)
+  if (e instanceof Anthropic.APIUserAbortError) return "timeout";
   if (e instanceof Anthropic.APIConnectionTimeoutError) return "timeout";
   if (e instanceof Anthropic.APIConnectionError) return "connection";
   if (!(e instanceof Anthropic.APIError)) return null;
@@ -63,3 +65,18 @@ export const RETRY_WINDOW_MS = 60_000;
 export function shouldRetryApi(kind: ApiErrorKind | null, elapsedMs: number, attempt: number): boolean {
   return attempt === 0 && (kind === "overloaded" || kind === "connection") && elapsedMs < RETRY_WINDOW_MS;
 }
+
+/**
+ * API 호출 한 번의 전체 제한 770초 = 함수 한도(maxDuration 800초) − 자료 읽기·저장 여유 30초(사용자 결정 2026-11-13).
+ * SDK의 `timeout`은 응답 머리가 올 때까지만 걸고 fetch가 끝나면 풀려서 스트리밍 생성 시간은 안 묶음 — 그래서 호출 전체(키 교차·재시도 포함)를 이 마감의 AbortSignal로 묶음.
+ * 마감을 못 지키면 Vercel이 함수를 끊어 running 행이 20분 뒤에야 실패로 닫힘(AI_LIMITS.staleMs)
+ */
+export const API_TOTAL_MS = 770_000;
+
+/** 시작(startMs)부터 totalMs 마감까지 남은 시간(ms). 0 이하로 내려가지 않음 */
+export function remainingMs(startMs: number, nowMs: number, totalMs: number = API_TOTAL_MS): number {
+  return Math.max(0, totalMs - (nowMs - startMs));
+}
+
+/** 마감을 넘었나(남은 시간 0) — 넘었으면 다음 키·재시도를 시작하지 않고 시간 초과로 끝냄 */
+export const deadlinePassed = (startMs: number, nowMs: number, totalMs: number = API_TOTAL_MS): boolean => remainingMs(startMs, nowMs, totalMs) <= 0;
