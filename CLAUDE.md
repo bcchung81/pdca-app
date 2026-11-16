@@ -233,7 +233,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 
 ### 로그인(Supabase 매직링크)
 
-- 계정은 「사용자」 화면·`db:user`로만(Supabase 가입 끔 — 로그인은 미등록도 같은 답), 공통 지식 읽기는 `is_member`. 사용 중지(`profiles.active = false`)는 `requireUser`→`/login?blocked=1`·DB `my_role()`·auth ban(`setUserActive`)
+- 계정은 「사용자」 화면·`db:user`로만(Supabase 가입 끔 — 로그인은 미등록·발송 한도도 같은 답), 공통 지식 읽기는 `is_member`. 사용 중지(`profiles.active = false`)는 `requireUser`→`/login?blocked=1`·DB `my_role()`·auth ban(`setUserActive`)
 - 메일 링크 돌아올 주소는 호출한 주소 기준(`lib/auth/redirect.ts requestOrigin`, `docs/ops/운영-전환.md` §2). `/auth/confirm`에서 **버튼을 눌러야** 로그인(`token_hash`·`code` 둘 다)
 - 로그인 전 차단은 `proxy.ts`(공개 경로 `lib/auth/public-paths.ts`뿐, `safeNext`), 사용자 조회는 `lib/auth/dal.ts` `requireUser`. 최종 판정은 RLS, **서버 액션은 공개 API처럼** 안에서 사용자를 다시 확인
 
@@ -245,7 +245,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 성과관리팀은 **부서 담당자만**(기관 메일만) 만들고 관리자는 「권한」 열로 성과관리팀도 등록(`role-denied`)
 - 팀 표기는 **틀리게 자동 확정하지 않음**(접근 범위가 곧 팀): 자동 확정은 전체 일치·조각 일치·본부명+팀명 셋뿐, 나머지는 추천만. 글자 유사도로 팀을 고르지 않음. 서버는 반영 때 처음부터 다시 판정(`planRows`), 한 번에 300줄
 - **접근 범위는 담당자 지정 기준**(`20261001100000_assignee_access.sql`): 부서 담당자는 `card_assignees`에 지정된 과제만(같은 팀이어도 예외 없음), 성과관리팀·관리자는 전체. **보고서·추가자료·검토 코멘트는 팀 단위**(`private.can_read_report`, 일부러 둠). 지정은 같은 팀 안에서만(`guard_card_assignee`)
-- **삭제 = 사용 중지**. 성과관리팀은 부서 담당자만, 본인·마지막 활성 관리자는 못 함(DB 트리거도), DB 갱신이 성공한 뒤에만 auth ban. 권한 변경은 `access_events`에 남김
+- **삭제 = 사용 중지**. 성과관리팀은 부서 담당자만, 본인·마지막 활성 관리자는 못 함(DB 트리거도), DB 갱신이 성공한 뒤에만 auth ban. 권한 변경 기록은 DB 트리거(`access_events`)
 
 상세: `docs/design/users.md`
 

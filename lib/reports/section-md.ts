@@ -12,7 +12,7 @@ const KNOWN_KINDS = new Set(["bullets", "cards", "compare", "steps", "timeline",
 /** 글 한 줄: 줄바꿈 → 공백, 위첨자 ^{시점} → 시점 + 공백(한글 원고에는 위첨자가 없어 평문), 굵게 **…**·【확인: …】은 그대로 */
 const t = (s: unknown) =>
   String(s ?? "")
-    .replace(/\s*\r?\n\s*/g, " ")
+    .replace(/\s+/g, (ws) => (ws.includes("\n") ? " " : ws)) // 줄바꿈이 낀 공백 덩어리 → 공백 하나(예전 /\s*\r?\n\s*/g와 같은 결과, 공백만 긴 글도 선형)
     .replace(/\^\{([^{}]*)\}/g, "$1 ")
     .replace(/ {2,}/g, " ")
     .trim();

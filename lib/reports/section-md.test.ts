@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { parse, validateHwpx } from "kordoc";
 import { draftToKcaHwpx } from "../hwpx/generate.ts";
 import { BLOCK_KINDS, type Block, type BlockCell } from "./blocks.ts";
-import { sectionMarkdown } from "./section-md.ts";
+import { mdText, sectionMarkdown } from "./section-md.ts";
 import type { ReportSectionSpec } from "./section.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -257,3 +257,10 @@ for (const [name, spec, texts] of [
     for (const x of texts) assert.ok(back.markdown.includes(x), `「${x}」가 한글 파일에 없음`);
   });
 }
+
+test("글 한 줄(mdText): 줄바꿈이 낀 공백 덩어리 → 공백 하나, 공백만 긴 글도 빨리 끝남", () => {
+  assert.equal(mdText("가 \r\n  나\t\t다\n\n라"), "가 나\t\t다 라");
+  const t0 = performance.now();
+  assert.equal(mdText(`가${" ".repeat(100000)}나`), "가 나");
+  assert.ok(performance.now() - t0 < 200, "긴 공백");
+});

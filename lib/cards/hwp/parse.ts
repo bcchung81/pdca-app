@@ -16,10 +16,29 @@ const BOXES = "☑□☐■";
 
 /** str.strip(): 파이썬 isspace 문자만 걷음(JS trim은 ﻿도 걷음) */
 const PY_WS = "\\t\\n\\v\\f\\r \\x1c-\\x1f\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
-const STRIP_RE = new RegExp(`^[${PY_WS}]+|[${PY_WS}]+$`, "g");
-const strip = (s: string) => s.replace(STRIP_RE, "");
-const rstrip = (s: string) => s.replace(new RegExp(`[${PY_WS}]+$`), "");
+const PY_WS_CH = new RegExp(`[${PY_WS}]`);
+/** 끝의 파이썬 공백 걷기 — 정규식 [공백]+$는 공백이 긴 글에서 2제곱이라 글자를 거꾸로 셈(같은 결과, 2026-11-16) */
+const rstrip = (s: string) => {
+  let e = s.length;
+  while (e > 0 && PY_WS_CH.test(s[e - 1])) e--;
+  return e === s.length ? s : s.slice(0, e);
+};
+const strip = (s: string) => {
+  let b = 0;
+  while (b < s.length && PY_WS_CH.test(s[b])) b++;
+  return rstrip(b ? s.slice(b) : s);
+};
 const nospace = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, "");
+const isJsWs = (ch: string) => /\s/.test(ch);
+/** 끝의 「공백 쉼표 공백」 하나 걷기 — s.replace(/\s*[,，]\s*$/, "")와 같은 결과를 선형으로(2026-11-16) */
+function dropTrailingComma(s: string): string {
+  let e = s.length;
+  while (e > 0 && isJsWs(s[e - 1])) e--;
+  if (e === 0 || (s[e - 1] !== "," && s[e - 1] !== "，")) return s;
+  e--;
+  while (e > 0 && isJsWs(s[e - 1])) e--;
+  return s.slice(0, e);
+}
 
 /** 파이썬 repr(str) — 경고 문구의 %r */
 export function pyRepr(s: string): string {
@@ -79,6 +98,23 @@ export class Table {
   pendingMsg: string | null = null;
 }
 
+/**
+ * 표 칸 병합 값 상한(2026-11-16 시큐어 코딩 점검): 칸 주소가 없는 HWPX는 kordoc이 병합 값을 자르지 않고 넘김 — 정수 1 이상으로 맞추고
+ * 열은 COLSPAN_MAX(실제 카드 103장의 가장 넓은 표 19열의 5배 남짓), 행은 표가 닫힐 때 남은 행 수까지(clampRowspans). 실제 카드에는 해당 없음
+ */
+export const COLSPAN_MAX = 100;
+/** 한 표의 격자 칸(병합으로 덮는 칸 포함) 상한 — 실제 카드 표는 수천 칸 */
+export const GRID_CELLS_MAX = 200_000;
+function spanOf(v: string | undefined, max: number): number {
+  const n = Math.floor(Number(v || 1));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, max) : 1;
+}
+function clampRowspans(t: Table) {
+  t.rows.forEach((row, r) => {
+    for (const cell of row) if (cell.rowspan > t.rows.length - r) cell.rowspan = Math.max(1, t.rows.length - r);
+  });
+}
+
 export function parseHtmlTables(text: string): Table[] {
   const root: Node[] = [];
   const stack: Table[] = [];
@@ -110,7 +146,7 @@ export function parseHtmlTables(text: string): Table[] {
     const attrs = m[3];
     if (closing) {
       if ((tag === "td" || tag === "th") && stack.length) stack[stack.length - 1].openCell = null;
-      else if (tag === "table" && stack.length) stack.pop();
+      else if (tag === "table" && stack.length) clampRowspans(stack.pop() as Table);
       continue;
     }
     if (tag === "table") {
@@ -126,7 +162,7 @@ export function parseHtmlTables(text: string): Table[] {
     } else if (tag === "td" || tag === "th") {
       const t = stack[stack.length - 1];
       if (!t.rows.length) t.rows.push([]);
-      const cell = new Cell(tag, Number(attr(attrs, "colspan") || 1), Number(attr(attrs, "rowspan") || 1));
+      const cell = new Cell(tag, spanOf(attr(attrs, "colspan"), COLSPAN_MAX), spanOf(attr(attrs, "rowspan"), Number.MAX_SAFE_INTEGER));
       t.rows[t.rows.length - 1].push(cell);
       t.openCell = cell;
     } else if (tag === "br") {
@@ -136,6 +172,7 @@ export function parseHtmlTables(text: string): Table[] {
     }
   }
   data(unescapeHtml(text.slice(last)));
+  stack.forEach(clampRowspans);
   return root.filter((n): n is Table => n instanceof Table);
 }
 
@@ -195,12 +232,15 @@ export const key = (r: number, c: number) => `${r},${c}`;
 
 export function buildGrid(table: Table): Occ {
   const occ: Occ = new Map();
+  let filled = 0;
   table.rows.forEach((row, r) => {
     let c = 0;
     for (const cell of row) {
       while (occ.has(key(r, c))) c += 1;
       cell.r = r;
       cell.c = c;
+      filled += cell.rowspan * cell.colspan;
+      if (filled > GRID_CELLS_MAX) throw new Error("표 칸이 너무 많습니다(병합 값을 확인해 주세요).");
       for (let dr = 0; dr < cell.rowspan; dr++) for (let dc = 0; dc < cell.colspan; dc++) occ.set(key(r + dr, c + dc), cell);
       c += cell.colspan;
     }
@@ -673,7 +713,7 @@ class CardParser {
       const m = new RegExp(`^[${BOXES}]\\s*(협약|자체)\\s*예산\\s*(.*)$`, "s").exec(strip(seg));
       if (!m) continue;
       let rest = strip(m[2]).replace(/^[:：]\s*/, "");
-      rest = strip(rest.replace(/\s*[,，]\s*$/, ""));
+      rest = strip(dropTrailingComma(rest));
       amounts[m[1] === "협약" ? "agreement" : "own"] = rest || null;
     }
     const present = [amounts.agreement, amounts.own].filter(Boolean) as string[];

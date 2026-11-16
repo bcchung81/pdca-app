@@ -5,6 +5,7 @@
 // 여기는 조건·반복·셈(분량 공식, 첨부 글 몫, 전년 절 「같은 과제」 기준)만 — 보고서 작성 지침이 따로 오면 프롬프트 파일을 바꿉니다.
 
 import { z } from "zod";
+import { dataEnvelope, dataText } from "../ai/envelope.ts";
 import { cardOutline } from "../ai/writer.ts";
 import { flattenHtmlTables } from "../knowledge/rich-text.ts";
 import { inspectionCardText } from "../ai/inspect.ts";
@@ -396,7 +397,7 @@ export function sectionPrompt(
       businessNo: ctx.business.no,
       businessName: ctx.business.name,
       taskNo: ctx.task.no,
-      taskTitle: ctx.task.title,
+      taskTitle: dataText(ctx.task.title),
       mark: ctx.mark,
       module: ctx.module,
       moduleGuide: moduleGuide(p, ctx.module),
@@ -404,7 +405,7 @@ export function sectionPrompt(
       // 소항목 제목 글자 한도(2026-10-28): 표지·갈래 칩·마커 칩을 뺀 한 줄 폭에 드는 한글 수(fit.ts subTitleMax — 판면 어림과 같은 글 폭 모델)
       chip: ctx.chip ? `[${ctx.chip}] ` : "",
       titleMax: subTitleMax(ctx),
-      card: inspectionCardText(card),
+      card: dataEnvelope("card", inspectionCardText(card)),
     }),
   ];
   // 올해 실적 재료: 계량지표(’25 실적·’26 목표·’26 실적 = 카드 정량 성과 칸 → 카드 예상 칸) + 월별 실적 중 수치가 든 줄 + 정량 성과 칸의 남은 올해 실적 줄(lib/reports/actuals.ts)
@@ -476,7 +477,8 @@ export function sectionPrompt(
     lines.push("", r("files.head", { count: files.length }));
     files.forEach((f, i) => {
       lines.push("", r("files.item", { n: i + 1, name: f.name, relation: r(`files.relation.${f.relation === "same-report" ? "same" : (f.relation ?? "card")}` as (typeof REQUEST_SECTIONS)[number]) }));
-      lines.push(f.text);
+      // 첨부 글은 봉투에 넣음(글은 그대로 — 봉투 이름의 여닫는 태그만 무력화, lib/ai/envelope.ts)
+      lines.push(dataEnvelope("attachment", f.text));
     });
   }
   return lines.join("\n");

@@ -31,11 +31,61 @@ export function pictureFormat(b: Uint8Array): PictureFormat | null {
   return null;
 }
 
-/** CSS 계산값(background-image 등)의 url(…) 주소들(층 순서 — 첫 층이 맨 위). 따옴표 안 역슬래시 이스케이프를 풂 */
+const isWs = (ch: string | undefined) => ch !== undefined && /\s/.test(ch);
+/** at부터 공백(\s)을 건너뛴 자리 */
+const skipWs = (v: string, at: number) => {
+  while (isWs(v[at])) at++;
+  return at;
+};
+/** 줄 끝 글자(정규식 `.`이 못 받는 글자) */
+const LINE_END = /[\n\r\u2028\u2029]/;
+
+/**
+ * v의 `url(` 바로 뒤(at)에서 url(…) 하나 읽기 — 정규식 /url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)"'\s]*))\s*\)/와 같은 판정.
+ * 맞으면 { raw: 따옴표·이스케이프 그대로인 주소, end: `)` 다음 자리 }, 아니면 { resume: 다음 `url(`을 찾기 시작할 자리 }
+ */
+function urlAt(v: string, start: number, at: number): { raw: string; end: number } | { resume: number } {
+  const j = skipWs(v, at);
+  const q = v[j];
+  if (q === '"' || q === "'") {
+    // 따옴표 글: 역슬래시는 다음 한 글자(줄 끝 글자 제외)와 짝, 첫 짝 없는 같은 따옴표에서 닫힘
+    for (let k = j + 1; k < v.length; k++) {
+      const ch = v[k];
+      if (ch === "\\") {
+        if (k + 1 >= v.length || LINE_END.test(v[k + 1])) break;
+        k++;
+      } else if (ch === q) {
+        const s = skipWs(v, k + 1);
+        if (v[s] === ")") return { raw: v.slice(j + 1, k), end: s + 1 };
+        break;
+      }
+    }
+    return { resume: start + 1 };
+  }
+  let k = j;
+  while (k < v.length && !isWs(v[k]) && v[k] !== ")" && v[k] !== '"' && v[k] !== "'") k++;
+  const s = skipWs(v, k);
+  if (v[s] === ")") return { raw: v.slice(j, k), end: s + 1 };
+  // 따옴표 없는 글이 실패하면 그 글 안쪽에서 시작하는 url(도 같은 자리에서 실패 — 글 끝에 붙은 url(부터 다시 봄(선형 시간)
+  return { resume: Math.max(start + 1, k - 4) };
+}
+
+/**
+ * CSS 계산값(background-image 등)의 url(…) 주소들(층 순서 — 첫 층이 맨 위). 따옴표 안 역슬래시 이스케이프를 풂.
+ * 판정은 예전 정규식(urlAt 주석)과 같고, 공백·여는 괄호가 긴 값도 선형 시간으로 읽음(2026-11-16 시큐어 코딩 점검)
+ */
 export function cssUrls(v: string): string[] {
   const out: string[] = [];
-  for (const m of v.matchAll(/url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)"'\s]*))\s*\)/g)) {
-    const s = (m[1] ?? m[2] ?? m[3] ?? "").replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_x, hex: string | undefined, ch: string | undefined) => (hex ? String.fromCodePoint(parseInt(hex, 16)) : (ch ?? "")));
+  for (let from = 0; ; ) {
+    const start = v.indexOf("url(", from);
+    if (start < 0) break;
+    const m = urlAt(v, start, start + 4);
+    if ("resume" in m) {
+      from = m.resume;
+      continue;
+    }
+    from = m.end;
+    const s = m.raw.replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_x, hex: string | undefined, ch: string | undefined) => (hex ? String.fromCodePoint(parseInt(hex, 16)) : (ch ?? "")));
     if (s) out.push(s);
   }
   return out;

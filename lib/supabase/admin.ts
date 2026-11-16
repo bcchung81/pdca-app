@@ -9,6 +9,8 @@ import { supabaseEnv } from "./env.ts";
  * 예외 하나: 로그인 사용자 없이 도는 백그라운드 처리기(lib/prep/store.ts)가 씁니다 — 쓸 수 있는 표를
  * 매칭·준비물 표로 한정하고(lib/prep/tables.ts) 작업 등록은 로그인 사용자 권한(RLS)이 확인합니다
  * (docs/reference-materials.md §8, 결정 D13).
+ * 예외 둘: 계정 만들기 기록(access_events user_added — lib/users/service.ts logUserAdded). 계정이 서비스 키로 만들어져
+ * DB 트리거가 행위자를 모르므로 앱이 남깁니다(20261116120000).
  */
 export function createAdminClient() {
   const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;

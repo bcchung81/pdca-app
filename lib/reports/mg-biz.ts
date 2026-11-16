@@ -2,13 +2,15 @@
 // 읽기는 lib/reports/mg-biz-queries.ts(DB 함수 mg_biz_ref_texts — 그 경영관리 카드를 읽을 수 있는 사람만), 여기서는 그 결과를 요청 자료·숫자 근거·초안 근거 목록으로 바꿈.
 // - AI가 보는 글은 원문 그대로(원장 → 경평 초안 → 붙임, 주요사업마다). 이 경영관리 과제의 첨부와 섞이지 않게 docs는 MaterialDoc(kind card·report)이 아님 —
 //   초안 근거 목록(spec.sources)에는 주요사업 하나당 biz 한 줄만 적고(붙임은 따로 적지 않음), 이 카드의 자료로 착각하지 않게 함(draft-sources.ts specSources·withFileSources)
-// - 숫자 근거: 원장·붙임·초안 글 모두 인정. 단 그 주요사업 초안에서 이미 「없는 숫자」(card_report_drafts.unknown_numbers)는 숫자 근거 글에서 가려 경영관리 초안에서도 「없는 숫자」로 남김
+// - 숫자 근거: 원장·붙임·초안 글 모두 인정. 단 그 주요사업 초안의 「없는 숫자」는 숫자 근거 글에서 가려 경영관리 초안에서도 「없는 숫자」로 남김.
+//   없는 숫자는 저장값(card_report_drafts.unknown_numbers — 초안을 쓸 수 있는 사람이 앱 밖에서 비울 수 있음)만 믿지 않고 여기서 원장·붙임으로 다시 센 값과 합침
+//   (2026-11-16 시큐어 코딩 2차 점검). 그 초안의 전년 절·실사 답변·연결 조각은 여기 없어 그것으로만 맞던 숫자도 가려짐 — 근거가 적을수록 더 가리는 안전한 쪽
 // - 인용 대조: 초안 원문(가린 숫자가 든 구절도 원문에서 찾음)
 
 import { inspectionCardText } from "../ai/inspect.ts";
 import { stripNeeds } from "./actuals.ts";
 import type { BizRefText } from "./mg-biz-queries.ts";
-import { type ReportFile, type ReportSource, readSection, sectionText } from "./section.ts";
+import { type ReportFile, type ReportSource, readSection, recheckSection, sectionText } from "./section.ts";
 import { sectionMarkdown } from "./section-md.ts";
 
 /** AI에 넣을 주요사업 자료 하나(요청 「첨부 자료」 뒤에 이어 붙음 — relation이 문구를 가름) */
@@ -72,6 +74,15 @@ export const withoutBizFiles = <T extends { relation?: string }>(files: readonly
 /** 초안 근거 목록 이름 */
 export const bizSourceName = (taskId: string) => `${taskId} 경평 초안`;
 
+/**
+ * 주요사업 초안의 없는 숫자 = 저장값 ∪ 원장(카드 글)·붙임 글만으로 다시 센 값(저장 경로와 같은 recheckSection — 주요사업 초안). 저장값을 비워도 다시 센 숫자는 가려지고,
+ * 원장·붙임 숫자 두 개로 셈한 값(합·차·증감률 — number-calc.ts)은 근거로 남음
+ */
+export function bizUnknown(spec: NonNullable<ReturnType<typeof readSection>>, ref: Pick<BizRefText, "data" | "unknownNumbers" | "files">): string[] {
+  const fresh = recheckSection(spec, ref.data as Parameters<typeof recheckSection>[1], ref.files.map((f) => f.text).join("\n")).unknownNumbers;
+  return [...new Set([...ref.unknownNumbers, ...fresh])];
+}
+
 /** 읽은 주요사업 초안들 → 요청 자료·숫자 근거·인용 대조 글·초안 근거 목록 */
 export function bizMaterials(refs: readonly BizRefText[]): BizMaterials {
   const docs: BizDoc[] = [];
@@ -89,8 +100,8 @@ export function bizMaterials(refs: readonly BizRefText[]): BizMaterials {
     if (spec) {
       const text = draftText(spec);
       docs.push({ id: `${ref.cardId}#draft`, name: `${label} — 경평 초안`, text, relation: "biz-draft", numberEvidence: true });
-      // 숫자 근거 = 그 초안의 숫자 대조와 같은 글(【확인】 자리표시를 걷은 sectionText(spec, true)) − 그 초안의 없는 숫자
-      known.push(maskNumbers(stripNeeds(sectionText(spec, true)), ref.unknownNumbers));
+      // 숫자 근거 = 그 초안의 숫자 대조와 같은 글(【확인】 자리표시를 걷은 sectionText(spec, true)) − 그 초안의 없는 숫자(저장값 ∪ 원장·붙임으로 다시 센 값)
+      known.push(maskNumbers(stripNeeds(sectionText(spec, true)), bizUnknown(spec, ref)));
       quote.push(text);
     }
     for (const f of ref.files) {

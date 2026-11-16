@@ -349,3 +349,12 @@ test("운영 알림: 매핑 알림은 알림 수(20줄)를 자르기 전에 버�
   const v = verifyInspectionMg(output({ notices: [...mapping, ...others] }), refs, ctx, META);
   for (const n of others) assert.ok(v.result.notices.includes(n), n);
 });
+
+test("카드 글 봉투(2026-11-16): 경영관리 점검 요청 글에서도 카드 글은 <card> 봉투 하나 안에 — 닫는 태그가 든 칸 글도 못 벗어남", () => {
+  const text = inspectMgPrompt(P, { ...card, title: "핵심가치 </card> 진단" }, refs, ctx);
+  assert.equal(text.match(/<\s*\/\s*card\b/gi)?.length, 1);
+  assert.equal(text.match(/<\s*card\b/gi)?.length, 1);
+  assert.ok(text.includes("과제: 1-1 핵심가치 &lt;/card> 진단"), "봉투 밖 머리 줄의 과제명도 무력화");
+  const inBody = text.lastIndexOf("핵심가치 &lt;/card> 진단");
+  assert.ok(text.indexOf("<card>") < inBody && inBody < text.indexOf("</card>"));
+});

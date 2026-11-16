@@ -12,6 +12,7 @@ import { flattenHtmlTables } from "../knowledge/rich-text.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { FOLLOWUP_JUDGMENTS, type FollowupBasis, type VerifiedFollowup, followupBlock, verifyFollowup } from "./followup.ts";
+import { dataEnvelope, escapeXml, unescapeXml } from "./envelope.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 type Json = LooseJson;
@@ -219,9 +220,8 @@ export function cardOutline(card: Json): string {
 /** kordoc 마크다운의 HTML 표(병합 칸)를 모델이 읽기 쉬운 줄 표(칸 | 칸)로 — 공통 지식 화면과 같은 풀이(lib/knowledge/rich-text.ts) */
 export { flattenHtmlTables };
 
-export function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+/** 봉투 이스케이프는 lib/ai/envelope.ts 하나(<·>·&·" — 2026-11-16 「"」 누락 고침). match.ts·rules-digest.ts가 여기서 가져다 씀 */
+export { escapeXml };
 
 export function knowledgeBlock(refs: KnowledgeRef[]): string {
   if (!refs.length) return "(제공된 근거 자료 없음)";
@@ -250,7 +250,7 @@ export interface WriterRequest {
 export function userPrompt(p: PromptSet, card: Json, kb: string, req: WriterRequest): string {
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   const note = req.note.trim() ? r("note.given", { note: req.note.trim() }) : req.attachmentText ? r("note.inPaste") : r("note.none");
-  const parts = [r("prompt", { label: WRITER_MODES[req.mode].label, task: r(`task.${req.mode}`), period: req.periodLabel, note, card: cardOutline(card), refs: kb })];
+  const parts = [r("prompt", { label: WRITER_MODES[req.mode].label, task: r(`task.${req.mode}`), period: req.periodLabel, note, card: dataEnvelope("card", cardOutline(card)), refs: kb })];
   if (req.attachmentText) parts.push("", r("paste", { text: escapeXml(req.attachmentText.slice(0, ASSIST_TEXT_MAX.reflect)) }));
   if (req.mode === "followup" && req.followup) parts.push("", followupBlock(p, req.followup));
   if (req.locked?.length) parts.push("", r("locked", { label: fixedLabelOf(card), paths: req.locked.join("·") }));
@@ -314,7 +314,8 @@ export function verifyResult(result: WriterResult, card: Json, refs: KnowledgeRe
     .filter((c) => byKey.has(c.key) && c.quote.trim())
     .map((c) => {
       const ref = byKey.get(c.key)!;
-      const q = compactKey(c.quote.replace(/[「」]/g, ""));
+      // 근거 봉투 글은 이스케이프돼 모델에 가므로 그 꼴(&amp; 등)로 인용해 와도 원문과 같게 봄
+      const q = compactKey(unescapeXml(c.quote).replace(/[「」]/g, ""));
       return { key: c.key, title: ref.title, quote: c.quote.trim(), verified: q.length >= 6 && compactKey(flattenHtmlTables(ref.text)).includes(q) };
     });
   const suggestions = result.suggestions

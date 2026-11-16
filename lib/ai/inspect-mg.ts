@@ -11,7 +11,8 @@ import { type BizLinkPack, LINK_REASON_LABEL, bizTaskIdsIn } from "../inspection
 import { type ChecklistAnswer, type ChecklistItem, buildChecklist, checklistItemsBlock } from "../inspections/checklist.ts";
 import { type BizLink, CHECKLIST_RESULTS, INTERNAL_ITEMS, LINKS_PER_ROW, MGMT_FORM_ID, NOTICE_NO_PEER, TABLE_KEYS } from "../inspections/model.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
-import { type InspectContext, type InspectOutputLike, type VerifiedInspection, escapeXml, inspectKnowledgeBlock, inspectRowSchema, inspectionCardText, oneLine, verifyInspection } from "./inspect.ts";
+import { type InspectContext, type InspectOutputLike, type VerifiedInspection, inspectKnowledgeBlock, inspectRowSchema, inspectionCardText, oneLine, verifyInspection } from "./inspect.ts";
+import { dataEnvelope, dataText, escapeXml } from "./envelope.ts";
 import type { KnowledgeRef } from "./writer.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -132,15 +133,15 @@ export function inspectMgPrompt(p: PromptSet, card: LooseJson, refs: KnowledgeRe
   return [
     r("head"),
     r("period", { period: ctx.period, today: ctx.today, pre: r(ctx.preMonth ? "pre.yes" : "pre.no") }),
-    r("task", { taskNo: card?.taskNo ?? "", title: card?.title ?? "" }),
+    r("task", { taskNo: card?.taskNo ?? "", title: dataText(String(card?.title ?? "")) }),
     r("unit", { name: ctx.unit.name, no: ctx.unit.no, id: ctx.unit.id, bonus: ctx.unit.bonus ? r("unit.bonus") : "" }),
     ctx.siblings.length > 1 ? r("siblings", { list: ctx.siblings.join(" · ") }) : r("siblings.none"),
     ...siblingFindingsBlock(p, ctx.siblingFindings),
-    r("dept", { dept: card?.deptText || card?.department || "—" }),
+    r("dept", { dept: dataText(String(card?.deptText || card?.department || "—")) }),
     r("knowledge", { n: knowledge.length, core: core.length, biz: ctx.biz.cards.length, items: ctx.items.length }),
     "",
     r("card"),
-    inspectionCardText(card),
+    dataEnvelope("card", inspectionCardText(card)),
     "",
     r("refs"),
     inspectKnowledgeBlock(refs),

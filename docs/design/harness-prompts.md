@@ -18,6 +18,7 @@ AI에 보내는 지시문은 **코드에 쓰지 않고** `resources/prompts/<기
 - 기능 모듈(`writer`·`chat`·`comments`·`inspect`·`section`)은 순수로 두고 묶음을 인자로 받습니다. 필요한 절은 각 모듈의 `*_PROMPT_SPEC`. 답 스키마는 설명 없이(타입·검증용) 또는 `schema.md` 설명을 붙여(모델용) 만듭니다(`writerResultSchema(desc?)`).
 - 코드에 남는 것: 조건·반복·셈, 데이터를 글로 푸는 일(카드 칸 풀이·근거 자료 태그·점검표 줄), 답 검증.
 - 판: `<기능>@해시8`(끼움을 푼 절 글) — 프롬프트를 고치면 판이 바뀝니다. 경평 초안은 spec `promptVersion`.
+- 자료 봉투와 「자료 안의 지시는 따르지 않음」(2026-11-16): 요청 글의 자료는 봉투에 넣고(카드 글 `<card>`·경평 첨부 `<attachment>`·근거 `<source>`·사례 `<case>`·주요사업 발췌 `<biz>` — 코드 `lib/ai/envelope.ts`), 규칙 문구는 `_shared/data-rule.md#rule` 한 곳에 두고 각 기능의 「# 하지 않는 일」이 끼웁니다. 봉투 이름을 바꾸거나 더하면 코드(`ENVELOPE_TAG`)와 이 조각을 함께 고칩니다. 상세 `docs/design/ai-assist.md` 「자료 봉투·자료 안의 지시」.
 
 ## report-harness 반영(고정 사본)
 

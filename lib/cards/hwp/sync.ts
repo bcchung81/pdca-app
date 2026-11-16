@@ -101,6 +101,20 @@ export function titleSimilarity(a: unknown, b: unknown): number {
   return (2 * both) / total;
 }
 
+/**
+ * 줄 끝의 공백·세로줄 덩어리 걷기(세로줄이 하나라도 있을 때) — 예전 /(\s*\|\s*)+$/와 같은 결과.
+ * 그 정규식은 빈 칸이 많은 줄에서 지수 시간이라 글자를 거꾸로 셈(2026-11-16 시큐어 코딩 점검)
+ */
+function dropTrailingPipes(l: string): string {
+  let e = l.length;
+  let pipe = false;
+  while (e > 0 && (l[e - 1] === "|" || /\s/.test(l[e - 1]))) {
+    if (l[e - 1] === "|") pipe = true;
+    e--;
+  }
+  return pipe ? l.slice(0, e) : l;
+}
+
 /** 원본 양식 조각 → 사람이 읽는 줄(표 칸은 " | "로 이음) */
 export function htmlLines(html: string): string[] {
   return html
@@ -116,7 +130,7 @@ export function htmlLines(html: string): string[] {
     .replace(/&#39;/g, "'")
     .replace(/&amp;/g, "&")
     .split("\n")
-    .map((l) => l.replace(/\s+/g, " ").replace(/(\s*\|\s*)+$/, "").trim())
+    .map((l) => dropTrailingPipes(l.replace(/\s+/g, " ")).trim())
     .filter((l) => l && l !== "|");
 }
 

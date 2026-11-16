@@ -1,10 +1,11 @@
 import "server-only";
 
 import type { createClient } from "../supabase/server.ts";
+import { createAdminClient } from "../supabase/admin.ts";
 import { compareTaskNo } from "../cards/view.ts";
 import type { ExistingSnapshot, TeamOption } from "./types.ts";
 
-// 담당자 등록·관리의 DB 조회·기록 모음. 모두 로그인 사용자 권한(RLS)으로 돌고, 호출하는 액션이 역할을 먼저 확인합니다.
+// 담당자 등록·관리의 DB 조회·기록 모음. 계정 만들기 기록(logUserAdded)만 서비스 키, 나머지는 로그인 사용자 권한(RLS)으로 돌고, 호출하는 액션이 역할을 먼저 확인합니다.
 
 export type Db = Awaited<ReturnType<typeof createClient>>;
 
@@ -60,11 +61,12 @@ export async function assignTeamCards(db: Db, actorId: string, userId: string, t
   return data?.length ?? 0;
 }
 
-export type AccessAction = "user_added" | "user_updated" | "user_deactivated" | "user_restored" | "assigned" | "unassigned";
-
-/** 권한 변경 기록. 기록 실패가 본 작업을 막지 않게 오류만 남김 */
-export async function logAccessEvent(db: Db, actorId: string, targetUserId: string, action: AccessAction, detail: Record<string, unknown> = {}): Promise<void> {
-  const { error } = await db.from("access_events").insert({ actor_id: actorId, target_user_id: targetUserId, action, detail });
+/**
+ * 계정 만들기 기록(user_added). 계정은 서비스 키(Auth 관리 API)로 만들어 DB가 행위자를 모르므로 앱이 남김 — 역할·팀·활성·담당 과제 변경은
+ * DB 트리거가 남김(20261116120000). 로그인 사용자는 이 표에 쓰지 못해 서비스 키로 씀. 기록 실패가 본 작업을 막지 않게 오류만 남김
+ */
+export async function logUserAdded(actorId: string, targetUserId: string, detail: { via: "form" | "paste"; role: string; team_id: number | null }): Promise<void> {
+  const { error } = await createAdminClient().from("access_events").insert({ actor_id: actorId, target_user_id: targetUserId, action: "user_added", detail });
   if (error) console.error("access_events", error.message);
 }
 

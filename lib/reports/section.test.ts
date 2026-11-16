@@ -143,8 +143,9 @@ test("첨부 자료: 프롬프트에 자료마다 이름·전체 글(자르지 �
     { name: "보도자료.pdf", text: "PDF에서 뽑은 글" },
   ]);
   assert.match(p, /「첨부 자료」 2건 — .*전체 글\(자르지 않음/);
-  assert.match(p, /\[첨부 1\] 9월 결과보고\.hwp — [^\n]+\nLTE-R 준공검사 3건, 누적 측정 구간 1,240km/);
-  assert.match(p, /\[첨부 2\] 보도자료\.pdf — [^\n]+\nPDF에서 뽑은 글/);
+  // 자료마다 <attachment> 봉투(2026-11-16 — 글은 그대로)
+  assert.match(p, /\[첨부 1\] 9월 결과보고\.hwp — [^\n]+\n<attachment>\nLTE-R 준공검사 3건, 누적 측정 구간 1,240km\n<\/attachment>/);
+  assert.match(p, /\[첨부 2\] 보도자료\.pdf — [^\n]+\n<attachment>\nPDF에서 뽑은 글/);
   assert.doesNotMatch(p, /원본 문서\(PDF\)|앞부분만/);
   assert.ok(p.indexOf("「카드」") < p.indexOf("「첨부 자료」"), "카드가 뼈대(먼저)");
   // 예전 합계 15만 자 상한을 넘는 자료 둘도 끝까지

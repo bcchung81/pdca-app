@@ -9,6 +9,7 @@
 // 답은 전용 스키마(results·band·reply), 카드·막대(resultCards·resultChart)는 보여 주되 고치지 않음.
 
 import { z } from "zod";
+import { dataEnvelope } from "../ai/envelope.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { type Block, type BlockOutput, VARIANTS, blockOutSchema, blockSignature, blockTexts, cleanBlocks, isGridTable } from "./blocks.ts";
 import { type ShapeRules, MG_ONLY_SHAPES, blockShapeCode, blockShapeName, shapeAllowed, withContent } from "./block-shape.ts";
@@ -218,6 +219,9 @@ export function shapeMenuText(spec: ReportSectionSpec, index: number, rules: Sha
   return { shapes: ok.join(" · ") || "없음", blocked: no.join(" · ") || "없음" };
 }
 
+/** 근거 절의 카드 글·추가 근거를 자료 봉투에(글은 그대로, 봉투 이름 태그만 무력화 — lib/ai/envelope.ts, 2026-11-16 시큐어 코딩 2차 점검) */
+const evidenceVars = (e: { card: string; extra: string }) => ({ card: dataEnvelope("card", e.card), extra: e.extra ? dataEnvelope("attachment", e.extra) : "없음" });
+
 /**
  * 블록 고치기·질문 요청 글 — 근거(카드 글·첨부 전체 글·전년 절·실사 답변)는 초안과 같이 자르지 않음(넘치면 lib/ai/budget.ts가 멈춤). rules가 없으면 모양 바꾸기 없음.
  * share = 글 한도의 여유를 이 블록 몫(mm)으로(경영관리 분량 채움 보강만 — blockRoom). 사람 요청은 주지 않음
@@ -227,7 +231,7 @@ export function blockEditPrompt(p: PromptSet, spec: ReportSectionSpec, req: Bloc
   const b = blocks[req.blockIndex];
   const menu = rules ? shapeMenuText(spec, req.blockIndex, rules) : { shapes: "없음 — 이 요청은 모양을 바꾸지 않음", blocked: "없음" };
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
-  return [r(req.kind, { ...headVars(spec, req.blockIndex, share), quote: req.quote || "(고른 글 없음 — 블록 전체)", request: req.request, ...menu }), "", r("block", { block: JSON.stringify(b) }), "", r("evidence", { card: evidence.card, extra: evidence.extra || "없음" })].join("\n");
+  return [r(req.kind, { ...headVars(spec, req.blockIndex, share), quote: req.quote || "(고른 글 없음 — 블록 전체)", request: req.request, ...menu }), "", r("block", { block: JSON.stringify(b) }), "", r("evidence", evidenceVars(evidence))].join("\n");
 }
 
 /** 요청 글 머리 공통 값(소항목·블록 자리·판면·글 한도) */
@@ -361,7 +365,7 @@ export function blockShapesPrompt(p: PromptSet, spec: ReportSectionSpec, req: Bl
     "",
     r("block", { block: JSON.stringify(b) }),
     "",
-    r("evidence", { card: evidence.card, extra: evidence.extra || "없음" }),
+    r("evidence", evidenceVars(evidence)),
   ].join("\n");
 }
 
@@ -450,7 +454,7 @@ export function resultEditPrompt(p: PromptSet, spec: ReportSectionSpec, req: Blo
       request: req.request,
     }),
     "",
-    r("evidence", { card: evidence.card, extra: evidence.extra || "없음" }),
+    r("evidence", evidenceVars(evidence)),
   ].join("\n");
 }
 

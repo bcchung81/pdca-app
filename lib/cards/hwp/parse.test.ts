@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
-import { parseCardGroups, parseCardMarkdown, parseNationalAgenda, pyRepr, splitBlocks, unmarkKordocInline } from "./parse.ts";
+import { COLSPAN_MAX, GRID_CELLS_MAX, buildGrid, parseCardGroups, parseCardMarkdown, parseHtmlTables, parseNationalAgenda, pyRepr, splitBlocks, unmarkKordocInline } from "./parse.ts";
 import { HAS_SEED_CARDS, NO_SEED_CARDS } from "../../testing/originals.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -170,4 +170,28 @@ test("카드 이음 표(리뷰 T2-R2): 카드 표에 없는 구역([Check])이 �
   const kept = parseCardMarkdown([GT(1, "첫째 사업"), INDEX([["1-가", "시험 과제"]]), CARD_ROWS("1-가", [ROW("[Do]<br>추진내용", "∙ 시험 추진"), ROW("[Check]<br>성과점검", "∙ 카드 안 리스크")].join("\n")), ref].join("\n\n"), { sourceName: "x.hwp" }).cards[0];
   assert.ok(!kept.raw.includes("카드 밖 참고 표"), "이미 있는 구역의 표는 이음 표가 아님");
   assert.ok(!kept.parseWarnings.some((w: string) => /두 번/.test(w)), kept.parseWarnings.join(" / "));
+});
+
+test("표 칸 병합 값: 정수 1 이상·열은 상한·행은 남은 행 수까지, 격자 칸이 너무 많으면 멈춤", () => {
+  const [t] = parseHtmlTables('<table><tr><td rowspan="x" colspan="-3">a</td><td rowspan="2.7" colspan="1e9">b</td></tr><tr><td rowspan="Infinity">c</td></tr></table>');
+  const spans = t.rows.map((r) => r.map((c) => [c.rowspan, c.colspan]));
+  assert.deepEqual(spans, [[[1, 1], [2, COLSPAN_MAX]], [[1, 1]]]);
+  const occ = buildGrid(t);
+  assert.equal(occ.get("1,1")?.content[0], "b", "병합 칸이 다음 행을 덮음");
+  // 안쪽 표도 닫힐 때 행 수에 맞춤
+  const [outer] = parseHtmlTables('<table><tr><td><table><tr><td rowspan="50">안</td></tr></table></td></tr></table>');
+  const inner = outer.rows[0][0].content.find((n) => typeof n === "object" && "rows" in n) as typeof outer;
+  assert.equal(inner.rows[0][0].rowspan, 1);
+  const t0 = performance.now();
+  const tall = parseHtmlTables("<table>" + '<tr><td rowspan="99999" colspan="100">x</td></tr>'.repeat(3000) + "</table>")[0];
+  assert.throws(() => buildGrid(tall), /표 칸이 너무 많습니다/);
+  assert.ok(GRID_CELLS_MAX >= 100000);
+  assert.ok(performance.now() - t0 < 500, "큰 병합 값");
+});
+
+test("칸 글 앞뒤 공백 걷기: 공백이 긴 칸도 빨리 끝남", () => {
+  const t0 = performance.now();
+  const [b] = splitBlocks(`|a|${" ".repeat(100000)}가${" ".repeat(100000)}|\n`, true);
+  assert.equal(b.tables[0].rows[0][1].content.join(""), "가");
+  assert.ok(performance.now() - t0 < 500, "긴 공백 칸");
 });

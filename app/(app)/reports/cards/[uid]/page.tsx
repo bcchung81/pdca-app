@@ -12,6 +12,8 @@ import { blockShapeCode, shapeMenu, shapeRules } from "../../../../../lib/report
 import { planMatch, readComposition } from "../../../../../lib/reports/composition.ts";
 import { LENS_LABEL } from "../../../../../lib/reports/lens.ts";
 import { loadBizRefs } from "../../../../../lib/reports/mg-biz-queries.ts";
+import { recountDraft } from "../../../../../lib/reports/draft-recount.ts";
+import { loadDraftKnown } from "../../../../../lib/reports/draft-recount-queries.ts";
 import { readSection } from "../../../../../lib/reports/section.ts";
 import { createClient } from "../../../../../lib/supabase/server.ts";
 import { bizChoicesOf, bizStaleLabel, bizStaleOf, cardCommentsOf, cardRefs, checkNeedsOf, menuOf, neighborsOf, outlineDataOf, priorChoices, sourceFilesOf, threadOf, usedOf } from "./derive.ts";
@@ -62,7 +64,8 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
 
   const spec = readSection(draft?.spec);
   // 경영관리 카드만: 참고할 주요사업 경평 초안 후보(그 카드를 읽을 수 있는 사람에게만 DB 함수가 돌려줌 — 없거나 오류면 빈 목록이라 주요사업 화면·권한 없는 사람은 그대로)
-  const bizRows = mg ? await loadBizRefs(supabase, card.id, year) : [];
+  // 없는 숫자 다시 세기(2026-11-16): 저장된 unknown_numbers·warnings는 앱 밖에서 비울 수 있어 저장 경로와 같은 근거로 다시 셈(lib/reports/draft-recount*.ts)
+  const [bizRows, known] = await Promise.all([mg ? loadBizRefs(supabase, card.id, year) : Promise.resolve([]), spec ? loadDraftKnown(supabase, card, spec, year, { lens, priorSections, reportId: report?.id ?? null }) : Promise.resolve("")]);
   const biz = bizChoicesOf(bizRows, { spec, cardText: mg ? cardOutline(card.data as Record<string, unknown>) : "", unitId: card.eval_unit_id, linkIndex: mg ? mgLinkIndex() : [] });
   const bizStale = bizStaleLabel(bizStaleOf(spec, bizRows));
   // 구성안(재료표·짜임 — 담당자가 보고 고친 뒤 승인하면 그 짜임대로 집필)
@@ -71,8 +74,11 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
   const own = !staff && card.team_id === me.team?.id;
   const canWrite = card.status === "active" && (staff || own) && !locked && !deptView;
   const stale = Boolean(draft && draft.source_rev !== null && draft.source_rev !== card.data_rev);
-  const warnings: string[] = Array.isArray(draft?.warnings) ? draft.warnings.map(String) : [];
-  const unknown: string[] = draft?.unknown_numbers ?? [];
+  // 칠할 없는 숫자 = 저장값 ∪ 다시 센 값, 저장값에 없던 숫자가 있으면 경고의 없는 숫자 줄을 바꿔 알림(정상 초안은 저장값 그대로)
+  const stored = { unknown: draft?.unknown_numbers, warnings: Array.isArray(draft?.warnings) ? draft.warnings.map(String) : [] };
+  const recount = spec ? recountDraft(spec, card.data, known, stored) : null;
+  const warnings: string[] = recount?.warnings ?? stored.warnings;
+  const unknown: string[] = recount?.unknown ?? draft?.unknown_numbers ?? [];
   const { unit, team } = cardRefs(card);
   const back = returnTarget(sp.from, staffView ? "/reports/cards" : viewTeam ? `/my/report?team=${viewTeam.id}` : "/my/report");
   const { prev, next } = neighborsOf(sibs, outlineSort, staffView, uid);

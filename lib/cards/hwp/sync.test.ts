@@ -274,3 +274,11 @@ test("그리다 렌더러가 던지는 블록은 「비교 불가」 — 빈 글
   assert.equal(fromLedger.status, "unknown");
   assert.match(fromLedger.note ?? "", /^원장 카드의/);
 });
+
+test("원본 양식 줄 읽기: 줄 끝 공백·세로줄 덩어리를 걷고, 빈 칸이 많은 줄도 빨리 끝남", () => {
+  assert.deepEqual(htmlLines("<table><tr><td>가</td><td></td><td> </td></tr><tr><td></td><td>나</td></tr></table>"), ["가", "| 나"]);
+  const row = "<table><tr>" + "<td></td>".repeat(100000) + "<td>끝</td></tr></table>";
+  const t0 = performance.now();
+  assert.deepEqual(htmlLines(row).at(-1)?.endsWith("| 끝"), true);
+  assert.ok(performance.now() - t0 < 500, "빈 칸 많은 줄");
+});

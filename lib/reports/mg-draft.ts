@@ -6,6 +6,7 @@
 // AI 지시문은 resources/prompts/report-draft-mg/*.md(공통 지식 절은 _shared/knowledge-mg.md).
 
 import { z } from "zod";
+import { dataEnvelope, dataText } from "../ai/envelope.ts";
 import { cardOutline } from "../ai/writer.ts";
 import { inspectionCardText } from "../ai/inspect.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
@@ -209,7 +210,7 @@ const yy = (n: number) => String(n % 100).padStart(2, "0");
  */
 export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext, year: number, evals: number[], files: ReportFile[] = [], lens: LensRef[] = [], actuals?: YearActuals): string {
   const r = (key: RequestKey, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
-  const lines = [r("header", { year, indicator: ctx.indicator, taskNo: ctx.taskNo, title: String(card?.title ?? ""), markers: ctx.markers.join("·") || r("markers.none"), card: inspectionCardText(card), asOf: ctx.cardAsOf || "시점 모름" })];
+  const lines = [r("header", { year, indicator: ctx.indicator, taskNo: ctx.taskNo, title: dataText(String(card?.title ?? "")), markers: ctx.markers.join("·") || r("markers.none"), card: dataEnvelope("card", inspectionCardText(card)), asOf: ctx.cardAsOf || "시점 모름" })];
   const pdca = mgPdcaPrompt(p, mgPdcaSkeleton(card));
   if (pdca) lines.push("", pdca);
   lines.push("", r("skeleton.head", { priorYear: year - 1 }));
@@ -259,7 +260,8 @@ export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext,
     lines.push("", r("files.head", { count: files.length }));
     files.forEach((f, i) => {
       lines.push("", r("files.item", { n: i + 1, name: f.name, relation: r(`files.relation.${f.relation === "same-report" ? "same" : (f.relation ?? "card")}` as RequestKey) }));
-      lines.push(f.text);
+      // 첨부 글은 봉투에 넣음(글은 그대로 — 봉투 이름의 여닫는 태그만 무력화, lib/ai/envelope.ts)
+      lines.push(dataEnvelope("attachment", f.text));
     });
   }
   return lines.join("\n");

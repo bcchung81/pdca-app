@@ -235,6 +235,7 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
   const actuals = yearActuals(card.data, isoDay());
   // 숫자 대조 근거 = 카드 + 첨부 글 + 전년 절 글 + 실사 답변. 평가 기준·지적·유관기관 사례는 인용 대조에만
   // 숫자 근거 — 이 과제에 연결된 2025 보고서 절·실사 답변의 수치도(lib/reports/section.ts draftEvidence linked)
+  // 이 규칙을 바꾸면 저장된 초안을 다시 세는 lib/reports/draft-recount-queries.ts loadDraftKnown도 같이(검토 화면·내려받기·보고서 검토 — 2026-11-16)
   const { known, quoteOnly, past, current } = draftEvidence(files, prior, lens, actuals, relevantRefs(kb));
   // 도식 후보 중 이 과제만의 요소 — 초안이 하나도 안 쓰면 짜임 문제로 고치기
   const own = sectionHints(card.data, prior, files, lens, actuals, year).filter((h) => h.own);
@@ -276,6 +277,7 @@ async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "ye
   const biz = bizIds.length ? bizMaterials(bizRefs) : null;
   const skipped = bizIds.length ? [...x.skipped, ...bizMissing(bizIds, bizRefs)] : x.skipped;
   // 숫자 근거 = 카드·첨부·실사 답변 + 이 과제에 연결된 공통 지식 조각 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치) (+ 고른 주요사업 자료)
+  // — 저장된 초안 다시 세기(lib/reports/draft-recount-queries.ts loadDraftKnown)와 같은 규칙
   const known = [ev.known, numbers, ...(biz ? [biz.known] : [])].join("\n");
   const quoteOnly = biz ? [ev.quoteOnly, biz.quote].join("\n") : ev.quoteOnly;
   const promptKnown = biz ? [ev.known, numbers, biz.prompt].join("\n") : undefined;

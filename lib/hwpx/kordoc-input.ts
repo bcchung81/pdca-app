@@ -21,7 +21,7 @@ export function toKordocInput(text: string): string {
   let titleDone = false;
   let inQuote = false;
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/\s+$/, "");
+    const line = raw.trimEnd(); // /\s+$/ 걷기와 같은 결과 — 공백이 긴 줄도 선형
     const body = line.trim();
     if (FENCE.test(line)) {
       inQuote = !inQuote;

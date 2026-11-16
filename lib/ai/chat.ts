@@ -7,6 +7,7 @@ import { z } from "zod";
 import { type InspectionResult, TABLE_KEYS, directionLines, formTablesOf, remedyText, tally } from "../inspections/model.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
+import { dataEnvelope } from "./envelope.ts";
 import { FILES_SECTIONS, type PromptFile, cardOutline, filesBlock } from "./writer.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -93,7 +94,7 @@ export interface ChatRequest {
 /** kb = 이 과제 기준 공통 지식 목록(lib/knowledge/bundle.ts listText — ①~③ 글은 요청 앞에 따로) */
 export function chatPrompt(p: PromptSet, card: LooseJson, kb: string, req: ChatRequest): string {
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
-  const parts = [r("prompt", { period: req.periodLabel, card: cardOutline(card), inspection: req.inspection, refs: kb }), ...filesBlock(p, req.files ?? [])];
+  const parts = [r("prompt", { period: req.periodLabel, card: dataEnvelope("card", cardOutline(card)), inspection: req.inspection, refs: kb }), ...filesBlock(p, req.files ?? [])];
   if (req.history.length) {
     parts.push("", r("history.head"));
     for (const t of req.history) parts.push(r(t.role === "user" ? "history.user" : "history.ai", { text: t.text }));

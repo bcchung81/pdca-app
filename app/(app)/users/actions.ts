@@ -7,7 +7,7 @@ import { createAdminClient } from "../../../lib/supabase/admin.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { checkDisplayName } from "../../../lib/users/name.ts";
 import { type PlanContext, extractEmail, planRows } from "../../../lib/users/plan.ts";
-import { type Db, type ExistingProfile, assignTeamCards, loadMatchTeams, loadProfilesByEmail, logAccessEvent } from "../../../lib/users/service.ts";
+import { type Db, type ExistingProfile, assignTeamCards, loadMatchTeams, loadProfilesByEmail, logUserAdded } from "../../../lib/users/service.ts";
 import { type ApplyResult, type ApplyRowInput, type ApplyRowResult, type ExistingLookup, type LookupResponse, PASTE_MAX_ROWS, type TeamOption } from "../../../lib/users/types.ts";
 
 export type UserFormState = { status: "idle" } | { status: "ok"; message: string } | { status: "error"; message: string };
@@ -31,9 +31,14 @@ function planContext(me: CurrentUser, teams: TeamOption[], profiles: Map<string,
   return { actorRole: me.role, allowedDomains: allowedEmailDomains(), teams: new Map(teams.map((t) => [t.id, t])), existing: (email) => profiles.get(email) ?? null };
 }
 
-/** 계정 만들기(서비스 키) + 가입 트리거가 만든 프로필에 이름·부서(·역할)를 로그인 사용자 권한으로 지정. 반환 행 수를 확인해 0행이면 실패로 다룸 */
+/**
+ * 계정 만들기(서비스 키) + 가입 트리거가 만든 프로필에 이름·부서(·역할)를 로그인 사용자 권한으로 지정. 반환 행 수를 확인해 0행이면 실패로 다룸.
+ * 계정 만들기 기록(user_added)은 여기서 남기고, 이어지는 부서·역할 지정과 팀 과제 지정은 DB 트리거가 남김(20261116120000)
+ */
 async function createAccount(
   db: Db,
+  actorId: string,
+  via: "form" | "paste",
   email: string,
   name: string,
   patch: { team_id: number | null; role?: AppRole },
@@ -43,6 +48,7 @@ async function createAccount(
     console.error("createUser", createErr?.message);
     return { ok: false, message: "계정을 만들지 못했습니다." };
   }
+  await logUserAdded(actorId, data.user.id, { via, role: patch.role ?? "dept_user", team_id: patch.team_id });
   const { data: rows, error: updErr } = await db.from("profiles").update({ display_name: name, ...patch }).eq("id", data.user.id).select("id");
   if (updErr || !rows?.length) {
     console.error("createAccount profile", updErr?.message ?? "0 rows");
@@ -94,7 +100,6 @@ export async function updateUser(_prev: UserFormState, formData: FormData): Prom
       console.error("updateUser assign", e);
     }
   }
-  await logAccessEvent(supabase, me.id, id, "user_updated", { team: { from: target.team_id, to: team }, role: role !== target.role ? { from: target.role, to: role } : undefined, assigned });
   revalidatePath("/users");
   return { status: "ok", message: assigned ? `저장했습니다. 새 팀의 과제 ${assigned}장을 담당으로 지정했습니다.` : "저장했습니다." };
 }
@@ -123,7 +128,7 @@ export async function inviteUser(_prev: UserFormState, formData: FormData): Prom
   const { data: exists } = await supabase.from("profiles").select("id").eq("email", email).maybeSingle();
   if (exists) return error("이미 있는 계정입니다. 목록에서 역할·부서를 바꿔 주세요.");
 
-  const made = await createAccount(supabase, email, displayName, { team_id: team, role });
+  const made = await createAccount(supabase, me.id, "form", email, displayName, { team_id: team, role });
   if (!made.ok) return error(made.message);
   let assigned = 0;
   if (role === "dept_user" && team !== null) {
@@ -133,7 +138,6 @@ export async function inviteUser(_prev: UserFormState, formData: FormData): Prom
       console.error("inviteUser assign", e);
     }
   }
-  await logAccessEvent(supabase, me.id, made.id, "user_added", { via: "form", role, team_id: team, assigned });
   revalidatePath("/users");
   return { status: "ok", message: `${email} 계정을 만들었습니다.${assigned ? ` 팀 과제 ${assigned}장을 담당으로 지정했습니다.` : ""} 로그인 화면에서 메일 링크로 들어올 수 있습니다.` };
 }
@@ -163,7 +167,6 @@ export async function setUserActive(id: string, active: boolean): Promise<{ ok: 
     return { ok: false, message: "바꾸지 못했습니다." };
   }
   const { error: banErr } = await createAdminClient().auth.admin.updateUserById(id, { ban_duration: active ? "none" : BAN_FOREVER });
-  await logAccessEvent(supabase, me.id, id, active ? "user_restored" : "user_deactivated", banErr ? { ban_error: banErr.message } : {});
   revalidatePath("/users");
   if (banErr) {
     console.error("setUserActive ban", banErr.message);
@@ -211,8 +214,6 @@ export async function setUserAssignments(userId: string, cardIds: string[]): Pro
       return { ok: false, message: "담당 과제를 빼지 못했습니다." };
     }
   }
-  if (add.length) await logAccessEvent(supabase, me.id, userId, "assigned", { count: add.length, card_ids: add.slice(0, 60) });
-  if (drop.length) await logAccessEvent(supabase, me.id, userId, "unassigned", { count: drop.length, card_ids: drop.slice(0, 60) });
   revalidatePath("/users");
   return { ok: true, message: add.length || drop.length ? `담당 과제 ${want.size}장으로 맞췄습니다(추가 ${add.length} · 제외 ${drop.length}).` : "바뀐 것이 없습니다." };
 }
@@ -294,10 +295,9 @@ async function applyPlanned(
   const assign = async (userId: string) => (autoAssign && !pmo && plan.teamId !== null ? await assignTeamCards(db, me.id, userId, plan.teamId) : 0);
 
   if (!existing) {
-    const made = await createAccount(db, plan.email, plan.name, pmo ? { team_id: plan.teamId, role: "pmo" } : { team_id: plan.teamId });
+    const made = await createAccount(db, me.id, "paste", plan.email, plan.name, pmo ? { team_id: plan.teamId, role: "pmo" } : { team_id: plan.teamId });
     if (!made.ok) return fail(made.message);
     const assigned = await assign(made.id);
-    await logAccessEvent(db, me.id, made.id, "user_added", { via: "paste", role: plan.role, team_id: plan.teamId, assigned });
     const what = pmo ? "성과관리팀 계정을 만들었습니다" : "계정을 만들었습니다";
     return { line, email: plan.email, status: "created", message: assigned ? `계정을 만들고 팀 과제 ${assigned}장을 담당으로 지정했습니다` : what, assigned };
   }
@@ -312,8 +312,6 @@ async function applyPlanned(
   }
   const assigned = await assign(existing.id);
   const teamChanged = existing.teamId !== plan.teamId;
-  if (plan.status === "update") await logAccessEvent(db, me.id, existing.id, "user_updated", { via: "paste", changes: plan.changes, role: plan.role, assigned });
-  else if (assigned) await logAccessEvent(db, me.id, existing.id, "assigned", { via: "paste", count: assigned });
   if (plan.status === "update") {
     const note = teamChanged && !autoAssign && !pmo ? " (팀이 바뀌어 이전 담당 과제는 해제되었습니다)" : "";
     return { line, email: plan.email, status: "updated", message: `${plan.changes.join(" · ")}${assigned ? ` · 팀 과제 ${assigned}장 지정` : ""}${note}`, assigned };

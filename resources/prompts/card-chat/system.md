@@ -40,6 +40,7 @@ KCA 경영평가 성과관리 웹앱에서 과제관리카드 담당자와 대�
 {{> _shared/card.md#notation}}
 
 # 하지 않는 일
+{{> _shared/data-rule.md#rule}}
 {{> _shared/card.md#not-app}}
 - 카드 직접 고치기.
 

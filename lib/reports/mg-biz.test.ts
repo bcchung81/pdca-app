@@ -1,7 +1,7 @@
 // 경영관리 경평 초안의 「주요사업 초안 참고」(lib/reports/mg-biz.ts) — 요청 자료·숫자 근거(그 초안의 없는 숫자는 가림)·초안 근거 목록(2026-11-12)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BIZ_MASK, bizMaterials, bizMissing, maskNumbers, withBizSources, withoutBizFiles } from "./mg-biz.ts";
+import { BIZ_MASK, bizMaterials, bizMissing, bizUnknown, maskNumbers, withBizSources, withoutBizFiles } from "./mg-biz.ts";
 import { mgStoryHintsOf } from "./story-hints-mg.ts";
 import type { BizRefText } from "./mg-biz-queries.ts";
 import type { Block } from "./blocks.ts";
@@ -31,7 +31,7 @@ const ref = (over: Partial<BizRefText> = {}): BizRefText => ({
   taskNo: "3-나",
   title: "가짜 방송 지원사업",
   team: "가짜팀",
-  data: { taskNo: "3-나", title: "가짜 방송 지원사업", plan: { content: "현장 컨설팅 운영 계획" } },
+  data: { taskNo: "3-나", title: "가짜 방송 지원사업", outcome: { quantitative: ["현장 컨설팅 1,234건"] } },
   spec: bizSpec(["현장 컨설팅 1,234건 지원", "만족도 87.5% 달성"]),
   stamp: "a".repeat(32),
   updatedAt: "2026-11-10T00:00:00Z",
@@ -61,7 +61,7 @@ test("bizMaterials: 주요사업마다 원장 → 경평 초안 → 붙임(원�
   assert.match(draft.text, /만족도 87\.5% 달성/, "AI가 보는 초안 글은 원문 그대로(없는 숫자도)");
   assert.match(m.prompt, /\[주요사업 자료\] 주요사업3 3-나 가짜 방송 지원사업 — 경평 초안\n/);
   assert.doesNotMatch(m.known, /87\.5%/, "숫자 근거 글에서는 가림");
-  assert.match(m.known, /1,234/);
+  assert.match(m.known, /현장 컨설팅 1,234건 지원/, "원장에 있는 숫자는 초안 글에서도 가리지 않음");
   assert.match(m.quote, /87\.5%/, "인용 대조는 원문");
   // 이 카드 첨부(MaterialDoc card·report)와 섞이지 않게 docs의 id는 요청 안 열쇠
   assert.ok(m.docs.every((d) => d.id.startsWith("주요사업3/3-나#")));
@@ -79,9 +79,22 @@ test("숫자 근거: 그 주요사업 초안의 없는 숫자는 경영관리 �
   const inLedger = bizMaterials([ref({ data: { taskNo: "3-나", outcome: { quantitative: ["만족도 87.5%"] } } })]);
   const k2 = knownNumbers(mgCard, inLedger.known);
   assert.ok(k2.has("87.5%"));
-  // 없는 숫자가 없는 초안은 초안 숫자 전부 인정
-  const clean = bizMaterials([ref({ unknownNumbers: [] })]);
-  assert.ok(knownNumbers(mgCard, clean.known).has("87.5%"));
+  // 저장값(unknown_numbers)을 비운 초안이라도 원장·붙임에 없는 숫자는 다시 세어 가림(2026-11-16 — 저장값을 믿지 않음)
+  const cleared = bizMaterials([ref({ unknownNumbers: [] })]);
+  assert.ok(!knownNumbers(mgCard, cleared.known).has("87.5%"), "저장값을 비운 초안의 지어낸 숫자는 근거가 아님");
+  assert.deepEqual(unknownNumbersIn(mgDraft, (t) => knownNumbers(mgCard, cleared.known).has(t.replace(/,/g, ""))), ["87.5%"]);
+  // 붙임에 그 숫자가 있으면 저장값이 비어도 근거
+  const inFile = bizMaterials([ref({ unknownNumbers: [], files: [{ kind: "card", id: "m1", name: "결과보고.hwpx", text: "만족도 87.5%" }] })]);
+  assert.ok(knownNumbers(mgCard, inFile.known).has("87.5%"));
+});
+
+test("bizUnknown: 없는 숫자 = 저장값 ∪ 원장·붙임으로 다시 센 값 — 원장·붙임 숫자로 셈한 값은 남고, 저장값에만 있는 숫자도 가림", () => {
+  const spec = bizSpec(["목표 1,000건 대비 1,234건(123.4%) 달성", "만족도 87.5% 달성"]);
+  const r = ref({ spec, unknownNumbers: [], data: { taskNo: "3-나", outcome: { quantitative: ["목표 1,000건"] } }, files: [{ kind: "card", id: "m1", name: "결과보고.hwpx", text: "실적 1,234건" }] });
+  assert.deepEqual(bizUnknown(spec, r), ["87.5%"], "123.4%는 원장·붙임 두 값의 비율이라 근거");
+  assert.deepEqual(bizUnknown(spec, { ...r, unknownNumbers: ["1,234"] }), ["1,234", "87.5%"], "저장값은 그대로 더함(더 가리는 쪽)");
+  const known = knownNumbers({ taskNo: "8-1" }, bizMaterials([r]).known);
+  assert.ok(known.has("123.4%") && !known.has("87.5%"));
 });
 
 test("bizMaterials: 초안 형식이 아니면 초안 글 없이 원장·붙임만, 빈 붙임은 뺌", () => {

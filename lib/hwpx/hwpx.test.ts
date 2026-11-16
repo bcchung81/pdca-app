@@ -131,3 +131,14 @@ test("부호 문단 내어쓰기(2026-10-28): 본문 □·ㅇ·-·※는 kordoc 
     if (t.startsWith("∙")) assert.equal(pp.indent, -Math.round(em * MARK_CELL_EM.narrow), "표 칸 반각 부호 1.2em");
   }
 });
+
+test("긴 글도 빨리 끝남: 줄 끝 공백이 긴 줄(kordoc 입력) · == 표지가 많은 강조 글(후처리)", async () => {
+  let t0 = performance.now();
+  const ki = toKordocInput(`제목\n ○ 가${" ".repeat(100000)}나   `);
+  assert.ok(ki.startsWith("# 제목\n  - 가 ") && ki.endsWith(" 나\n"), "줄 끝 공백만 걷힘");
+  assert.ok(performance.now() - t0 < 200, "줄 끝 공백");
+  t0 = performance.now();
+  const { summary } = await draftToKcaHwpx(`# 제목\n\n□ 추진배경\n\n ○ ==강조== 정상 문장\n\n ○ 가${"=".repeat(20000)} 끝\n`);
+  assert.equal(summary.highlights, 1);
+  assert.ok(performance.now() - t0 < 3000, "== 많은 글");
+});

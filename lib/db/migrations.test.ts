@@ -293,13 +293,94 @@ test("성과관리팀 승격(붙여넣기 등록의 권한 열): 관리자만 �
   assert.ok((await as("inspector", () => count("select 1 from public.cards"))) < 59);
 });
 
-test("권한 변경 기록(access_events): 성과관리팀이 자기 이름으로 남기고 읽는다, 담당자는 못 본다", { skip: NO_SEED_CARDS }, async () => {
+test("권한 변경 기록(access_events, 20261116120000 — 감사 기록): 역할·팀·활성·담당 지정을 바꾸면 DB 트리거가 행위자와 바뀐 값을 남기고, 로그인 사용자는 직접 넣지 못하며(위조 막기), 담당자는 못 읽는다", { skip: NO_SEED_CARDS }, async () => {
+  type Ev = { actor_id: string | null; target_user_id: string; action: string; detail: Record<string, unknown> };
+  const take = async () => {
+    const r = (await db.query<Ev>("select actor_id, target_user_id, action, detail from public.access_events order by id")).rows;
+    await db.query("delete from public.access_events");
+    return r;
+  };
+  const qi = await teamId("검사기획팀");
+  const lic = await teamId("자격기획팀");
+  await db.query("delete from public.access_events");
+
+  // 로그인 사용자는 누구 이름으로도 직접 넣지 못함(성과관리팀·관리자 포함)
   const ins = "insert into public.access_events (actor_id, target_user_id, action, detail) values ($1, $2, 'user_added', '{}'::jsonb)";
-  await as("pmo", () => db.query(ins, [users.pmo, users.license]));
-  await rejects(() => as("pmo", () => db.query(ins, [users.admin, users.license])), /row-level security/);
-  await rejects(() => as("inspector", () => db.query(ins, [users.inspector, users.license])), /row-level security/);
-  assert.equal(await as("pmo", () => count("select 1 from public.access_events")), 1);
+  for (const who of ["pmo", "admin", "inspector"] as const) {
+    await rejects(() => as(who, () => db.query(ins, [users[who], users.license])), /permission denied/);
+  }
+  await rejects(() => as("pmo", () => db.query("update public.access_events set action = 'x'")), /permission denied/);
+  await rejects(() => as("pmo", () => db.query("delete from public.access_events")), /permission denied/);
+
+  // 성과관리팀이 직접(PostgREST) 팀을 바꾸면: user_updated(바뀐 칸만) + 딸려 해제된 담당 지정(auto)
+  const licCards = (await db.query<{ card_id: string }>("select card_id from public.card_assignees where user_id = $1 order by card_id", [users.license])).rows.map((r) => r.card_id);
+  assert.ok(licCards.length > 0, "앞 시험이 팀 과제를 지정해 둠");
+  await as("pmo", () => db.query("update public.profiles set team_id = $1 where id = $2", [qi, users.license]));
+  assert.deepEqual(await take(), [
+    { actor_id: users.pmo, target_user_id: users.license, action: "user_updated", detail: { team: { from: lic, to: qi } } },
+    { actor_id: users.pmo, target_user_id: users.license, action: "unassigned", detail: { count: licCards.length, card_ids: licCards.slice(0, 60), auto: true } },
+  ]);
+
+  // 이름만 바꾸면 남기지 않음, 활성 바꾸기는 중지·복구
+  const name0 = (await db.query<{ display_name: string }>("select display_name from public.profiles where id = $1", [users.license])).rows[0].display_name;
+  await as("pmo", () => db.query("update public.profiles set display_name = '이름만' where id = $1", [users.license]));
+  await as("pmo", () => db.query("update public.profiles set active = false where id = $1", [users.license]));
+  await as("pmo", () => db.query("update public.profiles set active = true, team_id = $1 where id = $2", [lic, users.license]));
+  assert.deepEqual(await take(), [
+    { actor_id: users.pmo, target_user_id: users.license, action: "user_deactivated", detail: { active: { from: true, to: false } } },
+    { actor_id: users.pmo, target_user_id: users.license, action: "user_restored", detail: { team: { from: qi, to: lic }, active: { from: false, to: true } } },
+  ]);
+
+  // 담당 지정: 한 번에 여러 과제를 넣어도 사용자마다 한 줄, 빼기도 같음(직접 뺀 것은 auto 없음)
+  const two = licCards.slice(0, 2).sort();
+  await as("pmo", () => db.query("insert into public.card_assignees (card_id, user_id, assigned_by) select unnest($1::text[]), $2, $3", [two, users.license, users.pmo]));
+  await as("pmo", () => db.query("insert into public.card_assignees (card_id, user_id) values ($1, $2) on conflict do nothing", [two[0], users.license]));
+  await as("pmo", () => db.query("delete from public.card_assignees where user_id = $1 and card_id = $2", [users.license, two[1]]));
+  assert.deepEqual(await take(), [
+    { actor_id: users.pmo, target_user_id: users.license, action: "assigned", detail: { count: 2, card_ids: two } },
+    { actor_id: users.pmo, target_user_id: users.license, action: "unassigned", detail: { count: 1, card_ids: [two[1]] } },
+  ], "이미 있는 지정(on conflict do nothing)은 남기지 않음");
+
+  // 관리자의 역할 변경
+  await as("admin", () => db.query("update public.profiles set role = 'pmo' where id = $1", [users.license]));
+  await as("admin", () => db.query("update public.profiles set role = 'dept_user' where id = $1", [users.license]));
+  assert.deepEqual(await take(), [
+    { actor_id: users.admin, target_user_id: users.license, action: "user_updated", detail: { role: { from: "dept_user", to: "pmo" } } },
+    { actor_id: users.admin, target_user_id: users.license, action: "unassigned", detail: { count: 1, card_ids: [two[0]], auto: true } },
+    { actor_id: users.admin, target_user_id: users.license, action: "user_updated", detail: { role: { from: "pmo", to: "dept_user" } } },
+  ]);
+
+  // 서비스 키(계정 만들기·pnpm db:user)는 행위자 없이 경로만
+  await db.exec("set role service_role");
+  try {
+    await db.query("update public.profiles set team_id = $1 where id = $2", [qi, users.license]);
+    await db.query("update public.profiles set team_id = $1 where id = $2", [lic, users.license]);
+  } finally {
+    await db.exec("reset role");
+  }
+  const sys = await take();
+  assert.deepEqual(sys.map((e) => [e.actor_id, e.action, e.detail.via]), [[null, "user_updated", "system"], [null, "user_updated", "system"]]);
+
+  // 읽기: 성과관리팀·관리자만
+  await as("pmo", () => db.query("update public.profiles set active = false where id = $1", [users.license]));
+  await as("pmo", () => db.query("update public.profiles set active = true where id = $1", [users.license]));
+  assert.equal(await as("pmo", () => count("select 1 from public.access_events")), 2);
+  assert.equal(await as("admin", () => count("select 1 from public.access_events")), 2);
   assert.equal(await as("inspector", () => count("select 1 from public.access_events")), 0);
+  assert.equal(await as("license", () => count("select 1 from public.access_events")), 0, "자기 기록도 못 봄");
+  await db.query("update public.profiles set display_name = $1 where id = $2", [name0, users.license]);
+  await assignTeams(); // 뒤의 시험을 위해 팀 과제 전체 지정을 되돌림
+});
+
+test("권한 변경 기록: 계정이 지워지는 연쇄(auth.users 삭제 → 프로필 → 담당 지정)는 기록 때문에 막히지 않는다", { skip: NO_SEED_CARDS }, async () => {
+  const tmp = "00000000-0000-0000-0000-0000000000aa";
+  await db.query("insert into auth.users (id, email) values ($1, 'tmp@kca.test')", [tmp]);
+  await db.query("update public.profiles set team_id = $1 where id = $2", [await teamId("자격기획팀"), tmp]);
+  await db.query("insert into public.card_assignees (card_id, user_id) values ($1, $2)", [await cardOf("자격기획팀"), tmp]);
+  await db.query("delete from auth.users where id = $1", [tmp]);
+  assert.equal(await count("select 1 from public.profiles where id = $1", [tmp]), 0);
+  assert.equal(await count("select 1 from public.access_events where target_user_id = $1", [tmp]), 0, "지워진 계정의 기록은 대상 칸이 비워짐(on delete set null)");
+  await db.query("delete from public.access_events");
 });
 
 test("본부 표기 정정(20260930120000): 방송콘텐츠진흥팀의 방송미디어부만 방송미디어본부로 바뀌고 여러 번 돌려도 같다", { skip: NO_SEED_CARDS }, async () => {

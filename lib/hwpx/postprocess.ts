@@ -224,7 +224,10 @@ function mapRuns(p: string, f: (id: string) => string): { xml: string; changed: 
 /** ==…== 표지 → 노란 음영+볼드 run(한 hp:t 안의 글에서만, 짝이 맞을 때) */
 function highlightRuns(p: string, cp: CharPrs): { xml: string; count: number } {
   let count = 0;
-  const xml = p.replace(/<hp:run charPrIDRef="(\d+)"><hp:t>([^<]*==[^<]*==[^<]*)<\/hp:t><\/hp:run>/g, (all, id: string, text: string) => {
+  // run 글을 먼저 선형으로 뽑고 겹치지 않는 == 두 개가 있는지는 indexOf로 봄(예전 [^<]*==[^<]*==[^<]* 정규식과 같은 run을 고르되 긴 글도 선형 — 2026-11-16)
+  const xml = p.replace(/<hp:run charPrIDRef="(\d+)"><hp:t>([^<]*)<\/hp:t><\/hp:run>/g, (all, id: string, text: string) => {
+    const first = text.indexOf("==");
+    if (first < 0 || text.indexOf("==", first + 2) < 0) return all;
     const parts = text.split(/(==[^=]+?==)/);
     if (parts.length < 3) return all;
     const hl = cp.highlighted(id);

@@ -2,6 +2,7 @@
 // 항목 목록·구분(지적 N / ①-N)·원문은 조각에서 정해지고, AI는 항목마다 이 과제 소관 여부·결과(예/부분/아니오/해당 없음)·반영과제·비고만 냅니다(지침 13 [자가진단 체크리스트 대조 — 5블록]).
 // 이 블록은 7대축·질의패턴·정합성 판정과 집계에 넣지 않습니다(model.ts가 보장).
 
+import { escapeXml } from "../ai/envelope.ts";
 import { type ChecklistBlock, type ChecklistResult, type ChecklistRow, CHECKLIST_RESULTS } from "./model.ts";
 
 /** 체크리스트 조각(checklist_group) 중 이 모듈이 읽는 칸 */
@@ -58,8 +59,6 @@ export function checklistItems(refs: readonly ChecklistRef[]): ChecklistItem[] {
   }
   return out;
 }
-
-const escapeXml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** 요청 글에 넣는 항목 목록: 줄마다 `<item id label [group]>점검사항</item>` */
 export function checklistItemsBlock(items: readonly ChecklistItem[]): string {

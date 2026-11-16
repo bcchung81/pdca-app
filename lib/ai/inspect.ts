@@ -25,6 +25,7 @@ import {
   formTablesOf,
 } from "../inspections/model.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
+import { dataEnvelope, dataText, escapeXml, unescapeXml } from "./envelope.ts";
 import { type KnowledgeRef, cardOutline } from "./writer.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -114,10 +115,6 @@ export interface InspectContext {
   form?: FormId;
 }
 
-export function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 /** 「붙임2 사례」: key·기관명·주요사업·등급·구분·KCA 여부와 잘한 점·아쉬운 점 */
 export function peerCaseBlock(refs: KnowledgeRef[]): string {
   const peers = refs.filter((r) => r.unitType === "peer_case");
@@ -172,15 +169,15 @@ export function inspectionPrompt(p: PromptSet, card: Json, refs: KnowledgeRef[],
   return [
     r("head"),
     r("period", { period: ctx.period, today: ctx.today, pre: r(ctx.preMonth ? "pre.yes" : "pre.no") }),
-    r("task", { taskNo: card?.taskNo ?? "", title: card?.title ?? "" }),
+    r("task", { taskNo: card?.taskNo ?? "", title: dataText(String(card?.title ?? "")) }),
     ...(b ? [r("business", { name2026: b.name2026, id: b.id, name2025: b.name2025 })] : []),
-    ctx.subBusinesses.length ? r("sub.withList", { target, list: ctx.subBusinesses.join(" · ") }) : r("sub", { target }),
-    r("kind", { kind, exec: [card?.executionTaskNo, card?.executionTask].filter(Boolean).join(". ") || "—" }),
-    r("dept", { dept: card?.deptText || card?.department || "—" }),
+    ctx.subBusinesses.length ? r("sub.withList", { target: dataText(String(target)), list: ctx.subBusinesses.join(" · ") }) : r("sub", { target: dataText(String(target)) }),
+    r("kind", { kind: dataText(kind), exec: dataText([card?.executionTaskNo, card?.executionTask].filter(Boolean).join(". ") || "—") }),
+    r("dept", { dept: dataText(String(card?.deptText || card?.department || "—")) }),
     r("knowledge", { n: knowledge.length, peer: ctx.hasPeerCases ? r("knowledge.peer", { n: peers.length }) : r("knowledge.noPeer") }),
     "",
     r("card"),
-    inspectionCardText(card),
+    dataEnvelope("card", inspectionCardText(card)),
     "",
     r("refs"),
     inspectKnowledgeBlock(knowledge),
@@ -193,7 +190,8 @@ export function inspectionPrompt(p: PromptSet, card: Json, refs: KnowledgeRef[],
 
 /** 인용이 원문에 있는가: 띄어쓰기·문장부호 무시, 「…」로 줄인 조각은 순서대로 모두 있어야 함 */
 export function quoteFound(quote: string, text: string): boolean {
-  const parts = quote
+  // 지식 조각은 이스케이프돼 모델에 가므로 그 꼴(&amp; 등)로 인용해 와도 원문과 같게 봄
+  const parts = unescapeXml(quote)
     .replace(/[「」『』]/g, "")
     .split(/…|\.{3}|⋯/)
     .map(compactKey)

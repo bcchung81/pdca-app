@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { compareTaskNo } from "../cards/view.ts";
+import { dataEnvelope, dataText } from "../ai/envelope.ts";
 import { inspectionCardText } from "../ai/inspect.ts";
 import { revisionNote } from "../knowledge/revision-note.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
@@ -230,31 +231,31 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
   // 카드 원장(작성본 아님)
   const cards = orderedCards(m);
   out.push("", r("cards.head", { count: cards.length }));
-  if (cards.length) for (const c of cards) out.push(r("cards.item", { taskNo: c.taskNo, title: c.title, rev: Number(c.dataRev ?? 0), text: inspectionCardText(c.data) }));
+  if (cards.length) for (const c of cards) out.push(r("cards.item", { taskNo: c.taskNo, title: c.title, rev: Number(c.dataRev ?? 0), text: dataEnvelope("card", inspectionCardText(c.data)) }));
   else out.push(r("cards.none"));
   // 과제별 초안(목차 순)
   const drafts = draftTexts(m);
   out.push("", r("drafts.head"));
-  for (const c of cards) out.push(drafts.has(c.id) ? r("drafts.item", { taskNo: c.taskNo, text: drafts.get(c.id)! }) : r("drafts.missing", { taskNo: c.taskNo }));
+  for (const c of cards) out.push(drafts.has(c.id) ? r("drafts.item", { taskNo: c.taskNo, text: dataText(drafts.get(c.id)!) }) : r("drafts.missing", { taskNo: c.taskNo }));
   // 올해 계량 실적(카드 정량 성과 칸에서 계량 행에 붙은 줄 — actuals.ts yearActuals wide, 경영관리 카드 초안과 같은 규칙)
   const kpiLines = cards.flatMap((c) => yearActuals(c.data, m.today, { wide: true }).kpi.flatMap((k) => (k.outcome ? [r("actuals.item", { taskNo: c.taskNo, name: k.name, actual: k.outcome })] : [])));
   out.push("", r("actuals.head", { yy: yy(year) }), ...(kpiLines.length ? kpiLines : [r("actuals.none")]));
   // '25 평가위원 지적(원문 — 인용 대조용, 숫자 근거 아님)
-  out.push("", r("evaluator.head", { prevYY: yy(year - 1) }), ...(m.evaluator.length ? m.evaluator.map((c) => r("evaluator.item", { title: oneLine(c.title ?? c.chunk_key), text: c.text })) : [r("evaluator.none")]));
+  out.push("", r("evaluator.head", { prevYY: yy(year - 1) }), ...(m.evaluator.length ? m.evaluator.map((c) => r("evaluator.item", { title: oneLine(c.title ?? c.chunk_key), text: dataText(c.text) })) : [r("evaluator.none")]));
   // 시정조치 계획(약속 표지 — revisionNote의 PLAN_NOTE 그대로)
   out.push(
     "",
     r("corrective.head"),
-    ...(input.corrective.length ? input.corrective.map((c) => r("corrective.item", { title: oneLine(c.title ?? c.chunk_key), note: revisionNote({ chunk_key: c.chunk_key, unit_type: c.unit_type ?? "corrective_action", meta: c.meta }) ?? "", text: c.text })) : [r("corrective.none")]),
+    ...(input.corrective.length ? input.corrective.map((c) => r("corrective.item", { title: oneLine(c.title ?? c.chunk_key), note: revisionNote({ chunk_key: c.chunk_key, unit_type: c.unit_type ?? "corrective_action", meta: c.meta }) ?? "", text: dataText(c.text) })) : [r("corrective.none")]),
   );
   // 2025 같은 장(카드 밖 장만)
   const same = m.report2025.filter((c) => OUT_OF_CARD.has(String(c.meta?.chapter ?? "")));
-  out.push("", r("report2025.head"), ...(same.length ? same.map((c) => r("report2025.item", { title: oneLine(c.title ?? c.chunk_key), text: c.text })) : [r("report2025.none")]));
-  out.push("", r("core.head"), ...(input.core.length ? input.core.map((c) => r("core.item", { title: oneLine(c.title ?? c.chunk_key), text: c.text })) : [r("core.none")]));
+  out.push("", r("report2025.head"), ...(same.length ? same.map((c) => r("report2025.item", { title: oneLine(c.title ?? c.chunk_key), text: dataText(c.text) })) : [r("report2025.none")]));
+  out.push("", r("core.head"), ...(input.core.length ? input.core.map((c) => r("core.item", { title: oneLine(c.title ?? c.chunk_key), text: dataText(c.text) })) : [r("core.none")]));
   out.push(
     "",
     r("handbook.head"),
-    ...(m.handbook.length ? m.handbook.map((c) => r("handbook.item", { title: oneLine(c.title ?? c.chunk_key), note: revisionNote({ chunk_key: c.chunk_key, unit_type: c.unit_type ?? "handbook_indicator", meta: c.meta }) ?? "", text: c.text })) : [r("handbook.none")]),
+    ...(m.handbook.length ? m.handbook.map((c) => r("handbook.item", { title: oneLine(c.title ?? c.chunk_key), note: revisionNote({ chunk_key: c.chunk_key, unit_type: c.unit_type ?? "handbook_indicator", meta: c.meta }) ?? "", text: dataText(c.text) })) : [r("handbook.none")]),
   );
   // 쓸 칸(행마다)
   out.push("", r("rows.head"));

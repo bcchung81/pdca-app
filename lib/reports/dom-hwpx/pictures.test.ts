@@ -78,6 +78,23 @@ test("CSS url(…) 읽기: 따옴표 둘·없음, 여러 층(그라데이션 사
   assert.deepEqual(cssUrls("none"), []);
 });
 
+test("CSS url(…) 읽기: 예전 정규식과 같은 결과(무작위 표본), 긴 값도 빨리 끝남", () => {
+  const old = (v: string) =>
+    [...v.matchAll(/url\(\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)"'\s]*))\s*\)/g)]
+      .map((m) => (m[1] ?? m[2] ?? m[3] ?? "").replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_x, hex: string | undefined, ch: string | undefined) => (hex ? String.fromCodePoint(parseInt(hex, 16)) : (ch ?? ""))))
+      .filter(Boolean);
+  const bits = ["url(", "url(", '"', "'", "\\", " ", "\n", ")", "(", "a", "b", "u", ", "];
+  let seed = 11;
+  const rnd = (n: number) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % n;
+  for (let i = 0; i < 30000; i++) {
+    const v = Array.from({ length: 1 + rnd(14) }, () => bits[rnd(bits.length)]).join("");
+    assert.deepEqual(cssUrls(v), old(v), JSON.stringify(v));
+  }
+  const t0 = performance.now();
+  for (const v of [`url(${" ".repeat(100000)}x`, "url(".repeat(25000), `url("${"url(".repeat(25000)}`, `url(a${" ".repeat(100000)}b`]) cssUrls(v);
+  assert.ok(performance.now() - t0 < 200, "긴 값");
+});
+
 /** 합성 스냅숏 상자 */
 function style(o: Partial<SnapStyle> = {}): SnapStyle {
   const side = { w: 0, style: "none", color: "rgb(0, 0, 0)" };

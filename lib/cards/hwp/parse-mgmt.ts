@@ -6,7 +6,8 @@
 import { type Cell, type Line, type Table, buildGrid, cellLines, key, plainText, splitBlocks } from "./parse.ts";
 
 const nospace = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, "");
-const strip = (s: string) => s.replace(/^[\s ]+|[\s ]+$/g, "");
+// 예전 [\s ]+ 앞뒤 걷기와 같은 결과(\s와 trim은 같은 글자 집합) — 정규식은 공백이 긴 글에서 2제곱이라 trim으로(2026-11-16)
+const strip = (s: string) => s.trim();
 const isStr = (x: Line): x is string => typeof x === "string";
 const textOf = (c: Cell | undefined | null, sep = " ") => (c ? plainText(c, sep) : "");
 const hasContent = (c: Cell) => cellLines(c).length > 0;

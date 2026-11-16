@@ -6,6 +6,7 @@ import { pathLabel, sectionTitle } from "../cards/path-label.ts";
 import { type CardEdit, type EditTarget, valueAt } from "../cards/patch.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
+import { dataEnvelope, dataText, escapeXml } from "./envelope.ts";
 import { FILES_SECTIONS, type PromptFile, filesBlock } from "./writer.ts";
 import type { LooseJson } from "../loose-json.ts";
 import { COMMENT_TEXT_MAX } from "../cards/limits.ts";
@@ -61,10 +62,6 @@ export function commentResultSchema(desc?: Descriptions) {
 export const CommentResultSchema = commentResultSchema();
 export type CommentResult = z.infer<typeof CommentResultSchema>;
 
-function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 /** 편집할 수 있는 칸 전부를 문서 순서로: 경로 [줄|칸] | 글 */
 export function commentOutline(card: Json, targets: Map<string, EditTarget>): string {
   const out: string[] = [];
@@ -93,7 +90,7 @@ export interface CommentRequest {
 /** kb = 이 과제 기준 공통 지식 목록(lib/knowledge/bundle.ts listText — ①~③ 글은 요청 앞에 따로) */
 export function commentPrompt(p: PromptSet, card: Json, targets: Map<string, EditTarget>, kb: string, req: CommentRequest): string {
   const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
-  const parts = [r("prompt", { period: req.periodLabel, taskNo: card.taskNo ?? "", title: card.title ?? "", card: commentOutline(card, targets) })];
+  const parts = [r("prompt", { period: req.periodLabel, taskNo: card.taskNo ?? "", title: dataText(String(card.title ?? "")), card: dataEnvelope("card", commentOutline(card, targets)) })];
   for (const c of req.comments) {
     const at = c.path ? `${c.path} (${pathLabel(c.path, card)})` : r("comment.wholeCard");
     parts.push(`<comment id="${escapeXml(c.id)}" kind="${COMMENT_KINDS[c.kind]}" at="${escapeXml(at)}">`);

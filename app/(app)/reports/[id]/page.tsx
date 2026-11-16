@@ -14,6 +14,7 @@ import { returnTarget, withReturn } from "../../../../lib/nav/return-to.ts";
 import { REPORT_STATUS_LABEL, readBlocks } from "../../../../lib/reports/model.ts";
 import { getReport, listComments, loadSubmitCards, loadTeamSubmitCards, submitKey } from "../../../../lib/reports/queries.ts";
 import { REPORT_CSS } from "../../../../lib/reports/section-css.ts";
+import { recountSubmitCards } from "../../../../lib/reports/draft-recount-queries.ts";
 import { sectionHtml } from "../../../../lib/reports/section-html.ts";
 import { missingLabel, submitReadiness, withTeamCards } from "../../../../lib/reports/submission.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
@@ -43,9 +44,10 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
   const deptView = Boolean(scope);
   const viewTeam = scope?.team ?? null;
   const teamQ = deptView ? `team=${encodeURIComponent(teamParam)}` : "";
+  // 과제별 초안의 없는 숫자는 저장값만 믿지 않고 다시 셈(2026-11-16 — 점선·확인 목록 건수, lib/reports/draft-recount*.ts)
   const [comments, cardsForReport, teamCards] = await Promise.all([
     listComments(supabase, id),
-    loadSubmitCards(supabase, report.year, { evalUnitId: report.evalUnitId, teamId: report.teamId }).then((m) => m.get(submitKey(report.evalUnitId, report.teamId)) ?? []),
+    loadSubmitCards(supabase, report.year, { evalUnitId: report.evalUnitId, teamId: report.teamId }).then((m) => recountSubmitCards(supabase, report, m.get(submitKey(report.evalUnitId, report.teamId)) ?? [])),
     loadTeamSubmitCards(supabase, id),
   ]);
   const readiness = submitReadiness(cardsForReport);

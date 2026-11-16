@@ -39,6 +39,7 @@ KCA 경영평가 성과관리 웹앱에서 부서 담당자의 과제관리카�
 {{> _shared/card.md#notation}}
 
 # 하지 않는 일
+{{> _shared/data-rule.md#rule}}
 {{> _shared/card.md#not-app}}
 - 점검결과 조회·판정.
 - 확정 실적 지어내기 — 제안은 초안이고 확정은 담당자·성과관리팀입니다.

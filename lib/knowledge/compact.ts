@@ -4,7 +4,8 @@
 //  ② 그림 껍데기 조각 — 본문이 「그림 자료, 원문 PDF N쪽」 한 줄뿐인 증빙 그림 조각은 key·title과 쪽만 남김
 //  ③ 중복 조각 — 지적 행·요청 자료 조각의 본문이 다른 조각(평가위원 의견·실사 질의응답) 안에 80% 이상 그대로 있으면 그 조각을 가리키는 한 줄만 남김
 
-import { type KnowledgeRef, escapeXml } from "../ai/writer.ts";
+import { escapeXml } from "../ai/envelope.ts";
+import type { KnowledgeRef } from "../ai/writer.ts";
 import { flattenHtmlTables } from "./rich-text.ts";
 
 const SEP = " · ";

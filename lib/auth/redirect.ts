@@ -59,8 +59,15 @@ export function authCallbackSearch(pathname: string, sp: URLSearchParams): strin
 
 /** 로그인 메일을 요청할 수 있는 메일 모양인가. 계정은 「사용자」 화면(성과관리팀·관리자)이나 `pnpm db:user`로만 만듦 — 로그인으로는 만들지 않음(Supabase 가입 꺼 둠, 2026-11-10 보안 점검 T4 H1) */
 export function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const e = email.trim();
+  // 길이 상한(메일 주소 최대 254자)을 먼저 보고, 겹침 없는 정규식 + 점 위치 검사로 — 긴 입력도 선형 시간(2026-11-16 시큐어 코딩 점검).
+  // 판정은 예전 /^[^\s@]+@[^\s@]+\.[^\s@]+$/와 같음: @ 하나, 앞뒤 비지 않음, 도메인 첫·끝 글자가 아닌 자리에 점
+  if (e.length > EMAIL_MAX || !/^[^\s@]+@[^\s@]+$/.test(e)) return false;
+  const domain = e.slice(e.indexOf("@") + 1);
+  return domain.slice(1, -1).includes(".");
 }
+/** 메일 주소 최대 길이(RFC 5321 경로 상한 256 − 꺾쇠 2) */
+export const EMAIL_MAX = 254;
 
 /**
  * 등록 안 된 주소라서 난 매직링크 오류인가(가입을 끈 Supabase가 shouldCreateUser:false 요청에 돌려줌 — 코드 otp_disabled·「Signups not allowed for otp」).

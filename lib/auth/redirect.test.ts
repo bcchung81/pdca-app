@@ -29,6 +29,22 @@ test("로그인 메일 요청: 메일 모양만 봄(기관·외부 구별 없음
   for (const e of ["broken", "a@b", "a b@kca.kr", ""]) assert.equal(isValidEmail(e), false, e);
 });
 
+test("메일 모양 판정: 254자 안에서는 예전 정규식과 같은 답, 긴 입력도 빨리 끝남", () => {
+  const old = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+  const abc = ["a", "@", ".", " ", "\t", "가"];
+  let seed = 7;
+  const rnd = (n: number) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % n;
+  for (let i = 0; i < 20000; i++) {
+    const s = Array.from({ length: 1 + rnd(10) }, () => abc[rnd(abc.length)]).join("");
+    assert.equal(isValidEmail(s), old(s), JSON.stringify(s));
+  }
+  assert.equal(isValidEmail(`${"a".repeat(64)}@${"b".repeat(186)}.kr`), true, "254자");
+  assert.equal(isValidEmail(`${"a".repeat(64)}@${"b".repeat(187)}.kr`), false, "255자");
+  const t0 = performance.now();
+  for (const s of [`a@${".".repeat(100000)}@`, `a@${"b".repeat(100000)}`, " ".repeat(100000)]) assert.equal(isValidEmail(s), false);
+  assert.ok(performance.now() - t0 < 200, "긴 입력");
+});
+
 test("등록 안 된 주소 오류 알아보기(가입 끈 Supabase의 답) — 화면은 보낸 것과 같은 답(계정 여부를 알리지 않음)", () => {
   assert.equal(isNotRegisteredError({ code: "otp_disabled", message: "Signups not allowed for otp" }), true);
   assert.equal(isNotRegisteredError({ message: "Signups not allowed for otp" }), true, "코드가 없어도 문구로");
