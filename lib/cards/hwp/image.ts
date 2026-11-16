@@ -16,6 +16,10 @@ export interface WebImage {
 
 const JPEG_QUALITY = 85;
 
+/** 그림 픽셀 수 상한. kordoc `MAX_PIXELS`(node_modules/kordoc, 36e6)와 같은 값 — 헤더만 크게 속인 그림이 메모리를 잡지 못하게 하는 크기 안전 상한 */
+export const MAX_IMAGE_PIXELS = 36e6;
+const MAX_IMAGE_MP = MAX_IMAGE_PIXELS / 1e6;
+
 const isBmp = (b: Uint8Array) => b.length > 26 && b[0] === 0x42 && b[1] === 0x4d;
 
 /** 마스크 → (자리, 비트 수) */
@@ -42,7 +46,7 @@ export function decodeBmp(b: Uint8Array): { width: number; height: number; rgba:
   const comp = core ? 0 : dv.getUint32(30, true);
   const colors = core || b.length < 50 ? 0 : dv.getUint32(46, true);
   const height = Math.abs(rawH);
-  if (width <= 0 || height <= 0 || width > 20000 || height > 20000) return null;
+  if (width <= 0 || height <= 0 || width > 20000 || height > 20000 || width * height > MAX_IMAGE_PIXELS) return null;
   if (comp !== 0 && comp !== 3 && comp !== 6) return null; // RLE·JPEG·PNG 담긴 BMP 등은 그대로 둠
   if (![1, 4, 8, 16, 24, 32].includes(bpp)) return null;
   // 비트필드: 머리 안(52바이트 이상) 또는 머리 바로 뒤(40바이트 머리)
@@ -214,9 +218,11 @@ export function decodePng(b: Uint8Array): { width: number; height: number; rgba:
   }
   const channels = color === 6 ? 4 : color === 2 ? 3 : color === 0 ? 1 : color === 4 ? 2 : 0;
   if (!width || !height || depth !== 8 || !channels || interlace) return null;
+  if (width * height > MAX_IMAGE_PIXELS) return null;
   let raw: Buffer;
   try {
-    raw = inflateSync(Buffer.concat(idat));
+    // 풀린 크기는 헤더가 말하는 크기(줄마다 필터 1바이트 포함)를 넘을 수 없음 — 넘게 부풀린 스트림은 오류로 거절
+    raw = inflateSync(Buffer.concat(idat), { maxOutputLength: (width * channels + 1) * height });
   } catch {
     return null;
   }
@@ -288,7 +294,7 @@ export function jpegOnWhite(data: Uint8Array, name: string, maxBytes: number): (
   let img: { width: number; height: number; rgba: Uint8Array } | null = isBmp(data) ? decodeBmp(data) : decodePng(data);
   if (!img && data[0] === 0xff && data[1] === 0xd8) {
     try {
-      const d = jpeg.decode(data, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 2048, maxResolutionInMP: 400 });
+      const d = jpeg.decode(data, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 2048, maxResolutionInMP: MAX_IMAGE_MP });
       img = { width: d.width, height: d.height, rgba: d.data };
     } catch {
       img = null;

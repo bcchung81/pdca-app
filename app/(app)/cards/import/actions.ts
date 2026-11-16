@@ -56,7 +56,7 @@ interface LoadedImportItem {
   candidates: string[];
   new_uid: string;
   status: string;
-  imp: { id: number; scope: "ledger" | "draft"; files: ImportFileMeta[] | null } | null;
+  imp: { id: number; scope: "ledger" | "draft"; target_card_id: string | null; files: ImportFileMeta[] | null } | null;
 }
 
 export interface ImportDecision {
@@ -256,7 +256,7 @@ export async function parseCardImport(importId: number): Promise<{ ok: boolean; 
 async function loadItem(supabase: Supabase, importId: number, itemId: number): Promise<LoadedImportItem | null> {
   const { data } = await supabase
     .from("card_import_items")
-    .select("id, import_id, file_n, parsed, layout, match, card_id, candidates, new_uid, status, imp:card_imports(id, scope, files)")
+    .select("id, import_id, file_n, parsed, layout, match, card_id, candidates, new_uid, status, imp:card_imports(id, scope, target_card_id, files)")
     .eq("id", itemId)
     .eq("import_id", importId)
     .maybeSingle();
@@ -462,7 +462,8 @@ export async function applyImportToDraft(
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
   const supabase = await createClient();
   const item = await loadItem(supabase, importId, Number(decision.itemId));
-  if (!item || item.imp?.scope !== "draft") return { ok: false, message: "항목을 찾을 수 없습니다." };
+  // 부서 작성본 묶음의 항목은 그 묶음의 대상 카드에만(parseCardImport가 대상 카드 하나로만 매칭 — DB 가드 guard_card_import_item도 같은 규칙, 20261116100000)
+  if (!item || item.imp?.scope !== "draft" || !item.card_id || item.card_id !== item.imp.target_card_id) return { ok: false, message: "항목을 찾을 수 없습니다." };
   if (item.status !== "pending") return { ok: false, message: "이미 처리한 항목입니다." };
   const { data: card } = await supabase.from("cards").select("id, uid, data, team_id, fixed_locked_at, status").eq("id", item.card_id).maybeSingle();
   if (!card || card.status !== "active") return { ok: false, message: "카드를 찾을 수 없습니다." };

@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { runJob } from "./job-run.ts";
 import { JOB_CRASH_MSG, type JobOutcome, type JobRow, jobState } from "./jobs.ts";
 import { startAiRequest, startAiRequests } from "./request-log.ts";
+import { fakeAiRequestRpc } from "./request-log-fake.ts";
 
 /** 결과·닫기 기록만 남기는 가짜 sink */
 function sink(o: { saveErr?: string; saveThrows?: boolean } = {}) {
@@ -102,7 +103,8 @@ function fakeDb() {
     };
     return q;
   };
-  const db: any = { from: (t: string) => ({ select: () => builder(t, "select"), insert: (p: Row) => builder(t, "insert", p), update: (p: Row) => builder(t, "update", p) }) };
+  // 호출 기록 시작·끝맺기는 rpc(20261116110000 — 가짜는 request-log-fake.ts)
+  const db: any = { from: (t: string) => ({ select: () => builder(t, "select"), insert: (p: Row) => builder(t, "insert", p), update: (p: Row) => builder(t, "update", p) }), rpc: fakeAiRequestRpc(tables.ai_requests, { user: "u1" }) };
   /** GET 라우트가 읽는 모양(호출 기록 + 결과 끝맺음) */
   const jobRow = (id: number): JobRow => {
     const r = tables.ai_requests.find((x) => x.id === id)!;

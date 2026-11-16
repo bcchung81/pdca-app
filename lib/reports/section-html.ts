@@ -233,7 +233,7 @@ function diagramHtml(d: Diagram, u: Marks, label = "", pp?: DiagramPaths, cm: Ce
       // 진행 상태(cm.status): 「지금」은 진행 칸(마지막 칸이 아님), 예정 칸은 k-st--plan, 머리 뒤 상태 표지 — 표지 글은 편집 칸 밖(코드가 정리한 값)
       const st = cm.status;
       const now = (i: number) => (st ? st[i] === "진행" : i === d.steps.length - 1);
-      const mark = (i: number) => (st?.[i] ? ` <span class="k-st">${st[i]}</span>` : "");
+      const mark = (i: number) => (st?.[i] ? ` <span class="k-st">${esc(String(st[i]))}</span>` : "");
       return `${title}<ol class="k-tl${st ? " k-tl--st" : ""}" style="grid-template-columns:${cols}">${d.steps
         .map(
           (s, i) =>
@@ -824,7 +824,7 @@ export function sectionBodyHtml(spec: ReportSectionSpec, unknownNumbers: string[
 function sectionBodyInner(spec: ReportSectionSpec, unknownNumbers: string[], opts: SectionHtmlOptions): string {
   const u = marksOf(unknownNumbers, opts.weak, opts.repeats ? repeatMarks(spec) : undefined);
   const head = opts.head ?? "all";
-  const bizHtml = head === "all" ? `<p class="k-biz"><span class="k-biz__no">대상사업${spec.business.no}</span><span>${esc(spec.business.name)}</span></p>${opts.bizMap ? `\n${opts.bizMap}` : ""}` : "";
+  const bizHtml = head === "all" ? `<p class="k-biz"><span class="k-biz__no">대상사업${esc(String(spec.business.no))}</span><span>${esc(spec.business.name)}</span></p>${opts.bizMap ? `\n${opts.bizMap}` : ""}` : "";
   const taskHtml = head !== "sub" ? `<h4 class="k-task"><span class="k-task__no">${esc(spec.task.no)}</span><span class="k-task__t">${esc(spec.task.title)}</span>${spec.task.bp ? MARKER_HTML.BP : ""}</h4>` : "";
   if (spec.version === 3 && spec.blocks && spec.mg) return mgBody(spec, spec.blocks, spec.mg, u, opts);
   if (spec.version === 3 && spec.blocks) {
@@ -913,13 +913,13 @@ function mgBody(spec: ReportSectionSpec, blocks: Block[], mg: NonNullable<Report
     if (p.evalNo !== ev) {
       ev = p.evalNo;
       th = "";
-      out.push(`<p class="k-biz"><span class="k-biz__no">평가내용${p.evalNo}</span><span>${esc(p.evalTitle)}</span></p>`);
+      out.push(`<p class="k-biz"><span class="k-biz__no">평가내용${esc(String(p.evalNo))}</span><span>${esc(p.evalTitle)}</span></p>`);
     }
     const t = `${p.evalNo}.${p.themeNo}`;
     if (t !== th) {
       th = t;
       enter(t);
-      out.push(`<h4 class="k-task"><span class="k-task__no">${p.themeNo}</span><span class="k-task__t">${esc(p.themeTitle)}</span>${take()}</h4>`);
+      out.push(`<h4 class="k-task"><span class="k-task__no">${esc(String(p.themeNo))}</span><span class="k-task__t">${esc(p.themeTitle)}</span>${take()}</h4>`);
     }
     if (p.mark) out.push(`<h5 class="k-sub">${esc(p.mark)}. ${chipHtml(p.chip)}${esc(p.title)}${take()}</h5>`);
     const idx = mg.at.flatMap((k, i) => (k === p.key ? [i] : []));
@@ -946,6 +946,12 @@ export function blocksSampleHtml(blocks: Block[]): string {
   return `<div class="kca-dg-doc"><div class="k-paper"><div class="k-frame">${blocksBody(blocks, marksOf([]), "")}</div></div></div>`;
 }
 
+/**
+ * 내려받기 문서(sectionDocument)의 유일한 인라인 스크립트 본문. 문서가 내보내는 글과 CSP 해시(lib/reports/doc-csp.ts)가 이 상수 하나에서 나옴 —
+ * fitTextLines.toString()은 번들마다 글이 달라지므로 해시를 미리 적어 두지 않고 같은 실행에서 셈
+ */
+export const REPORT_DOC_SCRIPT = `/* 글꼴 표지(진짜 원본 글꼴이면 Noto 흉내 자간 보정을 끔 — report-fonts.ts) → 글꼴 준비 → 자간 맞춤(1~2글자 넘친 칸 글을 한 줄로) */${reportFontsScript()}.then(function () { return document.fonts ? document.fonts.ready : null; }).then(function () { (${fitTextLines.toString()})(document); });`;
+
 /** 내려받기용 HTML 문서(글꼴 파일·외부 링크 없이 한 파일). 되풀이 표시(repeats)는 기본으로 켬 — 한글 내려받기 사본(html?for=hwpx)만 { repeats: false } */
 export function sectionDocument(spec: ReportSectionSpec, unknownNumbers: string[] = [], meta: { year: number; generatedAt: string; model: string } = { year: 2026, generatedAt: "", model: "" }, opts: Pick<SectionHtmlOptions, "marks" | "repeats"> = {}): string {
   const o = { repeats: true, ...opts };
@@ -967,7 +973,7 @@ ${REPORT_CSS}
 <body>
 <p class="meta">${esc(`${meta.year}년도 경영실적보고서${spec.mg ? `(경영관리) ${spec.mg.indicator} 초안` : "(주요사업) 평가내용2 소항목 초안"} · 과제관리카드 ${spec.card.taskNo} · ${meta.model ? `AI 초안(${meta.model})` : "초안"}${meta.generatedAt ? ` · ${meta.generatedAt}` : ""}${unknownNumbers.length ? ` · 붉은 점선 = 카드에 없는 숫자(확인 필요)` : ""}${repNote}`)}</p>
 <div class="wrap">${sectionHtml(spec, unknownNumbers, o)}</div>
-<script>/* 글꼴 표지(진짜 원본 글꼴이면 Noto 흉내 자간 보정을 끔 — report-fonts.ts) → 글꼴 준비 → 자간 맞춤(1~2글자 넘친 칸 글을 한 줄로) */${reportFontsScript()}.then(function () { return document.fonts ? document.fonts.ready : null; }).then(function () { (${fitTextLines.toString()})(document); });</script>
+<script>${REPORT_DOC_SCRIPT}</script>
 </body>
 </html>
 `;

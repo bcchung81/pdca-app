@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { parseStored, recordDescribe } from "../../../lib/ai/attachments.ts";
+import { parseStored } from "../../../lib/ai/attachments.ts";
 import { parseColumns } from "../../../lib/ai/material-text.ts";
 import { requireAtLeast, requireUser } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
@@ -163,17 +163,22 @@ export async function finishMaterialUpload(reportId: number, path: string, fileN
   if (!report) return { ok: false, message: "보고서를 찾을 수 없습니다." };
   if (contentLocked(me.role, report.status)) return { ok: false, message: LOCKED_MSG };
   const name = fileName.slice(0, 300);
-  const parsed = await parseStored(supabase, "report-materials", path, name);
+  // 등록을 먼저(storage_path unique) — 같은 경로로 다시 불러도 등록이 거절돼 파일을 다시 읽지(kordoc·AI 그림 설명) 않음. 읽은 글은 등록한 행에 채움(열 단위 update 권한)
   const { data: inserted, error } = await supabase
     .from("report_materials")
-    .insert({ report_id: reportId, storage_path: path, file_name: name, mime_type: mime.slice(0, 200) || null, bytes, uploaded_by: me.id, ...(parsed.sha256 ? parseColumns(parsed) : {}) })
+    .insert({ report_id: reportId, storage_path: path, file_name: name, mime_type: mime.slice(0, 200) || null, bytes, uploaded_by: me.id })
     .select("id")
     .single();
   if (error || !inserted) {
     console.error("finishMaterialUpload", error?.message);
     return { ok: false, message: "목록에 등록하지 못했습니다." };
   }
-  await recordDescribe(supabase, parsed, { userId: me.id }); // 그림 설명을 만들었으면 그 호출(토큰)을 남김(보고서 자료라 과제 없음)
+  // 그림 설명은 이 사용자의 호출 기록·그림 설명 한도 안에서(넘으면 보류, 보고서 자료라 과제 없음). 읽은 글을 못 채우면 「아직 안 읽음」으로 남아 초안 때 다시 읽음
+  const parsed = await parseStored(supabase, "report-materials", path, name);
+  if (parsed.sha256) {
+    const { error: e } = await supabase.from("report_materials").update(parseColumns(parsed)).eq("id", inserted.id);
+    if (e) console.error("finishMaterialUpload parse", e.message);
+  }
   // 어느 과제 자료인지는 올린 사람이 고름(3-5 재정의 — AI가 미리 분석하지 않음). 파일 이름에 과제번호가 있으면 화면이 미리 체크해 줌
   refresh(reportId);
   return { ok: true };

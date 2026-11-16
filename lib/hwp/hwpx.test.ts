@@ -13,7 +13,7 @@ import { readHwp5 } from "./hwp5.ts";
 import { readHwpx } from "./hwpx.ts";
 import { hwpxFiles, mmText, numberingStarts, positionMap } from "./hwpx-write.ts";
 import { type CardLayout, extractCardLayouts } from "./layout.ts";
-import type { CharPr, HwpDoc, Para, ParaPr } from "./model.ts";
+import { HwpReadError, type CharPr, type HwpDoc, type Para, type ParaPr } from "./model.ts";
 import { cardSourceFile } from "../cards/file-names.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 
@@ -259,4 +259,15 @@ test("글 속 묶음 빈칸·고정폭 빈칸은 한글 요소로, 글자 겹침
     items.map((it) => (it.kind === "text" ? it.text : it.kind === "compose" ? `[${it.chars}|${it.spread}]` : it.kind)),
     ["[∙　|1]", "가 나 다"],
   );
+});
+
+test("해제 상한: 풀린 크기가 한도를 넘는 항목이 든 HWPX는 「너무 커서」 오류, 한도 안이면 그대로 읽음", async () => {
+  const bytes = (await writeHwpxPackage(hwpxFiles({ doc: tinyDoc(), page, paras: [para("가나다")], images: new Map() }))).bytes;
+  assert.equal((await readHwpx(bytes)).sections.length, 1);
+  // 선언 크기 검사: 작은 한도
+  await assert.rejects(readHwpx(bytes, 50), (e: unknown) => e instanceof HwpReadError && /너무 커서/.test(e.message));
+  // 실제 해제량 검사: 중앙 디렉터리의 선언 크기를 1로 속여도 풀면서 멈춤
+  const lied = Buffer.from(bytes);
+  for (let i = lied.indexOf("PK\x01\x02", 0, "latin1"); i >= 0; i = lied.indexOf("PK\x01\x02", i + 4, "latin1")) lied.writeUInt32LE(1, i + 24);
+  await assert.rejects(readHwpx(lied, 50), (e: unknown) => e instanceof HwpReadError && /너무 커서/.test(e.message));
 });

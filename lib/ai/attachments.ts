@@ -4,10 +4,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { parse } from "kordoc";
 import { isRetryableDescribeError } from "./describe.ts";
-import { aiUsageColumns } from "./pricing.ts";
 import { type ReadDeps, readAttachmentWith } from "./read-attachment.ts";
+import { type AiRequestStart, DESCRIBE_FEATURE, startAiRequest } from "./request-log.ts";
 import { AttachmentError, type MaterialDoc, type MaterialRow, type ParseOutcome, materialState, parseColumns } from "./material-text.ts";
-import { AiUnavailableError, aiErrorMessage, callDescribe } from "./run.ts";
+import { AiUnavailableError, aiErrorMessage, aiProvider, callDescribe } from "./run.ts";
 import { ATTACH_LABEL, isAttachableName } from "./writer.ts";
 
 // 첨부(카드 전용 자료·보고서 추가자료) 읽기. 한글(HWP·HWPX)·PDF·워드·엑셀을 kordoc으로 글(마크다운)로 바꾸고, 이미지와 글 없는 스캔 PDF는 그림 설명으로 글을 만듭니다(4단계).
@@ -38,35 +38,37 @@ const realDeps: ReadDeps = {
   attachLabel: ATTACH_LABEL,
 };
 
-/** 파일 하나 읽기 — 던지지 않고 실패도 결과로(올리기·요청을 막지 않고 「AI가 못 읽음」으로 표시) */
+/** 파일 하나 읽기 — 던지지 않고 실패도 결과로(올리기·요청을 막지 않고 「AI가 못 읽음」으로 표시). 호출 기록·한도 없음(연기 시험 스크립트용) */
 export async function parseAttachment(bytes: Uint8Array, name: string): Promise<ParseOutcome> {
   return readAttachmentWith(bytes, name, realDeps);
 }
 
-/** 그림 설명을 만들었으면 그 호출(모델·토큰)을 ai_requests에 남김(본문은 저장 안 함, 기록 실패는 무시). 호출 기록이 있을 때만 */
-export async function recordDescribe(supabase: SupabaseClient, o: ParseOutcome, ctx: { userId: string; cardId?: string | null }): Promise<void> {
-  if (!o.describe) return;
-  try {
-    await supabase.from("ai_requests").insert({
-      user_id: ctx.userId,
-      card_id: ctx.cardId ?? null,
-      feature: "material_describe",
-      model: o.describe.model,
-      status: o.status === "parsed" ? "ok" : "error",
-      error: o.status === "parsed" ? null : (o.error ?? "").slice(0, 200),
-      ...aiUsageColumns(o.describe.usage),
-      ...(o.describe.ms === undefined ? {} : { duration_ms: o.describe.ms, finished_at: new Date().toISOString() }),
-    });
-  } catch {
-    // 기록 실패는 올리기·요청을 막지 않음
-  }
+/**
+ * 로그인 사용자 이름으로 파일 하나 읽기: 그림 설명이 필요하면 부르기 전에 호출 기록을 시작하고(start_ai_request — 그림 설명 한도 DESCRIBE_LIMITS),
+ * 한도에 걸리거나 기록을 못 남기면 AI를 부르지 않고 보류(pending — 요청 때 다시 읽음). 부른 호출은 성공·실패 모두 끝맺기로 남김(모델·토큰·오류, 본문은 저장 안 함)
+ */
+async function parseLogged(supabase: SupabaseClient, bytes: Uint8Array, name: string, cardId: string | null): Promise<ParseOutcome> {
+  const log: { req?: Extract<AiRequestStart, { ok: true }> } = {};
+  const deps: ReadDeps = {
+    ...realDeps,
+    async describe(input) {
+      if (aiProvider() !== "api") return realDeps.describe(input); // CLI 경로는 AI를 부르지 않고 보류만(기록·한도 없음)
+      const s = await startAiRequest(supabase, { cardId, feature: DESCRIBE_FEATURE });
+      if (!s.ok) return { ok: false, unavailable: true, error: `그림 설명을 미뤘습니다 — ${s.message} (요청 때 다시 읽습니다)` };
+      log.req = s;
+      return realDeps.describe(input);
+    },
+  };
+  const o = await readAttachmentWith(bytes, name, deps);
+  await log.req?.finish({ status: o.status === "parsed" ? "ok" : "error", model: o.describe?.model, usage: o.describe?.usage, ...(o.status === "parsed" ? {} : { error: o.error ?? "읽지 못했습니다" }) });
+  return o;
 }
 
-/** 저장소에 올린 파일을 사용자 권한으로 내려받아 읽기 */
-export async function parseStored(supabase: SupabaseClient, bucket: string, path: string, name: string): Promise<ParseOutcome> {
+/** 저장소에 올린 파일을 사용자 권한으로 내려받아 읽기(그림 설명은 그 사용자의 호출 기록·한도 안에서 — cardId는 기록에 남길 과제) */
+export async function parseStored(supabase: SupabaseClient, bucket: string, path: string, name: string, cardId: string | null = null): Promise<ParseOutcome> {
   const { data: blob, error } = await supabase.storage.from(bucket).download(path);
   if (error || !blob) return { status: "failed", text: "", error: "저장소에서 파일을 읽지 못했습니다", sha256: "" };
-  return parseAttachment(new Uint8Array(await blob.arrayBuffer()), name);
+  return parseLogged(supabase, new Uint8Array(await blob.arrayBuffer()), name, cardId);
 }
 
 /**
@@ -95,11 +97,8 @@ export async function loadMaterialTexts(
     }
     const o = await parseStored(supabase, bucket, r.storage_path, r.file_name);
     // 저장 실패(권한 없음 등)는 무시 — 다음 요청에서 다시 읽음. 보류(pending)도 저장해 사유를 보이되 같은 판이어도 요청 때 다시 읽어 봄
+    // 그림 설명은 이 사용자의 호출 기록·그림 설명 한도 안에서(parseStored) — 한도에 걸리면 보류로 남아 다음 요청에서 다시 읽음
     if (o.sha256) await supabase.from(table).update(parseColumns(o)).eq("id", id);
-    if (o.describe) {
-      const { data: u } = await supabase.auth.getUser(); // 요청 때 처음 만든 그림 설명의 비용을 그 사용자 이름으로 남김
-      if (u.user) await recordDescribe(supabase, o, { userId: u.user.id });
-    }
     if (o.status === "parsed") docs.push({ id, kind, name: r.file_name, text: o.text });
     else failed.push({ id, name: r.file_name, error: o.error ?? "읽지 못했습니다" });
   }

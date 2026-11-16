@@ -137,9 +137,9 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 요청 종류는 개선 제안·실적 발굴·실적 반영·보완 점검·질문 다섯뿐(`WRITER_MODES` + 질문, 옛 이름 `LEGACY_MODES`는 옛 기록만). 카드 반영 제안은 8건까지(`SUGGESTION_MAX`)
 - **보완 점검**: 최종 점검표 미흡 행을 코드가 id(`axes.4`)로 뽑고 AI는 판단어(반영됨·일부 반영·미반영·확인 불가)·인용·남은 할 일만 냄. 행 채우기·인용 대조·건수는 `lib/ai/followup.ts`, 공식 판정 아님. 점검표 없거나 미흡 0건이면 AI 안 부름
 - 카드 전용 자료는 그 카드의 `card_materials` 안에서만 사용자 권한으로 읽음. 첨부는 올릴 때 kordoc으로 읽어 전체 글 저장(`parsed_text`, `PARSER_VERSION`), 요청 때는 **자르지 않음**(`loadMaterialTexts`) — 대신 요청 전체가 `INPUT_BUDGET` 40만을 넘으면 멈춤(`BudgetError`). `ASSIST_TEXT_MAX`는 화면 maxLength와 서버 자르기가 같은 값
-- 이미지·스캔 PDF 첨부는 light 모델(`material_describe`)이 적은 그림 설명이 전체 글(표지 「[그림 설명 — AI가 … 적은 글입니다]」, 원문 인용 금지). **API 경로에서만**(CLI·일시 오류는 `pending`)
-- Vercel(`VERCEL`)에서는 늘 `api`. 모델·effort·출력 상한은 `lib/ai/models.ts`의 `FEATURE_TIER`·`FEATURE_EFFORT`(월간 점검 `xhigh`)·`FEATURE_MAX_TOKENS`(환경변수 `CLAUDE_MODEL_HEAVY` 등이 앞섬)
-- 호출 기록 `ai_requests`(토큰·오류·시간). **부르기 전에 running 행**(`startAiRequest`), 1분 5회 + 동시 2건(`AI_LIMITS`). AI 요청은 백그라운드: 액션은 검증·제한·running 행까지, AI·저장은 `after()`(`lib/ai/background.ts`), 진행은 GET `/api/ai/requests`(서버 액션 폴링 금지)
+- 이미지·스캔 PDF 첨부는 light 모델(`material_describe`)이 적은 그림 설명이 전체 글(표지 붙음, 원문 인용 금지). **API 경로에서만**(CLI·일시 오류는 `pending`)
+- Vercel에서는 늘 `api`. 모델·effort·출력 상한은 `lib/ai/models.ts`의 `FEATURE_TIER`·`FEATURE_EFFORT`(월간 점검 `xhigh`)·`FEATURE_MAX_TOKENS`(환경변수 `CLAUDE_MODEL_HEAVY` 등이 앞섬)
+- 호출 기록 `ai_requests`(토큰·오류·시간). **부르기 전에 running 행**(`startAiRequest`), 쓰기는 rpc로만(`start_ai_request`·`finish_ai_request`), 1분 5회 + 동시 2건(`AI_LIMITS`, DB와 같은 값). AI 요청은 백그라운드: 액션은 검증·제한·running 행까지, AI·저장은 `after()`, 진행은 GET `/api/ai/requests`(서버 액션 폴링 금지)
 - 진행 줄(`AiProgress`)은 서버가 실제로 넣는 자료와 같게만 적고 지어내지 않음. **카드 배율은 0.6~1.1배까지**
 
 ### AI 작성지원 「질문」·카드 리뷰어(코멘트)

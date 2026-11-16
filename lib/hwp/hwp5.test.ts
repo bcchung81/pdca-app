@@ -153,3 +153,9 @@ test("문단 모양 줄 나눔: 한글 비트 7 = 1(글자 단위) → KEEP_WORD
   assert.deepEqual(pps.map((p) => p.breakNonLatin), ["KEEP_WORD", "BREAK_WORD", "BREAK_WORD", "BREAK_WORD"]);
   assert.deepEqual(pps.map((p) => p.breakLatin), ["KEEP_WORD", "KEEP_WORD", "HYPHENATION", "BREAK_WORD"]);
 });
+
+test("해제 합계 상한: 스트림 합이 한도를 넘으면 「너무 커서」 오류, 한도 안이면 그대로 읽음", () => {
+  const b = hwp({ compress: true, sections: [GOOD(), GOOD()] });
+  assert.equal(readHwp5(b).sections.length, 2);
+  assert.throws(() => readHwp5(b, 300), (e: unknown) => e instanceof HwpReadError && /너무 커서/.test(e.message));
+});

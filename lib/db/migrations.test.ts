@@ -3,6 +3,7 @@
 // (호스티드 Supabase에서 확인할 항목).
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { after, before, test } from "node:test";
@@ -11,6 +12,7 @@ import { readSeedInput } from "./seed-files.ts";
 import { SUPABASE_STUB } from "./supabase-stub.ts";
 import { buildSeedRows } from "./seed-rows.ts";
 import { HAS_SEED_CARDS, NO_SEED_CARDS } from "../testing/originals.ts";
+import { AI_LIMITS, DESCRIBE_FEATURE, DESCRIBE_LIMITS } from "../ai/request-log.ts";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const MIGRATIONS = join(ROOT, "supabase/migrations");
@@ -399,46 +401,166 @@ test("첨부 읽은 글(참고자료 1단계): 쓸 수 있는 사람만 읽은 �
 });
 
 test("AI 호출 기록: 캐시 쓰기 중 1시간 캐시 몫을 따로 남긴다", { skip: NO_SEED_CARDS }, async () => {
-  await as("inspector", () => db.query("insert into public.ai_requests (user_id, feature, status, cache_write_tokens, cache_write_1h_tokens) values ($1, 'card_assist', 'ok', 10, 4)", [users.inspector]));
+  await db.query("insert into public.ai_requests (user_id, feature, status, cache_write_tokens, cache_write_1h_tokens) values ($1, 'card_assist', 'ok', 10, 4)", [users.inspector]); // 사용자 쓰기는 rpc만(20261116110000) — 열 확인이라 관리자 권한으로
   assert.equal(await count("select 1 from public.ai_requests where cache_write_1h_tokens = 4"), 1);
   await db.query("delete from public.ai_requests where cache_write_1h_tokens = 4");
 });
 
-test("AI 호출 기록 진행 중·끝맺기(2026-10-10 개선 계획 P0-3): 자기 running 행만 ok·error로 끝내며 토큰·소요 시간을 채우고, 끝난 행·남의 행·user_id·feature는 못 고침", { skip: NO_SEED_CARDS }, async () => {
+/** 끝맺기 키와 그 sha256(hex) — 서버(lib/ai/request-log.ts)가 시작 때 해시만 보내고 끝맺을 때 키를 보냄 */
+const aiKey = (k: string) => ({ key: k, hash: createHash("sha256").update(k, "utf8").digest("hex") });
+type AiStart = { ok: boolean; ids?: number[]; running?: number; recent?: number };
+/** start_ai_request rpc(20261116110000)를 사용자로 부름 */
+async function startAi(who: keyof typeof users, o: { feature?: string; card?: string | null; job?: string | null; hashes?: string[]; batch?: boolean } = {}): Promise<AiStart> {
+  const r = await as(who, () =>
+    db.query<{ r: AiStart }>("select public.start_ai_request($1, $2, $3, $4, $5::text[], $6) as r", [o.feature ?? "card_assist", o.card ?? null, null, o.job ?? null, o.hashes ?? [aiKey(`${who}-${Math.random()}`).hash], o.batch ?? false]),
+  );
+  return r.rows[0].r;
+}
+/** finish_ai_request rpc — 고쳤으면 true */
+async function finishAi(who: keyof typeof users, id: number, key: string, extra = ""): Promise<boolean> {
+  const r = await as(who, () => db.query<{ r: boolean }>(`select public.finish_ai_request(p_id => $1, p_key => $2, p_status => 'ok'${extra}) as r`, [id, key]));
+  return r.rows[0].r;
+}
+const clearAi = () => db.query("delete from public.ai_requests where user_id = any($1)", [Object.values(users)]);
+
+test("AI 호출 기록 쓰기(20261116110000 — 웹 취약점 점검): 로그인 사용자는 표에 직접 넣지도·고치지도 못하고 rpc로만 — 시작은 읽을 수 있는 카드만·자기 이름으로, anon·로그인 없음은 거절", { skip: NO_SEED_CARDS }, async () => {
   const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 limit 1", [users.inspector])).rows[0].id;
-  const ins = (who: keyof typeof users, card: string | null) => as(who, () => db.query<{ id: number }>("insert into public.ai_requests (user_id, card_id, feature, status) values ($1, $2, 'report_section', 'running') returning id", [users[who], card]));
-  const id = (await ins("inspector", own)).rows[0].id;
-  await as("inspector", () => db.query("update public.ai_requests set status = 'ok', output_tokens = 100, duration_ms = 1234, finished_at = now(), timings = '{\"call\": 1000}'::jsonb where id = $1", [id]));
-  assert.equal(await count("select 1 from public.ai_requests where id = $1 and status = 'ok' and output_tokens = 100 and duration_ms = 1234 and timings->>'call' = '1000'", [id]), 1);
-  // 끝난 행은 다시 못 고침(정책이 running만 — 0행)
-  await as("inspector", () => db.query("update public.ai_requests set output_tokens = 1, status = 'error' where id = $1", [id]));
-  assert.equal(await count("select 1 from public.ai_requests where id = $1 and output_tokens = 100 and status = 'ok'", [id]), 1);
-  // 남의 running 행은 못 끝냄
-  const other = (await ins("license", null)).rows[0].id;
-  await as("inspector", () => db.query("update public.ai_requests set status = 'ok' where id = $1", [other]));
-  assert.equal(await count("select 1 from public.ai_requests where id = $1 and status = 'running'", [other]), 1);
-  // 식별 열(user_id·feature·card_id·mode)은 열 권한이 없어 거절
-  const mine = (await ins("inspector", own)).rows[0].id;
-  await rejects(() => as("inspector", () => db.query("update public.ai_requests set feature = 'card_chat' where id = $1", [mine])), /permission denied/);
-  await rejects(() => as("inspector", () => db.query("update public.ai_requests set user_id = $2 where id = $1", [mine, users.license])), /permission denied/);
-  // 상태 값은 running·ok·error만
-  await rejects(() => as("inspector", () => db.query("update public.ai_requests set status = 'done' where id = $1", [mine])), /check constraint|violates/);
-  await db.query("delete from public.ai_requests where id = any($1)", [[id, other, mine]]);
+  const other = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '자격기획팀' limit 1")).rows[0].id;
+  try {
+    // 직접 넣기·고치기(가짜 토큰 행·진행 중 행 닫기)는 권한 없음
+    await rejects(() => as("inspector", () => db.query("insert into public.ai_requests (user_id, card_id, feature, status, output_tokens) values ($1, $2, 'card_assist', 'ok', 999)", [users.inspector, own])), /permission denied/);
+    const k = aiKey("a");
+    const s = await startAi("inspector", { card: own, hashes: [k.hash], job: "assist" });
+    assert.ok(s.ok && s.ids?.length === 1);
+    const id = s.ids![0];
+    assert.equal(await count("select 1 from public.ai_requests where id = $1 and user_id = $2 and status = 'running' and job = 'assist' and finish_key_hash = $3", [id, users.inspector, k.hash]), 1, "자기 이름·running·키 해시");
+    for (const sql of ["update public.ai_requests set status = 'ok' where id = $1", "update public.ai_requests set output_tokens = 1 where id = $1", "update public.ai_requests set job = 'chat' where id = $1"])
+      await rejects(() => as("inspector", () => db.query(sql, [id])), /permission denied/);
+    assert.equal(await count("select 1 from public.ai_requests where id = $1 and status = 'running'", [id]), 1);
+    // 읽을 수 없는 카드로는 시작 못 함, 성과관리팀은 됨
+    await rejects(() => startAi("inspector", { card: other }), /읽을 수 없는/);
+    assert.ok((await startAi("pmo", { card: other })).ok);
+    // 키 해시 모양이 아니거나 묶음이 아닌데 여러 행이면 거절, 작업 종류는 허용 목록만
+    await rejects(() => startAi("inspector", { hashes: ["x"] }), /올바르지 않습니다/);
+    await rejects(() => startAi("inspector", { hashes: [aiKey("1").hash, aiKey("2").hash] }), /올바르지 않습니다/);
+    await rejects(() => startAi("license", { job: "nope" }), /check constraint|violates/);
+    // 로그인 없음·anon
+    await rejects(() => db.query("select public.start_ai_request('card_assist', null, null, null, $1::text[])", [[aiKey("z").hash]]), /로그인이 필요/);
+    await db.exec("set role anon");
+    try {
+      await rejects(() => db.query("select public.start_ai_request('card_assist', null, null, null, $1::text[])", [[aiKey("z").hash]]), /permission denied/);
+      await rejects(() => db.query("select public.finish_ai_request(1, 'k', 'ok')"), /permission denied/);
+    } finally {
+      await db.exec("reset role");
+    }
+    // 읽기: 본인과 성과관리팀·관리자
+    assert.equal(await as("license", () => count("select 1 from public.ai_requests where id = $1", [id])), 0);
+    assert.equal(await as("admin", () => count("select 1 from public.ai_requests where id = $1", [id])), 1);
+  } finally {
+    await clearAi();
+  }
+});
+
+test("AI 호출 끝맺기 rpc(finish_ai_request): 주인·running·키가 맞을 때만 결과 열을 쓰고 키 해시를 비움 — 틀린 키·남의 행·끝난 행은 그대로(false)", { skip: NO_SEED_CARDS }, async () => {
+  try {
+    const k = aiKey("mine");
+    const id = (await startAi("inspector", { hashes: [k.hash] })).ids![0];
+    assert.equal(await finishAi("inspector", id, "틀린 키"), false, "틀린 키");
+    assert.equal(await finishAi("license", id, k.key), false, "남의 행(키를 알아도)");
+    assert.equal(await count("select 1 from public.ai_requests where id = $1 and status = 'running'", [id]), 1);
+    const extra = ", p_model => 'cli/opus', p_output_tokens => 100, p_cache_write_1h_tokens => 4, p_duration_ms => 1234, p_timings => '{\"call\": 1000}'::jsonb";
+    assert.equal(await finishAi("inspector", id, k.key, extra), true);
+    assert.equal(
+      await count("select 1 from public.ai_requests where id = $1 and status = 'ok' and model = 'cli/opus' and output_tokens = 100 and cache_write_1h_tokens = 4 and duration_ms = 1234 and timings->>'call' = '1000' and finished_at is not null and finish_key_hash is null", [id]),
+      1,
+    );
+    // 끝난 행은 같은 키로도 다시 못 고침(두 번 불러도 처음 것이 남음)
+    const r = await as("inspector", () => db.query<{ r: boolean }>("select public.finish_ai_request(p_id => $1, p_key => $2, p_status => 'error', p_output_tokens => 1) as r", [id, k.key]));
+    assert.equal(r.rows[0].r, false);
+    assert.equal(await count("select 1 from public.ai_requests where id = $1 and status = 'ok' and output_tokens = 100", [id]), 1);
+    // 상태는 ok·error만, 오류 글은 300자까지
+    const k2 = aiKey("second");
+    const id2 = (await startAi("inspector", { hashes: [k2.hash] })).ids![0];
+    await rejects(() => as("inspector", () => db.query("select public.finish_ai_request($1, $2, 'running')", [id2, k2.key])), /올바르지 않습니다/);
+    await as("inspector", () => db.query("select public.finish_ai_request(p_id => $1, p_key => $2, p_status => 'error', p_error => $3)", [id2, k2.key, "가".repeat(400)]));
+    assert.equal((await db.query<{ n: number }>("select length(error) as n from public.ai_requests where id = $1", [id2])).rows[0].n, 300);
+  } finally {
+    await clearAi();
+  }
+});
+
+test("AI 호출 시작 rpc 한도(start_ai_request): 동시·1분 수를 TS 한도(AI_LIMITS)와 같게 판정하고, 여러 안은 진행 중 0건일 때만·n건으로 셈, 그림 설명은 따로(DESCRIBE_LIMITS), 오래된 running은 닫음", { skip: NO_SEED_CARDS }, async () => {
+  try {
+    // 동시 실행: 상한까지 되고 그다음은 거절(행 안 생김)
+    const keys = Array.from({ length: AI_LIMITS.perMinute + 1 }, (_, i) => aiKey(`k${i}`));
+    const ids: number[] = [];
+    for (let i = 0; i < AI_LIMITS.running; i++) ids.push((await startAi("inspector", { hashes: [keys[i].hash] })).ids![0]);
+    const busy = await startAi("inspector");
+    assert.deepEqual([busy.ok, busy.running], [false, AI_LIMITS.running]);
+    assert.equal(await count("select 1 from public.ai_requests where user_id = $1", [users.inspector]), AI_LIMITS.running, "거절하면 행을 넣지 않음");
+    // 여러 안: 진행 중이 있으면 거절
+    assert.equal((await startAi("inspector", { batch: true, hashes: [aiKey("b1").hash, aiKey("b2").hash] })).ok, false);
+    // 1분 수: 끝맺어도 최근 60초 안 호출로 셈
+    for (let i = 0; i < ids.length; i++) assert.ok(await finishAi("inspector", ids[i], keys[i].key));
+    for (let i = AI_LIMITS.running; i < AI_LIMITS.perMinute; i++) {
+      const id = (await startAi("inspector", { hashes: [keys[i].hash] })).ids![0];
+      assert.ok(await finishAi("inspector", id, keys[i].key));
+    }
+    const often = await startAi("inspector");
+    assert.deepEqual([often.ok, often.running, often.recent], [false, 0, AI_LIMITS.perMinute]);
+    // 다른 사람·그림 설명은 따로
+    assert.ok((await startAi("license")).ok, "다른 사람 기록은 안 셈");
+    const described: number[] = [];
+    for (let i = 0; i < DESCRIBE_LIMITS.running; i++) described.push((await startAi("inspector", { feature: DESCRIBE_FEATURE })).ids![0]);
+    const dBusy = await startAi("inspector", { feature: DESCRIBE_FEATURE });
+    assert.deepEqual([dBusy.ok, dBusy.running], [false, DESCRIBE_LIMITS.running], "그림 설명 동시 상한");
+    await db.query("update public.ai_requests set status = 'ok' where id = any($1)", [described]);
+    await db.query(
+      "insert into public.ai_requests (user_id, feature, status) select $1, $2, 'ok' from generate_series(1, $3)",
+      [users.inspector, DESCRIBE_FEATURE, DESCRIBE_LIMITS.perMinute - DESCRIBE_LIMITS.running],
+    );
+    const dOften = await startAi("inspector", { feature: DESCRIBE_FEATURE });
+    assert.deepEqual([dOften.ok, dOften.recent], [false, DESCRIBE_LIMITS.perMinute], "그림 설명 1분 상한");
+    await clearAi();
+
+    // 여러 안: n건으로 1분 상한에 셈(최근 + n > 상한이면 거절), 한 번에 상한까지
+    const many = (n: number) => Array.from({ length: n }, (_, i) => aiKey(`m${n}-${i}`).hash);
+    await db.query("insert into public.ai_requests (user_id, feature, status) select $1, 'card_chat', 'ok' from generate_series(1, $2)", [users.inspector, AI_LIMITS.perMinute - 2]);
+    assert.equal((await startAi("inspector", { batch: true, hashes: many(3) })).ok, false);
+    const two = await startAi("inspector", { batch: true, hashes: many(2), job: "alts" });
+    assert.equal(two.ids?.length, 2, "딱 상한");
+    assert.deepEqual((await db.query<{ job: string | null }>("select job from public.ai_requests where id = any($1) order by id", [two.ids])).rows.map((r) => r.job), ["alts", null], "작업 종류는 첫 행에만");
+    await rejects(() => startAi("license", { batch: true, hashes: many(AI_LIMITS.perMinute + 1) }), /올바르지 않습니다/);
+    await clearAi();
+
+    // 오래된 running(끝맺지 못한 호출)은 시작할 때 error로 닫고 세지 않음 — 상한 직전 것은 그대로
+    const staleMin = AI_LIMITS.staleMs / 60_000;
+    await db.query(
+      "insert into public.ai_requests (user_id, feature, status, created_at) values ($1, 'report_section', 'running', now() - make_interval(mins => $2 + 1)), ($1, 'report_section', 'running', now() - make_interval(mins => $2 + 1)), ($1, 'report_section', 'running', now() - make_interval(mins => $2 - 1))",
+      [users.inspector, staleMin],
+    );
+    const fresh = await startAi("inspector");
+    assert.ok(fresh.ok, "오래된 두 건은 세지 않음(남은 진행 중 1건)");
+    assert.equal(await count("select 1 from public.ai_requests where user_id = $1 and status = 'error' and error like '중단%'", [users.inspector]), 2);
+    assert.equal(await count("select 1 from public.ai_requests where user_id = $1 and status = 'running'", [users.inspector]), 2);
+  } finally {
+    await clearAi();
+  }
 });
 
 test("AI 백그라운드 작업 결과(ai_results, 20261106100000): 본인 결과만 읽고 지움(성과관리팀·관리자도 남의 답은 못 읽음), 자기 작업 기록에만 넣음, 만료 행은 안 보이고 다음 넣기 때 지워짐, 작업 종류는 넣을 때만·과제 영구 삭제면 연쇄", { skip: NO_SEED_CARDS }, async () => {
   const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 order by c.id limit 1", [users.inspector])).rows[0].id;
   const job = (who: keyof typeof users, card: string | null, kind: string | null = "assist") =>
-    as(who, () => db.query<{ id: number }>("insert into public.ai_requests (user_id, card_id, feature, status, job) values ($1, $2, 'card_assist', 'running', $3) returning id", [users[who], card, kind])).then((r) => r.rows[0].id);
+    db.query<{ id: number }>("insert into public.ai_requests (user_id, card_id, feature, status, job) values ($1, $2, 'card_assist', 'running', $3) returning id", [users[who], card, kind]).then((r) => r.rows[0].id); // 사용자 쓰기는 rpc(한도 있음) — 결과 표 시험이라 관리자 권한으로
   const put = (who: keyof typeof users, req: number, card: string | null, o: { user?: keyof typeof users; feature?: string } = {}) =>
     as(who, () => db.query("insert into public.ai_results (request_id, user_id, card_id, feature, result) values ($1, $2, $3, $4, '{\"ok\":true,\"message\":\"끝\"}')", [req, users[o.user ?? who], card, o.feature ?? "card_assist"]));
   const mine = await job("inspector", own);
   const plain = await job("inspector", own, null);
   const theirs = await job("license", null);
   try {
-    await rejects(() => as("inspector", () => db.query("insert into public.ai_requests (user_id, feature, status, job) values ($1, 'card_assist', 'running', 'nope')", [users.inspector])), /check constraint|violates/);
+    await rejects(() => db.query("insert into public.ai_requests (user_id, feature, status, job) values ($1, 'card_assist', 'running', 'nope')", [users.inspector]), /check constraint|violates/);
     await job("inspector", own, "inspect"); // 월간 점검 AI 초안도 백그라운드 작업(20261110120000)
-    // 작업 종류는 넣을 때만(열 단위 update 권한에 없음)
+    // 작업 종류는 넣을 때만(사용자 update 권한 없음 — 20261116110000)
     await rejects(() => as("inspector", () => db.query("update public.ai_requests set job = 'chat' where id = $1", [mine])), /permission denied/);
 
     await put("inspector", mine, own);
@@ -522,12 +644,13 @@ test("자동 저장 이력 병합·AI 사용 기록 권한", { skip: NO_SEED_CAR
   assert.equal(upd.affectedRows, 1, "본인 이력 행 갱신");
   const byAdmin = await as("admin", () => db.query("update public.card_edits set after = '{}' where id = $1", [row.rows[0].id]));
   assert.equal(byAdmin.affectedRows, 0, "남의 이력 행은 못 고침");
-  // AI 기록: 볼 수 있는 카드만, 본인 이름으로만
-  await as("inspector", () => db.query("insert into public.ai_requests (user_id, card_id, feature, status) values ($1, $2, 'card_assist', 'ok')", [users.inspector, own]));
-  await rejects(() => as("inspector", () => db.query("insert into public.ai_requests (user_id, card_id, feature, status) values ($1, $2, 'card_assist', 'ok')", [users.inspector, other])), /row-level security/);
-  await rejects(() => as("inspector", () => db.query("insert into public.ai_requests (user_id, card_id, feature, status) values ($1, $2, 'card_assist', 'ok')", [users.license, own])), /row-level security/);
+  // AI 기록(rpc — 20261116110000): 볼 수 있는 카드만, 본인 이름으로만(행 주인은 auth.uid())
+  assert.ok((await startAi("inspector", { card: own })).ok);
+  await rejects(() => startAi("inspector", { card: other }), /읽을 수 없는/);
+  assert.equal(await count("select 1 from public.ai_requests where user_id = $1", [users.inspector]), 1);
   assert.equal(await as("license", () => count("select 1 from public.ai_requests")), 0);
   assert.equal(await as("pmo", () => count("select 1 from public.ai_requests")), 1);
+  await clearAi();
 });
 
 test("공통 지식: 팀 있는 사용자·성과관리팀·관리자가 읽고(2026-11-10 — 팀 없음·사용 중지는 아래 「공통 자료 읽기 범위」), 관리자만 쓴다(2026-11-03 — 성과관리팀도 거절). anon은 아무것도 못 읽음", { skip: NO_SEED_CARDS }, async () => {
@@ -978,6 +1101,50 @@ test("카드 현행화: 원장 반영 묶음은 성과관리팀만, 부서는 �
   await as("inspector", () => db.query("insert into storage.objects (bucket_id, name) values ('card-originals', $1)", [`${own.uid}/imp${mine}-image_001.jpg`]));
   await rejects(() => as("inspector", () => db.query("insert into storage.objects (bucket_id, name) values ('card-originals', $1)", [`${own.uid}/biz1-image_009.jpg`])), /row-level security/);
   await rejects(() => as("inspector", () => db.query("insert into storage.objects (bucket_id, name) values ('card-originals', $1)", [`${other.uid}/imp${mine}-image_001.jpg`])), /row-level security/);
+});
+
+test("현행화 묶음·항목 위조 막기(20261116100000 — 웹 취약점 점검): 부서는 자기 작성본 묶음의 범위·대상·만든 사람을 못 바꾸고, 항목은 그 묶음 대상 카드에만·다른 묶음으로 못 옮김 — 부서 작성본 흐름과 성과관리팀 원장 흐름은 그대로", { skip: NO_SEED_CARDS }, async () => {
+  const mineCards = (await db.query<{ id: string }>("select c.id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 order by c.id limit 2", [users.inspector])).rows.map((r) => r.id);
+  const other = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '자격기획팀' order by c.id limit 1")).rows[0].id;
+  const [own, own2] = mineCards;
+  const newImport = "insert into public.card_imports (scope, target_card_id, created_by) values ($1, $2, $3) returning id";
+  const draft = (await as("inspector", () => db.query<{ id: number }>(newImport, ["draft", own, users.inspector]))).rows[0].id;
+  const draft2 = (await as("inspector", () => db.query<{ id: number }>(newImport, ["draft", own2, users.inspector]))).rows[0].id;
+  const ledger = (await as("pmo", () => db.query<{ id: number }>(newImport, ["ledger", null, users.pmo]))).rows[0].id;
+  const item = "insert into public.card_import_items (import_id, file_n, seq, parsed, match, card_id, candidates) values ($1, 1, $2, '{}'::jsonb, 'exact', $3, $4::jsonb) returning id";
+  try {
+    // ① 묶음: 범위·대상·만든 사람·만든 시각은 못 바꿈(바뀌기 전 행으로 판정하던 정책 구멍)
+    for (const [sql, args] of [
+      ["update public.card_imports set scope = 'ledger', target_card_id = null where id = $1", [draft]],
+      ["update public.card_imports set scope = 'ledger' where id = $1", [draft]],
+      ["update public.card_imports set target_card_id = $2 where id = $1", [draft, own2]],
+      ["update public.card_imports set created_by = $2 where id = $1", [draft, users.pmo]],
+      ["update public.card_imports set created_at = now() - interval '1 day' where id = $1", [draft]],
+    ] as const)
+      await rejects(() => as("inspector", () => db.query(sql, [...args])), /성과관리팀만 바꿀 수 있습니다/);
+    assert.equal(await count("select 1 from public.card_imports where id = $1 and scope = 'draft' and target_card_id = $2 and created_by = $3", [draft, own, users.inspector]), 1);
+    // 부서의 정상 흐름(startCardImport·parseCardImport): files·status만 고침
+    assert.equal((await as("inspector", () => db.query("update public.card_imports set files = '[{\"n\":1}]'::jsonb, status = 'parsed' where id = $1", [draft]))).affectedRows, 1);
+
+    // ② 항목: draft 묶음에는 대상 카드만(다른 팀 카드·같은 팀 다른 카드 거절), 대상 카드·null은 됨
+    await rejects(() => as("inspector", () => db.query(item, [draft, 1, other, JSON.stringify([other])])), /대상 카드에만/);
+    await rejects(() => as("inspector", () => db.query(item, [draft, 1, own2, JSON.stringify([own2])])), /대상 카드에만/);
+    const it = (await as("inspector", () => db.query<{ id: number }>(item, [draft, 1, own, JSON.stringify([own])]))).rows[0].id;
+    await as("inspector", () => db.query(item, [draft, 2, null, "[]"]));
+    await rejects(() => as("inspector", () => db.query("update public.card_import_items set card_id = $2 where id = $1", [it, other])), /대상 카드에만/);
+    // 다른 묶음으로 옮기기는 누구도(자기 묶음끼리도, 성과관리팀도)
+    await rejects(() => as("inspector", () => db.query("update public.card_import_items set import_id = $2 where id = $1", [it, draft2])), /옮길 수 없습니다/);
+    await rejects(() => as("pmo", () => db.query("update public.card_import_items set import_id = $2 where id = $1", [it, ledger])), /옮길 수 없습니다/);
+    // 부서 작성본 반영(applyImportToDraft): 상태·결과만 고침
+    assert.equal((await as("inspector", () => db.query("update public.card_import_items set status = 'applied', result = '{\"versionId\":1}'::jsonb, decided_by = $2, decided_at = now() where id = $1", [it, users.inspector]))).affectedRows, 1);
+
+    // ③ 성과관리팀 원장 흐름: 묶음 범위를 정하고, 아무 카드 항목이나 넣고 반영(card_id 지정)함
+    const li = (await as("pmo", () => db.query<{ id: number }>(item, [ledger, 1, null, JSON.stringify([own, other])]))).rows[0].id;
+    assert.equal((await as("pmo", () => db.query("update public.card_import_items set status = 'applied', card_id = $2, decided_by = $3, decided_at = now() where id = $1", [li, other, users.pmo]))).affectedRows, 1);
+    assert.equal((await as("pmo", () => db.query("update public.card_imports set files = '[]'::jsonb, status = 'parsed' where id = $1", [ledger]))).affectedRows, 1);
+  } finally {
+    await db.query("delete from public.card_imports where id = any($1)", [[draft, draft2, ledger]]);
+  }
 });
 
 test("카드 보관(삭제): 보관한 카드는 부서가 못 보고 못 씀, 성과관리팀은 보관함에서 봄", { skip: NO_SEED_CARDS }, async () => {

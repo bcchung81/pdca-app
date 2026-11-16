@@ -181,3 +181,26 @@ test("저장소 한도를 넘는 그림 → 흰 바탕 JPEG: 투명한 곳은 �
   assert.equal(jpegOnWhite(png, "a.png", 10), null, "가장 낮은 품질로도 넘으면 null");
   assert.equal(jpegOnWhite(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0]), "a.gif", 1_000_000), null, "풀 수 없는 형식");
 });
+
+test("그림 픽셀 상한: 20000×20000 헤더만 가진 작은 BMP·PNG는 할당 없이 거절", () => {
+  const b = Buffer.alloc(100);
+  b.write("BM", 0, "latin1");
+  b.writeUInt32LE(54, 10);
+  b.writeUInt32LE(40, 14);
+  b.writeInt32LE(20000, 18);
+  b.writeInt32LE(20000, 22);
+  b.writeUInt16LE(1, 26);
+  b.writeUInt16LE(1, 28);
+  const before = process.memoryUsage().arrayBuffers;
+  assert.equal(decodeBmp(b), null);
+  assert.ok(process.memoryUsage().arrayBuffers - before < 50e6);
+  const png = Buffer.from(encodePng(new Uint8Array(4 * 4 * 4), 4, 4, false));
+  png.writeUInt32BE(20000, 16);
+  png.writeUInt32BE(20000, 20);
+  assert.equal(decodePngLib(png), null);
+});
+
+test("정상 크기 BMP는 그대로 읽힘", () => {
+  const d = decodeBmp(bmp24(3, 2, () => [1, 2, 3]));
+  assert.equal(d?.width, 3);
+});

@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { parseStored, recordDescribe } from "../../../lib/ai/attachments.ts";
+import { parseStored } from "../../../lib/ai/attachments.ts";
 import { parseColumns } from "../../../lib/ai/material-text.ts";
 import { requireUser } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
@@ -115,17 +115,22 @@ export async function finishCardMaterialUpload(uid: string, path: string, fileNa
   const { supabase, card } = await cardFor(uid);
   if (!card || !isMaterialPath(card.uid, path)) return { ok: false, message: "경로가 올바르지 않습니다." };
   const name = fileName.slice(0, 300);
-  const parsed = await parseStored(supabase, "card-materials", path, name);
+  // 등록을 먼저(storage_path unique) — 같은 경로로 다시 불러도 등록이 거절돼 파일을 다시 읽지(kordoc·AI 그림 설명) 않음. 읽은 글은 등록한 행에 채움(열 단위 update 권한)
   const { data, error } = await supabase
     .from("card_materials")
-    .insert({ card_id: card.id, storage_path: path, file_name: name, mime_type: mime.slice(0, 200) || null, bytes, uploaded_by: me.id, ...(parsed.sha256 ? parseColumns(parsed) : {}) })
+    .insert({ card_id: card.id, storage_path: path, file_name: name, mime_type: mime.slice(0, 200) || null, bytes, uploaded_by: me.id })
     .select("id")
     .single();
   if (error || !data) {
     console.error("finishCardMaterialUpload", error?.message);
     return { ok: false, message: "목록에 등록하지 못했습니다." };
   }
-  await recordDescribe(supabase, parsed, { userId: me.id, cardId: card.id }); // 그림 설명을 만들었으면 그 호출(토큰)을 남김
+  // 그림 설명은 이 사용자의 호출 기록·그림 설명 한도 안에서(넘으면 보류). 읽은 글을 못 채우면 「아직 안 읽음」으로 남아 요청 때 다시 읽음
+  const parsed = await parseStored(supabase, "card-materials", path, name, card.id);
+  if (parsed.sha256) {
+    const { error: e } = await supabase.from("card_materials").update(parseColumns(parsed)).eq("id", data.id);
+    if (e) console.error("finishCardMaterialUpload parse", e.message);
+  }
   // 실패와 보류(그림 설명은 API 경로에서만 — CLI로 돌면 나중에 읽음) 모두 사유를 돌려줘 「AI가 못 읽음」으로 보임
   return { ok: true, id: String(data.id), ...(parsed.status !== "parsed" && parsed.sha256 ? { parseError: parsed.error ?? "읽지 못했습니다" } : {}) };
 }

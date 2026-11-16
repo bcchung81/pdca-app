@@ -7,7 +7,8 @@ import type { Block } from "./blocks.ts";
 import type { MgPart } from "./mg-types.ts";
 import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 import { REPORT_CSS } from "./section-css.ts";
-import { blockHtml, blocksSampleHtml, markRoots, miniChartHtml, sectionBodyHtml, sectionDocument, sectionHtml } from "./section-html.ts";
+import { REPORT_DOC_CSP, REPORT_DOC_CSP_META } from "./doc-csp.ts";
+import { REPORT_DOC_SCRIPT, blockHtml, blocksSampleHtml, markRoots, miniChartHtml, sectionBodyHtml, sectionDocument, sectionHtml } from "./section-html.ts";
 
 const B = (kind: Block["kind"], label: string, over: Partial<Block> = {}): Block => ({ kind, label, title: "", variant: "", text: "", items: [], cells: [], rows: [], series: [], badge: "", ...over });
 const none: Diagram = { type: "none", title: "", rows: [], steps: [], actions: [] };
@@ -388,4 +389,49 @@ test("값 + 단위 묶음: 「340건」·「18.4초」·「1,922곳」은 .k-nb 
   const rep = sectionBodyHtml(base({ version: 3, blocks: [B("bullets", "가", { items: ["45건 처리"] }), B("bullets", "나", { items: ["45건 점검"] }), B("bullets", "다", { items: ["45건 완료"] })], rows: [], results: [] }), [], { repeats: true });
   assert.match(rep, /<span class="k-rep" title="같은 수치 3곳 반복[^"]*"><span class="k-nb">45건<\/span><\/span>/);
   assert.doesNotMatch(rep, /title="[^"]*k-nb/);
+});
+
+// 2026-11-16 저장형 XSS: 부서 담당자는 card_report_drafts.spec을 REST로 직접 고칠 수 있고 readSection은 형 변환만 함 —
+// 숫자로 여겨 그대로 끼우던 칸(대상사업 번호·평가내용·대주제 번호)과 진행 상태 표지에 태그를 넣어도 글로만 나와야 함
+const XSS = "1</span><img src=x onerror=alert(1)>";
+const XSS_ESC = "1&lt;/span&gt;&lt;img src=x onerror=alert(1)&gt;";
+const noTag = (html: string, what: string) => {
+  assert.ok(!html.includes("<img"), `${what}: <img 태그가 그대로 나옴`);
+  assert.doesNotMatch(html, /<[^>]*onerror=/, `${what}: onerror 속성이 태그 안에 나옴`);
+};
+
+test("저장형 XSS: 대상사업 번호(spec.business.no)는 이스케이프", () => {
+  const html = sectionBodyHtml(base({ business: { no: XSS as unknown as number, name: "사업" }, rows: [row("추진배경", ["a"])] }));
+  noTag(html, "대상사업 번호");
+  assert.ok(html.includes(`<span class="k-biz__no">대상사업${XSS_ESC}</span>`));
+});
+
+test("저장형 XSS: 경영관리 평가내용 번호(evalNo)·대주제 번호(themeNo)는 이스케이프", () => {
+  const html = sectionBodyHtml(mgSpec([part(XSS as unknown as number, XSS as unknown as number, "가")]));
+  noTag(html, "평가내용·대주제 번호");
+  assert.ok(html.includes(`<span class="k-biz__no">평가내용${XSS_ESC}</span>`));
+  assert.ok(html.includes(`<span class="k-task__no">${XSS_ESC}</span>`));
+});
+
+test("저장형 XSS: 진행 상태 흐름(timeline:status)의 칸 표지(tag)는 이스케이프", () => {
+  const b = B("timeline", "", { variant: "status", cells: [{ head: "’25", tag: XSS, bullets: ["a"], note: "" }, { head: "’26", tag: "진행", bullets: ["b"], note: "" }] });
+  const html = blockHtml(b, new Set());
+  noTag(html, "상태 표지");
+  assert.ok(html.includes(`<span class="k-st">${XSS_ESC}</span>`));
+  assert.ok(html.includes('<span class="k-st">진행</span>'), "정상 표지는 그대로");
+});
+
+test("저장형 XSS: 내려받기 문서에는 스크립트가 하나뿐(넣은 태그는 글로) — CSP 해시 = 문서 안 스크립트의 sha256", () => {
+  const spec = mgSpec([part(XSS as unknown as number, XSS as unknown as number, "가")], { business: { no: XSS as unknown as number, name: "사업" } });
+  const doc = sectionDocument(spec);
+  noTag(doc, "내려받기 문서");
+  const scripts = [...doc.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.equal(scripts.length, 1);
+  assert.equal((doc.match(/<script/g) ?? []).length, 1);
+  assert.equal(scripts[0], REPORT_DOC_SCRIPT);
+  const hash = createHash("sha256").update(scripts[0], "utf8").digest("base64");
+  assert.equal(REPORT_DOC_CSP, `script-src 'sha256-${hash}'; object-src 'none'; base-uri 'none'`);
+  assert.doesNotMatch(REPORT_DOC_CSP, /default-src/, "글꼴·그림·스타일을 깨지 않게 default-src는 두지 않음");
+  assert.equal(REPORT_DOC_CSP_META, `<meta http-equiv="Content-Security-Policy" content="${REPORT_DOC_CSP}">`);
+  assert.ok(!REPORT_DOC_CSP.includes('"'), "meta content 속성 안에 들어감");
 });

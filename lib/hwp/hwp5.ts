@@ -73,6 +73,8 @@ const T_SC_CURVE = 83;
 const T_SC_PICTURE = 85;
 
 const MAX_STREAM = 200 * 1024 * 1024;
+/** 스트림 해제 합계 상한. kordoc `MAX_DECOMPRESS_SIZE`(node_modules/kordoc, 256MB)와 같은 값 — 메모리 안전 상한이지 문서별 렌더링 상수가 아님 */
+export const MAX_HWP5_INFLATED = 256 * 1024 * 1024;
 
 function readRecords(buf: Buffer): Rec[] {
   const out: Rec[] = [];
@@ -743,8 +745,16 @@ function shapeAt(ctx: Ctx, si: number, end: number, pos: ObjPos, ctrlLevel: numb
   return shape;
 }
 
-function inflate(raw: Buffer): Buffer {
-  const out = inflateRawSync(raw, { maxOutputLength: MAX_STREAM });
+/** 스트림 하나를 풂 — 스트림마다 상한(MAX_STREAM)과 파일 전체 남은 한도(budget)를 함께 넘지 못함 */
+function inflate(raw: Buffer, budget: { left: number }): Buffer {
+  let out: Buffer;
+  try {
+    out = inflateRawSync(raw, { maxOutputLength: Math.max(1, Math.min(MAX_STREAM, budget.left)) });
+  } catch (e) {
+    if ((e as { code?: string }).code === "ERR_BUFFER_TOO_LARGE") throw new HwpReadError("파일이 너무 커서 읽지 않았습니다.");
+    throw e;
+  }
+  budget.left -= out.length;
   return out;
 }
 
@@ -785,7 +795,8 @@ function readHeadFoot(ctx: Ctx, sec: Section) {
 }
 
 /** HWP 5 바이트 → 모델 */
-export function readHwp5(bytes: Uint8Array): HwpDoc {
+export function readHwp5(bytes: Uint8Array, maxInflated: number = MAX_HWP5_INFLATED): HwpDoc {
+  const budget = { left: maxInflated };
   let cfb: CFB.CFB$Container;
   try {
     cfb = CFB.read(Buffer.from(bytes), { type: "buffer" });
@@ -805,7 +816,7 @@ export function readHwp5(bytes: Uint8Array): HwpDoc {
   const compressed = (flags & 1) !== 0;
   const docInfoRaw = stream("/DocInfo");
   if (!docInfoRaw) throw new HwpReadError("한글 파일의 문서 정보(DocInfo)가 없습니다.");
-  const info = readRecords(compressed ? inflate(docInfoRaw) : docInfoRaw);
+  const info = readRecords(compressed ? inflate(docInfoRaw, budget) : docInfoRaw);
 
   // 글꼴: 언어별 개수는 ID_MAPPINGS[1..7]
   const idm = info.find((r) => r.tag === T_ID_MAPPINGS);
@@ -847,8 +858,9 @@ export function readHwp5(bytes: Uint8Array): HwpDoc {
     let data: Uint8Array | null = raw;
     if (raw && (b.compress === 1 || (b.compress === 0 && compressed))) {
       try {
-        data = inflate(raw);
-      } catch {
+        data = inflate(raw, budget);
+      } catch (e) {
+        if (e instanceof HwpReadError) throw e; // 크기 한도는 삼키지 않음
         data = raw;
       }
     }
@@ -860,7 +872,7 @@ export function readHwp5(bytes: Uint8Array): HwpDoc {
   for (let s = 0; ; s++) {
     const raw = stream(`/BodyText/Section${s}`);
     if (!raw) break;
-    const recs = readRecords(compressed ? inflate(raw) : raw);
+    const recs = readRecords(compressed ? inflate(raw, budget) : raw);
     const ctx: Ctx = { recs };
     const [ps] = paras(ctx, 0, recs.length, 0);
     const sec: Section = { page: null, paras: ps };

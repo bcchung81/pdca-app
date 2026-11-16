@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { type Figure, figureMm } from "./blocks.ts";
 import { type Composition, type PlanBlock, blockBudgets } from "./composition.ts";
-import { SHAPE_NAMES, compositionSheetHtml, shapeCode, shapeName, sheetParts } from "./composition-sheet.ts";
+import { SHAPE_NAMES, compositionSheetHtml, mgSheetHtml, shapeCode, shapeName, sheetParts } from "./composition-sheet.ts";
 import { PAGE_MM, frameHeight } from "./fit.ts";
 
 const planBlock = (over: Partial<PlanBlock> = {}): PlanBlock => ({ kind: "bullets", variant: "", label: "", purpose: "설명", cells: 2, materials: [], figures: [], ...over });
@@ -62,4 +62,17 @@ test("compositionSheetHtml: 그림 자리는 figureMm 크기 빗금 칸, 모든 
   assert.doesNotMatch(html, /<script>|<b>/);
   assert.ok(sheetParts(c, 0.5, "sub").head < sheetParts(c, 0.5, "all").head, "제목만이면 제목부가 낮음");
   assert.match(compositionSheetHtml(c, 0.5, "sub"), /<div class="cs-head" style="height:[\d.]+mm"><span class="cs-kind">소항목 제목\(가\.\)<\/span>/, "제목부 상자 안 글");
+});
+
+// 2026-11-16 저장형 XSS: 구성안(card_report_drafts.outline)도 부서 담당자가 REST로 고칠 수 있고 readComposition은 형 변환만 함 — 칸 수(cells)도 글로만
+test("저장형 XSS: 구성안 블록 칸 수(cells)에 태그를 넣어도 이스케이프(주요사업·경영관리 판면)", () => {
+  const XSS = "1</span><img src=x onerror=alert(1)>";
+  const esc = "1&lt;/span&gt;&lt;img src=x onerror=alert(1)&gt;";
+  const bad = planBlock({ cells: XSS as unknown as number });
+  const mg = comp([{ ...bad, at: "1.1.가" }], { mg: { indicator: "지표", parts: [{ key: "1.1.가", evalNo: 1, evalTitle: "평가", themeNo: 1, themeTitle: "대주제", mark: "가", title: "절", story: "", why: "" }] } as Composition["mg"] });
+  for (const html of [compositionSheetHtml(comp([bad]), 1), mgSheetHtml(mg)]) {
+    assert.ok(!html.includes("<img"));
+    assert.doesNotMatch(html, /<[^>]*onerror=/);
+    assert.ok(html.includes(`<span> · 줄 ${esc}`) || html.includes(`<span> · 칸 ${esc}`));
+  }
 });

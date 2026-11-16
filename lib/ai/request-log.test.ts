@@ -1,59 +1,40 @@
 // AI 호출 기록·제한 공용 래퍼(lib/ai/request-log.ts) 시험 — 2026-10-10 개선 계획 P0-3·B1:
 // 호출 직전에 running 행을 넣어 1분 5회·동시 실행 제한에 진행 중 호출도 세고, 끝나면 토큰·소요 시간을 채워 끝맺음(검증 전에 — 검증 예외에도 토큰이 남음).
+// 2026-11-16부터 시작·끝맺기는 rpc(start_ai_request·finish_ai_request — 20261116110000). 여기서는 가짜 rpc(request-log-fake.ts)로 TS 래퍼를 보고,
+// DB 함수 자체(잠금·한도·키 대조·권한)는 lib/db/migrations.test.ts가 PGlite로 확인함.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { AI_LIMITS, batchLimitMessage, startAiRequest, startAiRequests } from "./request-log.ts";
+import { AI_LIMITS, DESCRIBE_FEATURE, DESCRIBE_LIMITS, batchLimitMessage, startAiRequest, startAiRequests } from "./request-log.ts";
+import { fakeAiRequestRpc } from "./request-log-fake.ts";
 
 type Row = Record<string, any>;
-
-/** ai_requests 한 표만 흉내 내는 가짜 클라이언트: select(count head)·insert(returning)·update(returning) + eq·neq·gte·lt 조건 */
-function fakeDb(seed: Row[] = []) {
-  const rows: Row[] = seed.map((r, i) => ({ id: i + 1, ...r }));
-  let nextId = rows.length + 1;
-  const match = (r: Row, f: Array<[string, string, any]>) =>
-    f.every(([op, k, v]) => (op === "eq" ? r[k] === v : op === "neq" ? r[k] !== v : op === "gte" ? r[k] >= v : op === "lt" ? r[k] < v : true));
-  const builder = (kind: "select" | "update" | "insert", payload?: Row, opts?: any) => {
-    const filters: Array<[string, string, any]> = [];
-    const q: any = {
-      eq: (k: string, v: any) => (filters.push(["eq", k, v]), q),
-      neq: (k: string, v: any) => (filters.push(["neq", k, v]), q),
-      gte: (k: string, v: any) => (filters.push(["gte", k, v]), q),
-      lt: (k: string, v: any) => (filters.push(["lt", k, v]), q),
-      select: () => q,
-      single: () => q,
-      then(resolve: (v: any) => void) {
-        if (kind === "select") resolve({ count: rows.filter((r) => match(r, filters)).length, data: null, error: null });
-        else if (kind === "insert") {
-          const r = { id: nextId++, ...payload };
-          rows.push(r);
-          resolve({ data: { id: r.id }, error: null });
-        } else {
-          const hit = rows.filter((r) => match(r, filters));
-          hit.forEach((r) => Object.assign(r, payload));
-          resolve({ data: hit.map((r) => ({ id: r.id })), error: null });
-        }
-      },
-    };
-    void opts;
-    return q;
-  };
-  const db: any = { from: (t: string) => (assert.equal(t, "ai_requests"), { select: (_c: string, o?: any) => builder("select", undefined, o), insert: (p: Row) => builder("insert", p), update: (p: Row) => builder("update", p) }) };
-  return { db, rows };
-}
 
 const NOW = Date.parse("2026-10-10T12:00:00Z");
 const iso = (ms: number) => new Date(ms).toISOString();
 const me = "u1";
 
-test("startAiRequest: running 행을 넣고, finish가 토큰·모델·소요 시간·단계 시간을 채워 ok로 끝맺음", async () => {
+/** ai_requests 표 + rpc만 있는 가짜 클라이언트(표 직접 쓰기는 없음 — from을 부르면 실패). calls = rpc 기록 */
+function fakeDb(seed: Row[] = [], user = me) {
+  const rows: Row[] = seed.map((r, i) => ({ id: i + 1, ...r }));
+  const rpc = fakeAiRequestRpc(rows, { user, now: () => NOW });
+  const calls: Array<{ fn: string; args: Record<string, any> }> = [];
+  const db: any = {
+    rpc: (fn: string, args: Record<string, any>) => (calls.push({ fn, args }), rpc(fn, args)),
+    from: (t: string) => assert.fail(`표 직접 접근 없음(${t})`),
+  };
+  return { db, rows, calls };
+}
+
+test("startAiRequest: rpc로 running 행을 넣고, finish가 토큰·모델·소요 시간·단계 시간을 채워 ok로 끝맺음", async () => {
   const f = fakeDb();
   const r = await startAiRequest(f.db, { userId: me, cardId: "c1", feature: "report_section", mode: "1p" }, NOW);
   assert.ok(r.ok);
   assert.equal(f.rows.length, 1);
   assert.equal(f.rows[0].status, "running");
-  assert.equal(f.rows[0].created_at, undefined, "만든 시각은 DB 기본값(now())");
+  assert.deepEqual(f.calls[0].args, { p_feature: "report_section", p_card_id: "c1", p_mode: "1p", p_job: null, p_key_hashes: [f.rows[0].finish_key_hash], p_batch: false });
   if (!r.ok) return;
   await r.finish({ status: "ok", model: "cli/sonnet", usage: { input: 10, output: 200, cacheRead: 5, cacheWrite: 7, cacheWrite1h: 3 }, timings: { call: 900 } }, NOW + 1234);
   assert.equal(f.rows[0].status, "ok");
@@ -63,6 +44,21 @@ test("startAiRequest: running 행을 넣고, finish가 토큰·모델·소요 �
   assert.equal(f.rows[0].duration_ms, 1234);
   assert.deepEqual(f.rows[0].timings, { call: 900 });
   assert.ok(f.rows[0].finished_at);
+});
+
+test("끝맺기 키: 시작 때는 키의 sha256만 보내고, 끝맺기 때 보낸 키가 그 해시와 맞음(키는 행마다 다름)", async () => {
+  const f = fakeDb();
+  const b = await startAiRequests(f.db, { userId: me, feature: "report_outline", mode: "1p+2안" }, 2, NOW);
+  assert.ok(b.ok);
+  if (!b.ok) return;
+  const hashes = f.calls[0].args.p_key_hashes as string[];
+  assert.equal(hashes.length, 2);
+  assert.notEqual(hashes[0], hashes[1]);
+  for (const h of hashes) assert.match(h, /^[0-9a-f]{64}$/);
+  await b.reqs[1].finish({ status: "error", error: "x" }, NOW + 1);
+  const key = f.calls[1].args.p_key as string;
+  assert.equal(createHash("sha256").update(key, "utf8").digest("hex"), hashes[1]);
+  assert.ok(!hashes.includes(key), "키 자체는 시작 때 보내지 않음");
 });
 
 test("finish: 실패(error)로 끝맺어도 duration_ms·finished_at이 남고, timings를 안 넘겨도 시작 시각에서 자동 계산됨", async () => {
@@ -88,7 +84,7 @@ test("finish는 한 번만: ok로 끝맺은 뒤 검증 예외로 error 끝맺기
   assert.equal(f.rows[0].output_tokens, 50);
 });
 
-test("제한: 진행 중 호출이 상한이면 거절(5~10분짜리 호출도 셈), 최근 60초 기록이 5건이면 거절", async () => {
+test("제한(DB 판정 → TS 안내 글): 진행 중 호출이 상한이면 「이미 N건」, 최근 60초 기록이 상한이면 「1분 뒤」", async () => {
   const running = Array.from({ length: AI_LIMITS.running }, () => ({ user_id: me, feature: "report_outline", status: "running", created_at: iso(NOW - 5 * 60_000) }));
   const busy = await startAiRequest(fakeDb(running).db, { userId: me, feature: "card_assist" }, NOW);
   assert.equal(busy.ok, false);
@@ -97,24 +93,28 @@ test("제한: 진행 중 호출이 상한이면 거절(5~10분짜리 호출도 �
   const often = await startAiRequest(fakeDb(recent).db, { userId: me, feature: "card_chat" }, NOW);
   assert.equal(often.ok, false);
   assert.match(!often.ok ? often.message : "", /1분 뒤/);
-  // 다른 사람 기록·첨부 그림 설명 기록은 세지 않음
-  const others = [...recent.map((r) => ({ ...r, user_id: "u2" })), ...recent.map((r) => ({ ...r, feature: "material_describe" }))];
-  assert.equal((await startAiRequest(fakeDb(others).db, { userId: me, feature: "card_chat" }, NOW)).ok, true);
 });
 
-test("오래된 running 행(끝맺지 못한 호출 — 함수가 시간 제한에서 끊김)은 시작할 때 error로 닫고 동시 실행 수에서 뺌", async () => {
-  const stale = Array.from({ length: AI_LIMITS.running }, () => ({ user_id: me, feature: "report_section", status: "running", created_at: iso(NOW - AI_LIMITS.staleMs - 60_000) }));
-  const f = fakeDb(stale);
-  const r = await startAiRequest(f.db, { userId: me, feature: "report_section" }, NOW);
-  assert.ok(r.ok, "오래된 것은 세지 않음");
-  assert.deepEqual(f.rows.slice(0, stale.length).map((x) => x.status), stale.map(() => "error"));
-  assert.match(f.rows[0].error, /중단/);
+test("rpc가 실패하면(함수 없음·연결 오류) AI를 부르지 않게 거절", async () => {
+  const db: any = { rpc: async () => ({ data: null, error: { message: "function not found" } }) };
+  const r = await startAiRequest(db, { feature: "card_chat" }, NOW);
+  assert.equal(r.ok, false);
+  assert.match(!r.ok ? r.message : "", /기록을 남기지 못해/);
+  const b = await startAiRequests(db, { feature: "report_outline" }, 2, NOW);
+  assert.equal(b.ok, false);
 });
 
-test("limited: false(첨부 그림 설명)는 제한 없이 기록만", async () => {
-  const running = Array.from({ length: AI_LIMITS.running + 2 }, () => ({ user_id: me, feature: "report_outline", status: "running", created_at: iso(NOW - 60_000) }));
-  const r = await startAiRequest(fakeDb(running).db, { userId: me, feature: "material_describe", limited: false }, NOW);
-  assert.ok(r.ok);
+test("첨부 그림 설명(material_describe)은 따로 셈: 다른 기능 기록에 막히지 않고, 그림 설명 한도(DESCRIBE_LIMITS)에 걸리면 거절", async () => {
+  const others = Array.from({ length: AI_LIMITS.perMinute }, () => ({ user_id: me, feature: "card_chat", status: "running", created_at: iso(NOW - 10_000) }));
+  assert.equal((await startAiRequest(fakeDb(others).db, { feature: DESCRIBE_FEATURE }, NOW)).ok, true);
+  const described = Array.from({ length: DESCRIBE_LIMITS.perMinute }, () => ({ user_id: me, feature: DESCRIBE_FEATURE, status: "ok", created_at: iso(NOW - 10_000) }));
+  assert.equal((await startAiRequest(fakeDb(described).db, { feature: "card_chat" }, NOW)).ok, true, "그림 설명 기록은 다른 기능 한도에 안 셈");
+  const r = await startAiRequest(fakeDb(described).db, { feature: DESCRIBE_FEATURE }, NOW);
+  assert.equal(r.ok, false);
+  assert.match(!r.ok ? r.message : "", /1분 뒤/);
+  const busy = Array.from({ length: DESCRIBE_LIMITS.running }, () => ({ user_id: me, feature: DESCRIBE_FEATURE, status: "running", created_at: iso(NOW - 10_000) }));
+  const b = await startAiRequest(fakeDb(busy).db, { feature: DESCRIBE_FEATURE }, NOW);
+  assert.match(!b.ok ? b.message : "", new RegExp(`이미 ${DESCRIBE_LIMITS.running}건`));
 });
 
 test("requestState·medianMs(AI 사용량 화면): running은 진행 중, 오래된 running은 중단, 소요 시간 중앙값은 끝맺은 행만", async () => {

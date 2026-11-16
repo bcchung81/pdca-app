@@ -667,15 +667,72 @@ function parseXml(xml: string, name: string): El {
   return doc.documentElement;
 }
 
+/**
+ * 압축 해제 합계 상한(바이트). kordoc `MAX_DECOMPRESS_SIZE`(node_modules/kordoc, 256MB)와 같은 값 — 신뢰할 수 없는 파일이 서버 함수 메모리를
+ * 한꺼번에 채우지 못하게 하는 크기 안전 상한이라 문서·글꼴별 렌더링 상수가 아님(금기 5 해당 없음).
+ */
+export const MAX_HWPX_UNZIPPED = 256 * 1024 * 1024;
+
+const TOO_BIG = "파일이 너무 커서 읽지 않았습니다.";
+
+type Helper = { on(e: string, f: (...a: any[]) => void): Helper; pause(): void; resume(): void }; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** zip 항목 하나를 풀어 바이트로 — 선언 크기가 남은 한도를 넘으면 풀지 않고, 풀면서 쌓인 실제 길이가 넘으면 그 자리에서 멈춤(선언 크기는 속일 수 있어 실제 해제량으로도 막음) */
+function unzipLimited(entry: JSZip.JSZipObject, budget: { left: number }): Promise<Uint8Array> {
+  const declared = (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize;
+  if (typeof declared === "number" && declared > budget.left) return Promise.reject(new HwpReadError(TOO_BIG));
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    let got = 0;
+    let done = false;
+    const helper = (entry as unknown as { internalStream(t: "uint8array"): Helper }).internalStream("uint8array");
+    helper
+      .on("data", (c: Uint8Array) => {
+        if (done) return;
+        got += c.length;
+        if (got > budget.left) {
+          done = true;
+          helper.pause();
+          chunks.length = 0;
+          reject(new HwpReadError(TOO_BIG));
+          return;
+        }
+        chunks.push(c);
+      })
+      .on("error", () => {
+        if (done) return;
+        done = true;
+        reject(new HwpReadError("한글(HWPX) 파일 구조를 읽지 못했습니다."));
+      })
+      .on("end", () => {
+        if (done) return;
+        done = true;
+        budget.left -= got;
+        const out = new Uint8Array(got);
+        let at = 0;
+        for (const c of chunks) {
+          out.set(c, at);
+          at += c.length;
+        }
+        resolve(out);
+      })
+      .resume();
+  });
+}
+
 /** HWPX 바이트 → 모델 */
-export async function readHwpx(bytes: Uint8Array): Promise<HwpDoc> {
+export async function readHwpx(bytes: Uint8Array, maxUnzipped: number = MAX_HWPX_UNZIPPED): Promise<HwpDoc> {
+  const budget = { left: maxUnzipped };
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(bytes);
   } catch {
     throw new HwpReadError("한글(HWPX) 파일 구조를 읽지 못했습니다.");
   }
-  const text = async (path: string) => (zip.file(path) ? await zip.file(path)!.async("string") : null);
+  const text = async (path: string) => {
+    const f = zip.file(path);
+    return f ? new TextDecoder("utf-8", { ignoreBOM: true }).decode(await unzipLimited(f, budget)) : null;
+  };
   const header = await text("Contents/header.xml");
   if (!header) throw new HwpReadError("한글(HWPX) 파일의 문서 정보(header.xml)가 없습니다.");
   // 그림: content.hpf 목록의 id → 파일
@@ -690,7 +747,7 @@ export async function readHwpx(bytes: Uint8Array): Promise<HwpDoc> {
     const n = binNums.size + 1;
     binNums.set(id, n);
     const f = zip.file(href);
-    const item: BinItem = { id: n, ext: safeBinExt(href.split(".").pop() ?? ""), data: f ? await f.async("uint8array") : null };
+    const item: BinItem = { id: n, ext: safeBinExt(href.split(".").pop() ?? ""), data: f ? await unzipLimited(f, budget) : null };
     doc.bins.set(n, item);
   }
   const binId = (ref: string) => binNums.get(ref) ?? 0;
