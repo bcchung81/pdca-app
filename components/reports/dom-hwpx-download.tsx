@@ -205,7 +205,11 @@ export function useDomHwpx(): { start: (it: DomHwpxItem) => void; startTarget: (
       if (gate.warned.length)
         steps.push({
           title: "글꼴 일부가 없습니다 — 계속 내려받을까요?",
-          body: [`이 PC에 ${gate.warned.map((k) => FONT_GROUP_NAME[k]).join("·")} 글꼴이 없어 그 글은 대체 글꼴로 그려졌습니다.`, "한글 파일에는 원래 글꼴 이름을 적고 화면의 흉내 자간은 되돌립니다. 그 글의 줄바꿈이 화면과 조금 다를 수 있습니다."],
+          body: [
+            `이 PC에 ${gate.warned.map((k) => FONT_GROUP_NAME[k]).join("·")} 글꼴이 없어 그 글은 대체 글꼴로 그려졌습니다.`,
+            "한글 파일에는 원래 글꼴 이름을 적습니다. 이 글꼴이 없는 PC의 한글은 함초롬돋움으로 대신 그리는데 화면보다 넓어서, 딱지(대상사업·과제 번호) 칸은 조금 넓혀 두었습니다. 제목·표 머리의 줄바꿈은 화면과 다를 수 있습니다.",
+            "화면과 같게 받으려면 글꼴을 설치하고 브라우저를 다시 연 뒤 내려받으세요(도움말 「글꼴 안내」).",
+          ],
           confirmLabel: "계속",
         });
       if (over > 0) steps.push({ title: "판면을 넘칩니다 — 계속 내려받을까요?", body: [`화면 기준 ${over.toFixed(1)}mm 넘침 — 한글에서 다음 쪽으로 넘어갈 수 있음.`], confirmLabel: "내려받기" });

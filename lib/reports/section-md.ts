@@ -9,11 +9,28 @@ import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
 
 const KNOWN_KINDS = new Set(["bullets", "cards", "compare", "steps", "timeline", "hub", "voices", "define", "band", "banner", "quotes", "case", "chart", "subhead", "stats", "qa", "table", "strategy", "pdca", "matrix", "remap"]);
 
-/** 글 한 줄: 줄바꿈 → 공백, 위첨자 ^{시점} → 시점 + 공백(한글 원고에는 위첨자가 없어 평문), 굵게 **…**·【확인: …】은 그대로 */
+/**
+ * 굵게 표기: 짝 맞는 **…**(안에 * 없음)만 두고 짝 잃은 **는 걷음 — 화면(section-html.ts emph)·기존 양식(section-hwpx.ts)과 같은 규칙.
+ * 글자 한도로 잘린 칸 글(「… **종합 점검･보」)의 짝 잃은 **가 한글에 글자로 보이던 것(2026-11-17). 짝을 찾는 훑기는 다음 * 에서 멈춰 선형
+ */
+function boldPairs(s: string): string {
+  if (!s.includes("**")) return s;
+  let out = "";
+  let last = 0;
+  for (const m of s.matchAll(/\*\*([^*]+?)\*\*/g)) {
+    out += s.slice(last, m.index).replace(/\*\*/g, "") + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + s.slice(last).replace(/\*\*/g, "");
+}
+
+/** 글 한 줄: 줄바꿈 → 공백, 위첨자 ^{시점} → 시점 + 공백(한글 원고에는 위첨자가 없어 평문), 굵게 **…**(짝 맞는 것만 — boldPairs)·【확인: …】은 그대로 */
 const t = (s: unknown) =>
-  String(s ?? "")
-    .replace(/\s+/g, (ws) => (ws.includes("\n") ? " " : ws)) // 줄바꿈이 낀 공백 덩어리 → 공백 하나(예전 /\s*\r?\n\s*/g와 같은 결과, 공백만 긴 글도 선형)
-    .replace(/\^\{([^{}]*)\}/g, "$1 ")
+  boldPairs(
+    String(s ?? "")
+      .replace(/\s+/g, (ws) => (ws.includes("\n") ? " " : ws)) // 줄바꿈이 낀 공백 덩어리 → 공백 하나(예전 /\s*\r?\n\s*/g와 같은 결과, 공백만 긴 글도 선형)
+      .replace(/\^\{([^{}]*)\}/g, "$1 "),
+  )
     .replace(/ {2,}/g, " ")
     .trim();
 /** 굵게 표기를 걷은 글(상자·강조 안에서 표기가 겹치지 않게) */

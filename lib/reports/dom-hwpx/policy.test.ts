@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { validateHwpx } from "kordoc";
 import type { Table } from "../../hwp/model.ts";
 import { REPORT_PAGE_MM } from "../section-hwpx.ts";
-import { bodyMmOf, pageDefOf, snapshotHwpxInput, snapshotToHwpx } from "./convert.ts";
+import { bodyMmOf, pageDefOf, SPLIT_OVER_SHARE, snapshotHwpxInput, snapshotToHwpx } from "./convert.ts";
 import { DOM_HWPX_MAX_BYTES, REPORT_BODY_MM, SNAP_LIMITS, fontGate, judgeDomHwpx, judgeSnapshotPost, overflowLimitMm, overflowMm, parseDomHwpxPost, spacingUndoFor, validateSnapshot } from "./policy.ts";
 import type { LayoutSnapshot } from "./snapshot.ts";
 
@@ -18,7 +18,7 @@ import type { LayoutSnapshot } from "./snapshot.ts";
 const fixture = (name: string): LayoutSnapshot => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
 const clone = <T>(x: T): T => structuredClone(x);
 const MM = 7200 / 25.4;
-// 변환기 splitOverMm 옵션 시험용 값(라우트는 쓰지 않음 — 2026-11-03 기본값만)
+// 변환기 splitOverMm 옵션 시험용 값(라우트는 쓰지 않음 — 기본값만: 2026-11-17부터 쪽 본문 × 0.45)
 const QUARTER_PAGE_MM = REPORT_BODY_MM.h / 4;
 const topTables = (snap: LayoutSnapshot, splitOverMm?: number) =>
   snapshotHwpxInput(snap, { lines: false, page: REPORT_PAGE_MM, splitOverMm }).input.paras.flatMap((p) => p.items.flatMap((it) => (it.kind === "obj" && it.obj.kind === "table" ? [it.obj as Table] : [])));
@@ -154,13 +154,13 @@ test("쪽 정의 인자: 넘긴 용지·여백이 그대로 한글 용지 · 본
 
 test("여러 쪽: 나눔 높이보다 높은 맨 위 표만 글자처럼 취급하지 않음(한글이 쪽에서 나눔) · 높은 행이 있으면 TABLE, 아니면 CELL · 표 안 표·낮은 표는 그대로", () => {
   const snap = fixture("multi-page.snapshot.json");
-  // 기본(쪽 본문 255mm): 300mm 상자만
+  // 기본(쪽 본문 255mm × 0.45 = 114.75mm — 2026-11-17): 300mm 상자(그보다 높은 행 → TABLE)와 240mm 네 행 표(행 60mm → CELL)
   const base = topTables(snap);
   assert.deepEqual(
     base.map((t) => [Math.round(t.pos.height / MM), t.pos.treatAsChar, t.pageBreak]),
     [
       [300, false, "TABLE"],
-      [240, true, "CELL"],
+      [240, false, "CELL"],
       [30, true, "CELL"],
     ],
   );
@@ -183,12 +183,13 @@ test("여러 쪽: 나눔 높이보다 높은 맨 위 표만 글자처럼 취급�
   assert.equal(snapshotHwpxInput(snap, { lines: false, page: REPORT_PAGE_MM, splitOverMm: QUARTER_PAGE_MM }).stats.split, 2);
 });
 
-test("여러 쪽 초안(경영관리 등): 쪽 본문보다 낮은 맨 위 표는 모두 글자처럼 취급(treatAsChar) — 떠 있는 표가 뒤 절 표와 겹치지 않게(2026-11-03)", () => {
+test("여러 쪽 초안(경영관리 등): 쪽 본문 × 0.45보다 높은 맨 위 표만 떠 있는 표 — 그보다 낮은 표는 글자처럼 취급(2026-11-03 겹침 방지 + 2026-11-17 빈 쪽 방지)", () => {
   const snap = fixture("multi-page.snapshot.json");
-  // 라우트는 splitOverMm을 주지 않음(변환기 기본 = 쪽 본문 높이): 쪽 본문(255mm)보다 낮은 240mm·30mm 표는 글자처럼 취급
+  // 라우트는 splitOverMm을 주지 않음(변환기 기본 = 쪽 본문 높이 × SPLIT_OVER_SHARE): 114.75mm보다 낮은 30mm 표는 글자처럼 취급, 240mm·300mm 표는 나눔
   const tables = topTables(snap);
-  for (const t of tables) if (t.pos.height / MM <= REPORT_BODY_MM.h) assert.equal(t.pos.treatAsChar, true);
-  assert.equal(tables.filter((t) => !t.pos.treatAsChar).length, 1);
+  const limit = REPORT_BODY_MM.h * SPLIT_OVER_SHARE;
+  for (const t of tables) assert.equal(t.pos.treatAsChar, t.pos.height / MM <= limit);
+  assert.equal(tables.filter((t) => !t.pos.treatAsChar).length, 2);
 });
 
 test("고정 자료 둘 → HWPX validateHwpx 통과(여러 쪽은 나눔 표 포함)", async () => {

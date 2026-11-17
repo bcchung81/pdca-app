@@ -25,7 +25,7 @@ import type { Para, Table } from "../../hwp/model.ts";
 import { BLOCK_KINDS } from "../blocks.ts";
 import { REPORT_PAGE_MM } from "../section-hwpx.ts";
 import { hangCheck } from "../../hwpx/hang.ts";
-import { alignOf, gradientMean, imageFillMode, lastAlignOf, lenMm, overlapCheck, parseGradient, snapshotHwpxInput, snapshotToHwpx, splitTop, wordBreakOf } from "./convert.ts";
+import { alignOf, gradientMean, imageFillMode, lastAlignOf, lenMm, overlapCheck, parseGradient, shadowRing, snapshotHwpxInput, snapshotToHwpx, splitTop, wordBreakOf } from "./convert.ts";
 import type { LayoutSnapshot, Rect, SnapBox, SnapNode, SnapPseudo, SnapStyle, SnapText } from "./snapshot.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -134,6 +134,62 @@ test("테두리·배경이 있는 칸 → 칸 테두리/배경(굵기·색·채�
   assert.deepEqual(c.margin, [hu(12.5) - hu(10), hu(110) - hu(107.5), hu(1.5), hu(20) - hu(18.5)]);
   // 영역보다 좁은 표: 품은 문단의 왼쪽 여백 = 왼쪽 빈틈
   assert.equal(input.doc.paraPrs[input.paras[0].paraPr].left, hu(10));
+});
+
+test("그림자 고리(shadowRing): 오프셋·흐림 없이 번지기만 있는 한 겹만 고리 — 여러 겹·오프셋·흐림·none은 null", () => {
+  assert.deepEqual(shadowRing("rgb(75, 76, 75) 0px 0px 0px 0.64px inset"), { w: 0.64 * (25.4 / 96), color: "rgb(75, 76, 75)" });
+  assert.deepEqual(shadowRing("rgb(199, 154, 0) 0px 0px 0px 1px"), { w: 25.4 / 96, color: "rgb(199, 154, 0)" });
+  assert.equal(shadowRing("none"), null);
+  assert.equal(shadowRing(""), null);
+  assert.equal(shadowRing("rgba(255, 255, 255, 0.35) 2px 2px 0px 0px inset"), null);
+  assert.equal(shadowRing("rgb(126, 127, 126) 1.86667px 1.86667px 0px 0px"), null);
+  assert.equal(shadowRing("rgb(0, 0, 0) 0px 0px 4px 1px"), null);
+  assert.equal(shadowRing("rgb(255, 255, 255) 0px 0px 0px 2px inset, rgb(185, 186, 185) 0px 0px 0px 2.8px inset"), null);
+});
+
+test("그림자 고리 → 칸 실선 테두리(자기 테두리가 없는 변만) · 칩도 글자 테두리 · 오프셋 그림자는 예전처럼 테두리 없음", () => {
+  // 확인 질문 A 표지 모양: 흰 바탕 + 0.64px 안쪽 고리
+  const ring = box("span", rect(10, 0, 4.4, 4.2), [text("A", rect(11, 0, 2, 4))], { bg: "rgb(255, 255, 255)", shadow: "rgb(75, 76, 75) 0px 0px 0px 0.64px inset" });
+  const own = box("div", rect(30, 0, 40, 10), [text("자기 선", rect(31, 1, 10, 4))], { bg: "rgb(241, 242, 241)", border: [side(0.5, "solid", "rgb(0, 0, 0)"), side(), side(), side()], shadow: "rgb(185, 186, 185) 0px 0px 0px 0.64px inset" });
+  const drop = box("div", rect(80, 0, 40, 10), [text("그림자", rect(81, 1, 10, 4))], { bg: "rgb(241, 242, 241)", shadow: "rgb(126, 127, 126) 1.86667px 1.86667px 0px 0px" });
+  const { input, approx } = snapshotHwpxInput(snap([ring, own, drop]), { lines: false, page: PAGE });
+  const bfOf = (word: string) => {
+    const t = tablesIn(input.paras).find((x) => x.cells.some((c) => texts(c.paras[0]) === word))!;
+    return input.doc.borderFills[t.cells.find((c) => texts(c.paras[0]) === word)!.borderFill]!;
+  };
+  const a = bfOf("A");
+  assert.deepEqual([a.left, a.right, a.top, a.bottom].map((x) => [x.type, x.color]), Array(4).fill(["SOLID", "#4B4C4B"]));
+  const o = bfOf("자기 선");
+  assert.deepEqual([o.top.width, o.top.color], [0.5, "#000000"]);
+  assert.deepEqual([o.left.type, o.left.color], ["SOLID", "#B9BAB9"]);
+  const d = bfOf("그림자");
+  assert.deepEqual([d.left, d.top].map((x) => x.type), ["NONE", "NONE"]);
+  assert.ok(approx.some((x) => x.kind === "그림자 고리(box-shadow 번지기) → 실선 테두리"));
+  assert.ok(approx.some((x) => x.kind === "그림자(box-shadow) 생략"));
+  // 글 속 칩(「확인」 칩 모양): 고리 → 글자 테두리
+  const chip = box("span", rect(20, 0.5, 12, 4), [text("확인", rect(21, 0.5, 8, 4))], { display: "inline-block", bg: "rgb(255, 241, 184)", shadow: "rgb(199, 154, 0) 0px 0px 0px 1px inset" });
+  const p = box("p", rect(0, 0, 170, 6), [text("앞 글 ", rect(0, 0.5, 18, 4)), chip]);
+  const r2 = snapshotHwpxInput(snap([p]), { lines: false, page: PAGE });
+  const cps = r2.input.paras[0].items.flatMap((it) => (it.kind === "text" && it.text.includes("확인") ? [r2.input.doc.charPrs[it.charPr]] : []));
+  assert.ok(cps.length > 0 && cps.every((c) => c.borderFill !== undefined && r2.input.doc.borderFills[c.borderFill!]!.left.type === "SOLID"));
+});
+
+test("막대 그래프 트랙의 안쪽 고리: width:100% 막대(트랙을 다 덮어 한 칸) → 짙은 칸 테두리 없음 · 부분 막대 → 트랙 테두리 있음", () => {
+  // 화면의 .k-barc__t(옅은 채움 + 안쪽 고리) 안 .k-barc__b(짙은 채움). 안쪽 고리는 자식 아래에 그려져 100% 막대면 안 보임
+  const track = (y: number, w: number) =>
+    box("span", rect(10, y, 40, 3), [box("span", rect(10, y, w, 3), [], { bg: "rgb(75, 76, 75)" })], { bg: "rgb(241, 242, 241)", shadow: "rgb(185, 186, 185) 0px 0px 0px 0.64px inset" });
+  const lab = (y: number, t: string) => box("p", rect(0, y, 170, 5), [text(t, rect(0, y, 10, 4))]);
+  const { input } = snapshotHwpxInput(snap([lab(0, "가득"), track(6, 40), lab(12, "부분"), track(18, 14)]), { lines: false, page: PAGE });
+  const tbs = tablesIn(input.paras);
+  const sides = (bf: number) => {
+    const x = input.doc.borderFills[bf]!;
+    return [x.left, x.right, x.top, x.bottom].map((e) => e.type);
+  };
+  const full = tbs.find((t) => t.cells.length === 1 && Math.abs(t.pos.width - hu(40)) <= 1)!;
+  assert.deepEqual(sides(full.cells[0].borderFill), Array(4).fill("NONE"));
+  const part = tbs.find((t) => t !== full && Math.abs(t.pos.width - hu(40)) <= 1)!;
+  const partSides = part.cells.flatMap((c) => sides(c.borderFill));
+  assert.ok(partSides.includes("SOLID"), "부분 막대 트랙에는 고리 테두리");
 });
 
 test("칩: 테두리 있는 인라인 상자 → 글자 테두리/배경 · 배경만 → 음영 · 화면 1px 선 → 한글 가는 선 0.12mm", () => {

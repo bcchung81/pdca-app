@@ -40,10 +40,18 @@
 //   · 바이트가 없는 그림(허용 밖 주소·상한·모르는 형식)은 같은 크기의 빈 그림(자리만), 배경이면 생략 — 근사 기록
 // 두 판: lines=false면 줄 배치 없이(한글이 조판), true면 화면에서 잰 줄마다 시작 글자·세로 위치로 linesegarray를 적음(한글이 화면 줄바꿈을 따르는지 시험용)
 // 쪽 정의(용지·여백 mm)는 부르는 쪽이 넘김(page — 경평 초안은 section-hwpx.ts REPORT_PAGE_MM). 본문 틀 폭이 쪽 본문 폭과 다르면 근사 기록.
-// 쪽 넘김(2026-10-28): 맨 위 표 중 splitOverMm(기본 = 쪽 본문 높이)보다 높은 것은 글자처럼 취급하지 않는 표(문단 기준 위치·위아래 배치)로 두어
+// 쪽 넘김(2026-10-28): 맨 위 표 중 splitOverMm(기본 = 쪽 본문 높이 × SPLIT_OVER_SHARE)보다 높은 것은 글자처럼 취급하지 않는 표(문단 기준 위치·위아래 배치)로 두어
 //   한글이 쪽 경계에서 나눔(경평 초안도 기본값 — 2026-11-03: 1/4 쪽 덮어쓰기를 없앰. 한글이 떠 있는 표만 다음 쪽으로 옮겨 뒤 절 표와 겹침, 운영 6-2) — 그 값보다 높은 행이 있으면 칸 안에서도 나눔(TABLE), 아니면 행 단위(CELL). 표 안 표는 그대로 글자처럼 취급
+//   2026-11-17: 기본을 쪽 본문 높이 → 절반(뒤에 0.45)으로. 글자처럼 취급하는 표는 한글이 쪽 사이에서 나누지 못해(나눔 값을 줘도 — 한컴 뷰어 확인) 쪽보다 조금 낮은 표가 통째로
+//   다음 쪽으로 넘어가 앞 쪽이 비었음(경영관리 10-2 1쪽이 제목뿐, 7-4 반쪽 공백). 절반 문턱은 뷰어에서 10-2·7-4·6-2 모두 빈 쪽·겹침 없이 나뉨을 확인함
+//   → 같은 날 0.45로: 절반(127.5mm) 바로 아래 126.4mm 표가 통째로 넘어가 10-1 1쪽 41%가 빔 → 0.45(114.75mm)에서 6%. 0.45로 바뀌는 15장을 뷰어로 봐도
+//   쪽 수·빈 쪽·겹침 변화 없음(2026-11-03 겹침은 1/4쪽 문턱이었고 재현 안 됨). 문턱 바로 아래 표는 어떤 값에서도 다시 생길 수 있음
+// 그림자 고리(2026-11-17 — shadowRing): 오프셋·흐림 없이 번지기만 있는 box-shadow 한 겹(테두리 대신 고리를 그리는 데 씀 — 확인 질문 A 표지·「확인」 칩)은
+//   그 굵기·색의 실선 테두리로(자기 테두리가 없는 변만). 여러 겹·오프셋·흐림이 있는 그림자는 예전처럼 생략
 // 흉내 자간 되돌리기(spacingUndo): 글꼴 별칭마다 「진짜 글꼴이 없어 대체 글꼴로 폭을 흉내 낸 자간(em)」을 주면, 그 별칭 글의 자간이 흉내 값 쪽(절반 이상)이면 그 값을 뺌
 //   (한글 파일은 진짜 글꼴 이름을 적으므로 흉내 자간이 남으면 한글에서 글이 좁아짐). 어떤 별칭·값인지는 부르는 쪽이 정함
+// 빠진 글꼴 딱지 여유(2026-11-17 — badgeGrow): 되돌리기 표에 있는 갈래(그 PC에 없는 글꼴)의 한 줄 글만 든 딱지 칸(열 나눔 표에서 띠 높이를 채운 꾸민 상자)은
+//   글 폭 × MISSING_FONT_SLACK만큼 넓히고 뒤 열을 밂(표 폭 그대로) — 그 글꼴이 없는 PC의 한글은 substFont(함초롬돋움)로 그려 화면보다 넓음. 되돌리기 표가 없으면 예전과 바이트까지 같음
 
 import { BORDER_WIDTH_MM } from "../../hwp/hwp5.ts";
 import { type HwpxImage, type HwpxInput, hwpxFiles } from "../../hwp/hwpx-write.ts";
@@ -106,7 +114,7 @@ export interface DomHwpxOptions {
   title?: string;
   /** 쪽 정의(mm) */
   page: PageMm;
-  /** 맨 위 표를 쪽 경계에서 나눌 수 있게 할 높이(mm) — 이보다 높은 맨 위 표. 없으면 쪽 본문 높이 */
+  /** 맨 위 표를 쪽 경계에서 나눌 수 있게 할 높이(mm) — 이보다 높은 맨 위 표. 없으면 쪽 본문 높이 × SPLIT_OVER_SHARE */
   splitOverMm?: number;
   /** 흉내 자간 되돌리기(없으면 화면 자간 그대로) */
   spacingUndo?: readonly SpacingUndo[];
@@ -206,6 +214,21 @@ const ONE_PX_MM = 25.4 / 96;
 
 const visibleSide = (s: SnapStyle["border"][number]) => s.w > 0.001 && s.style !== "none" && s.style !== "hidden" && visibleColor(parseColor(s.color));
 const hasBorder = (st: SnapStyle) => st.border.some(visibleSide);
+/**
+ * 그림자 고리: box-shadow 계산값이 한 겹이고 오프셋·흐림이 0, 번지기가 양수면 그 굵기(mm)·색(테두리 대신 고리를 그린 것 — 안쪽 inset이든 바깥이든).
+ * 여러 겹·오프셋·흐림이 있으면 null(그림자로 보고 생략). 계산값 모양: 「rgb(…) 0px 0px 0px 0.64px inset」
+ */
+export function shadowRing(shadow: string): { w: number; color: string } | null {
+  if (!shadow || shadow === "none") return null;
+  const layers = splitTop(shadow, ",");
+  if (layers.length !== 1) return null;
+  const m = /^(rgba?\([^)]*\)|#[0-9a-fA-F]{3,8})\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px\s+([\d.]+)px(\s+inset)?$/.exec(layers[0].trim());
+  if (!m || Number(m[2]) !== 0 || Number(m[3]) !== 0 || Number(m[4]) !== 0) return null;
+  const w = Number(m[5]) * PX_MM;
+  return w > 0.001 ? { w, color: m[1] } : null;
+}
+/** 쪽 본문 높이에 대한 맨 위 표 나눔 높이 몫(splitOverMm 기본) */
+export const SPLIT_OVER_SHARE = 0.45;
 const hasBg = (st: SnapStyle) => visibleColor(parseColor(st.bg)) || (st.bgImage && st.bgImage !== "none");
 /** 자기 테두리·배경이 보이는 상자(스타일만 — 자리를 모르는 의사요소용. 상자는 Converter.decoBox) */
 const decorated = (st: SnapStyle) => hasBorder(st) || !!hasBg(st);
@@ -217,6 +240,11 @@ const PX_MM = 25.4 / 96;
 const THIN_MM = 2 * PX_MM;
 /** 위·아래첨자로 보는 최소 이동(둘레 글 크기에 대한 몫) — 칩의 1~2pt 줄 맞춤 이동(둘레 글의 1/10~1/5)은 글자 위치로 둠 */
 const SCRIPT_MIN_SHIFT = 0.25;
+/**
+ * 빠진 글꼴 갈래 딱지의 칸 폭 여유(한 줄 글 폭에 대한 몫 — columnsTable). 그 갈래 글꼴이 없는 PC의 한글은 substFont(함초롬돋움)로 다시 그리는데,
+ * 화면(대체 글꼴 + 흉내 자간)에서 잰 폭보다 넓음 — 2026-11-17 운영 초안 103장의 맑은 고딕·HY헤드라인M 갈래 한 줄 글 실측 1.0~1.27배(중앙 약 1.13배)
+ */
+const MISSING_FONT_SLACK = 0.2;
 /** 칠하는 몫(면적 × 평균 불투명도)이 이것보다 작으면 상자를 칠하지 않음 */
 const MIN_COVER = 0.5;
 
@@ -773,6 +801,48 @@ class Converter {
 
   // ── 글꼴·글자 모양
 
+  /** 빠진 글꼴 갈래인가: font-family 목록에서 앱 글꼴 별칭(report-fonts.ts — face()와 같은 첫 별칭)이 흉내 자간 되돌리기 표에 있음 */
+  missingFont(st: SnapStyle): boolean {
+    if (!this.undo.size) return false;
+    const alias = st.fontFamily
+      .split(",")
+      .map((f) => f.trim().replace(/^["']|["']$/g, ""))
+      .find((f) => Object.values(REPORT_FONTS).some((g) => g.alias === f));
+    return alias !== undefined && this.undo.has(alias);
+  }
+  /** 빠진 글꼴 갈래의 한 줄 글 폭 합(mm): 글 마디는 부모 스타일로 봄. 화면에서 여러 줄로 나뉜 글은 뺌(한글이 어차피 다시 나눔) */
+  missingTextMm(nodes: readonly SnapNode[], st: SnapStyle): number {
+    let w = 0;
+    for (const n of nodes) {
+      if (n.kind === "box") w += this.missingTextMm(n.children, n.style);
+      else if (n.kind === "text" && n.frags.length && n.frags.every((f) => Math.abs(f.y - n.frags[0].y) < EPS) && this.missingFont(st)) w += n.frags.reduce((a, f) => a + f.w, 0);
+    }
+    return w;
+  }
+  /** 항목 안 빠진 글꼴 갈래의 한 줄 글 폭 합(mm) */
+  itemMissingMm(it: Item): number {
+    if (it.t === "flow") return this.missingTextMm(it.nodes, it.style);
+    if (it.t === "box") return this.missingTextMm(it.node.children, it.node.style);
+    return 0;
+  }
+  /**
+   * 열 나눔 표의 딱지 칸 여유(mm, 열마다 — columnsTable): 딱지 열(onlys — 띠 높이를 채운 꾸민 상자 하나)의 빠진 갈래 한 줄 글 폭 × MISSING_FONT_SLACK.
+   * 넓힌 만큼 뒤 열이 밀리므로 오른쪽 빈자리(x1 − 내용 오른쪽 끝)에서 딱지 아닌 열의 빠진 갈래 글 여유를 먼저 남기고, 모자라면 같은 비율로 줄임. 빠진 갈래가 없으면 모두 0
+   */
+  badgeGrow(onlys: readonly (BoxItem | null)[], cols: readonly Item[][], x1: number): number[] {
+    const zero = cols.map(() => 0);
+    if (!this.undo.size) return zero;
+    const want = onlys.map((b) => (b ? this.itemMissingMm(b) * MISSING_FONT_SLACK : 0));
+    const total = want.reduce((a, v) => a + v, 0);
+    if (total <= 0) return zero;
+    const others = cols.reduce((a, c, i) => (onlys[i] ? a : a + c.reduce((s, it) => s + this.itemMissingMm(it), 0) * MISSING_FONT_SLACK), 0);
+    const room = x1 - Math.max(...cols.flat().map((it) => right(it.rect))) - others;
+    if (room <= EPS) return zero;
+    this.notes.add("빠진 글꼴 갈래의 한 줄 딱지 → 칸 폭 여유(한글 대체 글꼴이 화면보다 넓음)");
+    const k = Math.min(1, room / total);
+    return want.map((v) => v * k);
+  }
+
   /** font-family 목록 → 한글 글꼴 이름: 앱 글꼴 별칭(report-fonts.ts)이면 그 굵기의 한글 이름, 아니면 목록의 첫 실제 이름 */
   face(st: SnapStyle): { name: string; bold: boolean } {
     const fams = st.fontFamily.split(",").map((f) => f.trim().replace(/^["']|["']$/g, ""));
@@ -859,7 +929,7 @@ class Converter {
   /** 꾸밈 근사 기록(둥근 모서리·그림자·clip-path·반투명) */
   noteDecor(st: SnapStyle): void {
     if (st.radius && !/^0(px)?( 0(px)?)*$/.test(st.radius.trim())) this.notes.add("둥근 모서리 → 직각");
-    if (st.shadow && st.shadow !== "none") this.notes.add("그림자(box-shadow) 생략");
+    if (st.shadow && st.shadow !== "none") this.notes.add(shadowRing(st.shadow) ? "그림자 고리(box-shadow 번지기) → 실선 테두리" : "그림자(box-shadow) 생략");
     if (st.clipPath && st.clipPath !== "none") this.notes.add("모양 자르기(clip-path) 무시 → 사각형");
     if (st.opacity < 1) this.notes.add("반투명(opacity) 무시");
   }
@@ -1037,15 +1107,18 @@ class Converter {
     };
     walk(root);
   }
-  boxSpec(st: SnapStyle, rect: Rect): BoxSpec {
-    this.noteDecor(st);
-    const [t, r, b, l] = st.border.map((s) => this.border(s));
+  /** ring = false: 그림자 고리를 빼고(자기 테두리 + 배경 가장자리 선만) — 같은 상자를 두 번 셀 때라 근사 기록·셈은 안 함 */
+  boxSpec(st: SnapStyle, rect: Rect, ring0 = true): BoxSpec {
+    if (ring0) this.noteDecor(st);
+    // 자기 테두리가 없는 변은 그림자 고리(있으면)를 실선 테두리로
+    const ring = ring0 ? shadowRing(st.shadow) : null;
+    const [t, r, b, l] = st.border.map((s) => (ring && !visibleSide(s) ? this.border({ w: ring.w, style: "solid", color: ring.color }) : this.border(s)));
     const p = this.paintOf(st, rect);
     const e = p.edges;
     const pick = (own: Border, k: keyof Paint["edges"]) => {
       const x = e[k];
       if (!x || own.type !== "NONE") return own;
-      this.stats.rules += 1;
+      if (ring0) this.stats.rules += 1;
       return x;
     };
     return { t: pick(t, "t"), r: pick(r, "r"), b: pick(b, "b"), l: pick(l, "l"), fill: p.fill, ...(p.image ? { image: p.image } : {}) };
@@ -1530,11 +1603,14 @@ class Converter {
     const noPad = b.style.pad.every((p) => p < 0.1);
     if (only?.table && only.rect && noPad && !cell.box?.image && only.ps.before === 0 && Math.abs(only.rect.x - cr.x) < EPS && Math.abs(right(only.rect) - right(cr)) < EPS && Math.abs(only.rect.y - cr.y) < EPS && Math.abs(bottom(only.rect) - bottom(cr)) < EPS) {
       const t = only.table;
-      const outer = cell.box as BoxSpec;
+      const ringed = cell.box as BoxSpec;
+      // 안쪽 그림자 고리는 자식 아래에 그려짐 — 채운 칸이 덮는 자리에는 화면에 안 보이므로 그 칸에는 고리를 빼고 얹음(100% 막대 그래프의 트랙 고리)
+      const bare = /\binset\b/.test(b.style.shadow) && shadowRing(b.style.shadow) ? this.boxSpec(b.style, b.rect, false) : ringed;
       const lastC = t.xs.length - 1;
       const lastR = t.ys.length - 1;
       for (const c of t.cells) {
         const bx = { ...(c.box ?? EMPTY_BOX) };
+        const outer = bx.fill ? bare : ringed;
         if (c.c0 === 0 && bx.l.type === "NONE") bx.l = outer.l;
         if (c.c1 === lastC && bx.r.type === "NONE") bx.r = outer.r;
         if (c.r0 === 0 && bx.t.type === "NONE") bx.t = outer.t;
@@ -1629,19 +1705,27 @@ class Converter {
 
   /** 열 나눔 표(한 행): 열마다 따로 흐름. 열 사이 빈틈은 앞 열에 붙임(한 줄 글이 넘치지 않게 여유) */
   columnsTable(cols: Item[][], band: { y0: number; y1: number }, x0: number, x1: number): TableIR {
-    const starts = [x0, ...cols.slice(1).map((c) => Math.min(...c.map((i) => i.rect.x)))];
+    // 띠 높이를 꽉 채운 꾸민 상자 하나뿐인 열(딱지 등): 그 상자를 바로 칸으로(감싸지 않음), 뒤 빈틈은 빈 칸 열
+    const onlyOf = (c: Item[]): BoxItem | null => {
+      const it = c.length === 1 && c[0].t === "box" ? c[0] : null;
+      return it && Math.abs(it.rect.y - band.y0) < EPS && Math.abs(bottom(it.rect) - band.y1) < EPS ? it : null;
+    };
+    // 빠진 글꼴 딱지 여유: 딱지 칸을 넓힌 만큼 뒤 열들을 오른쪽으로 밂(push = 그 열 앞에서 넓힌 합, 여유가 없으면 모두 0 — 예전과 같음)
+    const grow = this.badgeGrow(cols.map(onlyOf), cols, x1);
+    const push = grow.map((_, i) => grow.slice(0, i).reduce((a, v) => a + v, 0));
+    const starts = [x0, ...cols.slice(1).map((c) => Math.min(...c.map((i) => i.rect.x)))].map((s, i) => s + push[i]);
     const xs: number[] = [];
     const cells: TCell[] = [];
     cols.forEach((c, i) => {
       const end = i + 1 < cols.length ? starts[i + 1] : x1;
       const c0 = xs.length;
       xs.push(starts[i]);
-      // 띠 높이를 꽉 채운 꾸민 상자 하나뿐인 열: 그 상자를 바로 칸으로(감싸지 않음), 뒤 빈틈은 빈 칸 열
-      const only = c.length === 1 && c[0].t === "box" ? c[0] : null;
-      if (only && Math.abs(only.rect.y - band.y0) < EPS && Math.abs(bottom(only.rect) - band.y1) < EPS) {
+      const only = onlyOf(c);
+      if (only) {
         cells.push(this.boxCell(only.node, { r0: 0, r1: 1, c0, c1: c0 + 1 }));
-        if (end - right(only.rect) > EPS) {
-          xs.push(right(only.rect));
+        const r = right(only.rect) + push[i] + grow[i];
+        if (end - r > EPS) {
+          xs.push(r);
           cells.push({ r0: 0, r1: 1, c0: c0 + 1, c1: c0 + 2, box: null, margin: [0, 0, 0, 0], va: "TOP", outs: [] });
         }
         return;
@@ -2162,7 +2246,7 @@ function midWordBreak(segs: Seg[], lines: Line[]): boolean {
 /** 스냅숏 → 한글 모델 입력·근사 목록·통계 */
 export function snapshotHwpxInput(snap: LayoutSnapshot, opts: DomHwpxOptions): DomHwpxResult {
   const body = bodyMmOf(opts.page);
-  const cv = new Converter(opts.lines, snap.root.style, opts.splitOverMm ?? body.h, opts.spacingUndo ?? [], opts.pictures ?? null);
+  const cv = new Converter(opts.lines, snap.root.style, opts.splitOverMm ?? body.h * SPLIT_OVER_SHARE, opts.spacingUndo ?? [], opts.pictures ?? null);
   if (Math.abs(snap.frame.w - body.w) > 0.5) cv.notes.add(`본문 틀 폭 ${snap.frame.w.toFixed(1)}mm ≠ 한글 본문 ${body.w}mm`);
   const region: Region = { x0: 0, x1: snap.frame.w, y0: 0, y1: snap.frame.h };
   const root = snap.root;

@@ -258,6 +258,31 @@ for (const [name, spec, texts] of [
   });
 }
 
+test("굵게 표기 짝(mdText): 짝 맞는 **…**만 두고 짝 잃은 **는 걷음(화면·기존 양식과 같은 규칙), 긴 글도 빨리 끝남", () => {
+  assert.equal(mdText("굵게 **핵심** 글"), "굵게 **핵심** 글");
+  assert.equal(mdText("**가** 와 **나**"), "**가** 와 **나**");
+  // 글자 한도로 잘린 칸 글: 여는 **만 남음 → 걷음(닫는 **의 반쪽 * 하나는 화면처럼 글로 둠)
+  assert.equal(mdText("실적 **종합 점검･보"), "실적 종합 점검･보");
+  assert.equal(mdText("비율 **’24년 79.6% → ’25년 80.7%*"), "비율 ’24년 79.6% → ’25년 80.7%*");
+  assert.equal(mdText("앞 **가** 뒤 **나"), "앞 **가** 뒤 나");
+  assert.equal(mdText("**a*b**"), "a*b", "안에 * 가 든 것은 짝이 아님(화면 emph와 같음)");
+  assert.equal(mdText("가 ** 나"), "가 나", "걷은 자리의 겹친 빈칸은 하나로");
+  const t0 = performance.now();
+  mdText(`**${"가".repeat(100000)}`);
+  mdText("**가 ".repeat(30000));
+  assert.ok(performance.now() - t0 < 300, "짝 없는 ** 가 많은 글");
+});
+
+test("잘린 표 칸 글의 짝 잃은 **: 개조식 원고·한글 파일에 ** 가 글자로 남지 않음", async () => {
+  const b = block({ kind: "table", label: "위원회", items: ["구분", "추진내용", "시기"], cells: [cell("위원회 제1차", ["’25년 추진 실적 **종합 점검･보", "’26.3"]), cell("위원회 제2차", ["**중점** 점검", "’26.6"])] });
+  const m = md([b]).md;
+  assert.ok(m.includes("| 위원회 제1차 | ’25년 추진 실적 종합 점검･보 | ’26.3 |"), m);
+  assert.ok(m.includes("| 위원회 제2차 | **중점** 점검 | ’26.6 |"), "짝 맞는 굵게는 그대로");
+  const back: any = await parse(Buffer.from((await draftToKcaHwpx(m)).bytes));
+  assert.ok(back.success && back.markdown.includes("종합 점검･보"));
+  assert.ok(!/\*\*종합/.test(back.markdown), "한글 파일에 ** 글자 없음");
+});
+
 test("글 한 줄(mdText): 줄바꿈이 낀 공백 덩어리 → 공백 하나, 공백만 긴 글도 빨리 끝남", () => {
   assert.equal(mdText("가 \r\n  나\t\t다\n\n라"), "가 나\t\t다 라");
   const t0 = performance.now();
