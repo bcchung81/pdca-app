@@ -136,3 +136,13 @@ export const TRACK_COOKIE = "pdca_track";
 export function parseTrack(value: string | null | undefined): TrackId {
   return value === "경영관리" ? "경영관리" : DEFAULT_TRACK.id;
 }
+
+/**
+ * 화면이 실제로 쓸 트랙: 고른 트랙(쿠키)이 이 사용자가 볼 수 있는 트랙이면 그대로, 아니고 볼 수 있는 트랙이 하나뿐이면 그 트랙.
+ * 머리띠 트랙 전환은 두 트랙을 다 볼 때만 보이므로(app/(app)/layout.tsx), 경영관리 과제만 맡은 부서 담당자가 기본값(주요사업)의
+ * 빈 화면에 갇히지 않게 함(2026-11-17). 볼 수 있는 트랙이 없거나 둘이면 고른 값 그대로
+ */
+export function resolveTrack(value: string | null | undefined, visible: ReadonlySet<TrackId>): TrackId {
+  const picked = parseTrack(value);
+  return visible.size === 1 && !visible.has(picked) ? [...visible][0] : picked;
+}

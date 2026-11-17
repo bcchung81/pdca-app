@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { type BundleChunk, layerOf } from "../knowledge/bundle.ts";
 import { FORM_ID } from "../inspections/model.ts";
 import { boardUnits } from "./board-units.ts";
-import { BIZ_TRACK, DEFAULT_TRACK, MGMT_TRACK, TRACK_COOKIE, TRACK_SPECS, parseTrack, trackOfUnit, trackSpecOfUnit } from "./index.ts";
+import { BIZ_TRACK, DEFAULT_TRACK, MGMT_TRACK, TRACK_COOKIE, TRACK_SPECS, parseTrack, resolveTrack, trackOfUnit, trackSpecOfUnit } from "./index.ts";
 import { NO_PDCA_GUIDES } from "../testing/originals.ts";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -81,6 +81,17 @@ test("머리띠 트랙 전환(쿠키 pdca_track): 경영관리만 경영관리, 
   assert.equal(parseTrack("경영관리"), "경영관리");
   assert.equal(parseTrack("주요사업"), "주요사업");
   for (const v of [undefined, null, "", "mgmt", "경영 관리", "<script>"]) assert.equal(parseTrack(v), DEFAULT_TRACK.id);
+});
+
+test("실제 트랙(resolveTrack): 볼 수 있는 트랙이 하나뿐이면 그 트랙(경영관리 과제만 맡은 부서 담당자가 주요사업 빈 화면에 갇히지 않음), 둘이거나 없으면 고른 값", () => {
+  const only = (t: "주요사업" | "경영관리") => new Set([t] as const);
+  const both = new Set(["주요사업", "경영관리"] as const);
+  for (const v of [undefined, "", "주요사업", "경영관리"]) assert.equal(resolveTrack(v, only("경영관리")), "경영관리", `경영관리만 · 쿠키 ${v}`);
+  for (const v of [undefined, "주요사업", "경영관리"]) assert.equal(resolveTrack(v, only("주요사업")), "주요사업", `주요사업만 · 쿠키 ${v}`);
+  assert.equal(resolveTrack(undefined, both), "주요사업", "두 트랙이면 고른 값(없으면 기본)");
+  assert.equal(resolveTrack("경영관리", both), "경영관리");
+  assert.equal(resolveTrack("경영관리", new Set()), "경영관리", "볼 수 있는 카드가 없으면 고른 값");
+  assert.equal(resolveTrack(undefined, new Set()), DEFAULT_TRACK.id);
 });
 
 test("과제 목록의 평가단위 칩: 주요사업은 사업 BZ-1~3(카드 묶음 주요사업N), 경영관리는 지표 MG-1~14(칩 이름은 지표명)", () => {
