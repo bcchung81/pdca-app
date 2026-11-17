@@ -72,10 +72,11 @@ DB가 마지막 판정: `profiles_update` 정책(본인 · 관리자 · 성과�
 
 ## 기록·데이터 정정
 
-- `access_events(actor_id, target_user_id, action, detail)`: `user_added`·`user_updated`·`user_deactivated`·`user_restored`·`assigned`·`unassigned`. 성과관리팀·관리자가 읽기만 하고 **로그인 사용자는 아무도 쓰지 못한다**(위조 막기, `20261116120000` — 2026-11-16 시큐어 코딩 2차 점검).
+- `access_events(actor_id, target_user_id, action, detail)`: `user_added`·`user_updated`·`user_deactivated`·`user_restored`·`assigned`·`unassigned`·`ban_failed`. 성과관리팀·관리자가 읽기만 하고 **로그인 사용자는 아무도 쓰지 못한다**(위조 막기, `20261116120000` — 2026-11-16 시큐어 코딩 2차 점검).
   - **DB 트리거가 남김**: `profiles`의 역할·팀·활성이 바뀌면 행 트리거 `private.log_profile_access_event`가 한 줄(활성이 바뀌면 중지·복구, 아니면 `user_updated`; detail은 바뀐 칸만 `{role|team|active: {from, to}}`, 이름 바꾸기는 안 남김). `card_assignees` 추가·삭제는 문장 트리거 `private.log_assignee_access_event`가 사용자마다 한 줄(`{count, card_ids(앞 60개)}`, 팀·역할 변경·카드 이동·영구 삭제에 딸려 지워지면 `auto: true`). 화면을 거치지 않은 직접 변경(PostgREST)도 남는다. 계정 자체가 지워지는 연쇄(`auth.users` 삭제)에서는 남기지 않음(외래 키가 삭제를 막지 않게).
   - 행위자는 `auth.uid()`. 서비스 키·DB 직접 변경(`pnpm db:user`·시드·e2e)은 `actor_id` null + `detail.via = "system"`.
-  - **계정 만들기(`user_added`)만 앱이 남김**: 계정은 서비스 키(Auth 관리 API)로 만들어 DB가 행위자를 모르므로 `createAccount`가 `logUserAdded`(서비스 키, `{via: form|paste, role, team_id}`)로 남기고, 이어지는 이름·부서·역할 지정과 팀 과제 지정은 트리거가 `user_updated`·`assigned`로 남긴다. 이 기록의 실패만 본 작업을 막지 않고 서버 로그에 남는다. 로그인 차단(ban) 실패는 기록에 넣지 않고 서버 로그에만(`setUserActive ban`).
+  - **계정 만들기(`user_added`)만 앱이 남김**: 계정은 서비스 키(Auth 관리 API)로 만들어 DB가 행위자를 모르므로 `createAccount`가 `logUserAdded`(서비스 키, `{via: form|paste, role, team_id}`)로 남기고, 이어지는 이름·부서·역할 지정과 팀 과제 지정은 트리거가 `user_updated`·`assigned`로 남긴다. 이 기록의 실패만 본 작업을 막지 않고 서버 로그에 남는다.
+  - **로그인 차단 실패(`ban_failed`, 2026-11-17)**: 사용 중지·복구의 `active` 변경은 트리거가 남기지만 그 뒤 Auth ban(서비스 키)이 실패한 사실은 DB가 모르므로 `setUserActive`가 `logBanFailed`(서비스 키, `{active: 바꾼 값, ban_error: 300자까지}`)로 한 줄 더 남긴다 — 기록만 보고도 「중지됐지만 로그인 메일은 막히지 않은」 계정을 찾게. 서버 로그(`setUserActive ban`)도 그대로.
 - 본부 표기: 방송콘텐츠진흥팀의 본부 「방송미디어부」는 원본 오기(사용자 확인 2026-09-30) — 마이그레이션이 `teams.hq`를 「방송미디어본부」로 바로잡고(멱등), `HQ_CORRECTIONS`(`lib/db/seed-rows.ts`)가 재적재 때 되돌아가지 않게 한다. 카드 본문·`cards.hq`는 원본이라 건드리지 않는다. `teams.hq`는 표시·그룹용이며 권한에는 쓰지 않는다.
 
 ## 아직 안 한 것

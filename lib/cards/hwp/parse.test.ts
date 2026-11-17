@@ -195,3 +195,8 @@ test("칸 글 앞뒤 공백 걷기: 공백이 긴 칸도 빨리 끝남", () => {
   assert.equal(b.tables[0].rows[0][1].content.join(""), "가");
   assert.ok(performance.now() - t0 < 500, "긴 공백 칸");
 });
+
+test("표 글의 문자 참조: 범위 밖(0x10FFFF 초과·대리 영역) 숫자 참조는 던지지 않고 글 그대로, 정상 참조는 풂", () => {
+  const [t] = parseHtmlTables("<table><tr><td>&#x110000; &#99999999; &#xD800; &#44032; &#xAC01; &amp;</td></tr></table>");
+  assert.equal(t.rows[0][0].content.join(""), "&#x110000; &#99999999; &#xD800; 가 각 &");
+});

@@ -2,6 +2,7 @@ import { BpToggle } from "../../../../../components/reports/section-draft-button
 import { Tag } from "../../../../../components/ui/kit";
 import { FIT_TAG } from "../../../../../components/ui/status-tone.ts";
 import { fmtDateTime } from "../../../../../lib/format.ts";
+import { RECOUNT_FAIL_HEAD, recountFailWarning } from "../../../../../lib/reports/draft-recount.ts";
 import { fitWord } from "../../../../../lib/reports/draft-thread.ts";
 import type { Composition } from "../../../../../lib/reports/composition.ts";
 import { FIT_RANGE_TEXT } from "../../../../../lib/reports/fit.ts";
@@ -11,8 +12,41 @@ import { sourceGroups } from "./derive.ts";
 import type { DraftRow } from "./load.ts";
 
 /** 왼쪽 도구줄 칩(과제원장 편집기 도구줄 자리): 과제 · 어느 길로 쓰였는지 · 판면 어림 · 반영 근거 · 상태 */
-export function ReportToolbar({ spec, draft, composition, stale, unknown, bizStale }: { spec: ReportSectionSpec | null; draft: DraftRow | null; composition: Composition | null; stale: boolean; unknown: string[]; bizStale?: { text: string; title: string } | null }) {
+export function ReportToolbar({
+  spec,
+  draft,
+  composition,
+  stale,
+  unknown,
+  bizStale,
+  recountFail,
+  broken,
+}: {
+  spec: ReportSectionSpec | null;
+  draft: DraftRow | null;
+  composition: Composition | null;
+  stale: boolean;
+  unknown: string[];
+  bizStale?: { text: string; title: string } | null;
+  /** 없는 숫자를 다시 세지 못한 까닭(lib/reports/draft-recount.ts) — 있으면 막힘 표지를 맨 앞에 */
+  recountFail?: string | null;
+  /** 저장된 초안이 모양 검사에 걸려 그리지 않음 */
+  broken?: boolean;
+}) {
+  const failTag = recountFail ? (
+    <Tag tone="warnSolid" title={recountFailWarning(recountFail)}>
+      {RECOUNT_FAIL_HEAD}
+    </Tag>
+  ) : null;
   if (!spec) {
+    if (broken) {
+      return (
+        <>
+          {failTag}
+          <span className="text-xs text-muted">저장된 초안을 그릴 수 없음</span>
+        </>
+      );
+    }
     return <span className="text-xs text-muted">{composition ? `초안 없음 · 구성안 ${draft?.outline_status === "approved" ? "승인" : "확인 전"}` : "초안 없음"}</span>;
   }
   const { files, lensUsed, priorUsed } = sourceGroups(spec);
@@ -30,7 +64,8 @@ export function ReportToolbar({ spec, draft, composition, stale, unknown, bizSta
     .join("\n");
   return (
     <>
-      {/* 막힘 경고 두 칩은 맨 앞 — 도구줄이 한 줄 띠라 칩이 많으면 끝이 잘려 안 보일 수 있음 */}
+      {/* 막힘 경고 칩은 맨 앞 — 도구줄이 한 줄 띠라 칩이 많으면 끝이 잘려 안 보일 수 있음 */}
+      {failTag}
       {stale && (
         <Tag tone="warnSolid" title="초안을 만든 뒤 원장 카드가 바뀌었습니다">
           원장이 바뀜 — 다시 만들기 권장

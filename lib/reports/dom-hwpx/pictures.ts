@@ -70,6 +70,9 @@ function urlAt(v: string, start: number, at: number): { raw: string; end: number
   return { resume: Math.max(start + 1, k - 4) };
 }
 
+/** CSS 16진 이스케이프 → 글자. 0x10FFFF를 넘거나 대리 영역이면 U+FFFD(CSS Syntax 규칙 — String.fromCodePoint가 던지지 않게) */
+const cssCodePoint = (n: number) => String.fromCodePoint(n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff) ? 0xfffd : n);
+
 /**
  * CSS 계산값(background-image 등)의 url(…) 주소들(층 순서 — 첫 층이 맨 위). 따옴표 안 역슬래시 이스케이프를 풂.
  * 판정은 예전 정규식(urlAt 주석)과 같고, 공백·여는 괄호가 긴 값도 선형 시간으로 읽음(2026-11-16 시큐어 코딩 점검)
@@ -85,7 +88,7 @@ export function cssUrls(v: string): string[] {
       continue;
     }
     from = m.end;
-    const s = m.raw.replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_x, hex: string | undefined, ch: string | undefined) => (hex ? String.fromCodePoint(parseInt(hex, 16)) : (ch ?? "")));
+    const s = m.raw.replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_x, hex: string | undefined, ch: string | undefined) => (hex ? cssCodePoint(parseInt(hex, 16)) : (ch ?? "")));
     if (s) out.push(s);
   }
   return out;

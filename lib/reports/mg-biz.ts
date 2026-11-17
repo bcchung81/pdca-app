@@ -6,9 +6,11 @@
 //   없는 숫자는 저장값(card_report_drafts.unknown_numbers — 초안을 쓸 수 있는 사람이 앱 밖에서 비울 수 있음)만 믿지 않고 여기서 원장·붙임으로 다시 센 값과 합침
 //   (2026-11-16 시큐어 코딩 2차 점검). 그 초안의 전년 절·실사 답변·연결 조각은 여기 없어 그것으로만 맞던 숫자도 가려짐 — 근거가 적을수록 더 가리는 안전한 쪽
 // - 인용 대조: 초안 원문(가린 숫자가 든 구절도 원문에서 찾음)
+// - 깨진 초안(앱 밖에서 바꿔 모양·크기가 맞지 않음, 풀다가 던짐)은 그 주요사업만 통째로 빼고 「읽을 수 없음」 경고(2026-11-17 3차 — 경영관리 화면·집필이 500이 되지 않게)
 
 import { inspectionCardText } from "../ai/inspect.ts";
 import { stripNeeds } from "./actuals.ts";
+import { specIssue } from "./draft-recount.ts";
 import type { BizRefText } from "./mg-biz-queries.ts";
 import { type ReportFile, type ReportSource, readSection, recheckSection, sectionText } from "./section.ts";
 import { sectionMarkdown } from "./section-md.ts";
@@ -34,6 +36,8 @@ export interface BizMaterials {
   prompt: string;
   /** 초안 근거 목록(spec.sources)에 넣을 biz 항목(주요사업 하나당 한 줄) */
   sources: ReportSource[];
+  /** 읽을 수 없어 통째로 뺀 주요사업 카드 id(초안 모양이 앱이 쓰는 꼴이 아니거나 글이 한도를 넘음·풀다가 던짐 — bizMissing 셋째 인자로 「읽을 수 없음」 경고) */
+  broken: string[];
 }
 
 /** 가린 자리(숫자가 아님 — 숫자 대조에 안 잡힘) */
@@ -83,44 +87,75 @@ export function bizUnknown(spec: NonNullable<ReturnType<typeof readSection>>, re
   return [...new Set([...ref.unknownNumbers, ...fresh])];
 }
 
-/** 읽은 주요사업 초안들 → 요청 자료·숫자 근거·인용 대조 글·초안 근거 목록 */
+/** 주요사업 하나의 자료(원장 → 경평 초안 → 붙임). 초안이 앱이 쓰는 꼴이 아니면 null(통째로 뺌) — 풀다가 던지면 부르는 쪽이 같은 처리 */
+function bizRefMaterials(ref: BizRefText): { docs: BizDoc[]; known: string[]; quote: string[]; source: ReportSource } | null {
+  const label = [ref.taskId, ref.title].filter(Boolean).join(" ");
+  const docs: BizDoc[] = [];
+  const known: string[] = [];
+  const quote: string[] = [];
+  const spec = readSection(ref.spec);
+  // 다른 팀이 앱 밖에서 바꿀 수 있는 초안 — 모양·크기가 맞지 않으면 다시 세지도 넣지도 않음(draft-recount.ts specIssue, 2026-11-17 3차)
+  if (spec && specIssue(spec)) return null;
+  const ledger = inspectionCardText(ref.data);
+  if (ledger.trim()) {
+    docs.push({ id: `${ref.cardId}#card`, name: `${label} — 원장`, text: ledger, relation: "biz", numberEvidence: true });
+    known.push(ledger);
+  }
+  if (spec) {
+    const text = draftText(spec);
+    docs.push({ id: `${ref.cardId}#draft`, name: `${label} — 경평 초안`, text, relation: "biz-draft", numberEvidence: true });
+    // 숫자 근거 = 그 초안의 숫자 대조와 같은 글(【확인】 자리표시를 걷은 sectionText(spec, true)) − 그 초안의 없는 숫자(저장값 ∪ 원장·붙임으로 다시 센 값)
+    known.push(maskNumbers(stripNeeds(sectionText(spec, true)), bizUnknown(spec, ref)));
+    quote.push(text);
+  }
+  for (const f of ref.files) {
+    if (!f.text.trim()) continue;
+    docs.push({ id: `${ref.cardId}#${f.kind}:${f.id}`, name: `${label} — 붙임 ${f.name}`, text: f.text, relation: "biz", numberEvidence: true });
+    known.push(f.text);
+  }
+  return { docs, known, quote, source: { kind: "biz", id: ref.cardId, name: bizSourceName(ref.taskId), stamp: ref.stamp, at: ref.updatedAt } };
+}
+
+/**
+ * 읽은 주요사업 초안들 → 요청 자료·숫자 근거·인용 대조 글·초안 근거 목록. 하나가 깨져(모양·크기·풀다가 던짐) 읽을 수 없으면 그 주요사업만 통째로 빼고(원장·붙임 포함)
+ * broken에 적음 — 경영관리 화면·집필이 다른 팀 초안 하나 때문에 멈추지 않게(부르는 쪽은 bizMissing(…, broken)으로 「읽을 수 없음」 경고)
+ */
 export function bizMaterials(refs: readonly BizRefText[]): BizMaterials {
   const docs: BizDoc[] = [];
   const known: string[] = [];
   const quote: string[] = [];
   const sources: ReportSource[] = [];
+  const broken: string[] = [];
   for (const ref of refs) {
-    const label = [ref.taskId, ref.title].filter(Boolean).join(" ");
-    const ledger = inspectionCardText(ref.data);
-    if (ledger.trim()) {
-      docs.push({ id: `${ref.cardId}#card`, name: `${label} — 원장`, text: ledger, relation: "biz", numberEvidence: true });
-      known.push(ledger);
+    let one: ReturnType<typeof bizRefMaterials>;
+    try {
+      one = bizRefMaterials(ref);
+    } catch {
+      one = null;
     }
-    const spec = readSection(ref.spec);
-    if (spec) {
-      const text = draftText(spec);
-      docs.push({ id: `${ref.cardId}#draft`, name: `${label} — 경평 초안`, text, relation: "biz-draft", numberEvidence: true });
-      // 숫자 근거 = 그 초안의 숫자 대조와 같은 글(【확인】 자리표시를 걷은 sectionText(spec, true)) − 그 초안의 없는 숫자(저장값 ∪ 원장·붙임으로 다시 센 값)
-      known.push(maskNumbers(stripNeeds(sectionText(spec, true)), bizUnknown(spec, ref)));
-      quote.push(text);
+    if (!one) {
+      broken.push(ref.cardId);
+      continue;
     }
-    for (const f of ref.files) {
-      if (!f.text.trim()) continue;
-      docs.push({ id: `${ref.cardId}#${f.kind}:${f.id}`, name: `${label} — 붙임 ${f.name}`, text: f.text, relation: "biz", numberEvidence: true });
-      known.push(f.text);
-    }
-    sources.push({ kind: "biz", id: ref.cardId, name: bizSourceName(ref.taskId), stamp: ref.stamp, at: ref.updatedAt });
+    docs.push(...one.docs);
+    known.push(...one.known);
+    quote.push(...one.quote);
+    sources.push(one.source);
   }
-  return { docs, known: known.join("\n"), quote: quote.join("\n"), prompt: docs.map((d) => `[주요사업 자료] ${d.name}\n${d.text}`).join("\n\n"), sources };
+  return { docs, known: known.join("\n"), quote: quote.join("\n"), prompt: docs.map((d) => `[주요사업 자료] ${d.name}\n${d.text}`).join("\n\n"), sources, broken };
 }
 
 /** 주요사업 카드 id(「주요사업9/9-가」) → 표기(「주요사업9 9-가」 — biz-links.ts bizTaskId와 같은 모양). 모양이 다르면 id 그대로 */
 export const bizIdLabel = (id: string) => (/^주요사업\d+\/\d{1,2}-[가-힣]$/.test(id) ? id.replace("/", " ") : id);
 
-/** 고른 주요사업 중 읽지 못한 것(권한 없음·초안 없음·보관) — 초안 경고(「「주요사업9 9-가 경평 초안」(찾을 수 없음)」) */
-export function bizMissing(want: readonly string[], refs: readonly Pick<BizRefText, "cardId">[]): string[] {
+/**
+ * 고른 주요사업 중 읽지 못한 것(권한 없음·초안 없음·보관) — 초안 경고(「「주요사업9 9-가 경평 초안」(찾을 수 없음)」).
+ * broken = 읽었지만 깨져 뺀 것(bizMaterials) — 같은 모양으로 「(읽을 수 없음)」
+ */
+export function bizMissing(want: readonly string[], refs: readonly Pick<BizRefText, "cardId">[], broken: readonly string[] = []): string[] {
   const got = new Set(refs.map((r) => r.cardId));
-  return [...new Set(want)].filter((id) => !got.has(id)).map((id) => `「${bizSourceName(bizIdLabel(id))}」(찾을 수 없음)`);
+  const bad = new Set(broken);
+  return [...new Set(want)].filter((id) => !got.has(id) || bad.has(id)).map((id) => `「${bizSourceName(bizIdLabel(id))}」(${bad.has(id) ? "읽을 수 없음" : "찾을 수 없음"})`);
 }
 
 /**

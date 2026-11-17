@@ -1114,7 +1114,7 @@ export function splitSiblingsOf(data: unknown, cardId: string, siblings: Sibling
       const sp = readSection(r.spec);
       const plan = readComposition(r.outline);
       const c = Array.isArray(r.cards) ? r.cards[0] : r.cards;
-      return [{ mark: sp?.sub.mark || sib.taskNo.split("-")[1] || "", title: sp?.sub.title || c?.title || "", axis: plan?.split?.axis ?? "", chip: plan?.split?.chip || sp?.sub.chip || "" }];
+      return [{ mark: sp?.sub?.mark || sib.taskNo.split("-")[1] || "", title: sp?.sub?.title || c?.title || "", axis: plan?.split?.axis ?? "", chip: plan?.split?.chip || sp?.sub?.chip || "" }];
     })
     .sort((a, b) => (SUB_MARKS.indexOf(a.mark) + 1 || 99) - (SUB_MARKS.indexOf(b.mark) + 1 || 99));
 }

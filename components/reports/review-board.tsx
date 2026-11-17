@@ -59,6 +59,11 @@ export interface ReviewCard {
   bizStale?: string[];
   /** blockMarks를 켠 sectionHtml — data-block마다 클릭해 그 블록에 코멘트를 답니다 */
   html: string | null;
+  /**
+   * 없는 숫자를 다시 세지 못함(lib/reports/draft-recount.ts — 2026-11-17 3차, 서버가 글을 만들어 넘김: 이 부품은 클라이언트라 그 모듈을 읽지 않음).
+   * label = 표지 글(「없는 숫자 확인 불가」), reason = 까닭, warning = 표지 title(막힘 경고 전문). html이 없으면 「그릴 수 없음」 칸
+   */
+  recountFail?: { label: string; reason: string; warning: string };
   cardHref: string;
   draftHref: string;
 }
@@ -244,6 +249,11 @@ export function ReviewBoard({
                     <FitTag pct={c.fitPct} />
                   )}
                   {c.needs + c.figures > 0 && <Tag tone="warn">채울 자료 {c.needs + c.figures}</Tag>}
+                  {c.recountFail && (
+                    <Tag tone="warnSolid" title={c.recountFail.warning}>
+                      {c.recountFail.label}
+                    </Tag>
+                  )}
                   {c.unknown > 0 && <Tag tone="warnSolid">근거에 없는 숫자 {c.unknown}</Tag>}
                   {c.bizStale && c.bizStale.length > 0 && (
                     <Tag tone="warnSolid" title={`참고한 주요사업 초안이 그 뒤 바뀜: ${c.bizStale.join("·")} — 제출을 막지는 않습니다`}>
@@ -269,6 +279,13 @@ export function ReviewBoard({
                 </div>
                 {c.html ? (
                   <CardDoc uid={c.uid} html={c.html} live={canComment} narrow={narrow} onPick={pick} />
+                ) : c.recountFail && c.state !== "none" && c.state !== "outline" ? (
+                  <div id={`rv-card-${c.uid}`} className="flex items-center gap-2 rounded-md border border-dashed border-warn/60 bg-warn-bg px-4 py-6 text-ui text-warn">
+                    <span className="min-w-0">저장된 초안을 그릴 수 없습니다 — {c.recountFail.reason}</span>
+                    <Link href={c.draftHref} className="ml-auto shrink-0 text-xs font-semibold text-link no-underline hover:underline">
+                      과제별 초안 열기
+                    </Link>
+                  </div>
                 ) : (
                   <div id={`rv-card-${c.uid}`} className="flex items-center gap-2 rounded-md border border-dashed border-field-line bg-field px-4 py-6 text-ui text-muted-2">
                     초안 없음

@@ -1,7 +1,8 @@
-// 첨부(카드 전용 자료·보고서 추가자료)의 읽은 글 저장본 — 순수 함수. 읽기·내려받기·저장은 lib/ai/attachments.ts.
+// 첨부(카드 전용 자료·보고서 추가자료)의 읽은 글 저장본 — 순수 함수(saveParsed만 받은 클라이언트로 씀). 읽기·내려받기는 lib/ai/attachments.ts.
 // 참고자료 설계 1단계(docs/reference-materials.md §4.1): 올릴 때 kordoc으로 한 번 읽어 전체 글을 저장하고, AI 요청 때는 저장본만 씀(자르지 않음).
 // 저장본이 없거나(1단계 전에 올린 자료) 파서 판이 다르면 요청 때 다시 읽어 채움.
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { DESCRIBE_VERSION } from "./describe.ts";
 import type { KnowledgeRef } from "./writer.ts";
 
@@ -78,6 +79,25 @@ export function parseColumns(o: ParseOutcome, now: Date = new Date()) {
     parse_error: ok ? null : o.error,
     parsed_chars: ok ? o.text.length : null,
   };
+}
+
+export type MaterialTable = "card_materials" | "report_materials";
+
+/** saveParsed가 쓰는 Supabase 클라이언트 모양(시험에서 가짜로 바꿈) */
+type Db = Pick<SupabaseClient, "from">;
+
+/**
+ * 읽은 결과를 그 행에 저장 — 읽은 글 칸은 서버만 씀(20261117100000: 로그인 사용자의 update 권한 없음), 그래서 서비스 키(admin)로 그 칸만 씀.
+ * 남의 행 id로 서비스 키를 쓰지 않게 먼저 사용자 권한(user)으로 그 행을 읽을 수 있는지, 행의 경로가 방금 내려받아 읽은 파일(storagePath)과 같은지 확인.
+ * 보고서 제출·확정 잠금은 다시 보지 않음: 읽은 글은 (저장소 파일, 파서 판)으로 정해지는 값이고 경로·파일은 누구도 못 바꿈. 썼으면 true
+ */
+export async function saveParsed(user: Db, admin: Db, table: MaterialTable, id: string, storagePath: string, o: ParseOutcome, now: Date = new Date()): Promise<boolean> {
+  if (!o.sha256) return false; // 파일을 내려받지 못함(읽은 것이 없음)
+  const { data: row } = await user.from(table).select("id, storage_path").eq("id", id).maybeSingle();
+  if (!row || row.storage_path !== storagePath) return false;
+  const { data, error } = await admin.from(table).update(parseColumns(o, now)).eq("id", id).eq("storage_path", storagePath).select("id");
+  if (error) console.error("saveParsed", table, error.message);
+  return !error && (data?.length ?? 0) === 1;
 }
 
 /** 첨부 → 인용 대조용 근거(열쇠 file:N — 프롬프트의 <source key="file:N"> 봉투와 같음). 글은 자르지 않음 */

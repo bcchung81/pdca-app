@@ -12,6 +12,7 @@ import { readSeedInput } from "./seed-files.ts";
 import { SUPABASE_STUB } from "./supabase-stub.ts";
 import { buildSeedRows } from "./seed-rows.ts";
 import { HAS_SEED_CARDS, NO_SEED_CARDS } from "../testing/originals.ts";
+import { FEATURE_TIER } from "../ai/models.ts";
 import { AI_LIMITS, DESCRIBE_FEATURE, DESCRIBE_LIMITS } from "../ai/request-log.ts";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -442,7 +443,7 @@ test("카드 전용 자료 파일: 자기 카드 폴더에만 올린다", { skip
   await rejects(() => as("inspector", () => db.query("insert into storage.objects (bucket_id, name) values ('knowledge', 'x/y.pdf')")), /row-level security/);
 });
 
-test("첨부 읽은 글(참고자료 1단계): 쓸 수 있는 사람만 읽은 글 칸을 채우고, 파일 경로·소속은 못 바꾼다", { skip: NO_SEED_CARDS }, async () => {
+test("첨부 읽은 글(20261117100000 — 서버만 씀): 로그인 사용자는 누구도 읽은 글 칸을 넣거나 고치지 못하고(부서·성과관리팀·관리자), 등록 칸만 넣으며, 서비스 키는 씀", { skip: NO_SEED_CARDS }, async () => {
   const team = async (name: string) => (await db.query<{ id: number }>("select id from public.teams where name = $1", [name])).rows[0].id;
   const insp = await team("검사기획팀");
   const lic = await team("자격기획팀");
@@ -450,35 +451,47 @@ test("첨부 읽은 글(참고자료 1단계): 쓸 수 있는 사람만 읽은 �
   const own = await card("검사기획팀");
   const other = await card("자격기획팀");
   const parsed = "set parsed_text = '전체 글', parse_status = 'parsed', parser_version = 'v', parsed_at = now(), parse_error = null, parsed_chars = 4, sha256 = 'h'";
+  const staff = ["inspector", "pmo", "admin"] as const;
 
-  // 카드 전용 자료: 올릴 때 읽은 글을 함께 넣고, 판이 바뀌면 자기 카드 것만 다시 채움
-  const cm = (await as("inspector", () => db.query<{ id: string }>("insert into public.card_materials (card_id, storage_path, file_name, uploaded_by, parsed_text, parse_status, parser_version, parsed_chars) values ($1, 'x/a.hwp', 'a.hwp', $2, '글', 'parsed', 'v0', 1) returning id", [own, users.inspector]))).rows[0].id;
-  const cmOther = (await db.query<{ id: string }>("insert into public.card_materials (card_id, storage_path, file_name) values ($1, 'y/b.hwp', 'b.hwp') returning id", [other])).rows[0].id;
-  assert.equal((await as("inspector", () => db.query(`update public.card_materials ${parsed} where id = $1`, [cm]))).affectedRows, 1);
-  assert.equal((await as("inspector", () => db.query(`update public.card_materials ${parsed} where id = $1`, [cmOther]))).affectedRows, 0, "남의 카드 자료는 못 채움");
-  await rejects(() => as("inspector", () => db.query("update public.card_materials set storage_path = 'y/b.hwp' where id = $1", [cm])), /permission denied/);
+  // 카드 전용 자료: 등록은 등록 칸만(읽은 글은 기본값 — 아직 안 읽음), 읽은 글 칸을 함께 넣으면 거절
+  await rejects(() => as("inspector", () => db.query("insert into public.card_materials (card_id, storage_path, file_name, uploaded_by, parsed_text, parse_status) values ($1, 'x/z.hwp', 'z.hwp', $2, '글', 'parsed')", [own, users.inspector])), /permission denied/);
+  const cm = (await as("inspector", () => db.query<{ id: string }>("insert into public.card_materials (card_id, storage_path, file_name, mime_type, bytes, uploaded_by) values ($1, 'x/a.hwp', 'a.hwp', null, 1, $2) returning id", [own, users.inspector]))).rows[0].id;
+  assert.equal(await count("select 1 from public.card_materials where id = $1 and parse_status = 'pending' and parsed_text is null and sha256 is null", [cm]), 1, "기본은 아직 안 읽음");
+  await rejects(() => as("inspector", () => db.query("insert into public.card_materials (card_id, storage_path, file_name) values ($1, 'y/c.hwp', 'c.hwp')", [other])), /row-level security/);
+  for (const who of staff) {
+    await rejects(() => as(who, () => db.query(`update public.card_materials ${parsed} where id = $1`, [cm])), /permission denied/);
+    await rejects(() => as(who, () => db.query("update public.card_materials set storage_path = 'y/b.hwp' where id = $1", [cm])), /permission denied/);
+  }
   await rejects(() => as("inspector", () => db.query("update public.card_materials set card_id = $2 where id = $1", [cm, other])), /permission denied/);
+  assert.equal(await as("inspector", () => count("select 1 from public.card_materials where id = $1", [cm])), 1, "읽기는 그대로");
 
-  // 보고서 추가자료: 그 보고서 내용을 고칠 수 있는 사람만(제출하면 부서는 못 채움)
+  // 보고서 추가자료: 같은 규칙(제출 전·후, 성과관리팀도 못 씀)
   const insert = "insert into public.reports (eval_unit_id, year, team_id, created_by) values ('BZ-1', 2035, $1, $2) returning id";
   const mine = (await as("pmo", () => db.query<{ id: number }>(insert, [insp, users.pmo]))).rows[0].id;
   const theirs = (await as("pmo", () => db.query<{ id: number }>(insert, [lic, users.pmo]))).rows[0].id;
+  await rejects(() => as("inspector", () => db.query("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by, parsed_text) values ($1, $2, 'z.pdf', $3, '글')", [mine, `${mine}/z.pdf`, users.inspector])), /permission denied/);
   const rm = (await as("inspector", () => db.query<{ id: string }>("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values ($1, $2, 'a.pdf', $3) returning id", [mine, `${mine}/a.pdf`, users.inspector]))).rows[0].id;
-  const rmTheirs = (await db.query<{ id: string }>("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values ($1, $2, 'b.pdf', $3) returning id", [theirs, `${theirs}/b.pdf`, users.license])).rows[0].id;
+  await rejects(() => as("inspector", () => db.query("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values ($1, $2, 'b.pdf', $3)", [theirs, `${theirs}/b.pdf`, users.inspector])), /row-level security/);
   assert.equal((await db.query<{ parse_status: string }>("select parse_status from public.report_materials where id = $1", [rm])).rows[0].parse_status, "pending", "기본은 아직 안 읽음");
-  assert.equal((await as("inspector", () => db.query(`update public.report_materials ${parsed} where id = $1`, [rm]))).affectedRows, 1);
-  assert.equal((await as("inspector", () => db.query(`update public.report_materials ${parsed} where id = $1`, [rmTheirs]))).affectedRows, 0, "남의 부서 보고서 자료는 못 채움");
-  await rejects(() => as("inspector", () => db.query("update public.report_materials set storage_path = $2 where id = $1", [rm, `${theirs}/b.pdf`])), /permission denied/);
-  await rejects(() => as("inspector", () => db.query("update public.report_materials set report_id = $2 where id = $1", [rm, theirs])), /permission denied/);
-  await rejects(() => as("inspector", () => db.query("update public.report_materials set parse_status = 'done' where id = $1", [rm])), /check/);
-  await as("inspector", () => db.query("update public.reports set status = 'drafting' where id = $1", [mine])); // 전이 표: 작성 중을 거쳐 제출(2026-10-10)
-  await as("inspector", () => db.query("update public.reports set status = 'submitted' where id = $1", [mine]));
-  assert.equal((await as("inspector", () => db.query(`update public.report_materials ${parsed} where id = $1`, [rm]))).affectedRows, 0, "제출한 보고서는 부서가 못 채움");
-  assert.equal((await as("pmo", () => db.query(`update public.report_materials ${parsed} where id = $1`, [rm]))).affectedRows, 1, "성과관리팀은 채움");
+  for (const who of staff) {
+    await rejects(() => as(who, () => db.query(`update public.report_materials ${parsed} where id = $1`, [rm])), /permission denied/);
+    await rejects(() => as(who, () => db.query("update public.report_materials set report_id = $2 where id = $1", [rm, theirs])), /permission denied/);
+  }
+
+  // 서버(서비스 키)는 읽은 글 칸을 씀 — 앱은 사용자 권한으로 행을 읽을 수 있는지·경로를 먼저 확인(lib/ai/material-text.ts saveParsed)
+  await db.exec("set role service_role");
+  try {
+    assert.equal((await db.query(`update public.card_materials ${parsed} where id = $1 and storage_path = 'x/a.hwp'`, [cm])).affectedRows, 1);
+    assert.equal((await db.query(`update public.report_materials ${parsed} where id = $1`, [rm])).affectedRows, 1);
+    await rejects(() => db.query("update public.report_materials set parse_status = 'done' where id = $1", [rm]), /check/);
+  } finally {
+    await db.exec("reset role");
+  }
+  assert.equal(await as("inspector", () => count("select 1 from public.card_materials where id = $1 and parsed_text = '전체 글'", [cm])), 1);
   // 뒤 테스트의 건수에 끼지 않게 치움
   await db.query("delete from public.report_materials where report_id in ($1, $2)", [mine, theirs]);
   await db.query("delete from public.reports where id in ($1, $2)", [mine, theirs]);
-  await db.query("delete from public.card_materials where id in ($1, $2)", [cm, cmOther]);
+  await db.query("delete from public.card_materials where id = $1", [cm]);
 });
 
 test("AI 호출 기록: 캐시 쓰기 중 1시간 캐시 몫을 따로 남긴다", { skip: NO_SEED_CARDS }, async () => {
@@ -565,6 +578,30 @@ test("AI 호출 끝맺기 rpc(finish_ai_request): 주인·running·키가 맞을
     await rejects(() => as("inspector", () => db.query("select public.finish_ai_request($1, $2, 'running')", [id2, k2.key])), /올바르지 않습니다/);
     await as("inspector", () => db.query("select public.finish_ai_request(p_id => $1, p_key => $2, p_status => 'error', p_error => $3)", [id2, k2.key, "가".repeat(400)]));
     assert.equal((await db.query<{ n: number }>("select length(error) as n from public.ai_requests where id = $1", [id2])).rows[0].n, 300);
+  } finally {
+    await clearAi();
+  }
+});
+
+test("AI 호출 기록 값 상한(20261117100000): 기능 이름은 코드의 기능 목록(FEATURE_TIER)만, mode·model·토큰·소요 시간·단계 시간은 호출 한 번의 상식 범위로 자름", { skip: NO_SEED_CARDS }, async () => {
+  try {
+    for (const feature of Object.keys(FEATURE_TIER)) {
+      assert.equal((await startAi("inspector", { feature })).ok, true, feature);
+      await clearAi();
+    }
+    for (const feature of ["가짜기능", "card_assist ", ""]) await rejects(() => startAi("inspector", { feature }), /올바르지 않습니다/);
+    const k = aiKey("caps");
+    const id = (await as("inspector", () => db.query<{ r: AiStart }>("select public.start_ai_request('card_chat', null, $1, null, $2::text[]) as r", ["m".repeat(500), [k.hash]]))).rows[0].r.ids![0];
+    assert.equal((await db.query<{ n: number }>("select length(mode) as n from public.ai_requests where id = $1", [id])).rows[0].n, 60);
+    const big = 2147483647;
+    const extra = `, p_model => '${"x".repeat(5000)}', p_input_tokens => ${big}, p_output_tokens => -5, p_cache_read_tokens => ${big}, p_cache_write_tokens => ${big}, p_cache_write_1h_tokens => ${big}, p_duration_ms => ${big}, p_timings => '{"call": "${"y".repeat(5000)}"}'::jsonb`;
+    assert.equal(await finishAi("inspector", id, k.key, extra), true);
+    const row = (await db.query<Record<string, number | null>>("select length(model) as model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens, duration_ms, timings is null as no_timings from public.ai_requests where id = $1", [id])).rows[0];
+    assert.deepEqual({ ...row }, { model: 100, input_tokens: 2_000_000, output_tokens: 0, cache_read_tokens: 2_000_000, cache_write_tokens: 2_000_000, cache_write_1h_tokens: 2_000_000, duration_ms: 86_400_000, no_timings: true });
+    const k2 = aiKey("caps-2");
+    const id2 = (await startAi("inspector", { hashes: [k2.hash] })).ids![0];
+    assert.equal(await finishAi("inspector", id2, k2.key, ", p_timings => '[1, 2]'::jsonb"), true);
+    assert.equal(await count("select 1 from public.ai_requests where id = $1 and timings is null", [id2]), 1, "객체가 아닌 단계 시간은 버림");
   } finally {
     await clearAi();
   }

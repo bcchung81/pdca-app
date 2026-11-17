@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PAGE_MM } from "./fit.ts";
-import { type BusinessItem, HEAD_PART_MM, headModes, layoutBusiness, orderItems, sheetsOf, specHeight } from "./business-layout.ts";
+import { type BusinessItem, HEAD_PART_MM, SECTION_PAGES_MAX, headModes, layoutBusiness, orderItems, sheetsOf, specHeight } from "./business-layout.ts";
 import type { Block } from "./blocks.ts";
 import { bizMapHtml, sheetHtml } from "./business-html.ts";
 import { BIZ_MAP_MM, PAGE_TOLERANCE_MM, SPILL_FILL_MAX, SAME_TEXT_MAX, bizMapLine, bizMapMm, bizMapRows, bizMapWidth, businessChecks, headCut } from "./business-layout.ts";
@@ -540,4 +540,19 @@ test("쪽 채움 경고(경영관리): 평가내용이 바뀌는 쪽 앞의 거�
   assert.deepEqual(layoutBusiness([mgItem("6-1", 0, "평가내용 1. 가", null, 1.5), mgItem("6-2", 1, "평가내용 2. 나", null, 1)], { mg: { budget: 2 } }).warnings, []);
   // 본문 마지막 쪽
   assert.equal(layoutBusiness([mgItem("6-1", 0, "평가내용 1. 가", null, 1.06)], { mg: { budget: 1 } }).warnings.length, 1);
+});
+
+test("판면 높이 상한: 저장된 어림(fit.total)이 터무니없이 커도 과제당 쪽 수 상한에서 멈춤(빨리·작게), 어림 블록이 많아도 쪽 나누기는 상한까지", () => {
+  assert.equal(specHeight(spec({ fit: { total: 1e300, budget: 255 } }))?.mm, SECTION_PAGES_MAX * H);
+  assert.equal(specHeight(spec({ fit: { total: 600, budget: 255 } }))?.mm, 600, "상한 안이면 그대로");
+  const t0 = performance.now();
+  const r = layoutBusiness([item({ spec: spec({ fit: { total: 1e9, budget: 255 } }) }), item({ cardId: "c2", uid: "u2", taskNo: "1-나", sort: 1, spec: spec({ fit: { total: Number.MAX_VALUE, budget: 255 } }) })]);
+  assert.equal(r.pages.length, 2 * SECTION_PAGES_MAX);
+  assert.ok(r.sections.every((s) => s.endPage - s.startPage + 1 === SECTION_PAGES_MAX));
+  assert.ok(performance.now() - t0 < 500);
+  // 어림(estimate) 경로: 블록이 아주 많은 초안도 쪽 수 상한까지만
+  const many = Array.from({ length: 3000 }, () => ({ kind: "bullets", label: "A", title: "", variant: "", text: "", items: ["가나다 라마바 사아자 차카타 파하"], cells: [], rows: [], series: [], badge: "" }));
+  const e = layoutBusiness([item({ spec: spec({ blocks: many, module: 1 }) })]);
+  assert.ok(e.sections[0].height > SECTION_PAGES_MAX * H, "높이 값은 어림 그대로(넘침 표시)");
+  assert.equal(e.pages.length, SECTION_PAGES_MAX);
 });

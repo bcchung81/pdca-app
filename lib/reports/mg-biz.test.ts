@@ -109,6 +109,25 @@ test("bizMissing: 고른 주요사업 중 읽지 못한 것은 초안 경고 표
   assert.deepEqual(bizMissing(["다른모양"], []), ["「다른모양 경평 초안」(찾을 수 없음)"], "모양이 다르면 id 그대로");
 });
 
+test("bizMaterials: 깨진 주요사업 초안 하나는 그 주요사업만 통째로 빼고(던지지 않음) broken — bizMissing이 같은 모양 「읽을 수 없음」 경고(2026-11-17 3차)", () => {
+  const ok = ref({ cardId: "주요사업4/4-가", taskId: "주요사업4 4-가", taskNo: "4-가", title: "가짜 교육사업" });
+  const rowsBroken = ref({ spec: { ...bizSpec(["현장 컨설팅 1,234건 지원"]), rows: [{}] } });
+  const textBroken = ref({ cardId: "주요사업5/5-다", taskId: "주요사업5 5-다", taskNo: "5-다", spec: bizSpec([`가${" ".repeat(50_000)}끝`]) });
+  const ledgerThrows = ref({ cardId: "주요사업6/6-라", taskId: "주요사업6 6-라", taskNo: "6-라", data: new Proxy({}, { get: () => { throw new Error("가짜 오류"); } }) });
+  const m = bizMaterials([rowsBroken, ok, textBroken, ledgerThrows]);
+  assert.deepEqual(m.broken, ["주요사업3/3-나", "주요사업5/5-다", "주요사업6/6-라"]);
+  assert.ok(m.docs.every((d) => d.id.startsWith("주요사업4/4-가#")), "남은 자료는 성한 주요사업 것뿐(깨진 것의 원장·붙임도 뺌)");
+  assert.deepEqual(m.sources.map((x) => x.id), ["주요사업4/4-가"], "초안 근거 목록에도 성한 것만");
+  const want = ["주요사업3/3-나", "주요사업4/4-가", "주요사업5/5-다", "주요사업6/6-라", "주요사업9/9-가"];
+  assert.deepEqual(bizMissing(want, [rowsBroken, ok, textBroken, ledgerThrows], m.broken), [
+    "「주요사업3 3-나 경평 초안」(읽을 수 없음)",
+    "「주요사업5 5-다 경평 초안」(읽을 수 없음)",
+    "「주요사업6 6-라 경평 초안」(읽을 수 없음)",
+    "「주요사업9 9-가 경평 초안」(찾을 수 없음)",
+  ]);
+  assert.deepEqual(bizMaterials([ref()]).broken, [], "성한 초안은 그대로");
+});
+
 test("초안 근거 목록: biz는 이 카드 자료로 읽히지 않고(specSources biz), 블록 고치기의 새 주요사업만 더함(있는 것은 그때 지문 그대로)", () => {
   const spec = [
     { kind: "card", id: "c1", name: "a.hwp" },

@@ -56,6 +56,12 @@ function emptyHtml(it: BusinessItem, from?: string | null): string {
   return `<p><b>${esc(it.taskNo)} ${esc(it.title)}</b></p>${where ? `<p>${esc(where)}</p>` : ""}<p>초안 없음 · 배정 ${fmtPages(it.pages)}</p><p><a href="${esc(href)}">작성 화면으로</a></p>`;
 }
 
+/** 그리지 못한 초안 자리(배정 높이만큼 점선 빈 칸) — 작성 화면에서 다시 만들도록 */
+function brokenHtml(it: BusinessItem, from?: string | null): string {
+  const href = withReturn(`/reports/cards/${encodeURIComponent(it.uid)}`, from);
+  return `<p><b>${esc(it.taskNo)} ${esc(it.title)}</b></p><p>저장된 초안을 그리지 못했습니다(없는 숫자 확인 불가)</p><p><a href="${esc(href)}">작성 화면으로</a></p>`;
+}
+
 /**
  * 한 장(쪽 묶음) HTML. 걸친 소항목은 처음 조각에서 한 번만 그리고, 같은 쪽의 둘째 소항목부터는 SUB_GAP_MM 띄움.
  * 초안 없는 자리는 조판 높이(배정 쪽수 × 255mm)만큼 점선 빈 칸. from은 순수 모듈이라 인자로 받음(사업 조판 화면 주소 — 「작성 화면으로」가 돌아올 곳).
@@ -72,8 +78,16 @@ export function sheetHtml(sheet: LaidPage[], layout: Pick<BusinessLayout, "items
       const s = layout.sections[x.index];
       const gap = x.top > 0 ? `margin-top:${SUB_GAP_MM}mm;` : "";
       const id = `bz-${esc(it.uid)}`;
-      if (!it.spec) return `<div class="k-frame bz-piece bz-empty" id="${id}" style="${gap}${s.height > 0 ? `height:${s.height}mm` : ""}">${emptyHtml(it, from)}</div>`;
-      return `<div class="k-frame bz-piece" id="${id}"${gap ? ` style="${gap}"` : ""}>${sectionBodyHtml(it.spec, it.unknownNumbers ?? [], { head: s.head, ...(s.mgCont ? { mgCont: s.mgCont } : {}), ...(s.map ? { bizMap: bizMapHtml(s.map) } : {}) })}</div>`;
+      const box = (html: string) => `<div class="k-frame bz-piece bz-empty" id="${id}" style="${gap}${s.height > 0 ? `height:${s.height}mm` : ""}">${html}</div>`;
+      if (!it.spec) return box(emptyHtml(it, from));
+      // 모양 검사(draft-recount.ts specIssue)를 지났는데도 그리기가 던지면 그 과제만 빈 칸으로 — 조판 화면 전체가 오류가 되지 않게(2026-11-17 3차)
+      let body: string;
+      try {
+        body = sectionBodyHtml(it.spec, it.unknownNumbers ?? [], { head: s.head, ...(s.mgCont ? { mgCont: s.mgCont } : {}), ...(s.map ? { bizMap: bizMapHtml(s.map) } : {}) });
+      } catch {
+        return box(brokenHtml(it, from));
+      }
+      return `<div class="k-frame bz-piece" id="${id}"${gap ? ` style="${gap}"` : ""}>${body}</div>`;
     })
     .join("\n");
   return sheetShell(first, n, body);

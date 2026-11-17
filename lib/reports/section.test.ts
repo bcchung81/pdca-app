@@ -9,7 +9,7 @@ import type { LensRef } from "./lens.ts";
 import type { PriorPick } from "./prior.ts";
 import { reportDraftPrompts } from "../prompts/sets.ts";
 import { markRoots, sectionDocument, sectionHtml } from "./section-html.ts";
-import { LADDER_LABELS, clipLine, composeIssues, draftEvidence, evidenceOf, figureCap, figurePlaceIssues, fitPrompt, moduleGuide, quoteFoundIn, type SectionContext, recheckSection, resultExtras, resultRepeatIssue, sectionHints, sectionText, sourceKey, type SectionOutput, SectionOutputSchema, cardNumbers, numberTokens, readSection, reportTypography, sectionContext, sectionPrompt, siblingLayout, styleWarnings, verifySection } from "./section.ts";
+import { LADDER_LABELS, clipLine, composeIssues, draftEvidence, evidenceOf, figureCap, figurePlaceIssues, fitPrompt, moduleGuide, quoteFoundIn, type SectionContext, recheckSection, resultExtras, resultRepeatIssue, sectionHints, sectionText, sourceKey, type SectionOutput, SectionOutputSchema, cardNumbers, numberTokens, readSection, type ReportSectionSpec, reportTypography, sectionContext, sectionPrompt, siblingLayout, styleTail, styleWarnings, verifySection } from "./section.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
 import { cardOutline } from "../ai/writer.ts";
 import { cleanMaterials } from "./composition.ts";
@@ -1452,4 +1452,17 @@ test("evidenceOf: HTML 표 원문 조각의 행을 편 글(「칸 | 칸」·<br>
   assert.deepEqual(materials.map((m) => m.found), [true, true]);
   // 예전 열쇠(카드 글 + 근거 원문의 sourceKey)는 새 열쇠의 앞부분 그대로 — 예전에 찾던 구절은 모두 찾음
   assert.ok(hayKey.startsWith(sourceKey(`${cardOutline(card)}\n${inspectionCardText(card)}\n${chunk}\n`)));
+});
+
+test("문체 끝말 정리(styleTail): 예전 정규식과 같은 결과, 빈칸·괄호·마침표가 긴 글도 다시 점검(recheckSection)이 빨리 끝남", () => {
+  const old = (x: string) => x.replace(/(\s*\([^()]*\))+\s*$/, "").replace(/[.!\s]+$/, "");
+  const samples = ["구축함 (’25년)", "확산 (5건) (A등급).", "마련 ( x )  !", "(전체)", "시스템", "운영 (1(2)3)", "끝 )", "( 열림", "가 \n(나)\t", "", " . ! ", "a(b)c(d)"];
+  for (const x of samples) assert.equal(styleTail(x), old(x), JSON.stringify(x));
+  const block = (items: string[]): Block => ({ kind: "bullets", label: "추진내용", title: "", variant: "", text: "", items, cells: [], rows: [], series: [], badge: "" });
+  const long = ["가" + " ".repeat(200_000) + "나", "가" + "\n".repeat(200_000), "가" + " (x)".repeat(50_000) + "나", "가" + ".".repeat(200_000) + "나"];
+  const draft = { version: 3, card: { id: "주요사업3/3-나", taskNo: "3-나", title: "가짜" }, business: { no: 3, name: "가짜" }, task: { no: "3-1", title: "가짜", bp: false }, sub: { mark: "나", title: "가짜", markers: [] }, rows: [], blocks: [block(long)], results: long, caption: "", module: 1 } as ReportSectionSpec;
+  const t = performance.now();
+  styleWarnings(draft);
+  recheckSection(draft, { taskNo: "3-나", title: "가짜" }, "", 2026, "2026-11-17");
+  assert.ok(performance.now() - t < 3000, `${Math.round(performance.now() - t)}ms`);
 });

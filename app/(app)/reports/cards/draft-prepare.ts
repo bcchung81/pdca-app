@@ -20,7 +20,7 @@ import type { LensRef } from "../../../../lib/reports/lens.ts";
 import { type PriorPick, pickPrior, scorePrior } from "../../../../lib/reports/prior.ts";
 import { loadLens } from "../../../../lib/reports/lens-queries.ts";
 import { loadPriorSections } from "../../../../lib/reports/prior-queries.ts";
-import { type ReportFile, type SectionContext, type SiblingCard, type SiblingLayout, draftEvidence, readSection, sectionContext, sectionHints, siblingLayout } from "../../../../lib/reports/section.ts";
+import { type ReportFile, type SectionContext, type SiblingCard, type SiblingLayout, draftEvidence, sectionContext, sectionHints, siblingLayout } from "../../../../lib/reports/section.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { type AiRequestStart, startAiRequest, startAiRequests } from "../../../../lib/ai/request-log.ts";
 import { type AiJobStart, launchAiJob, startAiJob } from "../../../../lib/ai/background.ts";
@@ -31,6 +31,7 @@ import { type MgSibling, defaultEvals, mgSiblingOf } from "../../../../lib/repor
 import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../../../lib/reports/mg-queries.ts";
 import { BIZ_TEXT_MAX, type BizRefText, loadBizRefTexts } from "../../../../lib/reports/mg-biz-queries.ts";
 import { type BizMaterials, bizMaterials, bizMissing } from "../../../../lib/reports/mg-biz.ts";
+import { readDraftSpec } from "../../../../lib/reports/draft-recount.ts";
 import { MGMT_INDICATORS } from "../../../../lib/tracks/mgmt-units.ts";
 import { type FollowupBasis, followupBasis } from "../../../../lib/ai/followup.ts";
 import { readResult } from "../../../../lib/inspections/model.ts";
@@ -218,7 +219,8 @@ export async function prepareDraft(uid: string, sources?: DraftSources, opts: { 
   const { data: sibDrafts } = await supabase.from("card_report_drafts").select("card_id, spec, outline, cards!inner(eval_unit_id, task_no, title)").eq("year", year).eq("cards.eval_unit_id", card.eval_unit_id).neq("card_id", card.id);
   const siblingsLayout: SiblingLayout[] = (sibDrafts ?? [])
     .flatMap((d: { spec: unknown; outline: unknown; cards: { task_no: string; title: string } | Array<{ task_no: string; title: string }> | null }) => {
-      const sp = readSection(d.spec);
+      // 형제 초안이 앱 밖에서 깨졌으면(모양 검사 — draft-recount.ts) 초안 대신 구성안으로 — 다른 과제 초안 하나로 이 과제 집필이 멈추지 않게(2026-11-17 3차)
+      const sp = readDraftSpec(d.spec).spec;
       const fromDraft = sp ? siblingLayout(sp) : null;
       if (fromDraft) return [fromDraft];
       const c = Array.isArray(d.cards) ? d.cards[0] : d.cards;
@@ -275,7 +277,8 @@ async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "ye
   const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
   // 주요사업 초안 참고(2026-11-12): 원장·붙임·초안 글 모두 숫자 근거 — 초안 글은 그 초안의 없는 숫자를 가린 사본(AI가 보는 글은 원문), 인용 대조는 원문. 못 읽은 주요사업은 경고만
   const biz = bizIds.length ? bizMaterials(bizRefs) : null;
-  const skipped = bizIds.length ? [...x.skipped, ...bizMissing(bizIds, bizRefs)] : x.skipped;
+  // 깨진 주요사업 초안(모양·크기·풀다가 던짐)은 bizMaterials가 빼고 broken에 적음 — 「읽을 수 없음」으로 경고(2026-11-17 3차)
+  const skipped = bizIds.length ? [...x.skipped, ...bizMissing(bizIds, bizRefs, biz?.broken)] : x.skipped;
   // 숫자 근거 = 카드·첨부·실사 답변 + 이 과제에 연결된 공통 지식 조각 + 그 지표 2025 보고서 전 장·핵심공통항목(KCA 자신의 수치) (+ 고른 주요사업 자료)
   // — 저장된 초안 다시 세기(lib/reports/draft-recount-queries.ts loadDraftKnown)와 같은 규칙
   const known = [ev.known, numbers, ...(biz ? [biz.known] : [])].join("\n");

@@ -5,6 +5,7 @@ import { requireAtLeast } from "../../../../lib/auth/dal.ts";
 import { compareTaskNo, currentPeriod } from "../../../../lib/cards/view.ts";
 import { fmtDate } from "../../../../lib/format.ts";
 import { withReturn } from "../../../../lib/nav/return-to.ts";
+import { readDraftSpec } from "../../../../lib/reports/draft-recount.ts";
 import { readSection } from "../../../../lib/reports/section.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
@@ -126,7 +127,8 @@ export default async function ReportCardsPage({ searchParams }: PageProps<"/repo
                 <tbody>
                   {list.map((c) => {
                     const d = draftOf.get(c.id);
-                    const spec = readSection(d?.spec);
+                    // 모양 검사(2026-11-17 3차): 앱 밖에서 깨뜨린 초안 하나로 목록 전체가 오류가 되지 않게 — 깨진 초안은 첨부 수 0(초안 있음 셈은 그대로)
+                    const spec = readDraftSpec(d?.spec).spec;
                     const st = state(c);
                     const unknown = d?.unknown_numbers?.length ?? 0;
                     // 첨부 = 카드 전용 자료·보고서 추가자료만(전년 절·평가 근거는 sources에 함께 남지만 첨부가 아님)

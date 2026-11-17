@@ -70,6 +70,16 @@ export async function logUserAdded(actorId: string, targetUserId: string, detail
   if (error) console.error("access_events", error.message);
 }
 
+/**
+ * 사용 중지·복구 때 로그인 차단(Auth ban) 실패 기록(ban_failed). 활성 변경 자체는 DB 트리거가 남기고(user_deactivated·user_restored),
+ * Auth 쪽 실패는 DB가 모르므로 앱이 서비스 키로 남김 — 기록만 보고도 「중지됐지만 로그인 메일은 막히지 않은」 계정을 찾게. 기록 실패는 오류만 남김
+ */
+export async function logBanFailed(actorId: string, targetUserId: string, active: boolean, message: string): Promise<void> {
+  const detail = { active, ban_error: message.slice(0, 300) };
+  const { error } = await createAdminClient().from("access_events").insert({ actor_id: actorId, target_user_id: targetUserId, action: "ban_failed", detail });
+  if (error) console.error("access_events", error.message);
+}
+
 export interface AssignCard {
   id: string;
   taskNo: string;

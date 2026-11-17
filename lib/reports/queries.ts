@@ -7,6 +7,7 @@ import { loadBizStale } from "./mg-biz-queries.ts";
 import type { MaterialMatch } from "./material-match.ts";
 import type { ReportStatus } from "./model.ts";
 import { readSection } from "./section.ts";
+import { readDraftSpec } from "./draft-recount.ts";
 import type { SubmitCard } from "./submission.ts";
 import { DEFAULT_TRACK, type TrackId, trackOfUnit } from "../tracks/index.ts";
 import { loadWho } from "../users/who.ts";
@@ -254,7 +255,7 @@ export async function loadSubmitCards(supabase: SupabaseClient, year: number, fi
       dataRev: c.data_rev ?? null,
       ...(bizStale.get(c.id) ? { bizStale: bizStale.get(c.id) } : {}),
       ...(track === "경영관리" ? { undatedOutcome: undatedOutcomeLines({ outcome: { quantitative: c.outcome } }, year) } : {}),
-      draft: d ? { spec: d.spec ? readSection(d.spec) : null, sourceRev: d.source_rev ?? null, unknownNumbers: Array.isArray(d.unknown_numbers) ? d.unknown_numbers : [], outlineOnly: !d.spec && Boolean(d.outline), outline: d.outline ?? null } : null,
+      draft: d ? { spec: d.spec ? readDraftSpec(d.spec).spec : null, sourceRev: d.source_rev ?? null, unknownNumbers: Array.isArray(d.unknown_numbers) ? d.unknown_numbers : [], outlineOnly: !d.spec && Boolean(d.outline), outline: d.outline ?? null } : null,
     };
     const k = submitKey(c.eval_unit_id, c.team_id);
     out.set(k, [...(out.get(k) ?? []), row]);

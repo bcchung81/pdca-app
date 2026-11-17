@@ -7,7 +7,7 @@ import { createAdminClient } from "../../../lib/supabase/admin.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { checkDisplayName } from "../../../lib/users/name.ts";
 import { type PlanContext, extractEmail, planRows } from "../../../lib/users/plan.ts";
-import { type Db, type ExistingProfile, assignTeamCards, loadMatchTeams, loadProfilesByEmail, logUserAdded } from "../../../lib/users/service.ts";
+import { type Db, type ExistingProfile, assignTeamCards, loadMatchTeams, loadProfilesByEmail, logBanFailed, logUserAdded } from "../../../lib/users/service.ts";
 import { type ApplyResult, type ApplyRowInput, type ApplyRowResult, type ExistingLookup, type LookupResponse, PASTE_MAX_ROWS, type TeamOption } from "../../../lib/users/types.ts";
 
 export type UserFormState = { status: "idle" } | { status: "ok"; message: string } | { status: "error"; message: string };
@@ -170,6 +170,7 @@ export async function setUserActive(id: string, active: boolean): Promise<{ ok: 
   revalidatePath("/users");
   if (banErr) {
     console.error("setUserActive ban", banErr.message);
+    await logBanFailed(me.id, id, active, banErr.message);
     return active
       ? { ok: false, message: "복구했지만 로그인 차단을 풀지 못했습니다. 다시 눌러 주세요." }
       : { ok: true, message: "중지했습니다. 화면·데이터 접근은 막혔지만 로그인 메일 차단은 실패했습니다(다시 눌러 주세요)." };

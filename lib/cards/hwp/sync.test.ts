@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { renderCard } from "../render.ts";
 import { parseCardMarkdown } from "./parse.ts";
-import { applySync, diffLines, htmlLines, matchCard, normTitle, planSync, titleSimilarity } from "./sync.ts";
+import { DIFF_CELLS_MAX, applySync, diffLines, htmlLines, matchCard, normTitle, planSync, titleSimilarity } from "./sync.ts";
 import { HAS_SEED_CARDS, NO_SEED_CARDS } from "../../testing/originals.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -281,4 +281,33 @@ test("원본 양식 줄 읽기: 줄 끝 공백·세로줄 덩어리를 걷고, �
   const t0 = performance.now();
   assert.deepEqual(htmlLines(row).at(-1)?.endsWith("| 끝"), true);
   assert.ok(performance.now() - t0 < 500, "빈 칸 많은 줄");
+});
+
+test("줄 비교: 앞뒤 같은 줄을 먼저 걷고, 줄이 아주 많아도 메모리·시간이 작게 끝남(남은 표가 상한을 넘으면 가운데를 통째로 지움·더함)", () => {
+  const lines = (n: number, p: string) => Array.from({ length: n }, (_, i) => `${p} ${i}`);
+  const t0 = performance.now();
+  const ops = diffLines([...lines(50_000, "같음"), ...lines(50_000, "원장")], [...lines(50_000, "같음"), ...lines(50_000, "파일")], -1);
+  assert.equal(ops.length, 150_000);
+  assert.deepEqual([ops[0].op, ops[50_000].op, ops[100_000].op], ["same", "del", "add"]);
+  assert.ok(performance.now() - t0 < 2000, `${Math.round(performance.now() - t0)}ms`);
+  assert.ok(DIFF_CELLS_MAX >= 112 * 112 * 10, "실제 카드 블록 최대 112줄보다 넉넉히");
+});
+
+test("현행화 비교: 블록 줄이 너무 많으면 줄 비교 없이 「비교 불가」(기본 반영 제외), 직접 고르면 반영됨", { skip: NO_SEED_CARDS }, () => {
+  const id = "주요사업1/1-가";
+  const l = ledger(id);
+  const p = file(id);
+  l.do.lines = Array.from({ length: 1500 }, (_, i) => `작성본 줄 ${i}`);
+  p.do.lines = Array.from({ length: 1500 }, (_, i) => `파일 줄 ${i}`);
+  const t0 = performance.now();
+  const plan = planSync(l, p);
+  const d = plan.blocks.find((b) => b.key === "do")!;
+  assert.equal(d.status, "unknown");
+  assert.deepEqual(d.lines, []);
+  assert.ok(!plan.defaults.includes("do"));
+  assert.ok(plan.risks.some((r) => r.startsWith("비교 불가")));
+  const { card, applied } = applySync(l, p, { blocks: ["do"], removals: [] });
+  assert.deepEqual(applied, ["do"]);
+  assert.equal(card.do.lines[0], "파일 줄 0");
+  assert.ok(performance.now() - t0 < 3000, `${Math.round(performance.now() - t0)}ms`);
 });

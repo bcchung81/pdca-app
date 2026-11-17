@@ -43,6 +43,12 @@ export const SUB_GAP_MM = 3;
 
 /** 쪽에 조금 넘쳐도(판면 어림 오차 안) 그 쪽에 두고 「넘침」으로 표시하는 한도 — 과제별 초안의 채움 목표 윗선(FIT_BAND.over 102%)과 같은 비율 */
 export const PAGE_TOLERANCE_MM = PAGE_MM.height * (FIT_BAND.over - 1);
+/**
+ * 과제 하나(소항목)의 조판 높이 상한(쪽) — 저장된 판면 어림(spec.fit.total)은 앱 밖에서 바뀔 수 있어 그대로 믿지 않음(2026-11-17).
+ * 작성분량이 가장 큰 경영관리 지표 전체가 14쪽(mg-volume.ts)이고 주요사업 소항목은 1~2쪽이라 넉넉히 30쪽. 쪽 나누기 반복도 과제당 이 쪽 수에서 멈춤
+ */
+export const SECTION_PAGES_MAX = 30;
+const SECTION_MM_MAX = SECTION_PAGES_MAX * PAGE_MM.height;
 
 /** 같은 문장 기준값은 잎 모듈(same-text.ts)에 — 여기서 다시 내보냄(mg-close.ts·사업 조판 화면이 이 이름으로 가져감) */
 export { SAME_TEXT_MIN, SAME_TEXT_MIN_BIGRAMS };
@@ -239,7 +245,7 @@ const stale = (it: BusinessItem) => Boolean(it.spec && it.sourceRev !== null && 
 /** 초안 높이(머리 모두 넣은 값): 초안에 남은 어림 → 블록 목록(v3)이면 지금 어림 → 없으면 null */
 export function specHeight(spec: ReportSectionSpec | null): { mm: number; source: Exclude<HeightSource, "assigned"> } | null {
   if (!spec) return null;
-  if (spec.fit && Number.isFinite(spec.fit.total) && spec.fit.total > 0) return { mm: spec.fit.total, source: "fit" };
+  if (spec.fit && Number.isFinite(spec.fit.total) && spec.fit.total > 0) return { mm: Math.min(spec.fit.total, SECTION_MM_MAX), source: "fit" };
   if (spec.version === 3 && spec.blocks?.length) return { mm: fitReport(spec).total, source: "estimate" };
   return null;
 }
@@ -441,9 +447,9 @@ export function layoutBusiness(all: BusinessItem[], opts: { mg?: { budget: numbe
     let rest = s.height;
     let offset = 0;
     s.startPage = page.no;
-    for (;;) {
-      // 한 쪽에 드는 소항목(한도 안 넘침 포함)은 통째로, 큰 소항목은 판면 끝에서 끊어 다음 쪽으로
-      const room = single ? rest : Math.max(0, H - top);
+    for (let k = 1; ; k++) {
+      // 한 쪽에 드는 소항목(한도 안 넘침 포함)은 통째로, 큰 소항목은 판면 끝에서 끊어 다음 쪽으로. 과제당 SECTION_PAGES_MAX쪽째에서는 남은 높이를 다 담고 멈춤(쪽 수 상한)
+      const room = single || k >= SECTION_PAGES_MAX ? rest : Math.max(0, H - top);
       const h = Math.min(rest, room);
       const more = rest - h > 0.05;
       page.pieces.push({ index, cardId: s.cardId, taskNo: s.taskNo, head: s.head, top: round1(top), height: round1(h), total: s.height, offset: round1(offset), cont: offset > 0, more, over: s.fit === "over" });

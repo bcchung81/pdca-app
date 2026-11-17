@@ -139,7 +139,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 카드 전용 자료는 그 카드의 `card_materials` 안에서만 사용자 권한으로 읽음. 첨부는 올릴 때 kordoc으로 읽어 전체 글 저장(`parsed_text`, `PARSER_VERSION`), 요청 때는 **자르지 않음**(`loadMaterialTexts`) — 대신 요청 전체가 `INPUT_BUDGET` 40만을 넘으면 멈춤(`BudgetError`). `ASSIST_TEXT_MAX`는 화면 maxLength와 서버 자르기가 같은 값
 - 이미지·스캔 PDF 첨부는 light 모델(`material_describe`)이 적은 그림 설명이 전체 글(표지 붙음, 원문 인용 금지). **API 경로에서만**(CLI·일시 오류는 `pending`)
 - Vercel에서는 늘 `api`. 모델·effort·출력 상한은 `lib/ai/models.ts`의 `FEATURE_TIER`·`FEATURE_EFFORT`(월간 점검 `xhigh`)·`FEATURE_MAX_TOKENS`(환경변수 `CLAUDE_MODEL_HEAVY` 등이 앞섬)
-- 호출 기록 `ai_requests`(토큰·오류·시간). **부르기 전에 running 행**(`startAiRequest`), 쓰기는 rpc로만(`start_ai_request`·`finish_ai_request`), 1분 5회 + 동시 2건(`AI_LIMITS`, DB와 같은 값). AI 요청은 백그라운드: 액션은 검증·제한·running 행까지, AI·저장은 `after()`, 진행은 GET `/api/ai/requests`(서버 액션 폴링 금지)
+- 호출 기록 `ai_requests`(토큰·오류·시간). **부르기 전에 running 행**(`startAiRequest`), 쓰기는 rpc로만(`start_ai_request`·`finish_ai_request`), 1분 5회 + 동시 2건(`AI_LIMITS`·기능 이름, DB와 같은 값). AI 요청은 백그라운드: 액션은 검증·제한·running 행까지, AI·저장은 `after()`, 진행은 GET `/api/ai/requests`(서버 액션 폴링 금지)
 - 진행 줄(`AiProgress`)은 서버가 실제로 넣는 자료와 같게만 적고 지어내지 않음. **카드 배율은 0.6~1.1배까지**
 
 ### AI 작성지원 「질문」·카드 리뷰어(코멘트)

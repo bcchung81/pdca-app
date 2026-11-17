@@ -56,10 +56,13 @@ export function pyRepr(s: string): string {
 }
 const pyReprList = (xs: string[]) => `[${xs.map(pyRepr).join(", ")}]`;
 
-/** html.unescape(convert_charrefs) — kordoc 출력에 나오는 참조만 */
+/** html.unescape(convert_charrefs) — kordoc 출력에 나오는 참조만. 0x10FFFF를 넘거나 대리 영역인 숫자 참조는 던지지 않고 원문 그대로 둠 */
 function unescapeHtml(s: string): string {
   return s.replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos|nbsp);/g, (m, g: string) => {
-    if (g[0] === "#") return String.fromCodePoint(g[1] === "x" || g[1] === "X" ? parseInt(g.slice(2), 16) : parseInt(g.slice(1), 10));
+    if (g[0] === "#") {
+      const n = g[1] === "x" || g[1] === "X" ? parseInt(g.slice(2), 16) : parseInt(g.slice(1), 10);
+      return n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : m;
+    }
     return ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " } as Record<string, string>)[g] ?? m;
   });
 }

@@ -3,7 +3,7 @@
 // (저장된 경고·프롬프트·판 해시와 호환). 운영 측정(43장 평균 4.3건)에서 문장·칸 채우기·추진성과 표현 같은 참고성 신호가 사실 문제를 묻어 버려 둘로 가름.
 //  - block(막힘): 제출 전에 사람이 꼭 봐야 하는 사실·판면 문제 — 근거에 없는 숫자·전년 인용·올해 실적 누락·실적 칸의 계획 표현·판면/분량 넘침·카드 밖 부분 넘침·빠진 근거/절
 //  - info(참고): 문장·칸 채우기·추진성과 표현·그림·짜임 다양성 등 다듬기 신호. 모르는 앞머리도 info
-// 앞머리 표 WARNING_HEADS는 경고를 만드는 코드(lib/reports/*.ts·draft-write.ts)의 앞머리와 같아야 하며 warning-levels.test.ts가 코드를 읽어 대조한다.
+// 앞머리 표 WARNING_HEADS는 경고를 만드는 코드(lib/reports/*.ts·draft-write.ts·화면의 다시 세기 draft-recount.ts)의 앞머리와 같아야 하며 warning-levels.test.ts가 코드를 읽어 대조한다.
 
 export type WarningLevel = "block" | "info";
 
@@ -21,6 +21,7 @@ export const WARNING_HEADS: Readonly<Record<string, WarningLevel>> = {
   "값 충돌": "block", // 경영관리: 구성안이 근거에서 찾은 같은 항목의 다른 값 중 쓰지 않을 값이 초안 블록에 남음 — 사실 어긋남(lib/reports/mg-consistency.ts conflictWarnings, 2026-10-30)
   "로드맵 계획": "block", // 로드맵 표(table:roadmap)의 계획 열 수치가 추진성과·결과 줄에 실적처럼 다시 나옴(lib/reports/branch-checks.ts roadmapPlanWarning, 2026-11-09 P2 C3)
   "비율 차": "block", // 「A%에서 B%로 C% 증가」처럼 두 비율의 차를 %로 씀 — %p여야 함(lib/reports/writing-checks.ts percentPointWarning, 2026-11-09 P6 C6)
+  "없는 숫자 확인 불가": "block", // 저장된 초안의 없는 숫자를 다시 세지 못함(초안 모양이 깨짐·근거 읽기·다시 세기 실패) — 저장값을 믿지 않음(lib/reports/draft-recount.ts, 2026-11-17 3차)
   // ── info: 문장·표현·짜임
   문장: "info",
   문체: "info",

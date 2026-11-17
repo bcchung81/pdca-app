@@ -82,13 +82,15 @@ export async function extractLayout(frame: Element): Promise<LayoutSnapshot> {
     return false;
   };
 
+  /** CSS 16진 이스케이프 → 글자. 0x10FFFF를 넘거나 대리 영역이면 U+FFFD(CSS Syntax 규칙 — String.fromCodePoint가 던지지 않게) */
+  const cssCodePoint = (n: number) => String.fromCodePoint(n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff) ? 0xfffd : n);
   /** content 계산값의 따옴표 글만 이어 붙임(counter·attr·url은 뺌) */
   const contentText = (c: string): string | null => {
     if (!c || c === "none" || c === "normal") return null;
     let out = "";
     for (const m of c.matchAll(/"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g)) {
       const s = m[1] ?? m[2] ?? "";
-      out += s.replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_x, hex: string | undefined, ch: string | undefined) => (hex ? String.fromCodePoint(parseInt(hex, 16)) : (ch ?? "")));
+      out += s.replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_x, hex: string | undefined, ch: string | undefined) => (hex ? cssCodePoint(parseInt(hex, 16)) : (ch ?? "")));
     }
     return out;
   };

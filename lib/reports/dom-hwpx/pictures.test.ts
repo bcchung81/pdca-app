@@ -227,3 +227,7 @@ test("카드 라우트 권한 경로: 요청 사용자 권한 클라이언트(cr
   const rep = readFileSync(new URL("../../../app/(app)/reports/cards/[uid]/hwpx/route.ts", import.meta.url), "utf8");
   assert.doesNotMatch(rep, /resolvePictures|pictures:/);
 });
+
+test("cssUrls: 범위 밖(0x10FFFF 초과·대리 영역) 16진 이스케이프는 던지지 않고 U+FFFD로(CSS 규칙), 정상 이스케이프는 풂", () => {
+  assert.deepEqual(cssUrls(String.raw`url("https://a.example/\110000 x\D800 y\AC00 .png")`), ["https://a.example/�x�y가.png"]);
+});

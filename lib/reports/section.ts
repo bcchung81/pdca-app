@@ -623,6 +623,30 @@ export function quoteFoundIn(hayKey: string, quote: string): boolean {
   return parts.length > 0 && parts.every((p) => hayKey.includes(p));
 }
 
+const isWs = (ch: string) => /\s/.test(ch);
+
+/**
+ * 문체 끝말 판정용 꼬리 정리: 끝의 괄호 덧말 「(…)」 여러 개와 그 앞뒤 빈칸을 걷고, 끝의 마침표·느낌표·빈칸을 걷음.
+ * 예전 `x.replace(/(\s*\([^()]*\))+\s*$/, "").replace(/[.!\s]+$/, "")`와 같은 결과를 뒤에서 한 번 훑어 얻음 — 정규식은 빈칸·괄호가 긴 글에서 2제곱(2026-11-17)
+ */
+export function styleTail(x: string): string {
+  let e = x.length;
+  while (e > 0 && isWs(x[e - 1])) e--;
+  let cut = -1;
+  while (e > 0 && x[e - 1] === ")") {
+    let p = e - 2;
+    while (p >= 0 && x[p] !== "(" && x[p] !== ")") p--;
+    if (p < 0 || x[p] === ")") break;
+    e = p;
+    while (e > 0 && isWs(x[e - 1])) e--;
+    cut = e;
+  }
+  const t = cut < 0 ? x : x.slice(0, cut);
+  let k = t.length;
+  while (k > 0 && (t[k - 1] === "." || t[k - 1] === "!" || isWs(t[k - 1]))) k--;
+  return t.slice(0, k);
+}
+
 /** 불릿·추진성과 문장이 2025 최종본 문체에서 벗어난 곳(결정론 경고 — 고치지 않고 알림) */
 export function styleWarnings(spec: Pick<ReportSectionSpec, "rows" | "results" | "blocks">): string[] {
   // 강조 표시(**…**)는 걷고, 【확인: …】 자리표시는 채울 수치 한 자리(4자)로 셈 — 담당자가 채우면 짧은 수치가 됨
@@ -632,8 +656,7 @@ export function styleWarnings(spec: Pick<ReportSectionSpec, "rows" | "results" |
   const results = spec.results.map(plain);
   const lines = [...bullets, ...results];
   // 괄호 비교·출처를 걷은 끝말: ~함·됨·음·임(명사형 어미)·~다로 끝나면 경고(시스템·플랫폼처럼 ㅁ으로 끝나는 명사는 빼려고 네 글자만 봄)
-  const tail = (x: string) => x.replace(/(\s*\([^()]*\))+\s*$/, "").replace(/[.!\s]+$/, "");
-  const verbal = lines.filter((x) => /(?:[가-힣](?:함|됨|음|임)|[가-힣]다)$/.test(tail(x)) && !/(?:시스템|플랫폼|프로그램|알고리즘|다음|마음)$/.test(tail(x)));
+  const verbal = lines.filter((x) => /(?:[가-힣](?:함|됨|음|임)|[가-힣]다)$/.test(styleTail(x)) && !/(?:시스템|플랫폼|프로그램|알고리즘|다음|마음)$/.test(styleTail(x)));
   const out: string[] = [];
   if (verbal.length) out.push(`문체: ‘~함·~됨·~음·~임·~다’로 끝난 문장 ${verbal.length}개 — 2025 최종본처럼 동작성 명사(구축·마련·확산 등)로 끝내 주세요: ${verbal.slice(0, 3).join(" / ")}`);
   const long = bullets.filter((x) => x.length > 110);

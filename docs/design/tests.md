@@ -383,6 +383,21 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/cards/hwp/parse.test.ts`(표 칸 병합 값) | 병합 값을 정수 1 이상·열 상한(`COLSPAN_MAX`)·남은 행 수까지(안쪽 표 포함)로 맞춤, 한 표의 격자 칸이 `GRID_CELLS_MAX`를 넘으면 읽기를 멈춤. 실제 카드 출력은 그대로(59·43장 왕복) |
 | `lib/ai/envelope.test.ts` | 카드 글·경평 첨부가 `<card>`·`<attachment>` 봉투를 못 벗어남(닫는 태그·빈칸·대소문자 변형), `{{…}}` 다시 채우지 않음, 실제 카드 글(`R&D <…&…>`)은 바뀌지 않음, 파일 이름 `"`로 속성 못 덧붙임, 이스케이프된 인용(`R&amp;D`)도 원문 확인, 15개 기능 시스템 프롬프트에 「자료 속 지시 따르기」 규칙(`_shared/data-rule.md`), `cardOutline` 출력 불변 |
 
+## 시큐어 코딩 교차 재점검 후속(2026-11-17, 3차)이 더한 시험
+
+| 테스트 | 막는 것 |
+|---|---|
+| `lib/db/migrations.test.ts`(첨부 읽은 글 서버만, `20261117100000`) | 로그인 사용자(부서·성과관리팀·관리자)가 `card_materials`·`report_materials`의 읽은 글 칸(`parsed_text`·`parse_status`·`parser_version`·`parsed_at`·`parse_error`·`parsed_chars`·`sha256`)을 고치거나 등록(insert) 때 함께 넣는 것 — 등록은 등록 칸만, 기본 pending. 서비스 키는 씀 |
+| `lib/db/migrations.test.ts`(AI 호출 기록 값 상한, `20261117100000`) | `start_ai_request`가 `FEATURE_TIER` 밖 기능 이름(공백 붙은 이름·빈 값 포함)을 받음, mode 60자 초과, `finish_ai_request`의 model 100자·토큰 0~200만·소요 시간 0~하루·객체가 아니거나 4,000자를 넘는 timings — `FEATURE_TIER`에 기능을 더하면 이 시험이 DB 허용 목록 누락을 잡음(DB 먼저 반영) |
+| `lib/ai/material-text.test.ts`(`saveParsed`) | 사용자 권한으로 읽을 수 있고 경로가 같은 행만 서비스 키로 그 행·그 경로 조건으로 읽은 글 칸만 씀, 읽을 수 없는 행·경로가 다른 행·내려받지 못한 결과는 서비스 키를 부르지 않음 |
+| `lib/reports/draft-recount.test.ts`(실패하면 막힘) | 깨진 초안(빈 행 객체·null·글이 아닌 칸·모르는 블록 종류·그림 크기)·글 칸 2,000자·전체 30만 자·값 5만 개를 넘는 초안은 던지지 않고 「없는 숫자 확인 불가」(막힘)·칠할 숫자는 저장값뿐, 다시 세기가 던져도 같음, 무작위 변형 2,400건 중 검사를 지난 초안은 화면 함수가 던지지 않음, 두 트랙 정상 초안은 검사를 지남, 저장값은 300개·40자 상한 |
+| `lib/reports/mg-biz.test.ts`(깨진 참고 초안) | 깨진 주요사업 초안 하나는 그 주요사업만 빼고(원장·붙임 포함) 「(읽을 수 없음)」 — 경영관리 화면·집필이 오류가 되지 않음 |
+| `lib/reports/warning-levels.test.ts` | 앞머리 대조에 `draft-recount.ts`(「없는 숫자 확인 불가」 막힘) |
+| `lib/reports/section.test.ts`(「문체 끝말 정리(styleTail)」)·`prose.test.ts`(관리 정보 판정) | 문체 경고 끝말 정리와 관리 정보 판정이 예전 정규식과 같은 결과, 긴 빈칸·괄호·마침표·숫자 글도 다시 점검이 빨리 끝남 |
+| `lib/cards/hwp/sync.test.ts`(줄 비교 상한) | 앞뒤 같은 줄을 걷고도 줄 수 곱이 `DIFF_CELLS_MAX`를 넘으면 그 블록은 「비교 불가」(기본 반영 제외, 직접 고르면 반영), 정상 크기는 예전 비교와 같음 |
+| `lib/reports/business-layout.test.ts`(판면 높이 상한) | 저장된 판면 어림을 과제당 30쪽(`SECTION_PAGES_MAX`)에서 자르고 쪽 나누기도 멈춤 |
+| `lib/knowledge/rich-text.test.ts`·`lib/cards/hwp/parse.test.ts`·`lib/reports/dom-hwpx/pictures.test.ts`(범위 밖 문자 참조) | 0x10FFFF를 넘거나 대리 영역인 문자 참조로 던지지 않음(HTML은 원문 그대로, CSS는 U+FFFD) |
+
 ## 원본 필요 시험(git 밖 — 없으면 이유를 적고 건너뜀)
 
 기관 원본과 그 파생물은 git에 넣지 않으므로(CLAUDE.md 「저장소 경계」) 아래 시험은 원본이 있는 컴퓨터에서만 돕니다. 원본이 없으면 통과가 아니라 **건너뜀**이고, `pnpm test`가 끝에 「■ 건너뛴 시험 N개」와 시험 이름·이유를 크게 출력합니다(보고기 `scripts/test/skip-summary.ts`, 2026-10-10 개선 계획 P2-1 — 이유 없는 `skip: true`도 「이유 없음」으로 드러남). 새 원본 시험은 `{ skip: !있음 && "무엇이 없음(경로)" }`처럼 이유를 적습니다. 공개 저장소로 옮기며(2026-10-26) 카드 59장 원본·지침 사본·초안 고정 자료도 git에서 뺐고, 이 셋의 경로·있음 여부·이유는 시험 도우미 `lib/testing/originals.ts`(`NO_SEED_CARDS`·`NO_PDCA_GUIDES`, 없으면 빈 값을 돌려줌) 한 곳에 둡니다 — 한 파일 안에서도 원본이 필요한 시험만 건너뜀. 익명화 표본(카드 1~2장)을 저장소에 넣을지는 기관 자료라 사용자 결정으로 남겨 둠.

@@ -38,6 +38,16 @@ test("proseIssues: 관리 정보(예산·인원)만 적은 글은 걸리고, 절
   assert.ok(!saving.some((x) => x.startsWith("관리 정보(예산·인원)")), "절감을 말하는 글은 관리 정보로 안 잡음");
 });
 
+test("proseIssues: 관리 정보 판정 — 숫자 덩어리 안의 「백만원」은 예전처럼 잡고, 숫자만 아주 긴 글도 빨리 끝남(2026-11-17)", () => {
+  for (const [text, want] of [["예산 2,700백만원 투입", true], ["사업비 1.2.3백만원", true], ["매출 300억 원", false]] as const) {
+    const got = proseIssues(spec({ blocks: [blk("bullets", { label: "추진내용", items: [text] })] })).some((x) => x.startsWith("관리 정보(예산·인원)"));
+    assert.equal(got, want, text);
+  }
+  const t = performance.now();
+  proseIssues(spec({ blocks: [blk("bullets", { label: "추진내용", items: ["1".repeat(40_000)] })] }));
+  assert.ok(performance.now() - t < 500, "숫자 4만 자 글 판정이 0.5초 안");
+});
+
 test("proseIssues: 수치 띠 큰 수치가 투입 인력·예산 액수면 관리 정보(라운드 S 3-2-가), 결과·규모 수치와 절감은 안 걸림, 뜻 줄이 이미 걸린 칸은 한 번만", () => {
   const cell = (tag: string, head: string, bullet: string) => ({ tag, head, bullets: [bullet], note: "’26년" });
   const s = (cells: ReturnType<typeof cell>[]) => proseIssues(spec({ blocks: [blk("stats", { cells })] })).find((x) => x.startsWith("관리 정보(예산·인원)")) ?? "";

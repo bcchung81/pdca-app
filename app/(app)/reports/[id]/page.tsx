@@ -14,6 +14,7 @@ import { returnTarget, withReturn } from "../../../../lib/nav/return-to.ts";
 import { REPORT_STATUS_LABEL, readBlocks } from "../../../../lib/reports/model.ts";
 import { getReport, listComments, loadSubmitCards, loadTeamSubmitCards, submitKey } from "../../../../lib/reports/queries.ts";
 import { REPORT_CSS } from "../../../../lib/reports/section-css.ts";
+import { RECOUNT_FAIL_HEAD, recountFailNote, recountFailWarning } from "../../../../lib/reports/draft-recount.ts";
 import { recountSubmitCards } from "../../../../lib/reports/draft-recount-queries.ts";
 import { sectionHtml } from "../../../../lib/reports/section-html.ts";
 import { missingLabel, submitReadiness, withTeamCards } from "../../../../lib/reports/submission.ts";
@@ -44,7 +45,8 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
   const deptView = Boolean(scope);
   const viewTeam = scope?.team ?? null;
   const teamQ = deptView ? `team=${encodeURIComponent(teamParam)}` : "";
-  // 과제별 초안의 없는 숫자는 저장값만 믿지 않고 다시 셈(2026-11-16 — 점선·확인 목록 건수, lib/reports/draft-recount*.ts)
+  // 과제별 초안의 없는 숫자는 저장값만 믿지 않고 다시 셈(2026-11-16 — 점선·확인 목록 건수, lib/reports/draft-recount*.ts).
+  // 다시 세지 못한 과제는 recountFail(막힘 표지·확인 목록), 모양 검사에 걸린 초안은 spec 없이 옴(2026-11-17 3차)
   const [comments, cardsForReport, teamCards] = await Promise.all([
     listComments(supabase, id),
     loadSubmitCards(supabase, report.year, { evalUnitId: report.evalUnitId, teamId: report.teamId }).then((m) => recountSubmitCards(supabase, report, m.get(submitKey(report.evalUnitId, report.teamId)) ?? [])),
@@ -54,11 +56,26 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
   // 확정 단추 판정은 팀 전체 과제(지정 안 된 동료 과제 포함, 2026-11-03 §5-1) — 실패하면 읽은 과제로(서버 확정 검사가 다시 막음)
   const teamReadiness = teamCards ? submitReadiness(withTeamCards(teamCards, cardsForReport)) : readiness;
   const rowOf = new Map(readiness.rows.map((r) => [r.id, r]));
+  // 그리기가 던지면(모양 검사 빈틈) 그 과제만 그리지 않고 「확인 불가」 — 화면 전체 오류 대신(2026-11-17 3차)
+  const drawn = new Map<string, { html: string | null; fail?: string }>();
+  for (const c of cardsForReport) {
+    const spec = c.draft?.spec ?? null;
+    try {
+      drawn.set(c.id, { html: spec ? sectionHtml(spec, c.draft?.unknownNumbers ?? [], { blockMarks: true, repeats: true }) : null, fail: c.recountFail });
+    } catch (e) {
+      console.error("report review html", c.id, e);
+      drawn.set(c.id, { html: null, fail: "초안을 그리지 못함" });
+    }
+  }
+  const failed = cardsForReport.filter((c) => drawn.get(c.id)?.fail);
+  const failNote = recountFailNote(failed);
+  // 확정·승인 확인 목록(막지 않음)에 다시 세지 못한 과제를 맨 앞에
+  const checksWithFail = (checks: string[]) => (failNote ? [failNote, ...checks] : checks);
   // 카드 보기·과제별 초안은 다른 화면이라 지금 이 검토 화면 주소로 되돌아오게(from)
   const selfHref = `/reports/${id}${teamQ ? `?${teamQ}` : ""}`;
   const cards: ReviewCard[] = cardsForReport.map((c) => {
     const row = rowOf.get(c.id);
-    const spec = c.draft?.spec ?? null;
+    const d = drawn.get(c.id);
     return {
       id: c.id,
       uid: c.uid,
@@ -71,7 +88,8 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
       figures: row?.figures ?? 0,
       unknown: row?.unknown ?? 0,
       ...(c.bizStale?.length ? { bizStale: c.bizStale } : {}),
-      html: spec ? sectionHtml(spec, c.draft?.unknownNumbers ?? [], { blockMarks: true, repeats: true }) : null,
+      html: d?.html ?? null,
+      ...(d?.fail ? { recountFail: { label: RECOUNT_FAIL_HEAD, reason: d.fail, warning: recountFailWarning(d.fail) } } : {}),
       cardHref: withReturn(deptView ? `/my?${teamQ}&peek=${c.uid}` : staff ? `/cards?peek=${c.uid}` : `/my?peek=${c.uid}`, selfHref),
       draftHref: withReturn(`/reports/cards/${c.uid}${teamQ ? `?${teamQ}` : ""}`, selfHref),
     };
@@ -103,7 +121,7 @@ export default async function ReportReviewPage({ params, searchParams }: PagePro
             </span>
           )}
           {deptView && <span className="shrink-0 text-xs text-muted">부서 화면 보기 · 읽기 전용</span>}
-          {!deptView && <ReportStatusButtons id={report.id} status={report.status} staff={staff} readiness={{ ready: teamReadiness.ready, total: teamReadiness.total, drafted: teamReadiness.drafted, missing: teamReadiness.missing.map(missingLabel), checks: teamReadiness.checks }} />}
+          {!deptView && <ReportStatusButtons id={report.id} status={report.status} staff={staff} readiness={{ ready: teamReadiness.ready, total: teamReadiness.total, drafted: teamReadiness.drafted, missing: teamReadiness.missing.map(missingLabel), checks: checksWithFail(teamReadiness.checks) }} />}
           <Link href={target.href} aria-label={`목록으로 — ${target.label}`} title={`목록으로 — ${target.label}`} className={`${T.iconLabelBtn} border-field-line text-ink hover:border-navy`}>
             <List size={16} aria-hidden />
             <span className={T.deskOnly}>목록</span>

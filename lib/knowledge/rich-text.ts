@@ -12,12 +12,15 @@ export interface RichCell {
 
 const ENTITIES: Record<string, string> = { lt: "<", gt: ">", quot: '"', apos: "'", amp: "&", nbsp: " " };
 
-/** HTML 문자 참조(&lt; &#39; &#x27; 등) 풀기 */
+/** 글자로 풀 수 있는 코드 포인트(0 초과·0x10FFFF 이하·대리 영역 밖) — 아니면 참조를 원문 그대로 둠(String.fromCodePoint가 던지지 않게) */
+const isScalar = (n: number) => Number.isInteger(n) && n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff);
+
+/** HTML 문자 참조(&lt; &#39; &#x27; 등) 풀기. 범위 밖 숫자 참조는 원문 그대로 */
 export function decodeEntities(s: string): string {
   return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
     if (e[0] === "#") {
       const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1));
-      return Number.isFinite(n) && n > 0 ? String.fromCodePoint(n) : m;
+      return isScalar(n) ? String.fromCodePoint(n) : m;
     }
     return ENTITIES[e.toLowerCase()] ?? m;
   });

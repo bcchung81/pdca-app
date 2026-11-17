@@ -5,7 +5,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MGMT_TRACK, type UnitPartKey } from "../tracks/index.ts";
 import { isoDay } from "../format.ts";
-import { readSection } from "./section.ts";
+import { readDraftSpec } from "./draft-recount.ts";
 import type { MgUnitMaterials, UnitChunk, UnitPartsSource } from "./unit-parts-mg.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -60,7 +60,7 @@ export async function loadUnitMaterials(supabase: SupabaseClient, unit: string, 
       unit,
       year,
       cards: cardRows.map((c) => ({ id: String(c.id), taskNo: String(c.task_no ?? ""), title: String(c.title ?? ""), status: String(c.status), dataRev: c.data_rev ?? null, data: c.data })),
-      drafts: ((drafts ?? []) as UnitDraftDbRow[]).map((d) => ({ cardId: String(d.card_id), updatedAt: String(d.updated_at), spec: readSection(d.spec) })),
+      drafts: ((drafts ?? []) as UnitDraftDbRow[]).map((d) => ({ cardId: String(d.card_id), updatedAt: String(d.updated_at), spec: readDraftSpec(d.spec).spec })),
       report2025: (report2025.data ?? []) as UnitChunk[],
       evaluator: (evaluator.data ?? []) as UnitChunk[],
       handbook: (handbook.data ?? []) as UnitChunk[],

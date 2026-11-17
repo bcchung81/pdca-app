@@ -134,25 +134,59 @@ export function htmlLines(html: string): string[] {
     .filter((l) => l && l !== "|");
 }
 
-/** 줄 비교(LCS). 바뀐 곳 앞뒤 context줄만 남기고, 생략한 곳은 "…" */
+/**
+ * 줄 비교 표(LCS)의 칸 수 상한. 실제 카드(261103판 103장 + 9.16판 59장)의 블록당 줄 수는 최대 112줄(2026-11-17 실측)이라
+ * 앞뒤 같은 줄을 걷고 남은 줄 수의 곱이 이것을 넘으면 줄 비교를 하지 않고 블록을 「비교 불가」로 둡니다(planSync)
+ */
+export const DIFF_CELLS_MAX = 1_000_000;
+
+/** 앞뒤로 같은 줄 수(앞을 먼저 셈 — 뒤는 앞과 겹치지 않게) */
+function commonEnds(a: string[], b: string[]): { head: number; tail: number } {
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  return { head, tail };
+}
+
+/** 줄 비교 표가 상한을 넘는가(앞뒤 같은 줄을 걷고 남은 줄 수의 곱) */
+export function diffTooLarge(a: string[], b: string[]): boolean {
+  const { head, tail } = commonEnds(a, b);
+  return (a.length - head - tail) * (b.length - head - tail) > DIFF_CELLS_MAX;
+}
+
+/**
+ * 줄 비교(LCS). 바뀐 곳 앞뒤 context줄만 남기고, 생략한 곳은 "…".
+ * 앞의 같은 줄은 표 없이 걷음(결과는 전체 표와 같음). 뒤의 같은 줄까지 걷으면 같은 줄을 맞추는 자리가 달라질 수 있어(맞는 비교이긴 함)
+ * 표가 DIFF_CELLS_MAX를 넘을 때만 걷고, 그래도 넘으면 가운데를 통째로 지움·더함으로 둠(메모리 상한 — planSync는 이때 「비교 불가」)
+ */
 export function diffLines(a: string[], b: string[], context = 1): LineOp[] {
-  const n = a.length;
-  const m = b.length;
-  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const { head, tail } = commonEnds(a, b);
+  const fits = (t: number) => (a.length - head - t) * (b.length - head - t) <= DIFF_CELLS_MAX;
+  const cut = fits(0) ? 0 : tail;
+  const n = a.length - cut;
+  const m = b.length - cut;
   const ops: LineOp[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      ops.push({ op: "same", text: a[i] });
-      i++;
-      j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) ops.push({ op: "del", text: a[i++] });
-    else ops.push({ op: "add", text: b[j++] });
+  for (let k = 0; k < head; k++) ops.push({ op: "same", text: a[k] });
+  let i = head;
+  let j = head;
+  if (fits(cut)) {
+    const w = m - head + 1;
+    const dp = new Uint32Array((n - head + 1) * w);
+    const at = (x: number, y: number) => (x - head) * w + (y - head);
+    for (let x = n - 1; x >= head; x--) for (let y = m - 1; y >= head; y--) dp[at(x, y)] = a[x] === b[y] ? dp[at(x + 1, y + 1)] + 1 : Math.max(dp[at(x + 1, y)], dp[at(x, y + 1)]);
+    while (i < n && j < m) {
+      if (a[i] === b[j]) {
+        ops.push({ op: "same", text: a[i] });
+        i++;
+        j++;
+      } else if (dp[at(i + 1, j)] >= dp[at(i, j + 1)]) ops.push({ op: "del", text: a[i++] });
+      else ops.push({ op: "add", text: b[j++] });
+    }
   }
   while (i < n) ops.push({ op: "del", text: a[i++] });
   while (j < m) ops.push({ op: "add", text: b[j++] });
+  for (let k = n; k < a.length; k++) ops.push({ op: "same", text: a[k] });
   if (context < 0) return ops;
   const keep = ops.map((o) => o.op !== "same");
   const near = ops.map((_, k) => {
@@ -476,10 +510,16 @@ export function planSync(ledger: LooseJson, parsedIn: LooseJson, opts: { locked?
       if (key === "basic" && normTitle(ledger?.team) !== normTitle(parsed?.team)) risk = `담당 부서 변경(${ledger?.team ?? "—"} → ${parsed?.team ?? "—"})`;
       if (key === "basic" && !String(parsed?.title ?? "").trim()) risk = "파일에서 과제명을 읽지 못함";
     }
+    // 줄이 너무 많은 블록은 줄 비교를 하지 않고 「비교 불가」로 둠(기본은 원장 그대로 — 반영하려면 사람이 직접 고름, 비교 표 메모리 상한)
+    if (status !== "same" && diffTooLarge(before, after)) {
+      status = "unknown";
+      risk ??= `비교 불가(${label})`;
+      note = "줄이 너무 많아 줄 단위로 비교하지 못했습니다 — 기본은 원장 그대로 둡니다(반영하려면 파일 내용을 확인한 뒤 직접 고르세요)";
+    }
     // 원장에서 고정 영역을 확정하면 잠기는 블록 — 카드 종류별(lib/cards/fixed.ts fixedSectionsOf)
     const locked = Boolean(opts.locked) && fixedSectionsOf(ledger).includes(key) && status !== "same";
     if (locked) note = `원장의 고정 영역(${fixedLabelOf(ledger)})이 확정돼 반영하지 않습니다`;
-    blocks.push({ key, label, status, risk, locked, missing, lines: status === "same" ? [] : diffLines(before, after), note });
+    blocks.push({ key, label, status, risk, locked, missing, lines: status === "same" || status === "unknown" ? [] : diffLines(before, after), note });
   }
 
   for (const b of blocks) {

@@ -158,3 +158,8 @@ test("snippetText: 제목 기호(#)·마크다운 표 구분 줄·빈 칸 파이
   const md = "## 가. 비계량보고서 작성이 왜 중요한가?\n\n![image](image_001.png)\n\n|  |  |  | ☞ 핵심질문 |  |\n| --- | --- | --- | --- | --- |\n| 1 | 2 |\n\n### 다. 소제목";
   assert.equal(snippetText(md, 200), "가. 비계량보고서 작성이 왜 중요한가? | ☞ 핵심질문 | 1 | 2 | 다. 소제목");
 });
+
+test("문자 참조: 범위 밖(0x10FFFF 초과·대리 영역) 숫자 참조는 던지지 않고 원문 그대로 — 표를 펴는 글도", () => {
+  assert.equal(decodeEntities("&#x110000; &#99999999; &#xDFFF; &#55296; &#44032; &#x1F600; &lt;"), "&#x110000; &#99999999; &#xDFFF; &#55296; 가 😀 <");
+  assert.match(flattenHtmlTables("<table><tr><td>&#x110000;값</td><td>&#44032;</td></tr></table>"), /&#x110000;값 \| 가/);
+});

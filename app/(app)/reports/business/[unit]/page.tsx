@@ -10,6 +10,7 @@ import { compareUnitId, currentPeriod } from "../../../../../lib/cards/view.ts";
 import { withReturn } from "../../../../../lib/nav/return-to.ts";
 import { BUSINESS_CSS, outsideSheetHtml, sheetHtml } from "../../../../../lib/reports/business-html.ts";
 import { type HeadMode, type LaidOutside, type LaidSection, OUTSIDE_FILL_MAX, SAME_TEXT_MIN, layoutBusiness, sheetsOf } from "../../../../../lib/reports/business-layout.ts";
+import { recountFailNote } from "../../../../../lib/reports/draft-recount.ts";
 import { FIT_BAND, PAGE_MM } from "../../../../../lib/reports/fit.ts";
 import { PAGE_BUDGET } from "../../../../../lib/reports/outline.ts";
 import { REPORT_CSS, UNIT_PARTS_CSS } from "../../../../../lib/reports/section-css.ts";
@@ -68,8 +69,9 @@ export default async function BusinessLayoutPage({ params, searchParams }: PageP
   const startQuery = Number(first(sp.start ?? null));
   const selfHref = `/reports/business/${encodeURIComponent(unit)}${mapOn ? "?map=1" : ""}${mg && startQuery > 0 ? `?start=${startQuery}` : ""}`;
   const view = partsR?.ok ? partsR.view : null;
-  const loaded = mg ? await loadMgUnitLayout(supabase, unit, year, view, startQuery > 0 ? startQuery : null) : null;
-  const items = loaded?.items ?? (await loadBusinessItems(supabase, unit, year));
+  // 붉은 점선(없는 숫자)은 저장값 대신 다시 센 값(2026-11-17 3차 — 동시 4장, 실패한 장은 저장값 + 조판 알림 「없는 숫자 확인 불가」)
+  const loaded = mg ? await loadMgUnitLayout(supabase, unit, year, view, startQuery > 0 ? startQuery : null, { recount: true }) : null;
+  const items = loaded?.items ?? (await loadBusinessItems(supabase, unit, year, { recount: true }));
   const inOutline = new Set(items.map((it) => it.cardId));
   const notInOutline = (unitCards ?? []).filter((c) => !inOutline.has(c.id as string)).length;
   // 경영관리 쪽 수 기준: 그 지표 본문 예산(작성분량 기준) 중 카드가 맡은 평가내용(목차·쪽 배정 화면과 같은 값 — mgCardPages)
@@ -81,8 +83,9 @@ export default async function BusinessLayoutPage({ params, searchParams }: PageP
   const rule = mg ? "평가내용이 바뀌면 새 쪽, 대주제·절·과제는 이어 씀(2025 지표별 보고서 — 평가내용 바뀜 25곳 중 24곳이 새 쪽). 카드 밖 부분: 지적사항 조치실적 + 전년 대비는 새 쪽에서 이어 쓰고 본문은 그 뒤 새 쪽, 성과분석 및 환류는 본문 뒤 새 쪽(2025 11개 지표 모두), 표지는 쪽 수에 안 셈" : "대상사업·실행과제가 바뀌면 새 쪽, 같은 실행과제는 이어 씀(2025 최종본 관행)";
   const heads = mg ? MG_HEAD_LABEL : HEAD_LABEL;
   const states = mg ? MG_STATE : STATE;
-  // 조판 알림: 쪽 채움 경고(넘쳐 흐른 거의 빈 쪽 — 두 트랙 공통) + 카드 밖 부분 경고(넘침·전체 쪽 기준·빈 칸) + 부분을 못 읽었을 때
-  const outsideNotes = [...layout.warnings, ...(outside?.warnings ?? []), ...(partsR && !partsR.ok ? [`카드 밖 부분을 불러오지 못해 본문만 조판했습니다 — ${partsR.message}`] : [])];
+  // 조판 알림: 없는 숫자를 확인하지 못한 과제(막힘) + 쪽 채움 경고(넘쳐 흐른 거의 빈 쪽 — 두 트랙 공통) + 카드 밖 부분 경고(넘침·전체 쪽 기준·빈 칸) + 부분을 못 읽었을 때
+  const failNote = recountFailNote(items.filter((it) => it.recountFail));
+  const outsideNotes = [...(failNote ? [failNote] : []), ...layout.warnings, ...(outside?.warnings ?? []), ...(partsR && !partsR.ok ? [`카드 밖 부분을 불러오지 못해 본문만 조판했습니다 — ${partsR.message}`] : [])];
   const side = <SidePanel layout={layout} byUid={byUid} excluded={sum.excluded} notInOutline={notInOutline} from={selfHref} rule={rule} heads={heads} notes={outsideNotes} />;
   // 카드 밖 부분 종이: 표지(쪽 수에 안 셈) · 앞 · 뒤 — 장 조각은 카드 밖 부분 화면과 같은 렌더러(비고는 조판 결과의 쪽)
   const partOpts = { remarks: loaded?.remarks ?? {} };
