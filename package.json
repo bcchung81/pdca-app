@@ -12,6 +12,7 @@
     "knowledge:add": "node --conditions=react-server --env-file-if-exists=.env.local scripts/knowledge/add.ts",
     "knowledge:images": "node --conditions=react-server --env-file-if-exists=.env.local scripts/knowledge/images.ts",
     "knowledge:prune-images": "node --conditions=react-server --env-file-if-exists=.env.local scripts/knowledge/prune-images.ts",
+    "storage:prune-orphans": "node --conditions=react-server --env-file-if-exists=.env.local scripts/storage/prune-orphans.ts",
     "knowledge:parse": "node --conditions=react-server scripts/knowledge/parse.ts",
     "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./scripts/test/skip-summary.ts --test-reporter-destination=stdout \"lib/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "harness:sync": "node scripts/harness/sync.ts",

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
+import { removeObjects } from "../../../lib/storage/remove.ts";
 import { prepCardAdded } from "../../../lib/prep/triggers.ts";
 import { ARCHIVE_REASON_MAX } from "../../../lib/cards/limits.ts";
 
@@ -63,8 +64,8 @@ async function removeFolder(supabase: Awaited<ReturnType<typeof createClient>>, 
     const { data } = await supabase.storage.from(bucket).list(folder, { limit: 100 });
     const names = (data ?? []).filter((o) => o.id).map((o) => `${folder}/${o.name}`);
     if (!names.length) return;
-    const { error } = await supabase.storage.from(bucket).remove(names);
-    if (error) return;
+    // 카드 행은 이미 지워짐 — 못 지우면 서버 로그만 남기고 멈춤(남은 파일은 pnpm storage:prune-orphans)
+    if (!(await removeObjects(supabase, bucket, names, "purgeCard"))) return;
   }
 }
 

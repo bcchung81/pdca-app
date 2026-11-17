@@ -14,6 +14,7 @@ import { getReport, loadTeamSubmitCards } from "../../../lib/reports/queries.ts"
 import { COMMENT_BODY_MAX } from "../../../lib/reports/input-limits.ts";
 import { REVIEW_NOTE_MAX, submitBlockedReason, submitReadiness } from "../../../lib/reports/submission.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
+import { removeObjects } from "../../../lib/storage/remove.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
 import { DEFAULT_TRACK } from "../../../lib/tracks/index.ts";
 
@@ -190,7 +191,8 @@ export async function deleteMaterial(id: string): Promise<Result> {
   if (contentLocked(me.role, report.status)) return { ok: false, message: LOCKED_MSG };
   const { data, error } = await supabase.from("report_materials").delete().eq("id", id).select("id"); // 연결(report_material_cards)은 함께 사라짐
   if (error || !data?.length) return { ok: false, message: "지우지 못했습니다(자기 부서 보고서만)." };
-  await supabase.storage.from("report-materials").remove([row.storage_path]);
+  // 행은 이미 지워짐 — 파일을 못 지우면 서버 로그만 남기고 결과는 그대로(남은 파일은 pnpm storage:prune-orphans)
+  await removeObjects(supabase, "report-materials", [row.storage_path], "deleteMaterial");
   refresh(row.report_id);
   return { ok: true };
 }

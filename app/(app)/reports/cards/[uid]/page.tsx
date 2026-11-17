@@ -105,6 +105,7 @@ export default async function ReportCardPage({ params, searchParams }: PageProps
     <DraftWorkspace
       key={uid}
       uid={uid}
+      userId={me.id}
       title={card.title}
       taskNo={card.task_no}
       group={group}

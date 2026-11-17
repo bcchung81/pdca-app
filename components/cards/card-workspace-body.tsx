@@ -41,6 +41,7 @@ export function WorkspaceBody({ props, ws }: { props: WorkspaceProps; ws: CardWo
         <CardEditor
           ref={editor}
           uid={props.uid}
+          userId={props.userId}
           initial={props.initial}
           imageUrls={ws.imageUrls}
           layout={props.layout ?? null}
@@ -72,6 +73,7 @@ export function WorkspaceBody({ props, ws }: { props: WorkspaceProps; ws: CardWo
           <div className={`${sidePane} ${aiOpen ? "" : "hidden"}`} style={sidePaneStyle}>
             <AiAssist
               uid={props.uid}
+              userId={props.userId}
               title={props.title}
               canApply={!props.readOnly}
               getCard={() => editor.current?.current()}

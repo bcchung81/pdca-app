@@ -314,15 +314,16 @@ test("표지 판정 도우미: 맨 위 AND 항만 인정하고 OR·NOT 안의 �
 
 type PolicyRow = { tbl: string; name: string; cmd: string; permissive: boolean; qual: string | null; check: string | null };
 
-/** 공개 표 정책 가운데 로그인 사용자·비로그인·PUBLIC에 걸린 것(식은 pg_get_expr로 되살린 글) */
-async function clientPolicies(): Promise<PolicyRow[]> {
+/** 스키마(기본 public) 표 정책 가운데 로그인 사용자·비로그인·PUBLIC에 걸린 것(식은 pg_get_expr로 되살린 글) */
+async function clientPolicies(schema = "public"): Promise<PolicyRow[]> {
   return rows<PolicyRow>(
     `select c.relname as tbl, p.polname as name, p.polcmd::text as cmd, p.polpermissive as permissive,
             pg_get_expr(p.polqual, p.polrelid) as qual, pg_get_expr(p.polwithcheck, p.polrelid) as check
        from pg_policy p join pg_class c on c.oid = p.polrelid join pg_namespace n on n.oid = c.relnamespace
-      where n.nspname = 'public'
+      where n.nspname = $1
         and (0 = any(p.polroles) or exists (select 1 from pg_roles r where r.oid = any(p.polroles) and r.rolname in ('authenticated', 'anon')))
       order by 1, 2`,
+    [schema],
   );
 }
 
@@ -347,6 +348,32 @@ test("공개 표의 쓰기 정책(삽입·갱신 WITH CHECK, 삭제 USING)은 �
   assert.deepEqual(missing, [], `표지 빠진 정책 ${missing.length}개:\n  ${missing.join("\n  ")}`);
   const names = new Set((await clientPolicies()).map((p) => `${p.tbl}.${p.name}`));
   assert.deepEqual(Object.keys(POLICY_EXCEPTIONS).filter((k) => !names.has(k)), [], "예외 목록에 남은 없는 정책");
+});
+
+// 저장소(20261118100000): storage.objects의 쓰기 정책도 맨 위 AND 항에 표지 — Storage 서버가 요청 머리글을 request.headers로 넘김(마이그레이션 머리 주석).
+// FOR ALL 두 개(knowledge_objects_write·card_originals_objects_write)는 이름을 지키려고 남기되 USING·WITH CHECK 둘 다에 표지(같은 사람의 읽기는 따로 있는 …_read 정책이 맡음).
+// 읽기 정책은 표지를 요구하지 않음(서명 URL·목록·내려받기는 그대로).
+test("저장소 객체의 쓰기 정책(넣기·지우기·FOR ALL)은 모두 맨 위 AND 항에 private.app_write()가 있고, 읽기 정책에는 없다", async () => {
+  const policies = (await clientPolicies("storage")).filter((p) => p.tbl === "objects");
+  const missing: string[] = [];
+  for (const p of policies) {
+    const need = p.cmd === "a" || p.cmd === "w" ? [p.check] : p.cmd === "d" ? [p.qual] : p.cmd === "*" ? [p.qual, p.check ?? p.qual] : [];
+    if (need.some((expr) => !hasAppWriteConjunct(expr))) missing.push(`${p.name}(${p.cmd})`);
+  }
+  assert.deepEqual(missing, [], `표지 빠진 저장소 정책 ${missing.length}개`);
+  const reads = policies.filter((p) => p.cmd === "r");
+  assert.deepEqual(reads.filter((p) => (p.qual ?? "").includes("app_write")).map((p) => p.name), [], "읽기 정책은 표지와 무관");
+  // 정책 수가 바뀌면(새 버킷·정책) 이 시험과 migrations.test.ts 저장소 사례를 함께 봄
+  assert.deepEqual(
+    policies.map((p) => `${p.name}:${p.cmd}`),
+    [
+      "card_imports_objects_delete:d", "card_imports_objects_insert:a", "card_imports_objects_read:r",
+      "card_materials_objects_delete:d", "card_materials_objects_insert:a", "card_materials_objects_read:r",
+      "card_originals_objects_import:a", "card_originals_objects_read:r", "card_originals_objects_write:*",
+      "knowledge_objects_read:r", "knowledge_objects_write:*",
+      "report_materials_objects_delete:d", "report_materials_objects_insert:a", "report_materials_objects_read:r",
+    ],
+  );
 });
 
 /** 본문에서 주석을 지우고 첫 begin 다음 첫 문장이 표지 확인(거절)인가 */

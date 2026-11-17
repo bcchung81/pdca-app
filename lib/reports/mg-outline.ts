@@ -4,6 +4,7 @@
 // 판면 어림·높이 예산은 쓰지 않음(쪽 수(작성분량)는 2026-10-12 확보, 판형·글자 규격 자료가 없고 2026-10-12 사용자 결정대로 경고까지만 — 설계 §7-3). AI 지시문은 resources/prompts/report-outline-mg/*.md.
 
 import { z } from "zod";
+import { dataText } from "../ai/envelope.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { FIGURE_KINDS, FIGURE_POS, FIGURE_SIZES, type BlockKind, MG_BLOCK_KINDS, VARIANTS } from "./blocks.ts";
 import { type DiagramHint, type HintOptions, mgVarietyIssues } from "./diagram-hints.ts";
@@ -876,7 +877,8 @@ export function mgBundlePrompt(p: PromptSet, bundles: readonly MgBundle[]): stri
     ...shown.map((b) => {
       const rows = b.lines.slice(0, BUNDLE_LINES_SHOWN).join(" / ");
       const more = b.lines.length > BUNDLE_LINES_SHOWN ? r("bundles.more", { n: b.lines.length - BUNDLE_LINES_SHOWN }) : "";
-      return r("bundles.item", { from: r(`bundles.from.${b.from}`, b.ref ?? {}), unit: b.unit, count: b.values.length, values: b.values.join("·"), lines: `${rows}${more}` });
+      // 묶음 줄은 카드 칸 글(지표 이름·월별 실적 줄)이라 봉투 밖 — 봉투 이름 태그만 무력화(dataText, 2026-11-18)
+      return r("bundles.item", { from: r(`bundles.from.${b.from}`, b.ref ?? {}), unit: b.unit, count: b.values.length, values: b.values.join("·"), lines: `${dataText(rows)}${more}` });
     }),
     ...(linked.length > shownLinked.length ? [r("bundles.cut", { n: linked.length - shownLinked.length, shown: LINKED_BUNDLES_SHOWN })] : []),
   ].join("\n");

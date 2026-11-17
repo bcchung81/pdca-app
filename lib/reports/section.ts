@@ -395,7 +395,8 @@ export function sectionPrompt(
     r("header", {
       year,
       businessNo: ctx.business.no,
-      businessName: ctx.business.name,
+      // 대상사업 이름은 카드 칸 값(봉투 밖 머리 — dataText, 2026-11-18)
+      businessName: dataText(ctx.business.name),
       taskNo: ctx.task.no,
       taskTitle: dataText(ctx.task.title),
       mark: ctx.mark,

@@ -4,7 +4,7 @@ import { ChevronUp, LayoutTemplate, LoaderCircle, MessageCircleQuestionMark, Ref
 import { useRouter } from "next/navigation";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type DraftEditItem, listDraftEdits, runDraftBlockEdit, undoDraftBlockEdit } from "../../app/(app)/reports/cards/edit-actions";
-import { TAB_KEYS } from "../../lib/ai/assist-thread.ts";
+import { TAB_KEYS, readTabRecord, sweepTabStore, writeTabRecord } from "../../lib/ai/assist-thread.ts";
 import type { DraftPick } from "../../lib/reports/draft-sources.ts";
 import { fmtDateTime } from "../../lib/format.ts";
 import type { ResultBox } from "../../lib/reports/block-edit.ts";
@@ -82,10 +82,12 @@ function markPick(range: Range | null) {
   }
 }
 
-function loadNotes(uid: string): DraftNote[] {
+/** 이 탭의 결과 메모 — userId = 로그인한 사용자 id(다른 사용자·옛 꼴 기록은 읽지 않고 지움, readTabRecord). 붙을 때 한 번 */
+function loadNotes(uid: string, userId: string): DraftNote[] {
   try {
-    const raw = sessionStorage.getItem(KEY(uid));
-    const xs: unknown = raw ? JSON.parse(raw) : [];
+    // 이 탭의 다른 사용자 카드 기록(다른 카드 것도)을 모두 지움(sweepTabStore)
+    sweepTabStore(sessionStorage, userId);
+    const xs: unknown = readTabRecord(sessionStorage, KEY(uid), userId) ?? [];
     if (!Array.isArray(xs)) return [];
     return xs
       .filter((n): n is DraftNote => Boolean(n) && typeof n.id === "string" && Number.isInteger(n.blockIndex) && (n.kind === "edit" || n.kind === "ask") && typeof n.status === "string")
@@ -102,9 +104,9 @@ function loadNotes(uid: string): DraftNote[] {
     return [];
   }
 }
-function saveNotes(uid: string, notes: DraftNote[]) {
+function saveNotes(uid: string, userId: string, notes: DraftNote[]) {
   try {
-    sessionStorage.setItem(KEY(uid), JSON.stringify(notes.slice(-KEEP)));
+    writeTabRecord(sessionStorage, KEY(uid), userId, notes.slice(-KEEP));
   } catch {
     // 저장 공간이 없으면 이 화면에서만
   }
@@ -157,6 +159,8 @@ const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slic
  */
 export function useDraftReview(p: {
   uid: string;
+  /** 로그인한 사용자 id(쪽이 요청마다 새로 줌 — 이 탭 결과 메모의 주인) */
+  userId: string;
   /** 초안 행 updated_at(블록 목록 초안일 때만 — 없으면 끔) */
   version: string | null;
   /** 도구줄을 띄울지(초안 판에서만) */
@@ -170,7 +174,7 @@ export function useDraftReview(p: {
   /** 지금 고른 근거(서버가 초안 근거에 더함 — 초안 뒤 올린 첨부, 뺀 자료는 뺌). 보낼 때의 값을 씀 */
   pick?: DraftPick;
 }) {
-  const { uid } = p;
+  const { uid, userId } = p;
   const pickRef = useRef(p.pick);
   useEffect(() => {
     pickRef.current = p.pick;
@@ -195,12 +199,12 @@ export function useDraftReview(p: {
   useEffect(() => {
     // 이 탭에 남긴 결과 메모 — 서버 렌더에는 없는 값이라 붙은 뒤에 읽음
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNotes(loadNotes(uid));
+    setNotes(loadNotes(uid, userId));
     setLoaded(true);
-  }, [uid]);
+  }, [uid, userId]);
   useEffect(() => {
-    if (loaded) saveNotes(uid, notes);
-  }, [uid, notes, loaded]);
+    if (loaded) saveNotes(uid, userId, notes);
+  }, [uid, userId, notes, loaded]);
   useEffect(() => {
     versionRef.current = p.version;
     // 고친 뒤 새로 그려진 종이에서 그 블록을 깜박임

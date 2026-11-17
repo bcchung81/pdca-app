@@ -40,6 +40,7 @@ export default async function CardPage({ params, searchParams }: PageProps<"/car
       key={ws.mountKey}
       variant="page"
       uid={ws.card.uid}
+      userId={user.id}
       group={String(ws.card.data.group ?? "")}
       taskNo={ws.card.taskNo}
       title={ws.card.title}

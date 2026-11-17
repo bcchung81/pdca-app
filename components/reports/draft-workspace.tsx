@@ -83,6 +83,8 @@ const PAPER_MARK_CSS = `[aria-label="구성안 판면"] [data-block]{cursor:poin
 export function DraftWorkspace(
   props: SourceProps & {
     uid: string;
+    /** 로그인한 사용자 id(쪽이 요청마다 새로 줌 — 블록 고치기 결과 메모 탭 기록의 주인) */
+    userId: string;
     title: string;
     taskNo: string;
     group: string;
@@ -200,7 +202,7 @@ export function DraftWorkspace(
   // 블록 고치기(초안 판·블록 목록 초안): 끌어 고른 글 → 도구줄 → 여백 작성 카드 → 결과 메모. 여백 열은 좁은 창에서도 이때는 둠
   // 좁은 폭(64rem 미만)에서는 끌어 고르기·여백 메모 열(272px)을 쓰지 않음 — 구성안 메모는 시트의 구성안 목록으로, 고친 이력은 수정 이력으로
   const reviewOn = shown === "draft" && Boolean(props.version) && !props.deptView && !narrow;
-  const review = useDraftReview({ uid: props.uid, version: props.version, enabled: reviewOn, canEdit: props.canWrite, paper: paperRef, content: contentRef, pick });
+  const review = useDraftReview({ uid: props.uid, userId: props.userId, version: props.version, enabled: reviewOn, canEdit: props.canWrite, paper: paperRef, content: contentRef, pick });
   // 왼쪽 열 폭 → 여백 메모를 둘 수 있는지(margin) · 맞춤 확대(종이는 늘 182mm 고정 폭 — docWidthPx)
   // 구성안 블록 메모(도식 구조)는 「구성안」 판에서만 여백에(2026-09-28 사용자 요구 — 초안 판에 도식 구조가 섞여 보였음). 초안 판의 여백은 블록 고치기 메모만
   const marginOf = (leftW: number) => !narrow && Boolean(outline) && shown === "outline" && leftW > 0 && leftW >= PAPER_PX * FIT_ZOOM.min + NOTES_PX + PAD_PX;

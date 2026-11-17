@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type CommentJobData, runCardComments } from "../../../app/(app)/cards/actions";
 import { fetchAiResults, trackAiJob, waitAiJob } from "../../workspace/ai-jobs";
-import { TAB_KEYS } from "../../../lib/ai/assist-thread.ts";
+import { TAB_KEYS, readTabRecord, sweepTabStore, writeTabRecord } from "../../../lib/ai/assist-thread.ts";
 import type { VerifiedEdit } from "../../../lib/ai/comments.ts";
 import { type CommentBatch, type TaggedEdit, editTargets, mergeEdits, toggleComment } from "../../../lib/cards/patch.ts";
 import type { LooseJson } from "../../../lib/loose-json.ts";
@@ -59,10 +59,13 @@ const MAX_BATCH = 12;
 const TRANSIENT: NoteStatus[] = ["grace", "queued", "sending"];
 
 const storeKey = (uid: string) => `${TAB_KEYS.cardReview}${uid}`;
-function load(uid: string): ReviewNote[] {
+/** 이 탭의 코멘트 목록 — userId = 로그인한 사용자 id(다른 사용자·옛 꼴 기록은 읽지 않고 지움, 모르면 비움 — readTabRecord). 붙을 때 한 번 */
+function load(uid: string, userId: string | undefined): ReviewNote[] {
   try {
-    const raw = sessionStorage.getItem(storeKey(uid));
-    const list = raw ? (JSON.parse(raw) as ReviewNote[]) : [];
+    // 이 탭의 다른 사용자 카드 기록(다른 카드 것도)을 모두 지움(sweepTabStore)
+    sweepTabStore(sessionStorage, userId);
+    const raw = readTabRecord(sessionStorage, storeKey(uid), userId);
+    const list = raw === undefined ? [] : (raw as ReviewNote[]);
     // 서버 작업으로 넘어간 코멘트(처리 중 + 작업 id)는 이어 받고, 보내기 전에 창을 닫아 끊긴 것은 다시 보내기로
     return list.map((n) => (TRANSIENT.includes(n.status) && !(n.status === "sending" && n.requestId) ? { ...n, status: "error", error: "창을 닫아 결과를 받지 못했습니다. 다시 보내 주세요." } : n));
   } catch {
@@ -74,6 +77,8 @@ const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? c
 
 export function useCardReview(opts: {
   uid: string;
+  /** 로그인한 사용자 id(이 탭 기록의 주인 — 없으면 코멘트 목록을 탭에 남기지 않음) */
+  userId?: string;
   readOnly: boolean;
   locked?: string[];
   getCard: () => LooseJson;
@@ -99,7 +104,7 @@ export function useCardReview(opts: {
     notesRef.current = next;
     setNotes(next);
     try {
-      sessionStorage.setItem(storeKey(optsRef.current.uid), JSON.stringify(next.slice(-60)));
+      writeTabRecord(sessionStorage, storeKey(optsRef.current.uid), optsRef.current.userId, next.slice(-60));
     } catch {
       // 저장 공간이 없어도 화면은 그대로
     }
@@ -110,13 +115,13 @@ export function useCardReview(opts: {
     alive.current = true;
     if (!loaded.current) {
       loaded.current = true;
-      commit(load(opts.uid));
+      commit(load(opts.uid, opts.userId));
     }
     return () => {
       alive.current = false;
       if (graceTimer.current) clearTimeout(graceTimer.current);
     };
-  }, [opts.uid, commit]);
+  }, [opts.uid, opts.userId, commit]);
 
   /** 작업 하나가 끝나길 기다려 결과를 지금 카드에 합침(보낸 화면이든, 다른 화면에 갔다 와 다시 연 화면이든). 화면이 사라지면 그만둠(다시 열면 이어 받음) */
   const finishBatch = useCallback(async (ids: Set<string>, requestId: number): Promise<void> => {
@@ -197,8 +202,8 @@ export function useCardReview(opts: {
     else
       try {
         const key = storeKey(o.uid);
-        const list = JSON.parse(sessionStorage.getItem(key) ?? "[]") as ReviewNote[];
-        sessionStorage.setItem(key, JSON.stringify(list.map((n) => (ids.has(n.id) ? { ...n, requestId } : n))));
+        const list = (readTabRecord(sessionStorage, key, o.userId) ?? []) as ReviewNote[];
+        writeTabRecord(sessionStorage, key, o.userId, list.map((n) => (ids.has(n.id) ? { ...n, requestId } : n)));
       } catch {
         // 저장 공간이 없으면 다음에 열 때 끊긴 것으로
       }

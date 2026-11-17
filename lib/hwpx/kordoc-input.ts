@@ -16,6 +16,39 @@ const DASH = /^-\s+/;
 const FENCE = /^\s*```/;
 export const QUOTE_MARK = "⁠";
 
+/** kordoc 4.15.3 줄 나눔 흉내(simulateWrap)의 줄 끝 금칙 글자(FORBID_END) */
+const LINE_END_BANNED = new Set([..."$([{£¥〈《「『【〔₩"]);
+/** 줄 끝 금칙 글자가 이 수보다 길게 이어지면 이 수마다 끊음(실제 초안 117건의 최대 연속은 2자) */
+export const LINE_END_RUN_MAX = 8;
+const JOINER = "\u2060";
+
+/**
+ * 줄 끝 금칙 글자 연속 끊기(2026-11-18 웹 취약점 점검 후속): kordoc은 줄을 나눌 때 줄 끝 금칙 글자를 다음 줄로 넘기려고
+ * 줄 머리까지 되돌아가는데, 그 글자가 한 줄 넘게 이어지면 줄이 한 글자씩만 나아가 장평 맞추기(fitParagraph)가 줄 수 × 사다리만큼 느려짐.
+ * LINE_END_RUN_MAX자마다 보이지 않는 이음 표식(U+2060, 인용 블록 표식과 같은 글자)을 끼워 되돌아가기를 끊음 — 보이는 글자는 그대로이고,
+ * 그런 연속이 없는 글은 같은 문자열을 돌려줌(선형)
+ */
+export function breakLineEndRuns(text: string): string {
+  const parts: string[] = [];
+  let from = 0;
+  let run = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (!LINE_END_BANNED.has(text[i])) {
+      run = 0;
+      continue;
+    }
+    if (run === LINE_END_RUN_MAX) {
+      parts.push(text.slice(from, i), JOINER);
+      from = i;
+      run = 0;
+    }
+    run++;
+  }
+  if (!parts.length) return text;
+  parts.push(text.slice(from));
+  return parts.join("");
+}
+
 export function toKordocInput(text: string): string {
   const out: string[] = [];
   let titleDone = false;

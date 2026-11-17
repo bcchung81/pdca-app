@@ -1,6 +1,7 @@
 "use server";
 
 import { callReportBlock, modelLabel } from "../../../../lib/ai/run.ts";
+import { recordedModel } from "../../../../lib/ai/recorded-model.ts";
 import { inspectionCardText } from "../../../../lib/ai/inspect.ts";
 import { cardOutline } from "../../../../lib/ai/writer.ts";
 import { canonicalJson } from "../../../../lib/cards/fixed.ts";
@@ -273,7 +274,8 @@ export async function previewBlockShapes(uid: string, raw: { blockIndex: number;
 /**
  * 「다른 모양으로」 적용: 미리보기에서 고른 안(AI 답 그대로)을 서버가 같은 검증으로 다시 정리해 그 블록만 바꿔 저장(AI 없음 — 호출 한도에 안 셈).
  * 블록 고치기와 같은 저장 경로(version 조건 · 다시 점검 · 사람이 고친 블록 표시 · 수정 이력 한 행 「모양 바꾸기 — …」 — 되돌리기 그대로 됨).
- * 경영관리 초안도 같은 블록 순번이라 절 자리(spec.mg.at[i])는 그대로
+ * 경영관리 초안도 같은 블록 순번이라 절 자리(spec.mg.at[i])는 그대로. 이력의 모델 표기는 이 사용자가 이 카드로 최근 7일 안에 끝낸 미리보기 호출 기록
+ * (report_block)의 모델일 때만 남기고 아니면 비움(화면 값으로 출처를 지어내지 못하게 — 2026-11-18 웹 점검 T3-N3, lib/ai/recorded-model.ts)
  */
 export async function applyBlockShape(uid: string, raw: { blockIndex: number; out: BlockOutput; why?: string; request?: string; model?: string; version: string; pick?: DraftPick }): Promise<DraftBlockResult> {
   if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
@@ -294,7 +296,7 @@ export async function applyBlockShape(uid: string, raw: { blockIndex: number; ou
   const asked = cleanLine(raw.request, 600);
   const request = `모양 바꾸기 — 「${blockShapeName(before)}」 → 「${blockShapeName(v.block)}」${asked ? ` · ${asked}` : ""}`;
   const reply = [cleanLine(raw.why, 160), ...v.dropped].filter(Boolean).join(" ");
-  const saved = await saveEditedDraft(p, next, d.version, { blockIndex, kind: "edit", request, quote: "", reply, before, after: v.block, model: cleanLine(raw.model, 80) || null, wasHuman: (d.spec.humanEdits ?? []).includes(blockIndex) });
+  const saved = await saveEditedDraft(p, next, d.version, { blockIndex, kind: "edit", request, quote: "", reply, before, after: v.block, model: cleanLine(await recordedModel(p.supabase, { userId: p.me.id, cardId: p.card.id, feature: "report_block" }, raw.model), 80) || null, wasHuman: (d.spec.humanEdits ?? []).includes(blockIndex) });
   if (!saved.ok) return saved;
   refresh(uid);
   return {

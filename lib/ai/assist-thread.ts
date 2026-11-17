@@ -49,23 +49,71 @@ export const PENDING_STALE_MS = 12 * 60_000;
 
 /**
  * 이 탭(sessionStorage)에 카드 uid로 남기는 기록의 열쇠 앞머리: 작성지원 대화·합치기 전 AI 대화·카드 리뷰 메모(use-card-review.ts)·초안 검토 메모(draft-review.tsx).
- * 열쇠에 사용자 구분이 없어 로그인 화면에 오면(로그아웃 뒤 등) 모두 지움(clearTabStore — 2026-11-17 웹 취약점 점검 N4)
+ * 로그인 화면에 오면(로그아웃 뒤 등) 모두 지움(clearTabStore — 2026-11-17 웹 취약점 점검 N4). 값에는 주인 사용자 id를 함께 둠(readTabRecord — 2026-11-18)
  */
 export const TAB_KEYS = { assist: "card-assist|", legacyChat: "card-chat|", cardReview: "card-review|", draftReview: "draft-review|" } as const;
 export const assistKey = (uid: string) => `${TAB_KEYS.assist}${uid}`;
 /** 합치기 전 「AI 대화」가 쓰던 자리(한 번 옮겨 담고 지움) */
 export const legacyChatKey = (uid: string) => `${TAB_KEYS.legacyChat}${uid}`;
 
-/** 이 탭에 남은 카드 기록(TAB_KEYS 앞머리)을 모두 지움 — 같은 탭에서 다음에 로그인한 사람에게 앞사람의 AI 대화·검토 메모가 보이지 않게. 지운 수 */
-export function clearTabStore(store: Pick<Storage, "length" | "key" | "removeItem">): number {
+/** 이 탭에 남은 카드 기록의 열쇠(TAB_KEYS 앞머리) — 지우는 동안 순번이 바뀌지 않게 먼저 모음 */
+function tabStoreKeys(store: Pick<Storage, "length" | "key">): string[] {
   const prefixes: string[] = Object.values(TAB_KEYS);
   const keys: string[] = [];
   for (let i = 0; i < store.length; i++) {
     const k = store.key(i);
     if (k !== null && prefixes.some((p) => k.startsWith(p))) keys.push(k);
   }
+  return keys;
+}
+
+/** 이 탭에 남은 카드 기록(TAB_KEYS 앞머리)을 모두 지움 — 같은 탭에서 다음에 로그인한 사람에게 앞사람의 AI 대화·검토 메모가 보이지 않게. 지운 수 */
+export function clearTabStore(store: Pick<Storage, "length" | "key" | "removeItem">): number {
+  const keys = tabStoreKeys(store);
   for (const k of keys) store.removeItem(k);
   return keys.length;
+}
+
+/** 탭 기록을 읽고 쓰는 저장 공간(sessionStorage — 시험은 흉내) */
+export type TabStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/**
+ * 탭 기록 한 칸 읽기(TAB_KEYS 네 저장소 공용): 값은 {user: 주인 사용자 id, data}. 주인이 지금 사용자와 다르거나 옛 꼴(사용자 id 없음)·깨진 값이면
+ * 읽지 않고 지움 — 로그인 화면을 거치지 않은 다른 탭에서 다음 사람이 열어도 앞사람의 AI 대화·검토 메모가 보이지 않게(2026-11-18 웹 점검 T2-F4·T3-W4).
+ * 사용자 id를 모르면(userId 없음) 읽지도 지우지도 않음. 없으면 undefined
+ */
+export function readTabRecord(store: TabStore, key: string, userId: string | undefined): unknown {
+  if (!userId) return undefined;
+  const raw = store.getItem(key);
+  if (raw === null) return undefined;
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (v && typeof v === "object" && !Array.isArray(v) && (v as { user?: unknown }).user === userId && "data" in v) return (v as { data: unknown }).data;
+  } catch {
+    // 깨진 값은 아래에서 지움
+  }
+  store.removeItem(key);
+  return undefined;
+}
+
+/**
+ * 이 탭의 카드 기록 가운데 주인이 지금 사용자가 아닌 것(옛 꼴·깨진 값 포함)을 모두 지움 — 쪽이 붙을 때 불러, 지금 연 카드 밖의 앞사람 기록도
+ * 뒤로 가기 등으로 되살아난 앞사람 쪽에 보이기 전에 없앰(readTabRecord 그대로 — 2026-11-18 L3 추가). 사용자 id를 모르면 손대지 않음. 지운 수
+ */
+export function sweepTabStore(store: TabStore & Pick<Storage, "length" | "key">, userId: string | undefined): number {
+  if (!userId) return 0;
+  let removed = 0;
+  for (const k of tabStoreKeys(store)) {
+    readTabRecord(store, k, userId);
+    if (store.getItem(k) === null) removed += 1;
+  }
+  return removed;
+}
+
+/** 탭 기록 한 칸 쓰기(주인 사용자 id와 함께). 사용자 id를 모르면 쓰지 않음 */
+export function writeTabRecord(store: TabStore, key: string, userId: string | undefined, data: unknown): void {
+  if (!userId) return;
+  store.setItem(key, JSON.stringify({ user: userId, data }));
 }
 
 const isMode = (m: unknown): m is TurnMode => m === "chat" || (typeof m === "string" && (m in WRITER_MODES || m in LEGACY_MODES));

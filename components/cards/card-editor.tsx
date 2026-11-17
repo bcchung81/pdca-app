@@ -132,6 +132,8 @@ const hhmm = (iso: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia
 export function CardEditor(props: {
   ref?: Ref<CardEditorHandle>;
   uid: string;
+  /** 로그인한 사용자 id(코멘트 탭 기록의 주인 — 없으면 코멘트 목록을 탭에 남기지 않음) */
+  userId?: string;
   initial: LooseJson;
   imageUrls: Record<string, string>;
   /** 원본 배치(한글 파일에서 뗀 카드 표). 있으면 원본 그대로 그리고, 없거나 못 맞추면 원본 양식 렌더러 */
@@ -323,6 +325,7 @@ export function CardEditor(props: {
   // 리뷰어 코멘트: AI 편집을 합친 카드를 넣고, 다시 그린 뒤 새로 생긴 글을 노랗게
   const review = useCardReview({
     uid,
+    userId: props.userId,
     readOnly: props.readOnly,
     locked: props.locked,
     getCard: () => cardRef.current,

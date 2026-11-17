@@ -3,7 +3,7 @@
 
 import { type GongmunOptions, markdownToHwpx } from "kordoc";
 import { KCA_GONGMUN } from "./kca-profile.ts";
-import { toKordocInput } from "./kordoc-input.ts";
+import { breakLineEndRuns, toKordocInput } from "./kordoc-input.ts";
 import { type PostSummary, postprocessKca } from "./postprocess.ts";
 
 /** 초안의 ※·＊ 줄(표·인용 블록 밖)이 순서대로 ＊였는가 — kordoc이 ＊를 ※로 바꿔 내는 것을 되돌리는 데 씀(R011) */
@@ -29,7 +29,7 @@ export async function draftToKcaHwpx(input: string): Promise<{ bytes: Uint8Array
   const draft = input.replace(XML_BAD, "");
   const warnings: string[] = [];
    
-  const raw = await markdownToHwpx(toKordocInput(draft), { gongmun: KCA_GONGMUN as GongmunOptions, warnings });
+  const raw = await markdownToHwpx(breakLineEndRuns(toKordocInput(draft)), { gongmun: KCA_GONGMUN as GongmunOptions, warnings });
   const { bytes, summary } = await postprocessKca(new Uint8Array(raw), starLinesOf(draft));
   return { bytes, warnings, summary };
 }

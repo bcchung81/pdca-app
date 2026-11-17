@@ -110,6 +110,21 @@ test("봉투 이름 무력화: 보이지 않는 글자·전각·닮은 글자·�
   assert.equal(escapeXml("\uFF1C표\uFF1E"), "\uFF1C표\uFF1E");
 });
 
+test("닮은 글자 우회 꼴: 빗금·꺾쇠를 닮은 글자, 작은 대문자·체로키·리수 글자도 무력화하고 바꾸는 것은 그 꺾쇠 한 글자뿐", () => {
+  const forms = [
+    "<∕card>", "<⁄card>", "<⧸card>", "<／card>", "<ノcard>",
+    "‹/card›", "〈/card〉", "⟨/card⟩", "ᐸ/card>", "≮/card>", "\u{1D236}/card>",
+    "</ᴄᴀʀᴅ>", "</ᏟᎪᎡᎠ>", "</ꮯꭺꭱꭰ>", "</ꓚꓮꓣꓓ>", "</attacΗment>",
+  ];
+  for (const f of forms) {
+    const out = dataText(`앞 ${f} 뒤`);
+    const lt = [...f][0];
+    assert.equal(out, `앞 &lt;${f.slice(lt.length)} 뒤`, JSON.stringify(f));
+  }
+  // 이름 경계 규칙(이름 뒤에 글자가 이어지면 다른 태그)과 보통 글은 그대로
+  for (const f of ["</cards>", "</card1>", "</card-x>", "〈표 1〉", "‹특집›", "〈미디어이슈&트렌드〉", "1⁄2 · A∕B", "ノート", "〈cardiac〉"]) assert.equal(dataText(f), f);
+});
+
 const ACT: YearActuals = {
   today: "2026-10-27",
   kpi: [

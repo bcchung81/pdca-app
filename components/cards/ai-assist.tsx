@@ -4,7 +4,7 @@ import { Check, ChevronDown, ChevronUp, Copy, Ellipsis } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { clearCardAiResults, getCardSelectPreview, runCardAssist, runCardChat } from "../../app/(app)/cards/actions";
 import { type CardMaterial, finishCardMaterialUpload, listCardMaterials, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
-import { ASK_CLIP, type AssistTurn, CHAT_MODE, type TurnMode, askLines, assistKey, chatHistory, fromChatMessages, legacyChatKey, mergeServerTurns, modeLabel, patchTurn, pushTurn, readTurns, sameTurns, threadMarkdown, turnHeadline, turnMarkdown } from "../../lib/ai/assist-thread.ts";
+import { ASK_CLIP, type AssistTurn, CHAT_MODE, type TurnMode, askLines, assistKey, chatHistory, fromChatMessages, legacyChatKey, mergeServerTurns, modeLabel, patchTurn, pushTurn, readTabRecord, readTurns, sameTurns, sweepTabStore, threadMarkdown, turnHeadline, turnMarkdown, writeTabRecord } from "../../lib/ai/assist-thread.ts";
 import { ASSIST_FEATURES, type JobResultRow } from "../../lib/ai/jobs.ts";
 import { fetchAiResults, trackAiJob, useAiJobs } from "../workspace/ai-jobs";
 import { CHAT_LIMITS } from "../../lib/ai/chat.ts";
@@ -60,34 +60,34 @@ const progressMode = (m: TurnMode): PickMode => (m === "chat" || m in WRITER_MOD
 /** 화면에 보이는 요청 종류 이름(말풍선 머리·보내기 단추·답 머리·칩 title): 「(모드 A)」 없는 짧은 이름. 질문·옛 종류는 기존 이름 그대로 — WRITER_MODES.label·modeLabel은 프롬프트에 들어가 못 바꿈 */
 const shownMode = (m: TurnMode) => (m in WRITER_MODES ? WRITER_MODES[m as WriterMode].short : modeLabel(m));
 
-function loadTurns(uid: string): AssistTurn[] {
+/** 이 탭의 카드 기록 읽기 — me = 로그인한 사용자 id(다른 사용자·옛 꼴 기록은 읽지 않고 지움, readTabRecord) */
+function loadTurns(uid: string, me: string): AssistTurn[] {
   try {
-    const raw = sessionStorage.getItem(assistKey(uid));
-    const turns = readTurns(raw ? JSON.parse(raw) : []);
+    const turns = readTurns(readTabRecord(sessionStorage, assistKey(uid), me));
     // 합치기 전 「AI 대화」 기록이 이 탭에 있으면 한 번 옮겨 담음
-    const legacy = sessionStorage.getItem(legacyChatKey(uid));
-    if (!legacy) return turns;
+    const legacy = readTabRecord(sessionStorage, legacyChatKey(uid), me);
+    if (legacy === undefined) return turns;
     sessionStorage.removeItem(legacyChatKey(uid));
-    const merged = readTurns([...fromChatMessages(JSON.parse(legacy)), ...turns].sort((a, b) => a.at.localeCompare(b.at)));
-    sessionStorage.setItem(assistKey(uid), JSON.stringify(merged));
+    const merged = readTurns([...fromChatMessages(legacy), ...turns].sort((a, b) => a.at.localeCompare(b.at)));
+    writeTabRecord(sessionStorage, assistKey(uid), me, merged);
     return merged;
   } catch {
     return [];
   }
 }
-function saveTurns(uid: string, turns: AssistTurn[]) {
+function saveTurns(uid: string, me: string, turns: AssistTurn[]) {
   try {
-    sessionStorage.setItem(assistKey(uid), JSON.stringify(turns));
+    writeTabRecord(sessionStorage, assistKey(uid), me, turns);
   } catch {
     // 저장 공간이 없으면 이 화면에서만
   }
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT, { detail: uid }));
 }
 /** 저장된 기록을 고쳐 씀(옆 창이 닫힌 뒤 끝난 요청도 기록에 남게 — 화면 상태가 아니라 저장 공간 기준). 바뀐 것이 없으면 다시 쓰지 않음 */
-function updateTurns(uid: string, f: (ts: AssistTurn[]) => AssistTurn[]) {
-  const before = loadTurns(uid);
+function updateTurns(uid: string, me: string, f: (ts: AssistTurn[]) => AssistTurn[]) {
+  const before = loadTurns(uid, me);
   const after = f(before);
-  if (!sameTurns(before, after)) saveTurns(uid, after);
+  if (!sameTurns(before, after)) saveTurns(uid, me, after);
 }
 /** 결과 표의 행 → 대화 차례(모양을 확인한 것만 — 서버 결과도 브라우저 기록과 같은 검사, 오래된 것 먼저) */
 const serverTurns = (rows: JobResultRow[]) => readTurns(rows.map((r) => r.result.data).reverse());
@@ -101,6 +101,8 @@ const serverTurns = (rows: JobResultRow[]) => readTurns(rows.map((r) => r.result
  */
 export function AiAssist(props: {
   uid: string;
+  /** 로그인한 사용자 id(쪽이 요청마다 새로 줌 — 이 탭 기록의 주인. 다른 사용자의 기록은 읽지 않고 지움) */
+  userId: string;
   /** 과제명(대화 내려받기 제목) */
   title: string;
   canApply: boolean;
@@ -122,7 +124,7 @@ export function AiAssist(props: {
   /** 확정된 고정 영역(부서 작성본) — 이 칸을 고치는 제안은 반영 단추 대신 안내(편집기도 반영을 막음) */
   locked?: string[];
 }) {
-  const { uid } = props;
+  const { uid, userId: me } = props;
   const active = props.active !== false;
   const [mode, setMode] = useState<PickMode>("improve");
   // 부모가 요청 종류를 골라 달라고 한 차례(렌더 중 상태 조정 — useEffect 안 setState 대신)
@@ -156,10 +158,10 @@ export function AiAssist(props: {
   const isOpen = (t: AssistTurn) => turnOpen[t.id] ?? t.id === latestOk;
 
   const reload = useCallback(() => {
-    const ts = loadTurns(uid);
+    const ts = loadTurns(uid, me);
     setTurns(ts);
     return ts;
-  }, [uid]);
+  }, [uid, me]);
   // 이 카드의 AI 작성지원·질문 작업(진행 중·최근 끝난 것 — 머리띠와 같은 저장소, components/workspace/ai-jobs.ts)
   const allJobs = useAiJobs();
   const cardJobs = allJobs.filter((j) => j.card?.uid === uid && (j.kind === "assist" || j.kind === "chat"));
@@ -170,29 +172,35 @@ export function AiAssist(props: {
   useEffect(() => {
     let live = true;
     void fetchAiResults({ card: uid, features: ASSIST_FEATURES }).then((rows) => {
-      if (live && rows.length) updateTurns(uid, (ts) => mergeServerTurns(ts, serverTurns(rows)));
+      if (live && rows.length) updateTurns(uid, me, (ts) => mergeServerTurns(ts, serverTurns(rows)));
     });
     return () => {
       live = false;
     };
-  }, [uid]);
+  }, [uid, me]);
   // 작업 상태가 바뀌면: 다른 곳에서 보낸 진행 중 작업은 쓰는 중 차례로, 끝난 작업은 결과를 받아 그 차례를 채움(이 창이 닫혀 있던 동안 끝난 것도)
   useEffect(() => {
-    const local = loadTurns(uid);
+    const local = loadTurns(uid, me);
     const done = local.filter((t) => t.status === "pending" && t.requestId && !fetching.current.has(t.requestId) && cardJobs.some((j) => j.id === t.requestId && j.state !== "running")).map((t) => t.requestId!);
-    updateTurns(uid, (ts) => mergeServerTurns(ts, [], cardJobs));
+    updateTurns(uid, me, (ts) => mergeServerTurns(ts, [], cardJobs));
     if (!done.length) return;
     for (const id of done) fetching.current.add(id);
     void fetchAiResults({ ids: done }).then((rows) => {
       const filled = serverTurns(rows);
       const last = local.findLast((t) => t.requestId && filled.some((f) => f.requestId === t.requestId));
       if (last) focus.current = { id: last.id, at: filled.find((f) => f.requestId === last.requestId)?.status === "ok" ? "start" : "end", smooth: true };
-      updateTurns(uid, (ts) => mergeServerTurns(ts, filled, cardJobs));
+      updateTurns(uid, me, (ts) => mergeServerTurns(ts, filled, cardJobs));
     });
     // 작업 상태(jobsKey)가 바뀔 때만
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid, jobsKey]);
+  }, [uid, me, jobsKey]);
   useEffect(() => {
+    // 붙을 때 이 탭의 다른 사용자 카드 기록(다른 카드 것도)을 모두 지움(sweepTabStore)
+    try {
+      sweepTabStore(sessionStorage, me);
+    } catch {
+      // 저장 공간을 못 쓰면 남은 기록도 없음
+    }
     // 브라우저 저장 공간(sessionStorage)에서 이 카드 기록을 불러옴 — 서버 렌더에는 없는 값이라 붙은 뒤에 읽음. 열면 마지막 답의 첫머리부터 보임
     // eslint-disable-next-line react-hooks/set-state-in-effect
     focus.current = lastSpot(reload());
@@ -201,7 +209,7 @@ export function AiAssist(props: {
     };
     window.addEventListener(UPDATE_EVENT, on);
     return () => window.removeEventListener(UPDATE_EVENT, on);
-  }, [uid, reload]);
+  }, [uid, me, reload]);
   const loadDocs = useCallback(
     () =>
       listCardMaterials(uid).then((r) => {
@@ -284,11 +292,11 @@ export function AiAssist(props: {
       return;
     }
     setErr(null);
-    const history = chatHistory(loadTurns(uid));
+    const history = chatHistory(loadTurns(uid, me));
     const files = includedDocs.map((d) => d.fileName);
     const turn: AssistTurn = { id: newTurnId(), at: new Date().toISOString(), mode: "chat", ask: askLines({ note: q, files }), files, status: "pending" };
     focus.current = { id: turn.id, at: "end", smooth: true };
-    updateTurns(uid, (ts) => pushTurn(ts, turn));
+    updateTurns(uid, me, (ts) => pushTurn(ts, turn));
     setNote("");
     let patch: Partial<AssistTurn>;
     try {
@@ -301,7 +309,7 @@ export function AiAssist(props: {
     }
     if (patch.status === "error") focus.current = { id: turn.id, at: "end", smooth: true };
     // 차례에 작업 id를 먼저 적고 저장소에 알림(작업 목록이 먼저 오면 다른 곳의 작업으로 보지 않게)
-    updateTurns(uid, (ts) => patchTurn(ts, turn.id, patch));
+    updateTurns(uid, me, (ts) => patchTurn(ts, turn.id, patch));
     if (patch.requestId) trackAiJob(patch.requestId, "chat", { uid });
   };
 
@@ -328,7 +336,7 @@ export function AiAssist(props: {
       status: "pending",
     };
     focus.current = { id: turn.id, at: "end", smooth: true };
-    updateTurns(uid, (ts) => pushTurn(ts, turn));
+    updateTurns(uid, me, (ts) => pushTurn(ts, turn));
     // 보낸 입력은 비움(요청 종류·고른 칸·첨부는 그대로 — 이어서 물을 수 있게)
     setNote("");
     let patch: Partial<AssistTurn>;
@@ -345,13 +353,13 @@ export function AiAssist(props: {
       patch = { status: "error", message: "AI 요청이 끊겼습니다. 잠시 뒤 다시 시도해 주세요." };
     }
     if (patch.status) focus.current = { id: turn.id, at: patch.status === "ok" ? "start" : "end", smooth: true };
-    updateTurns(uid, (ts) => patchTurn(ts, turn.id, patch));
+    updateTurns(uid, me, (ts) => patchTurn(ts, turn.id, patch));
     if (patch.requestId) trackAiJob(patch.requestId, "assist", { uid });
   };
 
   const apply = (t: AssistTurn, i: number, s: VerifiedSuggestion) => {
     props.onApply(s);
-    updateTurns(uid, (ts) => patchTurn(ts, t.id, { applied: [...new Set([...(t.applied ?? []), i])] }));
+    updateTurns(uid, me, (ts) => patchTurn(ts, t.id, { applied: [...new Set([...(t.applied ?? []), i])] }));
   };
   const download = () => {
     const url = URL.createObjectURL(new Blob([threadMarkdown(props.title, turns, fmtDateTime)], { type: "text/markdown;charset=utf-8" }));
@@ -440,7 +448,7 @@ export function AiAssist(props: {
                     disabled={pending}
                     onClick={() => {
                       // 이 탭 기록과 서버 결과(본인 것) 함께 — 서버 결과를 남기면 다음에 열 때 다시 채워짐
-                      saveTurns(uid, []);
+                      saveTurns(uid, me, []);
                       void clearCardAiResults(uid).then((r) => {
                         if (!r.ok && r.message) setErr(r.message);
                       });

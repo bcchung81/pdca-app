@@ -6,6 +6,7 @@ import { requireUser } from "../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/preview.ts";
 import { safeExt } from "../../../lib/reports/model.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
+import { removeObjects } from "../../../lib/storage/remove.ts";
 import { MATERIAL_MAX_BYTES, isMaterialPath, materialNameProblem } from "../../../lib/cards/limits.ts";
 import { type DraftSourceRow, MATERIAL_LOCKED_MSG, lockedMaterialIds } from "../../../lib/cards/material-lock.ts";
 import { loadWho } from "../../../lib/users/who.ts";
@@ -140,6 +141,7 @@ export async function deleteCardMaterial(id: string): Promise<{ ok: boolean; mes
   if ((await lockedIds(supabase, row.card_id)).has(String(row.id))) return { ok: false, message: MATERIAL_LOCKED_MSG };
   const { data, error } = await supabase.from("card_materials").delete().eq("id", id).select("id");
   if (error || !data?.length) return { ok: false, message: "지우지 못했습니다(자기 부서 카드만)." };
-  await supabase.storage.from("card-materials").remove([row.storage_path]);
+  // 행은 이미 지워짐 — 파일을 못 지우면 서버 로그만 남기고 결과는 그대로(남은 파일은 pnpm storage:prune-orphans)
+  await removeObjects(supabase, "card-materials", [row.storage_path], "deleteCardMaterial");
   return { ok: true };
 }

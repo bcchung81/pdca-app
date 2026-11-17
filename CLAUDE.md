@@ -60,6 +60,7 @@ pnpm knowledge:ingest        # 공통 지식 적재(검산 실패면 종료 코�
 pnpm knowledge:add <파일> --title "제목" --scope <범위> [--dry-run]   # 일반 문서 한 개를 공통 지식에 올림(범위: institution·common-kpi·bonus·BZ-1~3·search-only)
 pnpm knowledge:images <문서 id> [--dry-run]   # 올린 일반 문서(up-…)의 그림을 원본에서 다시 꺼내 조각 meta.images·버킷에 붙임(운영 DB에 씀 — 먼저 --dry-run)
 pnpm knowledge:prune-images [--doc <문서 id>] [--write]   # 조각이 안 가리키는 버킷 그림 정리(기본 드라이런, --write면 운영 버킷에서 지움)
+pnpm storage:prune-orphans [--bucket <이름>] [--write]   # DB 행이 안 가리키는 저장소 객체(하루 넘은 것) 정리(기본 드라이런, --write면 운영 버킷에서 지움)
 pnpm harness:sync            # report-harness 기준 문서 사본 갱신
 pnpm db:seed --dry-run       # 적재 건수 확인(접속 안 함)
 pnpm db:seed                 # 카드까지 덮어씀 — 운영 DB에는 쓰지 않음
@@ -74,7 +75,7 @@ pnpm e2e:ui                  # 로컬 Chrome(헤드리스)으로 실제 입력·
 pnpm e2e:shots               # 역할별 주요 화면 캡처 + 브라우저 콘솔 오류(VW·VH로 폭·높이)
 ```
 
-**운영 DB 보호(`DB_TARGET`)**: `production`|`development`(**비어 있으면 production**). production이면 `pnpm e2e`·`e2e:ui`·`e2e:shots`·전체 `pnpm db:seed`는 실행 전에 멈춥니다(`scripts/lib/db-target.ts` `guardProduction`) — 정말 필요하면 `--allow-production`. 개발 DB의 `.env.local`에는 `DB_TARGET=development`. 운영 관리 명령(db:push·db:user·db:layout·knowledge:*·harness:sync·db:check-search·`db:seed --dry-run|--knowledge-only`)과 읽기만 하는 `scripts/smoke/*`·`scripts/eval/*`는 막지 않습니다.
+**운영 DB 보호(`DB_TARGET`)**: `production`|`development`(**비어 있으면 production**). production이면 `pnpm e2e`·`e2e:ui`·`e2e:shots`·전체 `pnpm db:seed`는 실행 전에 멈춥니다(`scripts/lib/db-target.ts` `guardProduction`) — 정말 필요하면 `--allow-production`. 개발 DB의 `.env.local`에는 `DB_TARGET=development`. 운영 관리 명령(db:push·db:user·db:layout·knowledge:*·harness:sync·db:check-search·storage:prune-orphans·`db:seed --dry-run|--knowledge-only`)과 읽기만 하는 `scripts/smoke/*`·`scripts/eval/*`는 막지 않습니다.
 
 **운영 배포**: 설정·환경변수·배포 뒤 점검 순서는 `docs/ops/운영-전환.md`를 따릅니다. 서버 오류는 `instrumentation.ts`(`onRequestError`)가 한 줄 JSON 로그로 남깁니다. 앱이 읽는 환경변수는 모두 `.env.example`에 적음(`lib/ops/env-keys.test.ts`).
 

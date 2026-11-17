@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ASK_CLIP, ASSIST_KEEP, type AssistTurn, PENDING_STALE_MS, TAB_KEYS, askLines, assistKey, clearTabStore, legacyChatKey, chatHistory, fromChatMessages, modeLabel, patchTurn, pushTurn, readTurns, threadMarkdown, turnHeadline, turnMarkdown } from "./assist-thread.ts";
+import { ASK_CLIP, ASSIST_KEEP, type AssistTurn, PENDING_STALE_MS, TAB_KEYS, askLines, assistKey, clearTabStore, legacyChatKey, chatHistory, fromChatMessages, modeLabel, patchTurn, pushTurn, readTabRecord, readTurns, sweepTabStore, threadMarkdown, turnHeadline, turnMarkdown, writeTabRecord } from "./assist-thread.ts";
 
 const result = {
   headline: "전년 지적 2건 중 1건은 반영, 1건은 보강 필요",
@@ -275,4 +275,74 @@ test("탭 기록 지우기(로그인 화면): 카드 AI 대화·옛 AI 대화·�
   assert.equal(clearTabStore(store), 4);
   assert.deepEqual([...m.keys()], ["ai-jobs-seen", "card-assist"]);
   assert.equal(clearTabStore(store), 0);
+});
+
+/** sessionStorage 흉내(읽기·쓰기·지우기) */
+const memStore = (init: Array<[string, string]> = []) => {
+  const m = new Map(init);
+  return { m, getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
+};
+/** 네 저장소의 열쇠(같은 카드 uid) */
+const tabKeys = (uid: string) => Object.values(TAB_KEYS).map((p) => `${p}${uid}`);
+
+test("탭 기록 주인 묶음: 같은 사용자는 쓴 그대로 읽힘(네 저장소 모두, 2026-11-18 웹 점검 T2-F4)", () => {
+  const s = memStore();
+  const turns = [{ id: "a", at: "2026-11-18T00:00:00.000Z", mode: "chat", ask: ["질문"], status: "ok", answer: "답" }];
+  for (const k of tabKeys("u1")) writeTabRecord(s, k, "me-1", turns);
+  for (const k of tabKeys("u1")) assert.deepEqual(readTabRecord(s, k, "me-1"), turns);
+  // 작성지원 대화는 읽은 값이 기존 검사(readTurns)를 그대로 통과
+  assert.equal(readTurns(readTabRecord(s, assistKey("u1"), "me-1")).length, 1);
+  assert.equal(s.m.size, 4);
+});
+
+test("탭 기록 주인 묶음: 다른 사용자의 기록은 읽히지 않고 지워짐 — 다른 카드·다른 열쇠는 그대로", () => {
+  const s = memStore([["ai-jobs-seen", "[1]"]]);
+  for (const k of [...tabKeys("u1"), ...tabKeys("u2")]) writeTabRecord(s, k, "앞사람", [{ id: "x" }]);
+  for (const k of tabKeys("u1")) assert.equal(readTabRecord(s, k, "다음사람"), undefined);
+  assert.deepEqual([...s.m.keys()].sort(), ["ai-jobs-seen", ...tabKeys("u2")].sort());
+  // 지운 뒤 다음 사람이 쓰면 그 사람 것만
+  writeTabRecord(s, assistKey("u1"), "다음사람", []);
+  assert.deepEqual(readTabRecord(s, assistKey("u1"), "다음사람"), []);
+  assert.equal(readTabRecord(s, assistKey("u1"), "앞사람"), undefined);
+});
+
+test("탭 기록 주인 묶음: 옛 꼴(사용자 id 없는 배열)·깨진 값·data 없는 값은 읽지 않고 지움", () => {
+  const old = JSON.stringify([{ id: "a", at: "2026-11-17T00:00:00.000Z", mode: "chat", ask: ["질문"], status: "ok", answer: "앞사람 답" }]);
+  const s = memStore([
+    [assistKey("u1"), old],
+    [legacyChatKey("u1"), JSON.stringify([{ role: "user", text: "q" }, { role: "assistant", text: "a" }])],
+    [`${TAB_KEYS.cardReview}u1`, "{깨짐"],
+    [`${TAB_KEYS.draftReview}u1`, JSON.stringify({ user: "me-1" })],
+  ]);
+  for (const k of tabKeys("u1")) assert.equal(readTabRecord(s, k, "me-1"), undefined);
+  assert.equal(s.m.size, 0);
+});
+
+test("탭 기록 주인 묶음: 사용자 id를 모르면 읽지도 쓰지도 지우지도 않음", () => {
+  const s = memStore();
+  writeTabRecord(s, assistKey("u1"), "me-1", ["a"]);
+  assert.equal(readTabRecord(s, assistKey("u1"), undefined), undefined);
+  writeTabRecord(s, assistKey("u1"), undefined, ["b"]);
+  assert.deepEqual(readTabRecord(s, assistKey("u1"), "me-1"), ["a"]);
+  // 새 꼴도 열쇠 앞머리는 그대로라 로그인 화면의 지우기(clearTabStore)가 함께 지움
+  const all = { get length() { return s.m.size; }, key: (i: number) => [...s.m.keys()][i] ?? null, removeItem: s.removeItem };
+  assert.equal(clearTabStore(all), 1);
+});
+
+test("탭 기록 훑기(쪽이 붙을 때): 네 저장소에서 주인이 다른 것·옛 꼴·깨진 값은 다른 카드 것까지 모두 지우고, 내 기록과 다른 열쇠는 둠 — id를 모르면 손대지 않음(2026-11-18 L3 추가)", () => {
+  const s = memStore([
+    ["ai-jobs-seen", "[1]"],
+    [assistKey("u9"), JSON.stringify([{ id: "옛 꼴" }])],
+    [`${TAB_KEYS.draftReview}u8`, "{깨짐"],
+  ]);
+  for (const k of tabKeys("u1")) writeTabRecord(s, k, "앞사람", [{ id: "a" }]);
+  for (const k of tabKeys("u2")) writeTabRecord(s, k, "다음사람", [{ id: "b" }]);
+  const store = Object.assign(s, { get length() { return s.m.size; }, key: (i: number) => [...s.m.keys()][i] ?? null });
+  const before = s.m.size;
+  assert.equal(sweepTabStore(store, undefined), 0);
+  assert.equal(s.m.size, before);
+  assert.equal(sweepTabStore(store, "다음사람"), 6);
+  assert.deepEqual([...s.m.keys()].sort(), ["ai-jobs-seen", ...tabKeys("u2")].sort());
+  for (const k of tabKeys("u2")) assert.deepEqual(readTabRecord(s, k, "다음사람"), [{ id: "b" }]);
+  assert.equal(sweepTabStore(store, "다음사람"), 0);
 });

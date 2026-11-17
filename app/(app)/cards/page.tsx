@@ -62,6 +62,7 @@ export default async function CardsPage({ searchParams }: PageProps<"/cards">) {
         variant="peek"
         initialPanes={one(sp.panes) || undefined}
         uid={ws.card.uid}
+        userId={user.id}
         group={String(ws.card.data.group ?? "")}
         taskNo={ws.card.taskNo}
         title={ws.card.title}

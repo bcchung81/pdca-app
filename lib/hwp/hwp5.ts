@@ -39,6 +39,7 @@ import {
   type TabDef,
   type TextBox,
 } from "./model.ts";
+import { LAYOUT_TABLE_COLS_MAX, LAYOUT_TABLE_ROWS_MAX, spanIn } from "./hwpx.ts";
 
 interface Rec {
   tag: number;
@@ -546,6 +547,9 @@ function control(ctx: Ctx, k: number): Obj | { page: PageDef } | null {
   return null;
 }
 
+/** 원본 배치 표 크기 상한은 HWPX 읽기(hwpx.ts tableOf)와 같음 — 행·열 수, 격자 칸 수, 한 행에서 시작하는 칸 수, 병합은 표 끝까지 */
+const TABLE_TOO_BIG = "한글(HWP) 파일의 표가 너무 큽니다(행·열 수를 확인해 주세요).";
+
 function table(ctx: Ctx, k: number, end: number): Table | null {
   const level = ctx.recs[k].level;
   let ti = -1;
@@ -576,6 +580,8 @@ function table(ctx: Ctx, k: number, end: number): Table | null {
     const o = 22 + rows * 2 + z * 10;
     (t.zones ??= []).push({ c0: r.u16(o), r0: r.u16(o + 2), c1: r.u16(o + 4), r1: r.u16(o + 6), borderFill: r.u16(o + 8) });
   }
+  if (t.rows > LAYOUT_TABLE_ROWS_MAX || t.cols > LAYOUT_TABLE_COLS_MAX) throw new HwpReadError(TABLE_TOO_BIG);
+  const perRow = new Map<number, number>();
   const cellLevel = level + 1;
   for (let j = ti + 1; j < end; ) {
     const rec = ctx.recs[j];
@@ -588,12 +594,17 @@ function table(ctx: Ctx, k: number, end: number): Table | null {
     const flags = c.u32(4);
     const va = (flags >>> 5) & 3;
     const own = ((flags >>> 16) & 1) === 1;
+    const row = c.u16(10);
+    const col = c.u16(8);
+    const inRow = (perRow.get(row) ?? 0) + 1;
+    if (inRow > t.cols || t.cells.length >= t.rows * t.cols) throw new HwpReadError(TABLE_TOO_BIG);
+    perRow.set(row, inRow);
     const [ps, next] = paras(ctx, j + 1, end, cellLevel, Math.max(1, c.u16(0)));
     const cell: Cell = {
-      row: c.u16(10),
-      col: c.u16(8),
-      colSpan: Math.max(1, c.u16(12)),
-      rowSpan: Math.max(1, c.u16(14)),
+      row,
+      col,
+      colSpan: spanIn(c.u16(12), col, t.cols),
+      rowSpan: spanIn(c.u16(14), row, t.rows),
       width: c.u32(16),
       height: c.u32(20),
       // 안 여백을 따로 지정하지 않은 칸은 표의 기본 안 여백을 씀

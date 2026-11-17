@@ -383,8 +383,8 @@ function margin4(el: El | null): [number, number, number, number] {
 export const LAYOUT_TABLE_COLS_MAX = 100;
 export const LAYOUT_TABLE_ROWS_MAX = 1_000;
 const TABLE_TOO_BIG = "한글(HWPX) 파일의 표가 너무 큽니다(행·열 수를 확인해 주세요).";
-/** 병합 값: 1 이상, 시작 자리부터 표 끝까지 */
-const spanIn = (v: number, at: number, n: number) => Math.max(1, Math.min(v, n - Math.max(0, at)));
+/** 병합 값: 1 이상, 시작 자리부터 표 끝까지(HWP5 읽기 hwp5.ts도 씀) */
+export const spanIn = (v: number, at: number, n: number) => Math.max(1, Math.min(v, n - Math.max(0, at)));
 
 function tableOf(ctx: SecCtx, el: El): Table {
   const t: Table = {

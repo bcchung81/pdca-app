@@ -211,7 +211,8 @@ function evalCards(parts: UnitAiInput["parts"]): Map<number, string[]> {
 
 /**
  * AI 요청 글: 머리(지표·부분·채우는 방식) → 카드 원장 → 과제별 초안(목차 순) → 올해 계량 실적(원장 줄) → '25 평가위원 지적 → 시정조치 계획(약속 표지) →
- * 2025 같은 장 → 핵심공통항목 → 편람 → 쓸 칸(행마다 앱이 정한 칸 글·쓸 칸·이미 쓴 칸) → 끝맺음. 문구는 request.md, 여기는 고르기·되풀이뿐
+ * 2025 같은 장 → 핵심공통항목 → 편람 → 쓸 칸(행마다 앱이 정한 칸 글·쓸 칸·이미 쓴 칸) → 끝맺음. 문구는 request.md, 여기는 고르기·되풀이뿐.
+ * 봉투 밖 줄에 싣는 카드·사람·지금 칸 글은 dataText(봉투 이름 태그만 무력화 — 다른 글자는 그대로, 2026-11-18)
  */
 export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
   const r = (key: RequestKey, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
@@ -231,14 +232,14 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
   // 카드 원장(작성본 아님)
   const cards = orderedCards(m);
   out.push("", r("cards.head", { count: cards.length }));
-  if (cards.length) for (const c of cards) out.push(r("cards.item", { taskNo: c.taskNo, title: c.title, rev: Number(c.dataRev ?? 0), text: dataEnvelope("card", inspectionCardText(c.data)) }));
+  if (cards.length) for (const c of cards) out.push(r("cards.item", { taskNo: c.taskNo, title: dataText(c.title), rev: Number(c.dataRev ?? 0), text: dataEnvelope("card", inspectionCardText(c.data)) }));
   else out.push(r("cards.none"));
   // 과제별 초안(목차 순)
   const drafts = draftTexts(m);
   out.push("", r("drafts.head"));
   for (const c of cards) out.push(drafts.has(c.id) ? r("drafts.item", { taskNo: c.taskNo, text: dataText(drafts.get(c.id)!) }) : r("drafts.missing", { taskNo: c.taskNo }));
   // 올해 계량 실적(카드 정량 성과 칸에서 계량 행에 붙은 줄 — actuals.ts yearActuals wide, 경영관리 카드 초안과 같은 규칙)
-  const kpiLines = cards.flatMap((c) => yearActuals(c.data, m.today, { wide: true }).kpi.flatMap((k) => (k.outcome ? [r("actuals.item", { taskNo: c.taskNo, name: k.name, actual: k.outcome })] : [])));
+  const kpiLines = cards.flatMap((c) => yearActuals(c.data, m.today, { wide: true }).kpi.flatMap((k) => (k.outcome ? [r("actuals.item", { taskNo: c.taskNo, name: dataText(k.name), actual: dataText(k.outcome) })] : [])));
   out.push("", r("actuals.head", { yy: yy(year) }), ...(kpiLines.length ? kpiLines : [r("actuals.none")]));
   // '25 평가위원 지적(원문 — 인용 대조용, 숫자 근거 아님)
   out.push("", r("evaluator.head", { prevYY: yy(year - 1) }), ...(m.evaluator.length ? m.evaluator.map((c) => r("evaluator.item", { title: oneLine(c.title ?? c.chunk_key), text: dataText(c.text) })) : [r("evaluator.none")]));
@@ -268,9 +269,9 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
               field: c.field,
               label: c.label,
               budget: budgetText(budgets[`${c.row}|${c.field}`]),
-              current: hasText(c.current) ? r("row.current", { text: joinLines(c.current) }) : "",
+              current: hasText(c.current) ? r("row.current", { text: dataText(joinLines(c.current)) }) : "",
             })
-          : r("row.kept", { label: c.label, text: joinLines(c.current) }),
+          : r("row.kept", { label: c.label, text: dataText(joinLines(c.current)) }),
       );
   const byEval = evalCards(input.parts);
   const cardsText = (evalNo: number) => (byEval.get(evalNo) ?? []).join("·") || none;
@@ -291,10 +292,10 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
           key: `F${i + 1}`,
           taskNo: row.code.taskNo,
           n: row.code.rowIndex + 1,
-          finding: joinLines(row.code.finding),
-          plan: joinLines(row.code.plan) || none,
-          source: src ? `${src.label ? `(${src.label}) ` : ""}지적 ${src.no}: ${src.text}` : none,
-          parts: labels.join(" / ") || none,
+          finding: dataText(joinLines(row.code.finding)),
+          plan: dataText(joinLines(row.code.plan)) || none,
+          source: src ? dataText(`${src.label ? `(${src.label}) ` : ""}지적 ${src.no}: ${src.text}`) : none,
+          parts: dataText(labels.join(" / ")) || none,
         }),
         ...fieldLines(`F${i + 1}`),
       );
@@ -305,7 +306,7 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
     out.push("", r("rows.part", { title: L.prior.title }));
     if (!pr.rows.length) out.push(none);
     pr.rows.forEach((row, i) =>
-      out.push(r("row.prior", { key: `P${i + 1}`, evalNo: row.code.evalNo, title: row.code.title, cards: row.code.cards.map((c) => c.taskNo).join("·") || none, upToLabel: L.prior.cols[0], upTo: joinLines(row.human.upTo) || none }), ...fieldLines(`P${i + 1}`)),
+      out.push(r("row.prior", { key: `P${i + 1}`, evalNo: row.code.evalNo, title: dataText(row.code.title), cards: row.code.cards.map((c) => c.taskNo).join("·") || none, upToLabel: L.prior.cols[0], upTo: dataText(joinLines(row.human.upTo)) || none }), ...fieldLines(`P${i + 1}`)),
     );
   }
   const o = input.parts.outcome;
@@ -316,22 +317,22 @@ export function unitAiPrompt(p: PromptSet, input: UnitAiInput): string {
       out.push(
         r("row.kpi", {
           key: `K${i + 1}`,
-          name: row.code.name,
-          unit: row.code.unit || none,
+          name: dataText(row.code.name),
+          unit: dataText(row.code.unit) || none,
           taskNo: row.code.taskNo,
           prevLabel: L.outcome.kpiCols.prev,
-          prev: row.code.prev || none,
+          prev: dataText(row.code.prev) || none,
           yearLabel: L.outcome.kpiCols.year,
-          target: row.code.target || none,
-          actual: row.code.actual || none,
+          target: dataText(row.code.target) || none,
+          actual: dataText(row.code.actual) || none,
           rate: kpiRate(row).text,
           polarity: row.human.polarity === "down" ? "낮을수록 좋음" : "높을수록 좋음",
         }),
         ...fieldLines(`K${i + 1}`),
       );
     });
-    o.qual.forEach((row, i) => out.push(r("row.qual", { key: `Q${i + 1}`, label: row.human.label, evalNo: row.code.evalNo, title: row.code.title, cards: cardsText(row.code.evalNo) }), ...fieldLines(`Q${i + 1}`)));
-    o.plan.forEach((row, i) => out.push(r("row.plan", { key: `L${i + 1}`, label: row.human.label, evalNo: row.code.evalNo, title: row.code.title, cards: cardsText(row.code.evalNo) }), ...fieldLines(`L${i + 1}`)));
+    o.qual.forEach((row, i) => out.push(r("row.qual", { key: `Q${i + 1}`, label: dataText(row.human.label), evalNo: row.code.evalNo, title: dataText(row.code.title), cards: cardsText(row.code.evalNo) }), ...fieldLines(`Q${i + 1}`)));
+    o.plan.forEach((row, i) => out.push(r("row.plan", { key: `L${i + 1}`, label: dataText(row.human.label), evalNo: row.code.evalNo, title: dataText(row.code.title), cards: cardsText(row.code.evalNo) }), ...fieldLines(`L${i + 1}`)));
   }
   out.push("", r("tail", { count: targets.size }));
   return out.join("\n");

@@ -13,6 +13,8 @@ import { useCardWorkspace } from "./use-card-workspace.ts";
 export interface WorkspaceProps {
   variant: "peek" | "page";
   uid: string;
+  /** 로그인한 사용자 id(쪽이 요청마다 새로 줌 — AI 작성지원·코멘트 탭 기록의 주인, 앱 틀은 화면 이동 때 다시 그리지 않아 쓰지 않음) */
+  userId: string;
   group: string;
   taskNo: string;
   title: string;

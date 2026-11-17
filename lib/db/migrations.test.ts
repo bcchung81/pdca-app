@@ -22,6 +22,8 @@ const SKIP = [/_search(_\w+)?\.sql$/];
 const NO_DRAFT_MARKER = !existsSync(join(MIGRATIONS, "20261117130000_app_write_drafts.sql")) && "근본책 1단계 B 마이그레이션(20261117130000) 없음";
 // 근본책 2·3단계(남은 표 정책) — 없으면 그 시험만 건너뜀
 const NO_TABLE_MARKER = !existsSync(join(MIGRATIONS, "20261117140000_app_write_tables.sql")) && "근본책 2·3단계 표 마이그레이션(20261117140000) 없음";
+// 저장소 쓰기 정책 표지(20261118100000) — 없으면 그 시험만 건너뜀
+const NO_STORAGE_MARKER = !existsSync(join(MIGRATIONS, "20261118100000_storage_app_write.sql")) && "저장소 표지 마이그레이션(20261118100000) 없음";
 
 let db: PGlite;
 // 카드 59장 원본(seed/cards — git 밖)으로 팀·카드를 채운 DB 위에서 모든 시험이 돌므로, 원본이 없으면 DB를 만들지 않고 시험 전부를 건너뜀
@@ -2373,10 +2375,13 @@ async function blocked(fn: () => Promise<{ affectedRows?: number }>): Promise<bo
   }
 }
 
+/** 표 이름에 스키마가 없으면 public(저장소 사례는 storage.objects로 줌) */
+const qualified = (table: string) => (table.includes(".") ? table : `public.${table}`);
+
 /** 표지 없음·빈 값·틀린 값이면 역할과 무관하게 읽기 결과가 맞는 표지와 같은지 */
 async function sameReadsWithoutMark(table: string) {
   for (const user of ["inspector", "license", "pmo", "admin"] as const) {
-    const sql = `select 1 from public.${table}`;
+    const sql = `select 1 from ${qualified(table)}`;
     const want = await as(user, () => count(sql));
     for (const bad of [null, "", "wrong"]) assert.equal(await as(user, () => count(sql), bad), want, `${user} ${table} 읽기는 표지와 무관(${JSON.stringify(bad)})`);
   }
@@ -2402,7 +2407,7 @@ async function checkMarkCase(k: MarkCase) {
   if (k.setup) await db.exec(k.setup);
   try {
     const fingerprint = async () =>
-      (await db.query<{ h: string }>(`select md5(coalesce(string_agg(t::text, '|' order by t::text), '')) as h from public.${k.table} t`)).rows[0].h;
+      (await db.query<{ h: string }>(`select md5(coalesce(string_agg(t::text, '|' order by t::text), '')) as h from ${qualified(k.table)} t`)).rows[0].h;
     const before = await fingerprint();
     for (const user of ["inspector", "pmo", "admin"] as const) {
       for (const bad of [null, "", "wrong"]) {
@@ -2648,5 +2653,52 @@ test("앱 서버 경유 표지 — invoker 트리거가 다른 표에 쓰는 흐
   } finally {
     await db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [own.id, year]);
     await db.query("delete from public.reports where eval_unit_id = $1 and year = $2 and team_id = $3", [own.eval_unit_id, year, own.team_id]);
+  }
+});
+
+// ── 저장소 쓰기 정책 표지(20261118100000): Storage 서버가 요청 머리글을 request.headers로 넘기므로 표와 같은 표지 ─────────────────────────
+
+test("앱 서버 경유 표지 — 저장소 객체(20261118100000): 표지 없음·빈 값·틀린 값이면 카드 전용 자료·카드 그림(부서 현행화 그림·성과관리팀)·현행화 원본·보고서 추가자료·공통 지식 파일의 넣기·지우기가 부서·성과관리팀·관리자 모두 막히고 읽기는 그대로, 맞는 표지면 예전과 같음", { skip: NO_SEED_CARDS || NO_STORAGE_MARKER }, async () => {
+  const own = (await db.query<{ id: string; uid: string; eval_unit_id: string; team_id: number }>(
+    "select c.id, c.uid, c.eval_unit_id, c.team_id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 and c.status = 'active' order by c.id limit 1",
+    [users.inspector],
+  )).rows[0];
+  const draft = (await db.query<{ id: number }>("insert into public.card_imports (scope, target_card_id, created_by) values ('draft', $1, $2) returning id", [own.id, users.inspector])).rows[0].id;
+  const ledger = (await db.query<{ id: number }>("insert into public.card_imports (scope, created_by) values ('ledger', $1) returning id", [users.pmo])).rows[0].id;
+  const R = (await db.query<{ id: number }>("insert into public.reports (eval_unit_id, year, team_id, status) values ($1, 2061, $2, 'preparing') returning id", [own.eval_unit_id, own.team_id])).rows[0].id;
+  const put = (bucket: string, ...names: string[]) => `insert into storage.objects (bucket_id, name) values ${names.map((n) => `(${lit(bucket)}, ${lit(n)})`).join(", ")}`;
+  const drop = (bucket: string, ...names: string[]) => `delete from storage.objects where bucket_id = ${lit(bucket)} and name in (${names.map(lit).join(", ")})`;
+  const T = "storage.objects";
+  const u = own.uid;
+  const cases: MarkCase[] = [
+    { name: "카드 전용 자료(부서)", table: T, who: "inspector", setup: put("card-materials", `${u}/mark-a.pdf`), insert: put("card-materials", `${u}/mark-b.pdf`), del: drop("card-materials", `${u}/mark-a.pdf`, `${u}/mark-b.pdf`), cleanup: drop("card-materials", `${u}/mark-a.pdf`, `${u}/mark-b.pdf`) },
+    { name: "카드 그림 — 부서 현행화 그림(imp… 넣기만)", table: T, who: "inspector", insert: put("card-originals", `${u}/imp${draft}-mark.png`), cleanup: drop("card-originals", `${u}/imp${draft}-mark.png`) },
+    { name: "카드 그림(성과관리팀 FOR ALL)", table: T, who: "pmo", setup: put("card-originals", `${u}/mark-c.png`), insert: put("card-originals", `${u}/mark-d.png`), del: drop("card-originals", `${u}/mark-c.png`, `${u}/mark-d.png`), cleanup: drop("card-originals", `${u}/mark-c.png`, `${u}/mark-d.png`) },
+    { name: "현행화 원본(부서 작성본 묶음 넣기)", table: T, who: "inspector", insert: put("card-imports", `${draft}/9.hwpx`), cleanup: drop("card-imports", `${draft}/9.hwpx`) },
+    { name: "현행화 원본(성과관리팀 넣기·지우기)", table: T, who: "pmo", setup: put("card-imports", `${ledger}/1.hwpx`), insert: put("card-imports", `${ledger}/2.hwpx`), del: drop("card-imports", `${ledger}/1.hwpx`, `${ledger}/2.hwpx`), cleanup: drop("card-imports", `${ledger}/1.hwpx`, `${ledger}/2.hwpx`) },
+    { name: "보고서 추가자료(부서)", table: T, who: "inspector", setup: put("report-materials", `${R}/mark-a.pdf`), insert: put("report-materials", `${R}/mark-b.pdf`), del: drop("report-materials", `${R}/mark-a.pdf`, `${R}/mark-b.pdf`), cleanup: drop("report-materials", `${R}/mark-a.pdf`, `${R}/mark-b.pdf`) },
+    { name: "공통 지식 파일(관리자 FOR ALL)", table: T, who: "admin", setup: put("knowledge", "mark-doc/a.pdf"), insert: put("knowledge", "mark-doc/b.pdf"), del: drop("knowledge", "mark-doc/a.pdf", "mark-doc/b.pdf"), cleanup: drop("knowledge", "mark-doc/a.pdf", "mark-doc/b.pdf") },
+  ];
+  // 읽기 확인용 객체(버킷마다 하나 — 부서 담당자도 다섯 다 읽을 수 있는 자리)
+  const readable = [
+    ["card-materials", `${u}/mark-read.pdf`],
+    ["card-originals", `${u}/mark-read.png`],
+    ["card-imports", `${draft}/8.hwpx`],
+    ["report-materials", `${R}/mark-read.pdf`],
+    ["knowledge", "mark-doc/read.pdf"],
+  ] as const;
+  try {
+    for (const k of cases) await checkMarkCase(k);
+    for (const [b, n] of readable) await db.exec(put(b, n));
+    const mine = `select 1 from storage.objects where name like '%mark-read%' or name = ${lit(`${draft}/8.hwpx`)} or name = 'mark-doc/read.pdf'`;
+    for (const user of ["inspector", "pmo", "admin"] as const) {
+      for (const bad of [null, "", "wrong"]) assert.equal(await as(user, () => count(mine), bad), 5, `${user} 읽기(표지 ${JSON.stringify(bad)}) — 다섯 버킷 다`);
+    }
+    for (const bad of [TEST_WRITE_KEY, null]) assert.equal(await as("license", () => count(mine), bad), 1, "다른 팀 담당자는 표지와 무관하게 공통 지식 파일만 읽음");
+    await sameReadsWithoutMark(T);
+  } finally {
+    for (const [b, n] of readable) await db.exec(drop(b, n));
+    await db.query("delete from public.reports where id = $1", [R]);
+    await db.query("delete from public.card_imports where id = any($1)", [[draft, ledger]]);
   }
 });

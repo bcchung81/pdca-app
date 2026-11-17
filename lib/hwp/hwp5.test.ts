@@ -159,3 +159,54 @@ test("해제 합계 상한: 스트림 합이 한도를 넘으면 「너무 커�
   assert.equal(readHwp5(b).sections.length, 2);
   assert.throws(() => readHwp5(b, 300), (e: unknown) => e instanceof HwpReadError && /너무 커서/.test(e.message));
 });
+
+/** 표 하나를 담은 문단: 조종 글자(11, 8칸) + 표 조종 머리(수준 1) + 표 레코드(수준 2) + 칸마다 목록 머리·글 문단(수준 2) */
+function tablePara(rows: number, cols: number, cells: Array<[row: number, col: number, colSpan?: number, rowSpan?: number]>): Buffer {
+  const head = (level: number, chars: number) => {
+    const b = Buffer.alloc(22);
+    b.writeUInt32LE(chars, 0);
+    return rec(66, level, b);
+  };
+  const ctrl = Buffer.alloc(46);
+  ctrl.writeUInt32LE(0x74626c20, 0); // 조종 id "tbl "
+  const tbl = Buffer.alloc(22 + rows * 2);
+  tbl.writeUInt16LE(rows, 4);
+  tbl.writeUInt16LE(cols, 6);
+  const parts = [head(0, 9), rec(67, 1, u16s(11, 0, 0, 0, 0, 0, 0, 11, 13)), rec(71, 1, ctrl), rec(77, 2, tbl)];
+  for (const [row, col, colSpan = 1, rowSpan = 1] of cells) {
+    const lh = Buffer.alloc(34);
+    lh.writeUInt16LE(1, 0);
+    lh.writeUInt16LE(col, 8);
+    lh.writeUInt16LE(row, 10);
+    lh.writeUInt16LE(colSpan, 12);
+    lh.writeUInt16LE(rowSpan, 14);
+    lh.writeUInt32LE(1000 * colSpan, 16);
+    lh.writeUInt32LE(500, 20);
+    parts.push(rec(72, 2, lh), head(2, 2), rec(67, 3, u16s(0xac00, 13)));
+  }
+  return Buffer.concat(parts);
+}
+const readTable = (...args: Parameters<typeof tablePara>): any => {
+  const d = readHwp5(hwp({ sections: [Buffer.concat([pageDef(), tablePara(...args)])] }));
+  return (d.sections[0].paras[0].items.find((x) => x.kind === "obj") as any).obj;
+};
+
+test("원본 배치 표 크기 상한(HWPX와 같음): 행·열 수가 상한을 넘거나 칸이 격자·열 수보다 많으면 「표가 너무 큽니다」, 병합은 표 끝까지 — 보통 표는 그대로", () => {
+  const same = readTable(2, 2, [[0, 0, 2], [1, 0], [1, 1]]);
+  assert.equal(same.kind, "table");
+  assert.deepEqual([same.rows, same.cols, same.cells.map((c: any) => [c.row, c.col, c.rowSpan, c.colSpan])], [2, 2, [[0, 0, 1, 2], [1, 0, 1, 1], [1, 1, 1, 1]]]);
+  assert.equal(same.cells[0].paras[0].items[0].text, "가");
+  // 상한 끝의 표는 그대로 읽음
+  const edge = readTable(1000, 100, [[999, 99]]);
+  assert.deepEqual([edge.rows, edge.cols, edge.cells.length], [1000, 100, 1]);
+  const big = (e: unknown) => e instanceof HwpReadError && /표가 너무 큽니다/.test(e.message);
+  assert.throws(() => readTable(1001, 2, [[0, 0]]), big);
+  assert.throws(() => readTable(2, 101, [[0, 0]]), big);
+  assert.throws(() => readTable(65535, 65535, [[0, 0]]), big);
+  assert.throws(() => readTable(1, 2, [[0, 0, 2], [1, 0], [1, 1]]), big, "칸이 격자보다 많음");
+  assert.throws(() => readTable(2, 2, [[0, 0], [0, 1], [0, 0]]), big, "한 행에서 시작하는 칸이 열보다 많음");
+  const clamped = readTable(2, 2, [[0, 0, 65535, 65535], [1, 1]]);
+  assert.deepEqual([clamped.cells[0].rowSpan, clamped.cells[0].colSpan], [2, 2]);
+  const zero = readTable(2, 2, [[0, 0, 0, 0], [1, 1]]);
+  assert.deepEqual([zero.cells[0].rowSpan, zero.cells[0].colSpan], [1, 1], "병합 0은 1");
+});

@@ -2,7 +2,8 @@
 
 import type { HeadMode } from "../../../../lib/reports/fit.ts";
 
-import { type OutlineCall, aiProvider, callReportOutline, callReportOutlineMg, modelLabel, recordedModelLabel } from "../../../../lib/ai/run.ts";
+import { type OutlineCall, aiProvider, callReportOutline, callReportOutlineMg, modelLabel } from "../../../../lib/ai/run.ts";
+import { recordedModel } from "../../../../lib/ai/recorded-model.ts";
 import { specForFeature } from "../../../../lib/ai/models.ts";
 import type { FollowupBasis } from "../../../../lib/ai/followup.ts";
 import { requireUser } from "../../../../lib/auth/dal.ts";
@@ -78,28 +79,11 @@ function bizComposition(p: Prepared, out: CompositionOutput, memo: string, frame
   return { composition, warnings: outlineWarnings(composition, p.ctx.module, cleaned.warnings, p.ctx.head, p.splitSiblings), materialWarnings: cleaned.warnings };
 }
 
-/** 여러 안 결과(ai_results)를 두는 기간 — 그 안에 만든 안만 고를 수 있음 */
-const ALT_RECORD_MS = 7 * 86_400_000;
-
 /**
  * 고른 안의 모델 표기: 화면이 보낸 이름은 이 사용자가 이 카드로 최근 7일 안에 끝낸 구성안 호출 기록(ai_requests — 여러 안도 report_outline)의
- * 모델일 때만 남기고, 아니면 비움(화면 값으로 출처 표기를 지어내지 못하게 — 2026-11-17 웹 점검 마무리)
+ * 모델일 때만 남기고, 아니면 비움(화면 값으로 출처 표기를 지어내지 못하게 — 2026-11-17 웹 점검 마무리, lib/ai/recorded-model.ts)
  */
-async function recordedOutlineModel(p: Prepared, label: unknown): Promise<string | null> {
-  const want = typeof label === "string" ? label.trim() : "";
-  if (!want) return null;
-  const { data } = await p.supabase
-    .from("ai_requests")
-    .select("model")
-    .eq("user_id", p.me.id)
-    .eq("card_id", p.card.id)
-    .eq("feature", "report_outline")
-    .eq("status", "ok")
-    .gte("created_at", new Date(Date.now() - ALT_RECORD_MS).toISOString())
-    .order("created_at", { ascending: false })
-    .limit(50);
-  return (data ?? []).some((r: { model: string | null }) => r.model && recordedModelLabel(r.model) === want) ? want : null;
-}
+const recordedOutlineModel = (p: Prepared, label: unknown) => recordedModel(p.supabase, { userId: p.me.id, cardId: p.card.id, feature: "report_outline" }, label);
 
 /** 구성안 행 쓰기(버전 조건 — 승인했던 구성안은 다시 확인 전) */
 const saveOutlineRow = (supabase: Prepared["supabase"], cardId: string, year: number, composition: Composition, warnings: string[], model: string | null, base: string | null) =>
