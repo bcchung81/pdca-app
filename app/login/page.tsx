@@ -4,6 +4,7 @@ import { getCurrentUser } from "../../lib/auth/dal.ts";
 import { allowedEmailDomains, safeNext } from "../../lib/auth/redirect.ts";
 import { signOut } from "./actions";
 import { AuthCard } from "./auth-card";
+import { ClearTabStore } from "./clear-tab-store";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "로그인 · 경평AI비서" };
@@ -17,6 +18,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   if (user) {
     return (
       <AuthCard title="사용이 중지된 계정" lead="이 계정은 사용이 중지되어 쓸 수 없습니다. 다시 쓰려면 성과관리팀에 문의해 주세요.">
+        <ClearTabStore />
         <form action={signOut}>
           <button type="submit" className="h-11 w-full rounded-md border border-[var(--line)] bg-paper px-4 text-sm font-semibold text-navy">
             로그아웃
@@ -27,6 +29,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   }
   return (
     <AuthCard title="로그인" lead="기관 메일로 로그인 링크를 보내 드립니다. 비밀번호는 없습니다.">
+      <ClearTabStore />
       <LoginForm next={next} domain={allowedEmailDomains()[0] ?? "kca.kr"} />
     </AuthCard>
   );

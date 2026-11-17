@@ -69,3 +69,14 @@ test("고정 영역 잠금: 잠긴 칸은 고를 수만 있고(contenteditable·
   assert.ok(html.includes('data-toggle="overview.cells.0#0"'), "잠기지 않은 상자 토글은 그대로");
   assert.equal(html.replace(/<[^>]+>/g, ""), renderCard(c, { editable: true }).replace(/<[^>]+>/g, ""), "보이는 글자는 같음");
 });
+
+test("계량지표 칸 이름이 이상한 값이면 아는 칸만 그림(화면이 오류로 끝나지 않음 — 2026-11-17 웹 취약점 점검 W6)", { skip: NO_SEED_CARDS }, () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const c: any = structuredClone(cards.find((x: any) => x.kpi?.rows?.length));
+  for (const columns of [["x", "constructor", null, 5], "글자"]) {
+    c.kpi.columns = columns;
+    assert.doesNotThrow(() => renderCard(c), JSON.stringify(columns));
+  }
+  c.kpi.columns = ["x", "name"];
+  assert.equal((renderCard(c).match(/<table class="kc-frm kc-kpi"><colgroup>(.*?)<\/colgroup>/)?.[1].match(/<col /g) ?? []).length, 1);
+});

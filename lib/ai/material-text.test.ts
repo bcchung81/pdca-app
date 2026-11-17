@@ -62,8 +62,8 @@ test("첨부 봉투 열쇠: file:N(1부터), 제목은 파일 이름, 글은 자
   );
 });
 
-/** 가짜 클라이언트: 읽기는 rows(사용자 권한으로 보이는 행), 쓰기는 calls에 남김 */
-function fakeDb(rows: Array<{ id: string; storage_path: string }>, calls: Array<{ table: string; patch: unknown; eq: Array<[string, unknown]> }>) {
+/** 가짜 클라이언트(사용자 권한): 읽기는 rows(사용자에게 보이는 행), 쓰기는 calls에 남기고 writable(RLS가 허락한 행)이면 1행 */
+function fakeDb(rows: Array<{ id: string; storage_path: string }>, calls: Array<{ table: string; patch: unknown; eq: Array<[string, unknown]> }>, writable = true) {
   return {
     from(table: string) {
       const eq: Array<[string, unknown]> = [];
@@ -75,7 +75,7 @@ function fakeDb(rows: Array<{ id: string; storage_path: string }>, calls: Array<
         maybeSingle: async () => ({ data: rows.find((r) => eq.every(([k, v]) => (r as Record<string, unknown>)[k] === v)) ?? null, error: null }),
         then: (res: (v: unknown) => unknown) => {
           calls.push({ table, patch, eq });
-          return Promise.resolve({ data: [{ id: eq[0]?.[1] }], error: null }).then(res);
+          return Promise.resolve({ data: writable ? [{ id: eq[0]?.[1] }] : [], error: null }).then(res);
         },
       };
       return q;
@@ -83,18 +83,22 @@ function fakeDb(rows: Array<{ id: string; storage_path: string }>, calls: Array<
   } as unknown as Parameters<typeof saveParsed>[0];
 }
 
-test("읽은 글 저장(saveParsed — 20261117100000): 사용자가 읽을 수 있고 경로가 같은 행만 서비스 키로 그 칸을 씀", async () => {
+test("읽은 글 저장(saveParsed — 20261117170000): 사용자 권한 클라이언트로, 보이는 행이고 경로가 같을 때만 그 칸을 씀", async () => {
   const o: ParseOutcome = { status: "parsed", text: "전체 글", error: null, sha256: "h" };
   const now = new Date("2026-11-17T00:00:00Z");
   const visible = [{ id: "m1", storage_path: "u/a.hwpx" }];
 
   const calls: Array<{ table: string; patch: unknown; eq: Array<[string, unknown]> }> = [];
-  assert.equal(await saveParsed(fakeDb(visible, []), fakeDb([], calls), "card_materials", "m1", "u/a.hwpx", o, now), true);
+  assert.equal(await saveParsed(fakeDb(visible, calls), "card_materials", "m1", "u/a.hwpx", o, now), true);
   assert.deepEqual(calls, [{ table: "card_materials", patch: parseColumns(o, now), eq: [["id", "m1"], ["storage_path", "u/a.hwpx"]] }], "그 행·그 경로만, 읽은 글 칸만");
 
   const none: typeof calls = [];
-  assert.equal(await saveParsed(fakeDb(visible, []), fakeDb([], none), "report_materials", "m2", "u/a.hwpx", o, now), false, "읽을 수 없는(남의) 행");
-  assert.equal(await saveParsed(fakeDb(visible, []), fakeDb([], none), "card_materials", "m1", "u/b.hwpx", o, now), false, "방금 읽은 파일과 경로가 다른 행");
-  assert.equal(await saveParsed(fakeDb(visible, []), fakeDb([], none), "card_materials", "m1", "u/a.hwpx", { ...o, sha256: "" }, now), false, "파일을 못 내려받음(읽은 것 없음)");
-  assert.deepEqual(none, [], "서비스 키로 쓰지 않음");
+  assert.equal(await saveParsed(fakeDb(visible, none), "report_materials", "m2", "u/a.hwpx", o, now), false, "보이지 않는(남의) 행");
+  assert.equal(await saveParsed(fakeDb(visible, none), "card_materials", "m1", "u/b.hwpx", o, now), false, "방금 읽은 파일과 경로가 다른 행");
+  assert.equal(await saveParsed(fakeDb(visible, none), "card_materials", "m1", "u/a.hwpx", { ...o, sha256: "" }, now), false, "파일을 못 내려받음(읽은 것 없음)");
+  assert.deepEqual(none, [], "쓰기 시도 없음");
+
+  const locked: typeof calls = [];
+  assert.equal(await saveParsed(fakeDb(visible, locked, false), "card_materials", "m1", "u/a.hwpx", o, now), false, "RLS가 0행(잠긴 근거·쓰기 권한 없음)이면 저장 안 됨");
+  assert.equal(locked.length, 1);
 });

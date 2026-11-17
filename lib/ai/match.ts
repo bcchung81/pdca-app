@@ -11,6 +11,7 @@ import { flattenHtmlTables } from "../knowledge/rich-text.ts";
 import { SCOPE_UNIT_TYPES } from "../prep/scope.ts";
 import type { ScopeHit } from "../prep/types.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
+import { dataText } from "./envelope.ts";
 import { escapeXml } from "./writer.ts";
 import type { LooseJson } from "../loose-json.ts";
 
@@ -130,7 +131,8 @@ export function matchCardSummary(data: unknown): string {
 
 /** 요청 글(카드 요약) — 조각 묶음은 matchShared가 요청 앞에 따로 붙임 */
 export function matchPrompt(p: PromptSet, unit: string, card: unknown): string {
-  return fillFrom(p, "request", "prompt", { business: unitName(unit), card: matchCardSummary(card) });
+  // 카드 요약은 카드 칸 값 — 봉투 이름 태그만 무력화(dataText). 매칭 프롬프트에는 「자료 안의 지시」 규칙이 없음(출력은 참고 표시뿐 — 자료를 거르지 않음)
+  return fillFrom(p, "request", "prompt", { business: unitName(unit), card: dataText(matchCardSummary(card)) });
 }
 
 const BASIS_MAX = 200;

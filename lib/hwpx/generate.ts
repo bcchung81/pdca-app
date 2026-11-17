@@ -22,7 +22,11 @@ export function starLinesOf(draft: string): boolean[] {
   return out;
 }
 
-export async function draftToKcaHwpx(draft: string): Promise<{ bytes: Uint8Array; warnings: string[]; summary: PostSummary }> {
+/** XML 1.0에 쓸 수 없는 글자 — kordoc은 C0 조종 문자만 걷고 U+FFFE·U+FFFF는 남겨 한글이 파일을 못 열 수 있음(2026-11-17 웹 취약점 점검 W5) */
+const XML_BAD = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+
+export async function draftToKcaHwpx(input: string): Promise<{ bytes: Uint8Array; warnings: string[]; summary: PostSummary }> {
+  const draft = input.replace(XML_BAD, "");
   const warnings: string[] = [];
    
   const raw = await markdownToHwpx(toKordocInput(draft), { gongmun: KCA_GONGMUN as GongmunOptions, warnings });

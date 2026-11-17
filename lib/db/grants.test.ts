@@ -80,7 +80,7 @@ async function functionGrants(): Promise<string[]> {
   return r.map((x) => x.line);
 }
 
-// ── 기대 목록(위생 20261117110000 뒤 · 3차 20261117100000 · 근본책 1단계 A 20261117120000 포함) ─────────────────────────
+// ── 기대 목록(위생 20261117110000 뒤 · 3차 20261117100000 · 근본책 1단계 A 20261117120000 · 읽은 글 표지 20261117170000 포함) ─────────────────────────
 // anon은 공개 표·시퀀스에 아무 권한도 없고, 실행할 수 있는 공개 함수는 확인용 app_write_probe 하나뿐.
 
 const TABLE_WRITES = [
@@ -104,8 +104,9 @@ const TABLE_WRITES = [
   "authenticated INSERT public.card_knowledge_scope",
   "authenticated UPDATE public.card_knowledge_scope",
   "authenticated DELETE public.card_knowledge_scope",
-  // 카드 전용 자료: 등록 칸만 넣고(읽은 글은 서버만 — 20261117100000) 지우기
+  // 카드 전용 자료: 등록 칸만 넣고, 읽은 글 칸만 고치고(앱 서버 표지 + 잠긴 근거 아님 — 20261117170000), 지우기
   "authenticated INSERT(bytes,card_id,file_name,id,mime_type,storage_path,uploaded_by) public.card_materials",
+  "authenticated UPDATE(parse_error,parse_status,parsed_at,parsed_chars,parsed_text,parser_version,sha256) public.card_materials",
   "authenticated DELETE public.card_materials",
   // 경평 과제별 초안·구성안
   "authenticated INSERT public.card_report_drafts",
@@ -152,8 +153,9 @@ const TABLE_WRITES = [
   "authenticated INSERT public.report_material_cards",
   "authenticated UPDATE public.report_material_cards",
   "authenticated DELETE public.report_material_cards",
-  // 보고서 추가자료: 등록 칸만 넣고 지우기
+  // 보고서 추가자료: 등록 칸만 넣고, 읽은 글 칸만 고치고(앱 서버 표지 — 20261117170000), 지우기
   "authenticated INSERT(bytes,file_name,id,mime_type,report_id,storage_path,uploaded_by) public.report_materials",
+  "authenticated UPDATE(parse_error,parse_status,parsed_at,parsed_chars,parsed_text,parser_version,sha256) public.report_materials",
   "authenticated DELETE public.report_materials",
   // 보고서 목차(성과관리팀)
   "authenticated INSERT public.report_outline",

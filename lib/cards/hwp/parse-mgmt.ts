@@ -3,7 +3,7 @@
 // 칸은 위치가 아니라 첫 칸의 이름(과제개요·전년도 환류·지적 및 개선방안·추진내용·계량 성과지표·추진성과)으로 찾고, 짝이 되는 좌·우 칸은 병합(rowspan)이 겹치는 행끼리 묶습니다(카드마다 열 수가 10~12).
 // 양식 근거: 지침 13 `<경영관리_카드양식>`(칸 8개), 8월 점검 자료(260904) 43장. 입출력 없음.
 
-import { type Cell, type Line, type Table, buildGrid, cellLines, key, plainText, splitBlocks } from "./parse.ts";
+import { type Cell, type Line, type Table, buildGrid, cellLines, countTail, key, plainText, splitBlocks } from "./parse.ts";
 
 const nospace = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, "");
 // 예전 [\s ]+ 앞뒤 걷기와 같은 결과(\s와 trim은 같은 글자 집합) — 정규식은 공백이 긴 글에서 2제곱이라 trim으로(2026-11-16)
@@ -48,6 +48,14 @@ export function isMgmtCardTable(t: Table | undefined): boolean {
 export function splitUnit(raw: string): { name: string; unit: string | null } {
   const m = /^([\s\S]*\S)\s*\(([^()]*)\)\s*$/.exec(strip(raw));
   return m ? { name: strip(m[1]), unit: strip(m[2]) || null } : { name: strip(raw), unit: null };
+}
+
+/** 지표 묶음 머리 「이름 (N개)」 → [이름, N]. 예전 /^(.+?)\s*\((\d+)개\)$/와 같은 결과(이름은 한 글자 이상·줄바꿈 없음) — 정규식은 공백이 긴 글에서 2제곱이라 끝에서 찾음(2026-11-17) */
+export function splitBundleHead(s: string): [string, string] | null {
+  const ct = countTail(s, false, false);
+  if (!ct || ct.open < 1) return null;
+  const name = s.slice(0, Math.max(1, ct.lead));
+  return /[\n\r\u2028\u2029]/.test(name) ? null : [name, ct.count];
 }
 
 /** 「본부(팀)」 한 곳 */
@@ -373,9 +381,9 @@ export function parseMgmtMarkdown(md: string, opts: { sourceName: string; fileTy
       continue;
     }
     const first = strip(plainText(t.rows.flat().find((c) => plainText(c)) ?? null));
-    const g = /^(.+?)\s*\((\d+)개\)$/.exec(first);
+    const g = splitBundleHead(first);
     if (g) {
-      pending = { bundle: g[1].trim(), declared: Number(g[2]) };
+      pending = { bundle: g[0].trim(), declared: Number(g[1]) };
     } else if (pending && nospace(first) === "지표명") {
       const tasks: MgmtIndexEntry["tasks"] = [];
       for (const row of t.rows) {

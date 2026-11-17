@@ -77,6 +77,7 @@ export async function purgeCard(uid: string, confirmTaskNo: string): Promise<Res
   if (!card) return { ok: false, message: "카드를 찾을 수 없습니다." };
   if (card.status !== "retired") return { ok: false, message: "보관한 과제만 영구 삭제할 수 있습니다." };
   if (String(confirmTaskNo ?? "").trim() !== card.task_no) return { ok: false, message: `확인을 위해 과제번호(${card.task_no})를 그대로 적어 주세요.` };
+  // 감사 기록(누가·어느 과제)은 DB 트리거가 access_events card_purged로 남김(20261117170000) — 그 카드의 card_edits는 연쇄로 지워짐
   const { data, error } = await supabase.from("cards").delete().eq("id", card.id).eq("status", "retired").select("id");
   if (error || !data?.length) {
     console.error("purgeCard", error?.message);

@@ -374,6 +374,18 @@ function margin4(el: El | null): [number, number, number, number] {
   return [num(el, "left"), num(el, "right"), num(el, "top"), num(el, "bottom")];
 }
 
+/**
+ * 원본 배치 표 크기 상한(2026-11-17 웹 취약점 점검 후속): 행·열 수·병합 값은 그리기·쪽 나누기의 반복 횟수가 되므로 넘으면 읽지 않음(HwpReadError —
+ * 현행화는 원본 배치 없이 그대로 진행). 열은 카드 파서 COLSPAN_MAX와 같은 100(실제 카드·양식 한글 파일 32개의 가장 넓은 표 22열), 행은 1,000(가장 긴 표 37행) —
+ * 격자는 10만 칸으로 카드 파서 GRID_CELLS_MAX(20만) 안. 칸 수는 격자 칸 수까지, 한 행에서 시작하는 칸은 열 수까지(넘으면 행별 모으기가 2제곱),
+ * 병합은 표 끝까지로 자름. 실제 파일에는 해당 없음
+ */
+export const LAYOUT_TABLE_COLS_MAX = 100;
+export const LAYOUT_TABLE_ROWS_MAX = 1_000;
+const TABLE_TOO_BIG = "한글(HWPX) 파일의 표가 너무 큽니다(행·열 수를 확인해 주세요).";
+/** 병합 값: 1 이상, 시작 자리부터 표 끝까지 */
+const spanIn = (v: number, at: number, n: number) => Math.max(1, Math.min(v, n - Math.max(0, at)));
+
 function tableOf(ctx: SecCtx, el: El): Table {
   const t: Table = {
     kind: "table",
@@ -389,6 +401,9 @@ function tableOf(ctx: SecCtx, el: El): Table {
   };
   const zones: CellZone[] = kids(kid(el, "cellzoneList"), "cellzone").map((z) => ({ r0: num(z, "startRowAddr"), c0: num(z, "startColAddr"), r1: num(z, "endRowAddr"), c1: num(z, "endColAddr"), borderFill: ctx.head.fillIds.get(attr(z, "borderFillIDRef") ?? "") ?? 0 }));
   if (zones.length) t.zones = zones;
+  const ok = (n: number, max: number) => Number.isInteger(n) && n >= 0 && n <= max;
+  if (!ok(t.rows, LAYOUT_TABLE_ROWS_MAX) || !ok(t.cols, LAYOUT_TABLE_COLS_MAX)) throw new HwpReadError(TABLE_TOO_BIG);
+  const perRow = new Map<number, number>();
   for (const tr of kids(el, "tr"))
     for (const tc of kids(tr, "tc")) {
       const addr = kid(tc, "cellAddr");
@@ -396,11 +411,16 @@ function tableOf(ctx: SecCtx, el: El): Table {
       const sz = kid(tc, "cellSz");
       const sub = kid(tc, "subList");
       const own = flag(tc, "hasMargin");
+      const row = num(addr, "rowAddr");
+      const col = num(addr, "colAddr");
+      const inRow = (perRow.get(row) ?? 0) + 1;
+      if (inRow > t.cols || t.cells.length >= t.rows * t.cols) throw new HwpReadError(TABLE_TOO_BIG);
+      perRow.set(row, inRow);
       const c: Cell = {
-        row: num(addr, "rowAddr"),
-        col: num(addr, "colAddr"),
-        rowSpan: Math.max(1, num(span, "rowSpan", 1)),
-        colSpan: Math.max(1, num(span, "colSpan", 1)),
+        row,
+        col,
+        rowSpan: spanIn(num(span, "rowSpan", 1), row, t.rows),
+        colSpan: spanIn(num(span, "colSpan", 1), col, t.cols),
         width: num(sz, "width"),
         height: num(sz, "height"),
         margin: own ? margin4(kid(tc, "cellMargin")) : [...t.inMargin],

@@ -126,3 +126,10 @@ test("원본 서식: 열 너비·과제명 검은 칸·하늘색 머리·PDCA �
   const v: any = await (validateHwpx as any)(Buffer.from(await zip.generateAsync({ type: "uint8array" })));
   assert.equal(v.ok, true, JSON.stringify(v.issues));
 });
+
+test("9.16 서식 한글: XML에 쓸 수 없는 글자(U+FFFE·U+FFFF·조종 문자)는 본문 XML에 남기지 않음(2026-11-17 웹 취약점 점검 W5)", async () => {
+  const bytes = await buildCardHwpx({ title: "과제￾가\u0001나￿다", taskNo: "1-가", department: "부서" });
+  const sec = await (await JSZip.loadAsync(bytes)).file("Contents/section0.xml")!.async("string");
+  assert.ok(sec.includes("과제가나다"));
+  assert.ok(!/[\u0001￾￿]/.test(sec));
+});

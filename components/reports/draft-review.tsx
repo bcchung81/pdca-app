@@ -4,6 +4,7 @@ import { ChevronUp, LayoutTemplate, LoaderCircle, MessageCircleQuestionMark, Ref
 import { useRouter } from "next/navigation";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type DraftEditItem, listDraftEdits, runDraftBlockEdit, undoDraftBlockEdit } from "../../app/(app)/reports/cards/edit-actions";
+import { TAB_KEYS } from "../../lib/ai/assist-thread.ts";
 import type { DraftPick } from "../../lib/reports/draft-sources.ts";
 import { fmtDateTime } from "../../lib/format.ts";
 import type { ResultBox } from "../../lib/reports/block-edit.ts";
@@ -58,7 +59,7 @@ export interface DraftComposerState {
   text: string;
 }
 
-const KEY = (uid: string) => `draft-review|${uid}`;
+const KEY = (uid: string) => `${TAB_KEYS.draftReview}${uid}`;
 /** 결과 메모 보관 수(이 탭) */
 const KEEP = 20;
 /** 보낸 뒤 되돌릴 수 있는 시간 */

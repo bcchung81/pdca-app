@@ -403,6 +403,37 @@ test("권한 변경 기록: 계정이 지워지는 연쇄(auth.users 삭제 → 
   await db.query("delete from public.access_events");
 });
 
+test("카드 영구 삭제 기록(20261117170000): 카드 행이 지워지면 DB 트리거가 행위자·과제번호·제목을 access_events(card_purged)에 남기고, 서비스 키·직접 연결은 via system — 로그인 사용자는 직접 못 넣음", { skip: NO_SEED_CARDS }, async () => {
+  const src = await cardOf("검사기획팀");
+  const copy = (id: string, taskNo: string) =>
+    db.query("insert into public.cards (id, eval_unit_id, task_no, title, team_id, edition, data, status) select $2, eval_unit_id, $3, '삭제 기록 시험', team_id, edition, data, 'retired' from public.cards where id = $1", [src, id, taskNo]);
+  type Ev = { actor_id: string | null; target_user_id: string | null; detail: Record<string, unknown> };
+  const events = async () => (await db.query<Ev>("select actor_id, target_user_id, detail from public.access_events where action = 'card_purged' order by id")).rows;
+  try {
+    await db.query("delete from public.access_events where action = 'card_purged'");
+    await copy("시험/삭제기록1", "삭제기록-1");
+    await copy("시험/삭제기록2", "삭제기록-2");
+    await db.query("insert into public.card_edits (card_id, edited_by, before, after, summary) values ('시험/삭제기록1', $1, '{}', '{}', '이력')", [users.pmo]);
+    const ev = await events();
+    assert.equal(ev.length, 0, "넣기는 기록 안 함");
+    assert.equal((await as("admin", () => db.query("delete from public.cards where id = $1 and status = 'retired'", ["시험/삭제기록1"]))).affectedRows, 1);
+    assert.equal(await count("select 1 from public.card_edits where card_id = '시험/삭제기록1'"), 0, "카드 이력은 연쇄로 지워짐");
+    await db.query("delete from public.cards where id = $1", ["시험/삭제기록2"]); // 스크립트(직접 연결)
+    const eu = (await db.query<{ e: string }>("select eval_unit_id as e from public.cards where id = $1", [src])).rows[0].e;
+    assert.deepEqual(await events(), [
+      { actor_id: users.admin, target_user_id: null, detail: { card_id: "시험/삭제기록1", task_no: "삭제기록-1", title: "삭제 기록 시험", eval_unit_id: eu, status: "retired" } },
+      { actor_id: null, target_user_id: null, detail: { card_id: "시험/삭제기록2", task_no: "삭제기록-2", title: "삭제 기록 시험", eval_unit_id: eu, status: "retired", via: "system" } },
+    ]);
+    // 로그인 사용자는 표지가 있어도 기록을 직접 넣지 못함(위조 막기), 읽기는 성과관리팀·관리자만
+    await rejects(() => as("admin", () => db.query("insert into public.access_events (actor_id, action, detail) values ($1, 'card_purged', '{}'::jsonb)", [users.admin])), /permission denied/);
+    assert.equal(await as("pmo", () => count("select 1 from public.access_events where action = 'card_purged'")), 2);
+    assert.equal(await as("inspector", () => count("select 1 from public.access_events where action = 'card_purged'")), 0);
+  } finally {
+    await db.query("delete from public.cards where id = any($1)", [["시험/삭제기록1", "시험/삭제기록2"]]);
+    await db.query("delete from public.access_events where action = 'card_purged'");
+  }
+});
+
 test("본부 표기 정정(20260930120000): 방송콘텐츠진흥팀의 방송미디어부만 방송미디어본부로 바뀌고 여러 번 돌려도 같다", { skip: NO_SEED_CARDS }, async () => {
   const sql = readFileSync(join(MIGRATIONS, "20260930120000_users_assignees.sql"), "utf8");
   const fix = sql.split("\n").filter((l) => l.startsWith("update public.teams set hq")).join("\n");
@@ -462,55 +493,73 @@ test("카드 전용 자료 파일: 자기 카드 폴더에만 올린다", { skip
   await rejects(() => as("inspector", () => db.query("insert into storage.objects (bucket_id, name) values ('knowledge', 'x/y.pdf')")), /row-level security/);
 });
 
-test("첨부 읽은 글(20261117100000 — 서버만 씀): 로그인 사용자는 누구도 읽은 글 칸을 넣거나 고치지 못하고(부서·성과관리팀·관리자), 등록 칸만 넣으며, 서비스 키는 씀", { skip: NO_SEED_CARDS }, async () => {
-  const team = async (name: string) => (await db.query<{ id: number }>("select id from public.teams where name = $1", [name])).rows[0].id;
-  const insp = await team("검사기획팀");
-  const lic = await team("자격기획팀");
-  const card = async (name: string) => (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = $1 limit 1", [name])).rows[0].id;
-  const own = await card("검사기획팀");
-  const other = await card("자격기획팀");
-  const parsed = "set parsed_text = '전체 글', parse_status = 'parsed', parser_version = 'v', parsed_at = now(), parse_error = null, parsed_chars = 4, sha256 = 'h'";
-  const staff = ["inspector", "pmo", "admin"] as const;
-
-  // 카드 전용 자료: 등록은 등록 칸만(읽은 글은 기본값 — 아직 안 읽음), 읽은 글 칸을 함께 넣으면 거절
-  await rejects(() => as("inspector", () => db.query("insert into public.card_materials (card_id, storage_path, file_name, uploaded_by, parsed_text, parse_status) values ($1, 'x/z.hwp', 'z.hwp', $2, '글', 'parsed')", [own, users.inspector])), /permission denied/);
-  const cm = (await as("inspector", () => db.query<{ id: string }>("insert into public.card_materials (card_id, storage_path, file_name, mime_type, bytes, uploaded_by) values ($1, 'x/a.hwp', 'a.hwp', null, 1, $2) returning id", [own, users.inspector]))).rows[0].id;
-  assert.equal(await count("select 1 from public.card_materials where id = $1 and parse_status = 'pending' and parsed_text is null and sha256 is null", [cm]), 1, "기본은 아직 안 읽음");
-  await rejects(() => as("inspector", () => db.query("insert into public.card_materials (card_id, storage_path, file_name) values ($1, 'y/c.hwp', 'c.hwp')", [other])), /row-level security/);
-  for (const who of staff) {
-    await rejects(() => as(who, () => db.query(`update public.card_materials ${parsed} where id = $1`, [cm])), /permission denied/);
-    await rejects(() => as(who, () => db.query("update public.card_materials set storage_path = 'y/b.hwp' where id = $1", [cm])), /permission denied/);
-  }
-  await rejects(() => as("inspector", () => db.query("update public.card_materials set card_id = $2 where id = $1", [cm, other])), /permission denied/);
-  assert.equal(await as("inspector", () => count("select 1 from public.card_materials where id = $1", [cm])), 1, "읽기는 그대로");
-
-  // 보고서 추가자료: 같은 규칙(제출 전·후, 성과관리팀도 못 씀)
-  const insert = "insert into public.reports (eval_unit_id, year, team_id, created_by) values ('BZ-1', 2035, $1, $2) returning id";
-  const mine = (await as("pmo", () => db.query<{ id: number }>(insert, [insp, users.pmo]))).rows[0].id;
-  const theirs = (await as("pmo", () => db.query<{ id: number }>(insert, [lic, users.pmo]))).rows[0].id;
-  await rejects(() => as("inspector", () => db.query("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by, parsed_text) values ($1, $2, 'z.pdf', $3, '글')", [mine, `${mine}/z.pdf`, users.inspector])), /permission denied/);
-  const rm = (await as("inspector", () => db.query<{ id: string }>("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values ($1, $2, 'a.pdf', $3) returning id", [mine, `${mine}/a.pdf`, users.inspector]))).rows[0].id;
-  await rejects(() => as("inspector", () => db.query("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values ($1, $2, 'b.pdf', $3)", [theirs, `${theirs}/b.pdf`, users.inspector])), /row-level security/);
-  assert.equal((await db.query<{ parse_status: string }>("select parse_status from public.report_materials where id = $1", [rm])).rows[0].parse_status, "pending", "기본은 아직 안 읽음");
-  for (const who of staff) {
-    await rejects(() => as(who, () => db.query(`update public.report_materials ${parsed} where id = $1`, [rm])), /permission denied/);
-    await rejects(() => as(who, () => db.query("update public.report_materials set report_id = $2 where id = $1", [rm, theirs])), /permission denied/);
-  }
-
-  // 서버(서비스 키)는 읽은 글 칸을 씀 — 앱은 사용자 권한으로 행을 읽을 수 있는지·경로를 먼저 확인(lib/ai/material-text.ts saveParsed)
-  await db.exec("set role service_role");
+test("첨부 읽은 글(20261117170000 — 사용자 권한 + 표지): 표지가 있으면 그 자료를 쓸 수 있는 사람만 읽은 글 칸만 고치고, 표지 없음·다른 칸·남의 자료·잠긴 근거·제출한 보고서(부서)는 거절", { skip: NO_SEED_CARDS }, async () => {
+  const insp = await teamId("검사기획팀");
+  const lic = await teamId("자격기획팀");
+  const own = (await db.query<{ id: string; eval_unit_id: string }>("select c.id, c.eval_unit_id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 order by c.id limit 1", [users.inspector])).rows[0];
+  const other = await cardOf("자격기획팀");
+  const parsed = (text: string) => `set parsed_text = '${text}', parse_status = 'parsed', parser_version = 'v', parsed_at = now(), parse_error = null, parsed_chars = ${text.length}, sha256 = 'h'`;
+  const upd = (table: string, who: keyof typeof users, id: string, text: string, mark?: string | null) =>
+    as(who, () => db.query(`update public.${table} ${parsed(text)} where id = $1`, [id]), mark).then((r) => r.affectedRows ?? 0);
+  const textOf = async (table: string, id: string) => (await db.query<{ t: string | null }>(`select parsed_text as t from public.${table} where id = $1`, [id])).rows[0].t;
+  const year = 2046;
+  const reportIds: number[] = [];
+  let cm = "";
   try {
-    assert.equal((await db.query(`update public.card_materials ${parsed} where id = $1 and storage_path = 'x/a.hwp'`, [cm])).affectedRows, 1);
-    assert.equal((await db.query(`update public.report_materials ${parsed} where id = $1`, [rm])).affectedRows, 1);
-    await rejects(() => db.query("update public.report_materials set parse_status = 'done' where id = $1", [rm]), /check/);
+    // 카드 전용 자료: 등록은 등록 칸만(읽은 글은 기본값 — 아직 안 읽음), 읽은 글 칸을 함께 넣으면 거절
+    await rejects(() => as("inspector", () => db.query("insert into public.card_materials (card_id, storage_path, file_name, uploaded_by, parsed_text, parse_status) values ($1, 'x/z.hwp', 'z.hwp', $2, '글', 'parsed')", [own.id, users.inspector])), /permission denied/);
+    cm = (await as("inspector", () => db.query<{ id: string }>("insert into public.card_materials (card_id, storage_path, file_name, mime_type, bytes, uploaded_by) values ($1, 'x/a.hwp', 'a.hwp', null, 1, $2) returning id", [own.id, users.inspector]))).rows[0].id;
+    assert.equal(await count("select 1 from public.card_materials where id = $1 and parse_status = 'pending' and parsed_text is null and sha256 is null", [cm]), 1, "기본은 아직 안 읽음");
+
+    // 표지가 있으면 카드 쓰기 권한이 있는 사람(담당 부서·성과관리팀·관리자)이 읽은 글 칸을 씀
+    for (const who of ["inspector", "pmo", "admin"] as const) assert.equal(await upd("card_materials", who, cm, `글-${who}`), 1, who);
+    assert.equal(await textOf("card_materials", cm), "글-admin");
+    // 표지 없음·틀린 표지는 RLS 오류(행은 보이지만 WITH CHECK에서 거절), 남의 부서는 행이 안 보여 0행
+    await rejects(() => upd("card_materials", "inspector", cm, "위조", null), /row-level security/);
+    await rejects(() => upd("card_materials", "pmo", cm, "위조", "wrong"), /row-level security/);
+    assert.equal(await upd("card_materials", "license", cm, "위조"), 0, "남의 부서 자료");
+    // 다른 칸은 표지가 있어도 권한 없음
+    for (const sql of ["update public.card_materials set storage_path = 'y/b.hwp' where id = $1", "update public.card_materials set file_name = 'b.hwp' where id = $1"])
+      await rejects(() => as("admin", () => db.query(sql, [cm])), /permission denied/);
+    await rejects(() => as("inspector", () => db.query("update public.card_materials set card_id = $2 where id = $1", [cm, other])), /permission denied/);
+    await rejects(() => as("inspector", () => db.query("update public.card_materials set parse_status = 'done' where id = $1", [cm])), /check/);
+    assert.equal(await textOf("card_materials", cm), "글-admin", "거절된 쓰기는 글을 바꾸지 않음");
+
+    // 잠긴 근거(제출·승인한 보고서 초안의 근거 자료 — 20261104100000)는 누구도 읽은 글을 못 바꿈, 확정을 풀면 다시 씀
+    const ins = "insert into public.reports (eval_unit_id, year, team_id, created_by) values ($1, $2, $3, $4) returning id";
+    const lockReport = (await as("pmo", () => db.query<{ id: number }>(ins, [own.eval_unit_id, year, insp, users.pmo]))).rows[0].id;
+    reportIds.push(lockReport);
+    await db.query("insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, $3::jsonb, 'm', 1)", [own.id, year, JSON.stringify({ version: 3, rows: [], sources: [{ kind: "card", id: cm, name: "a.hwp" }] })]);
+    await as("pmo", () => db.query("update public.reports set status = 'submitted' where id = $1", [lockReport]));
+    for (const who of ["inspector", "pmo", "admin"] as const) assert.equal(await upd("card_materials", who, cm, "확정 뒤 바꿈"), 0, `${who}: 잠긴 근거`);
+    assert.equal(await textOf("card_materials", cm), "글-admin");
+    await as("pmo", () => db.query("update public.reports set status = 'drafting' where id = $1", [lockReport]));
+    assert.equal(await upd("card_materials", "inspector", cm, "다시 씀"), 1, "확정을 풀면 다시 씀");
+
+    // 보고서 추가자료: 표지 + 제출 전 팀·성과관리팀(3차 전 행 판정 그대로)
+    const mine = (await as("pmo", () => db.query<{ id: number }>(ins, ["BZ-1", 2035, insp, users.pmo]))).rows[0].id;
+    const theirs = (await as("pmo", () => db.query<{ id: number }>(ins, ["BZ-1", 2035, lic, users.pmo]))).rows[0].id;
+    reportIds.push(mine, theirs);
+    await rejects(() => as("inspector", () => db.query("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by, parsed_text) values ($1, $2, 'z.pdf', $3, '글')", [mine, `${mine}/z.pdf`, users.inspector])), /permission denied/);
+    const rm = (await as("inspector", () => db.query<{ id: string }>("insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values ($1, $2, 'a.pdf', $3) returning id", [mine, `${mine}/a.pdf`, users.inspector]))).rows[0].id;
+    assert.equal((await db.query<{ parse_status: string }>("select parse_status from public.report_materials where id = $1", [rm])).rows[0].parse_status, "pending", "기본은 아직 안 읽음");
+    assert.equal(await upd("report_materials", "inspector", rm, "보고서 글"), 1);
+    await rejects(() => upd("report_materials", "inspector", rm, "위조", null), /row-level security/);
+    assert.equal(await upd("report_materials", "license", rm, "위조"), 0, "남의 부서 보고서");
+    await rejects(() => as("inspector", () => db.query("update public.report_materials set report_id = $2 where id = $1", [rm, theirs])), /permission denied/);
+    await rejects(() => as("inspector", () => db.query("update public.report_materials set storage_path = 'x' where id = $1", [rm])), /permission denied/);
+    await as("pmo", () => db.query("update public.reports set status = 'drafting' where id = $1", [mine]));
+    await as("pmo", () => db.query("update public.reports set status = 'submitted' where id = $1", [mine]));
+    assert.equal(await upd("report_materials", "inspector", rm, "제출 뒤"), 0, "제출한 보고서는 부서가 못 바꿈");
+    assert.equal(await upd("report_materials", "pmo", rm, "성과관리팀"), 1, "성과관리팀은 바꿈(지우기와 같은 판정)");
+    assert.equal(await textOf("report_materials", rm), "성과관리팀");
   } finally {
-    await db.exec("reset role");
+    // 뒤 테스트의 건수에 끼지 않게 치움
+    await db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [own.id, year]);
+    await db.query("delete from public.report_materials where report_id = any($1)", [reportIds]);
+    await db.query("delete from public.reports where id = any($1)", [reportIds]);
+    if (cm) await db.query("delete from public.card_materials where id = $1", [cm]);
   }
-  assert.equal(await as("inspector", () => count("select 1 from public.card_materials where id = $1 and parsed_text = '전체 글'", [cm])), 1);
-  // 뒤 테스트의 건수에 끼지 않게 치움
-  await db.query("delete from public.report_materials where report_id in ($1, $2)", [mine, theirs]);
-  await db.query("delete from public.reports where id in ($1, $2)", [mine, theirs]);
-  await db.query("delete from public.card_materials where id = $1", [cm]);
 });
 
 test("AI 호출 기록: 캐시 쓰기 중 1시간 캐시 몫을 따로 남긴다", { skip: NO_SEED_CARDS }, async () => {
@@ -575,6 +624,19 @@ test("AI 호출 기록 쓰기(20261116110000 — 웹 취약점 점검): 로그�
     assert.equal(await as("license", () => count("select 1 from public.ai_requests where id = $1", [id])), 0);
     assert.equal(await as("admin", () => count("select 1 from public.ai_requests where id = $1", [id])), 1);
   } finally {
+    await clearAi();
+  }
+});
+
+test("AI 호출 시작 rpc(20261117170000): 사용 중지 계정은 남은 토큰으로도 시작 못 함(행을 남기지 않음), 되살리면 다시 됨", { skip: NO_SEED_CARDS }, async () => {
+  try {
+    await db.query("update public.profiles set active = false where id = $1", [users.license]);
+    await rejects(() => startAi("license"), /사용 중지/);
+    assert.equal(await count("select 1 from public.ai_requests where user_id = $1", [users.license]), 0);
+    await db.query("update public.profiles set active = true where id = $1", [users.license]);
+    assert.equal((await startAi("license")).ok, true);
+  } finally {
+    await db.query("update public.profiles set active = true where id = $1", [users.license]);
     await clearAi();
   }
 });
@@ -2446,12 +2508,14 @@ test("앱 서버 경유 표지 — 남은 표 전부(20261117140000): 표지 없
       name: "카드 전용 자료", table: "card_materials", who: "inspector",
       setup: `insert into public.card_materials (card_id, storage_path, file_name, uploaded_by) values (${F}, 'pyoji/a.txt', 'a.txt', ${insp})`,
       insert: `insert into public.card_materials (card_id, storage_path, file_name, uploaded_by) values (${F}, 'pyoji/b.txt', 'b.txt', auth.uid())`,
+      update: `update public.card_materials set parse_error = parse_error where card_id = ${F}`, // 읽은 글 칸만(20261117170000)
       del: `delete from public.card_materials where card_id = ${F}`, cleanup: `delete from public.card_materials where card_id = ${F}`,
     },
     {
       name: "보고서 추가자료", table: "report_materials", who: "inspector",
       setup: `insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values (${R}, 'pyoji-r/a.pdf', 'a.pdf', ${insp})`,
       insert: `insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values (${R}, 'pyoji-r/b.pdf', 'b.pdf', auth.uid())`,
+      update: `update public.report_materials set parse_error = parse_error where storage_path like 'pyoji-r/%'`, // 읽은 글 칸만(20261117170000)
       del: `delete from public.report_materials where storage_path like 'pyoji-r/%'`, cleanup: `delete from public.report_materials where storage_path like 'pyoji-r/%'`,
     },
     {

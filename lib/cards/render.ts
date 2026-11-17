@@ -332,7 +332,8 @@ export function renderKpi(x: Ctx, k: Json): string {
     });
     h.push(`<div class="kc-cats"${x.ed("kpi.categoriesText")}>${spans.join("")}</div>`);
   }
-  const cols: string[] = k.columns || ["name", "formula", "prev", "target"];
+  // 아는 칸 이름만(2026-11-17 웹 취약점 점검 W6 — 작성본 JSON에 모르는 값이 있으면 화면이 오류로 끝났음). 정상 카드는 그대로
+  const cols: string[] = (Array.isArray(k.columns) ? k.columns : ["name", "formula", "prev", "target"]).filter((c: unknown) => typeof c === "string" && Object.hasOwn(KPI_W, c));
   const tot = cols.reduce((s, c) => s + KPI_W[c], 0);
   h.push(`<table class="kc-frm kc-kpi"><colgroup>${cols.map((c) => `<col style="width:${pyFixed2((KPI_W[c] / tot) * 100)}%">`).join("")}</colgroup><thead><tr>`);
   const headers = k.headers || {};

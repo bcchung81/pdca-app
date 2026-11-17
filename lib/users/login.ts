@@ -9,6 +9,18 @@ export interface OtpSender {
   signInWithOtp(credentials: { email: string; options: { emailRedirectTo: string; shouldCreateUser: boolean } }): Promise<{ error: OtpError | null }>;
 }
 
+/**
+ * 로그인 메일 요청의 응답 최소 시간(2026-11-17 웹 취약점 점검 후속): 등록된 주소만 메일을 보내느라 늦고 미등록·발송 한도는 바로 답해,
+ * 응답 시간으로 등록 여부가 드러나지 않게 빠른 답도 이만큼 기다림(app/login/actions.ts). 메일 보내기가 이보다 길면 더 기다리지 않음
+ */
+export const LOGIN_MIN_MS = 1_500;
+
+/** startedAt부터 minMs가 지날 때까지 기다림(이미 지났으면 바로) */
+export async function waitAtLeast(startedAt: number, minMs = LOGIN_MIN_MS, now = Date.now, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))): Promise<void> {
+  const left = startedAt + minMs - now();
+  if (left > 0) await sleep(left);
+}
+
 const isRateLimited = (error: OtpError) => error.status === 429 || /rate limit/i.test(error.message);
 
 /**

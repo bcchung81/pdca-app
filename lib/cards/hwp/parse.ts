@@ -39,6 +39,44 @@ function dropTrailingComma(s: string): string {
   while (e > 0 && isJsWs(s[e - 1])) e--;
   return s.slice(0, e);
 }
+/** s[0, e)에서 끝 JS 공백(\s)을 뺀 끝 자리 */
+const wsBack = (s: string, e: number) => {
+  while (e > 0 && isJsWs(s[e - 1])) e--;
+  return e;
+};
+const isDigit = (ch: string | undefined) => ch !== undefined && ch >= "0" && ch <= "9";
+
+/**
+ * 끝의 「(숫자개)」: 정규식 `^(앞)\s*\((\d+)개\)$`의 괄호를 뒤에서 한 번 훑어 찾음(gap = 숫자와 「개」 사이 \s*, trail = 끝 \s* 허용).
+ * open = 여는 괄호 자리, lead = 그 앞 글의 끝 공백을 뺀 끝 자리. 앞을 `([\s\S]*?)\s*`로 받던 정규식은 공백이 긴 글에서 2제곱 이상이라 이것으로 나눔(같은 결과, 2026-11-17)
+ */
+export function countTail(s: string, gap: boolean, trail: boolean): { open: number; lead: number; count: string } | null {
+  const e = trail ? wsBack(s, s.length) : s.length;
+  if (e < 2 || s[e - 1] !== ")" || s[e - 2] !== "개") return null;
+  const d = gap ? wsBack(s, e - 2) : e - 2;
+  let b = d;
+  while (b > 0 && isDigit(s[b - 1])) b--;
+  return b < d && b > 0 && s[b - 1] === "(" ? { open: b - 1, lead: wsBack(s, b - 1), count: s.slice(b, d) } : null;
+}
+
+/** 「앞(괄호 안)」 — /^([\s\S]*?)\s*\(([\s\S]*)\)\s*$/와 같은 결과(첫 여는 괄호 ~ 끝 닫는 괄호)를 선형으로(2026-11-17) */
+export function splitParen(d: string): [string, string] | null {
+  const q = wsBack(d, d.length) - 1;
+  const j = d.indexOf("(");
+  return d[q] === ")" && j >= 0 && j < q ? [d.slice(0, wsBack(d, j)), d.slice(j + 1, q)] : null;
+}
+
+/**
+ * 묶음 제목 「(주요사업N) 제목 (M개)」 → [제목, M]. 예전 /^\((주요사업\s*\d+)\)\s*([\s\S]*?)\s*\((\d+)\s*개\)\s*$/와 같은 결과 —
+ * 머리는 정규식, 끝 「(M개)」는 countTail(예전 정규식은 가운데 공백이 긴 글에서 3제곱, 2026-11-17)
+ */
+export function splitGroupTitle(t: string): [string, string] | null {
+  const head = /^\(주요사업\s*\d+\)\s*/.exec(t);
+  const ct = head ? countTail(t, true, true) : null;
+  if (!head || !ct || ct.open < head[0].length) return null;
+  const a = head[0].length;
+  return [t.slice(a, Math.max(a, ct.lead)), ct.count];
+}
 
 /** 파이썬 repr(str) — 경고 문구의 %r */
 export function pyRepr(s: string): string {
@@ -466,10 +504,10 @@ function parseIndex(table: Table) {
     if (cells.some((c) => !c)) continue;
     const [c0, c1, c2, c3] = cells as Cell[];
     const tbText = cellLines(c0).filter(isStr).join(" ");
-    let m = /^([\s\S]*?)\s*\((\d+)개\)\s*$/.exec(tbText);
-    const [tbName, tbCount] = m ? [m[1], Number(m[2])] : [tbText, null];
+    const ct = countTail(tbText, false, true);
+    const [tbName, tbCount] = ct ? [tbText.slice(0, ct.lead), Number(ct.count)] : [tbText, null];
     const etText = cellLines(c1).filter(isStr).join(" ");
-    m = /^(\d+)\.\s*([\s\S]*)$/.exec(etText);
+    let m = /^(\d+)\.\s*([\s\S]*)$/.exec(etText);
     const [etNo, etTitle] = m ? [m[1], m[2]] : [null, etText];
     const taskText = cellLines(c2).filter(isStr).join(" ");
     const tags = parseTags(taskText);
@@ -673,10 +711,10 @@ class CardParser {
           if (nxt) {
             const d = this.take(nxt).filter(isStr).join(" ");
             res.deptText = d;
-            const m = /^([\s\S]*?)\s*\(([\s\S]*)\)\s*$/.exec(d);
+            const m = splitParen(d);
             if (m) {
-              res.department = m[1];
-              res.team = m[2];
+              res.department = m[0];
+              res.team = m[1];
             } else res.department = d;
           }
         } else if (t.startsWith("관리자/작성자")) {
@@ -1091,7 +1129,24 @@ export function parseNationalAgenda(lines: string[]) {
   });
 }
 
-const TIMING_RE = /\(\s*([^()]*?(?:\d\s*월|분기|반기|연중|상시|수시|매월|매년|[上下]|\d{2}년|\d+\.\d+\.?)[^()]*?)\s*\)\s*$/;
+/** 시기 낱말 — 숫자 덩이는 덩이 첫 자리에서만 시작(`(?<!\d)`: 덩이 중간에서 다시 시작하면 숫자가 긴 글에서 2제곱, 맞는지 여부는 같음) */
+const TIMING_WORD = /(?<!\d)\d+\.\d+|\d\s*월|분기|반기|연중|상시|수시|매월|매년|[上下]|\d{2}년/;
+
+/**
+ * 끝 괄호의 시기 「… (3월)」: 예전 정규식 /\(\s*([^()]*?(?:시기 낱말)[^()]*?)\s*\)\s*$/와 같은 결과(여는 괄호 자리 · 앞뒤 공백을 뺀 괄호 안 글)를
+ * 끝 닫는 괄호에서 거꾸로 한 번 훑어 찾음 — 예전 정규식은 여는 괄호·숫자가 긴 글에서 2제곱(2026-11-17)
+ */
+export function timingTail(s: string): { index: number; timing: string } | null {
+  const q = wsBack(s, s.length) - 1;
+  if (s[q] !== ")") return null;
+  let p = q - 1;
+  while (p >= 0 && s[p] !== "(" && s[p] !== ")") p--;
+  if (p < 0 || s[p] !== "(") return null;
+  let b = p + 1;
+  while (b < q && isJsWs(s[b])) b++;
+  const inner = s.slice(b, Math.max(b, wsBack(s, q)));
+  return TIMING_WORD.test(inner) ? { index: p, timing: inner } : null;
+}
 
 function splitHeading(s: string): [string | null, string] {
   if (!s.startsWith("(")) return [null, s];
@@ -1141,9 +1196,9 @@ function structureDo(lines: Line[]) {
     const [heading, restIn] = splitHeading(s);
     let rest = restIn;
     let timing: string | null = null;
-    const m = TIMING_RE.exec(rest);
+    const m = timingTail(rest);
     if (m) {
-      timing = m[1];
+      timing = m.timing;
       rest = rstrip(rest.slice(0, m.index));
     }
     items.push({ marker, heading, text: rest || null, timing, line: ln, subs: [] });
@@ -1312,10 +1367,10 @@ function parseGroupBlocks(blocks: Block[], opts: ParseOptions): ParsedGroup {
     else if (!(typ === "pagenum" || (typ === "para" && !b.text))) afterCard = false;
     if (typ === "groupTitle") {
       const t = firstCellText(b.tables[0]);
-      const m = /^\((주요사업\s*\d+)\)\s*([\s\S]*?)\s*\((\d+)\s*개\)\s*$/.exec(t);
+      const m = splitGroupTitle(t);
       if (m) {
-        group.title = m[2];
-        group.count = Number(m[3]);
+        group.title = m[0];
+        group.count = Number(m[1]);
       } else group.title = t;
       group.titleText = t;
     } else if (typ === "summary") {

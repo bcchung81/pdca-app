@@ -135,7 +135,7 @@ export function inspectMgPrompt(p: PromptSet, card: LooseJson, refs: KnowledgeRe
     r("period", { period: ctx.period, today: ctx.today, pre: r(ctx.preMonth ? "pre.yes" : "pre.no") }),
     r("task", { taskNo: card?.taskNo ?? "", title: dataText(String(card?.title ?? "")) }),
     r("unit", { name: ctx.unit.name, no: ctx.unit.no, id: ctx.unit.id, bonus: ctx.unit.bonus ? r("unit.bonus") : "" }),
-    ctx.siblings.length > 1 ? r("siblings", { list: ctx.siblings.join(" · ") }) : r("siblings.none"),
+    ctx.siblings.length > 1 ? r("siblings", { list: dataText(ctx.siblings.join(" · ")) }) : r("siblings.none"),
     ...siblingFindingsBlock(p, ctx.siblingFindings),
     r("dept", { dept: dataText(String(card?.deptText || card?.department || "—")) }),
     r("knowledge", { n: knowledge.length, core: core.length, biz: ctx.biz.cards.length, items: ctx.items.length }),
@@ -153,15 +153,17 @@ export function inspectMgPrompt(p: PromptSet, card: LooseJson, refs: KnowledgeRe
   ].join("\n");
 }
 
-/** 같은 지표 다른 과제의 「지적 및 개선방안」 행: 머리 줄 + 과제마다 「- 과제번호 「과제명」」과 행마다 한 줄(지적 → 개선방안) */
+/** 같은 지표 다른 과제의 「지적 및 개선방안」 행: 머리 줄 + 과제마다 「- 과제번호 「과제명」」과 행마다 한 줄(지적 → 개선방안). 다른 카드 글이 봉투 밖에 실려 dataText */
 function siblingFindingsBlock(p: PromptSet, list: SiblingFindings[]): string[] {
   if (!list.length) return [];
   return [
     fillFrom(p, "request", "siblings.findings", { n: list.length }),
-    ...list.flatMap((s) => [
-      `- ${s.taskNo} 「${s.title}」`,
-      ...(s.rows.length ? s.rows.map((x, i) => `  · ${i + 1}행 지적: ${x.finding.join(" / ") || "—"} → 개선방안: ${x.plan.join(" / ") || "—"}`) : ["  · 지적 행 없음"]),
-    ]),
+    ...list.flatMap((s) =>
+      [
+        `- ${s.taskNo} 「${s.title}」`,
+        ...(s.rows.length ? s.rows.map((x, i) => `  · ${i + 1}행 지적: ${x.finding.join(" / ") || "—"} → 개선방안: ${x.plan.join(" / ") || "—"}`) : ["  · 지적 행 없음"]),
+      ].map(dataText),
+    ),
   ];
 }
 
@@ -175,9 +177,9 @@ function bizBlock(p: PromptSet, biz: BizLinkPack): string[] {
     ...(biz.unknownCited.length ? [r("biz.unknown", { list: biz.unknownCited.join(" · ") })] : []),
     ...biz.cards.map(
       (c) =>
-        `<biz id="${attr(c.id)}" title="${attr(c.title)}" dept="${attr(c.dept)}" asof="${attr(c.asOf)}" why="${attr(c.reasons.map((x) => LINK_REASON_LABEL[x]).join(" · "))}">\n${c.id} 「${c.title}」 · ${c.dept || "—"} · 원장 ${c.asOf}\n${escapeXml(c.text)}\n</biz>`,
+        `<biz id="${attr(c.id)}" title="${attr(c.title)}" dept="${attr(c.dept)}" asof="${attr(c.asOf)}" why="${attr(c.reasons.map((x) => LINK_REASON_LABEL[x]).join(" · "))}">\n${attr(c.id)} 「${attr(c.title)}」 · ${attr(c.dept) || "—"} · 원장 ${attr(c.asOf)}\n${escapeXml(c.text)}\n</biz>`,
     ),
-    ...(biz.more.length ? [r("biz.more", { list: biz.more.map((m) => `${m.id} · ${m.title}`).join(" / ") })] : []),
+    ...(biz.more.length ? [r("biz.more", { list: biz.more.map((m) => `${m.id} · ${dataText(m.title)}`).join(" / ") })] : []),
   ];
 }
 

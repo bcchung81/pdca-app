@@ -27,3 +27,14 @@ test("캐시: 빈 배열은 두지 않고 있던 값도 덮지 않음 — 비구
   assert.equal(cachedChunks("주요사업", 3_001), null, "AI 묶음 열쇠(loadBundleChunks)도 같음");
   clearChunkCache();
 });
+
+test("캐시: 넣을 때·꺼낼 때 배열을 복사 — 부르는 쪽이 제자리로 정렬·추가해도 다음 요청의 목록은 그대로(2026-11-17 웹 취약점 점검 후속)", () => {
+  clearChunkCache();
+  const rows = [{ k: 2 }, { k: 1 }];
+  storeChunks("all", rows, 1_000);
+  rows.push({ k: 3 });
+  const a = cachedChunks<{ k: number }>("all", 1_001)!;
+  a.sort((x, y) => x.k - y.k).push({ k: 9 });
+  assert.deepEqual(cachedChunks("all", 1_002), [{ k: 2 }, { k: 1 }]);
+  clearChunkCache();
+});

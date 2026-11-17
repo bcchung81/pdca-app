@@ -34,6 +34,7 @@ import { outlineInspectionPrompt } from "../reports/inspection-input.ts";
 import { type SplitSibling, splitHeadPrompt, splitSiblingsPrompt } from "../reports/split-axes.ts";
 import type { FollowupBasis } from "./followup.ts";
 import { type ChatRequest, type ChatResult, chatPrompt } from "./chat.ts";
+import { dataText } from "./envelope.ts";
 import type { DescribeInput } from "./describe.ts";
 import { type MatchResult, matchPrompt, matchShared } from "./match.ts";
 import { API_TOTAL_MS, apiErrorKind, apiErrorMessage, deadlinePassed, remainingMs, shouldRetryApi, switchesKey } from "./api-errors.ts";
@@ -529,7 +530,8 @@ export function reportOutlineAsk(input: ReportOutlineInput): (files: ReportFile[
       storyText(files),
       // 갈래 축 사전·같은 실행과제 형제의 축·칩(2026-10-13 — 형제가 축을 쓰면 같은 축으로 값만)
       splitHeadPrompt(prompts, "biz"),
-      splitSiblingsPrompt(prompts, `${input.ctx.task.no} ${input.ctx.task.title}`.trim(), input.splitSiblings ?? []),
+      // 이 과제·형제 과제 제목·칩은 카드 값이라 봉투 이름 태그만 무력화(dataText — 축은 사전 이름이라 그대로)
+      splitSiblingsPrompt(prompts, dataText(`${input.ctx.task.no} ${input.ctx.task.title}`.trim()), (input.splitSiblings ?? []).map((s) => ({ ...s, title: dataText(s.title), chip: dataText(s.chip) }))),
       input.frame ? framePrompt(prompts, input.frame, false) : "",
       outlineInspectionPrompt(prompts, input.inspection ?? null),
       input.memo?.trim() ? fillFrom(prompts, "request", "memo", { memo: input.memo.trim() }) : "",
@@ -566,6 +568,16 @@ export interface MgReportInput {
   kb?: KnowledgeBundle;
 }
 
+/** 도식 후보 절(mgDiagramPrompt) — 후보 이유에는 카드·첨부 글 조각이 들어 봉투 이름 태그만 무력화(dataText, 2026-11-17) */
+export function mgDiagramAsk(p: PromptSet, hints: DiagramHint[]): string {
+  return mgDiagramPrompt(p, hints.map((h) => ({ ...h, why: dataText(h.why) })));
+}
+
+/** 같은 지표 다른 카드의 짜임 절(mgSiblingsPrompt) — 절 이름·칩은 그 카드 구성안의 글이라 봉투 이름 태그만 무력화(dataText, 2026-11-17) */
+export function mgSiblingsAsk(p: PromptSet, siblings: MgSibling[]): string {
+  return mgSiblingsPrompt(p, siblings.map((sb) => ({ ...sb, parts: sb.parts.map((x) => ({ ...x, label: dataText(x.label), ...(x.chip ? { chip: dataText(x.chip) } : {}) })) })));
+}
+
 /**
  * 경영관리 구성안 한 번 — 자료 블록(report-draft-mg/request.md, 추천 평가내용의 전년 절 글) 뒤에 구성안 요청(report-outline-mg task)과 담당자 메모.
  * 시스템 프롬프트 = report-outline-mg/system.md
@@ -576,8 +588,8 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
   const ask = (files: ReportFile[]) =>
     [
       mgMaterialsPrompt(draft, input.card, input.ctx, input.year, input.ctx.evals, files, input.lens ?? [], input.actuals),
-      mgDiagramPrompt(prompts, input.hints ?? []),
-      mgSiblingsPrompt(prompts, input.siblings ?? []),
+      mgDiagramAsk(prompts, input.hints ?? []),
+      mgSiblingsAsk(prompts, input.siblings ?? []),
       outlineInspectionPrompt(prompts, input.inspection ?? null),
       // 절별 「이 틀로 다시 짜기」면 전체 구성안 요청(task) 대신 그 절만(part.* — 다른 절은 앱이 그대로 둠)
       input.part ? mgPartPrompt(prompts, input.part) : fillFrom(prompts, "request", "task", { maxParts: MG_LIMITS.parts, maxBlocks: MG_LIMITS.blocks }),
@@ -829,4 +841,9 @@ export function aiErrorMessage(e: unknown): string {
 export function modelLabel(call: Pick<WriterCall, "model" | "provider">): string {
   if (call.provider === "codex") return `${call.model.replace(/^codex\//, "")} · Codex`;
   return call.provider === "cli" ? `${call.model} · Claude Code` : call.model;
+}
+
+/** 호출 기록(ai_requests.model — CLI는 「cli/」 머리) → modelLabel과 같은 표시(여러 안 고르기가 화면이 보낸 모델 표기를 기록과 맞춰 봄) */
+export function recordedModelLabel(recorded: string): string {
+  return recorded.startsWith("cli/") ? modelLabel({ provider: "cli", model: recorded.slice(4) }) : recorded;
 }

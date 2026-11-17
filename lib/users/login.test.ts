@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type OtpSender, requestMagicLink } from "./login.ts";
+import { LOGIN_MIN_MS, type OtpSender, requestMagicLink, waitAtLeast } from "./login.ts";
 
 /** 가짜 Supabase auth: 정해 둔 오류를 돌려주고 받은 요청을 적어 둠 */
 function fakeAuth(error: { status?: number; code?: string; message: string } | null) {
@@ -66,4 +66,13 @@ test("로그인 메일 요청: 발송 설정 문제·그 밖의 실패는 오류
   assert.match(unauthorized.status === "error" ? unauthorized.message : "", /발송 설정/);
   const failed = await quiet(() => requestMagicLink(fakeAuth({ status: 500, message: "Error sending magic link email" }).auth, EMAIL, URL));
   assert.deepEqual(failed, { status: "error", email: EMAIL, message: "로그인 메일을 보내지 못했습니다. 잠시 뒤 다시 시도해 주세요." });
+});
+
+test("로그인 응답 최소 시간: 빠른 답(미등록·한도)은 남은 만큼 기다리고, 이미 지났으면 바로 — 응답 시간으로 등록 여부가 드러나지 않게(2026-11-17)", async () => {
+  const slept: number[] = [];
+  const sleep = async (ms: number) => void slept.push(ms);
+  await waitAtLeast(1_000, LOGIN_MIN_MS, () => 1_200, sleep);
+  await waitAtLeast(1_000, LOGIN_MIN_MS, () => 1_000 + LOGIN_MIN_MS + 300, sleep);
+  assert.deepEqual(slept, [LOGIN_MIN_MS - 200]);
+  assert.ok(LOGIN_MIN_MS >= 500 && LOGIN_MIN_MS <= 3_000, "정상 사용자가 기다리는 시간은 몇 초 안");
 });

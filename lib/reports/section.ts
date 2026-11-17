@@ -409,19 +409,21 @@ export function sectionPrompt(
     }),
   ];
   // 올해 실적 재료: 계량지표(’25 실적·’26 목표·’26 실적 = 카드 정량 성과 칸 → 카드 예상 칸) + 월별 실적 중 수치가 든 줄 + 정량 성과 칸의 남은 올해 실적 줄(lib/reports/actuals.ts)
+  // 봉투 밖 줄이라 카드 칸 값은 dataText(봉투 이름 태그만 무력화 — 다른 글자는 그대로, 2026-11-17)
   const yy = String(year % 100).padStart(2, "0");
   lines.push("", r("actuals.head", { year, today: actuals.today || "—" }));
   for (const k of actuals.kpi) {
-    const actual = k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy, name: k.name });
-    lines.push(r("actuals.kpi", { name: k.name, unit: k.unit || "—", prevYY: String((year - 1) % 100).padStart(2, "0"), prev: k.prev || "—", yy, target: k.target || "—", actual }));
+    const name = dataText(k.name);
+    const actual = k.outcome ? r("actuals.kpiOutcome", { value: dataText(k.outcome) }) : k.expected ? r("actuals.kpiExpected", { value: dataText(k.expected) }) : r("actuals.kpiNone", { yy, name });
+    lines.push(r("actuals.kpi", { name, unit: dataText(k.unit) || "—", prevYY: String((year - 1) % 100).padStart(2, "0"), prev: dataText(k.prev) || "—", yy, target: dataText(k.target) || "—", actual }));
   }
   if (actuals.monthly.length) {
     lines.push(r("actuals.monthlyHead", { yy }));
-    for (const m of actuals.monthly) lines.push(r("actuals.monthlyItem", { period: m.period || "—", line: m.line }));
+    for (const m of actuals.monthly) lines.push(r("actuals.monthlyItem", { period: dataText(m.period) || "—", line: dataText(m.line) }));
   } else lines.push(r("actuals.monthlyNone"));
   if (actuals.outcome?.length) {
     lines.push(r("actuals.outcomeHead"));
-    for (const line of actuals.outcome) lines.push(r("actuals.outcomeItem", { line }));
+    for (const line of actuals.outcome) lines.push(r("actuals.outcomeItem", { line: dataText(line) }));
   }
   // 판면 예산: 쪽 높이·블록 영역·칸 폭별 한 줄 글자 수(lib/reports/fit.ts — 2025 판면·보고서 CSS와 같은 값)
   lines.push(
@@ -438,7 +440,8 @@ export function sectionPrompt(
   // 도식 고르기: 카드·근거의 신호로 뽑은 후보 두 갈래(이 과제만의 요소·기본 도식) + 같은 주요사업 초안들이 이미 쓴 도식(lib/reports/diagram-hints.ts)
   const hints = sectionHints(card, prior, files, lens, actuals, year);
   const usage = kindUsage(siblings.map((x) => x.signature));
-  const list = (hs: DiagramHint[]) => (hs.length ? hs.map((h) => r("diagram.item", { kind: h.kind, why: h.why })).join("\n") : `  - ${r("diagram.none")}`);
+  // 후보 이유에는 카드 글 조각(지표 이름·인용 앞부분 등)이 들어 dataText
+  const list = (hs: DiagramHint[]) => (hs.length ? hs.map((h) => r("diagram.item", { kind: h.kind, why: dataText(h.why) })).join("\n") : `  - ${r("diagram.none")}`);
   lines.push(
     "",
     r("diagram.guide", {
@@ -470,13 +473,14 @@ export function sectionPrompt(
   }
   if (siblings.length) {
     lines.push("", r("siblings.head", { count: siblings.length }));
-    for (const sb of siblings) lines.push(r("siblings.item", { label: sb.label, story: storyLabel(sb.story, sb.subStory) || r("siblings.noStory"), signature: sb.signature }));
+    // 형제 라벨은 다른 과제 제목이 든 카드 값(dataText)
+    for (const sb of siblings) lines.push(r("siblings.item", { label: dataText(sb.label), story: storyLabel(sb.story, sb.subStory) || r("siblings.noStory"), signature: sb.signature }));
   }
   if (files.length) {
     // 자료마다 전체 글(자르지 않음 — 넘치면 lib/ai/budget.ts가 멈춤)
     lines.push("", r("files.head", { count: files.length }));
     files.forEach((f, i) => {
-      lines.push("", r("files.item", { n: i + 1, name: f.name, relation: r(`files.relation.${f.relation === "same-report" ? "same" : (f.relation ?? "card")}` as (typeof REQUEST_SECTIONS)[number]) }));
+      lines.push("", r("files.item", { n: i + 1, name: dataText(f.name), relation: r(`files.relation.${f.relation === "same-report" ? "same" : (f.relation ?? "card")}` as (typeof REQUEST_SECTIONS)[number]) }));
       // 첨부 글은 봉투에 넣음(글은 그대로 — 봉투 이름의 여닫는 태그만 무력화, lib/ai/envelope.ts)
       lines.push(dataEnvelope("attachment", f.text));
     });

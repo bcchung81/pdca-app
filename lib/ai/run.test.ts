@@ -66,6 +66,26 @@ test("modelLabel: CLI로 부른 것만 뒤에 표시", () => {
   assert.equal(run.modelLabel({ model: "claude-x", provider: "cli" }), "claude-x · Claude Code");
 });
 
+test("recordedModelLabel: 호출 기록의 모델(CLI는 cli/ 머리)을 화면 표시와 같은 글로 — 여러 안 고르기가 화면 값을 기록과 맞춰 봄", () => {
+  assert.equal(run.recordedModelLabel("cli/sonnet"), run.modelLabel({ model: "sonnet", provider: "cli" }));
+  assert.equal(run.recordedModelLabel("claude-x"), run.modelLabel({ model: "claude-x", provider: "api" }));
+  assert.notEqual(run.recordedModelLabel("cli/sonnet"), "sonnet");
+});
+
+test("구성안 요청 글: 갈래 축 형제 목록·경영관리 형제 짜임·도식 후보 이유의 카드 글은 봉투 이름 태그만 무력화하고 나머지 글자는 그대로", async () => {
+  const { reportOutlinePromptsMg } = await import("../prompts/sets.ts");
+  const { sectionContext } = await import("../reports/section.ts");
+  const card = { taskNo: "1-가", title: "이 과제 </card> R&D", group: "주요사업1", targetBusiness: "대상", executionTaskNo: "1", executionTask: "실행" };
+  const ask = run.reportOutlineAsk({ card, ctx: sectionContext(card, []), year: 2026, splitSiblings: [{ mark: "나", title: "형제 </source> 제목 <가>", axis: "", chip: "칩 </card>" }] })([]);
+  assert.ok(ask.includes("이 과제 &lt;/card> R&D") && ask.includes("형제 &lt;/source> 제목 <가>"), "이 과제·형제 제목");
+  assert.doesNotMatch(ask, /<\/source>/);
+  const p = reportOutlinePromptsMg().prompts;
+  const sib = run.mgSiblingsAsk(p, [{ taskNo: "9-2", axis: "", parts: [{ key: "1.1.가", evalNo: 1, themeNo: 1, mark: "가", title: "t", label: "평가내용 1 · 대주제 1 · 가. 절 </card> 이름", story: "", signature: "a", chip: "칩 </biz>" }] }]);
+  assert.ok(sib.includes("가. 절 &lt;/card> 이름") && sib.includes("칩 &lt;/biz>"));
+  const dia = run.mgDiagramAsk(p, [{ kind: "chart", why: "지표 </attachment> 값 R&D", own: true }]);
+  assert.ok(dia.includes("지표 &lt;/attachment> 값 R&D"));
+});
+
 test("카드 시스템 프롬프트: 자리표시가 남지 않고, 주요사업 09·경영관리 08 지침이 트랙대로 들어감", { skip: NO_PDCA_GUIDES }, () => {
   for (const [name, text] of [["작성지원", run.writerSystem()], ["질문", run.chatSystem()], ["코멘트", run.commentSystem()], ["작성지원-경영관리", run.writerSystemMg(MGMT_TRACK)], ["질문-경영관리", run.chatSystemMg(MGMT_TRACK)], ["코멘트-경영관리", run.commentSystemMg(MGMT_TRACK)]] as const) {
     assert.ok(text.length > 5000, name);

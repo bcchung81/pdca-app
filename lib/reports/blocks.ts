@@ -87,7 +87,8 @@ export interface Figure {
   size: FigureSize;
 }
 /** 그림 한 개가 차지하는 폭·높이(mm) */
-export const figureMm = (f: Figure) => (f.kind === "logo" ? logoMm(f.desc) : FIGURE_MM[f.size]);
+/** 도식 크기(mm). 모르는 크기 값은 M(AI 답 읽기와 같은 기본값 — 저장된 초안 JSON에 이상한 값이 있어도 화면이 오류로 끝나지 않게, 2026-11-17 웹 취약점 점검 W6) */
+export const figureMm = (f: Figure) => (f.kind === "logo" ? logoMm(f.desc) : Object.hasOwn(FIGURE_MM, f.size) ? FIGURE_MM[f.size] : FIGURE_MM.M);
 /** 그림 칸과 글 사이 간격(mm) */
 export const FIGURE_GAP_MM = 2.5;
 

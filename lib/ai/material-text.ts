@@ -87,15 +87,15 @@ export type MaterialTable = "card_materials" | "report_materials";
 type Db = Pick<SupabaseClient, "from">;
 
 /**
- * 읽은 결과를 그 행에 저장 — 읽은 글 칸은 서버만 씀(20261117100000: 로그인 사용자의 update 권한 없음), 그래서 서비스 키(admin)로 그 칸만 씀.
- * 남의 행 id로 서비스 키를 쓰지 않게 먼저 사용자 권한(user)으로 그 행을 읽을 수 있는지, 행의 경로가 방금 내려받아 읽은 파일(storagePath)과 같은지 확인.
- * 보고서 제출·확정 잠금은 다시 보지 않음: 읽은 글은 (저장소 파일, 파서 판)으로 정해지는 값이고 경로·파일은 누구도 못 바꿈. 썼으면 true
+ * 읽은 결과를 그 행에 저장 — 사용자 권한 클라이언트(앱 서버 경유 표지를 실은 서버 클라이언트)로 읽은 글 칸만 씀(20261117170000:
+ * 로그인 사용자의 update는 그 칸들만, 행은 그 자료를 지울 수 있는 사람만 — 카드 자료는 카드 쓰기 권한 + 잠긴 근거가 아님, 보고서 추가자료는 제출 전 팀·성과관리팀).
+ * 먼저 그 행이 보이는지, 행의 경로가 방금 내려받아 읽은 파일(storagePath)과 같은지 확인. 잠겼거나 쓸 수 없는 행이면 저장하지 않음(false — 요청 때 다시 읽음). 썼으면 true
  */
-export async function saveParsed(user: Db, admin: Db, table: MaterialTable, id: string, storagePath: string, o: ParseOutcome, now: Date = new Date()): Promise<boolean> {
+export async function saveParsed(db: Db, table: MaterialTable, id: string, storagePath: string, o: ParseOutcome, now: Date = new Date()): Promise<boolean> {
   if (!o.sha256) return false; // 파일을 내려받지 못함(읽은 것이 없음)
-  const { data: row } = await user.from(table).select("id, storage_path").eq("id", id).maybeSingle();
+  const { data: row } = await db.from(table).select("id, storage_path").eq("id", id).maybeSingle();
   if (!row || row.storage_path !== storagePath) return false;
-  const { data, error } = await admin.from(table).update(parseColumns(o, now)).eq("id", id).eq("storage_path", storagePath).select("id");
+  const { data, error } = await db.from(table).update(parseColumns(o, now)).eq("id", id).eq("storage_path", storagePath).select("id");
   if (error) console.error("saveParsed", table, error.message);
   return !error && (data?.length ?? 0) === 1;
 }

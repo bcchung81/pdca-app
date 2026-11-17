@@ -2,7 +2,7 @@
 
 import type { HeadMode } from "../../../../lib/reports/fit.ts";
 
-import { type OutlineCall, aiProvider, callReportOutline, callReportOutlineMg, modelLabel } from "../../../../lib/ai/run.ts";
+import { type OutlineCall, aiProvider, callReportOutline, callReportOutlineMg, modelLabel, recordedModelLabel } from "../../../../lib/ai/run.ts";
 import { specForFeature } from "../../../../lib/ai/models.ts";
 import type { FollowupBasis } from "../../../../lib/ai/followup.ts";
 import { requireUser } from "../../../../lib/auth/dal.ts";
@@ -76,6 +76,29 @@ function bizComposition(p: Prepared, out: CompositionOutput, memo: string, frame
   const cleaned = cleanComposition(out, hayKey, known, p.files);
   const composition: Composition = { ...cleaned.composition, memo, module: p.ctx.module, head: p.ctx.head, sources: sourcesOf(p), ...(frame ? { frame } : {}) };
   return { composition, warnings: outlineWarnings(composition, p.ctx.module, cleaned.warnings, p.ctx.head, p.splitSiblings), materialWarnings: cleaned.warnings };
+}
+
+/** 여러 안 결과(ai_results)를 두는 기간 — 그 안에 만든 안만 고를 수 있음 */
+const ALT_RECORD_MS = 7 * 86_400_000;
+
+/**
+ * 고른 안의 모델 표기: 화면이 보낸 이름은 이 사용자가 이 카드로 최근 7일 안에 끝낸 구성안 호출 기록(ai_requests — 여러 안도 report_outline)의
+ * 모델일 때만 남기고, 아니면 비움(화면 값으로 출처 표기를 지어내지 못하게 — 2026-11-17 웹 점검 마무리)
+ */
+async function recordedOutlineModel(p: Prepared, label: unknown): Promise<string | null> {
+  const want = typeof label === "string" ? label.trim() : "";
+  if (!want) return null;
+  const { data } = await p.supabase
+    .from("ai_requests")
+    .select("model")
+    .eq("user_id", p.me.id)
+    .eq("card_id", p.card.id)
+    .eq("feature", "report_outline")
+    .eq("status", "ok")
+    .gte("created_at", new Date(Date.now() - ALT_RECORD_MS).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(50);
+  return (data ?? []).some((r: { model: string | null }) => r.model && recordedModelLabel(r.model) === want) ? want : null;
 }
 
 /** 구성안 행 쓰기(버전 조건 — 승인했던 구성안은 다시 확인 전) */
@@ -438,7 +461,6 @@ export async function adoptOutlineAlternative(uid: string, raw: { out: unknown; 
   const c = cleanFrameChoice(raw?.frame, mg);
   if (!c.ok) return c;
   const request = requestText(raw?.request);
-  const model = typeof raw?.model === "string" && raw.model.trim() ? raw.model.trim().slice(0, 80) : null;
   if (mg) {
     const key = String(raw.part);
     const o = await loadOutline(uid);
@@ -455,7 +477,7 @@ export async function adoptOutlineAlternative(uid: string, raw: { out: unknown; 
     const story = isMgMainStory(f.story) ? f.story : undefined;
     const { r, warnings } = mgPartMerge({ ...p, mg: p.mg }, o, parsed.data, key, story, frameRecord(f, request) ?? (request ? { request } : undefined));
     if (!r.changed) return { ok: false, message: r.notes.join(" ") };
-    const saved = await saveOutlineRow(p.supabase, p.card.id, p.year, r.composition, warnings, model, o.version);
+    const saved = await saveOutlineRow(p.supabase, p.card.id, p.year, r.composition, warnings, await recordedOutlineModel(p, raw?.model), o.version);
     if (!saved.ok) return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
     refresh(uid);
     const part = r.composition.mg?.parts.find((x) => x.key === key);
@@ -472,7 +494,7 @@ export async function adoptOutlineAlternative(uid: string, raw: { out: unknown; 
   const fixed = f.story && isStory(f.story) ? f.story : undefined;
   const { composition, warnings } = bizComposition(p, withFixedStory(parsed.data, fixed), request, frameRecord(f, request));
   if (!composition.blocks.length) return { ok: false, message: "고른 안에 블록이 없습니다. 다른 안을 고르거나 다시 만들어 주세요." };
-  const saved = await saveOutlineRow(p.supabase, p.card.id, p.year, composition, warnings, model, raw?.version ?? null);
+  const saved = await saveOutlineRow(p.supabase, p.card.id, p.year, composition, warnings, await recordedOutlineModel(p, raw?.model), raw?.version ?? null);
   if (!saved.ok) return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };
   refresh(uid);
   const fit = compositionFit(composition, p.ctx.module, p.ctx.head);

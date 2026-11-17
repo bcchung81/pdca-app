@@ -6,7 +6,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { isDeepStrictEqual } from "node:util";
-import { COLSPAN_MAX, GRID_CELLS_MAX, buildGrid, parseCardGroups, parseCardMarkdown, parseHtmlTables, parseNationalAgenda, pyRepr, splitBlocks, unmarkKordocInline } from "./parse.ts";
+import { COLSPAN_MAX, GRID_CELLS_MAX, buildGrid, countTail, parseCardGroups, parseCardMarkdown, parseHtmlTables, parseNationalAgenda, pyRepr, splitBlocks, splitGroupTitle, splitParen, timingTail, unmarkKordocInline } from "./parse.ts";
+import { splitBundleHead } from "./parse-mgmt.ts";
 import { HAS_SEED_CARDS, NO_SEED_CARDS } from "../../testing/originals.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -199,4 +200,43 @@ test("칸 글 앞뒤 공백 걷기: 공백이 긴 칸도 빨리 끝남", () => {
 test("표 글의 문자 참조: 범위 밖(0x10FFFF 초과·대리 영역) 숫자 참조는 던지지 않고 글 그대로, 정상 참조는 풂", () => {
   const [t] = parseHtmlTables("<table><tr><td>&#x110000; &#99999999; &#xD800; &#44032; &#xAC01; &amp;</td></tr></table>");
   assert.equal(t.rows[0][0].content.join(""), "&#x110000; &#99999999; &#xD800; 가 각 &");
+});
+
+test("끝 괄호 나누기(시기·부서(팀)·(N개)·묶음 제목): 예전 정규식과 무작위 표본에서 같은 결과, 긴 글도 빨리 끝남", () => {
+  const OLD = {
+    timing: /\(\s*([^()]*?(?:\d\s*월|분기|반기|연중|상시|수시|매월|매년|[上下]|\d{2}년|\d+\.\d+\.?)[^()]*?)\s*\)\s*$/,
+    paren: /^([\s\S]*?)\s*\(([\s\S]*)\)\s*$/,
+    count: /^([\s\S]*?)\s*\((\d+)개\)\s*$/,
+    group: /^\((주요사업\s*\d+)\)\s*([\s\S]*?)\s*\((\d+)\s*개\)\s*$/,
+    bundle: /^(.+?)\s*\((\d+)개\)$/,
+  };
+  const BITS = ["(", ")", "(", ")", " ", " ", "\u3000", "\n", "\u2028", "1", "2", "12", "개", "월", "분기", "上", ".", "a", "가", "년", "주요사업", "(주요사업1)", "(3개)", " (12 개) ", "(3월)", "(1.2.)"];
+  let seed = 7;
+  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2147483648), Math.floor(seed / 65536) % n);
+  const HEADS = ["", "(주요사업1)", "(주요사업 2) ", "(주요사업"];
+  const TAILS = ["", "(3개)", " (12 개) ", "(1개)\u3000", "(3월)", "( 상시 ) "];
+  const sample = () => HEADS[rnd(HEADS.length)] + Array.from({ length: rnd(10) }, () => BITS[rnd(BITS.length)]).join("") + TAILS[rnd(TAILS.length)];
+  for (let i = 0; i < 40000; i++) {
+    const s = sample();
+    const t = OLD.timing.exec(s);
+    assert.deepEqual(timingTail(s), t ? { index: t.index, timing: t[1] } : null, JSON.stringify(s));
+    const p = OLD.paren.exec(s);
+    assert.deepEqual(splitParen(s), p ? [p[1], p[2]] : null, JSON.stringify(s));
+    const c = OLD.count.exec(s);
+    const ct = countTail(s, false, true);
+    assert.deepEqual(ct ? [s.slice(0, ct.lead), ct.count] : null, c ? [c[1], c[2]] : null, JSON.stringify(s));
+    const g = OLD.group.exec(s);
+    assert.deepEqual(splitGroupTitle(s), g ? [g[2], g[3]] : null, JSON.stringify(s));
+    const b = OLD.bundle.exec(s);
+    assert.deepEqual(splitBundleHead(s), b ? [b[1], b[2]] : null, JSON.stringify(s));
+  }
+  const t0 = performance.now();
+  for (const s of ["(" + "1월".repeat(50000), "(1월" + " ".repeat(100000), " (".repeat(50000), "(주요사업1)" + "\u3000".repeat(100000) + "a", "a" + " ".repeat(100000) + "(1개)", "1".repeat(100000) + ")"]) {
+    timingTail(s);
+    splitParen(s);
+    countTail(s, true, true);
+    splitGroupTitle(s);
+    splitBundleHead(s);
+  }
+  assert.ok(performance.now() - t0 < 500, "긴 글");
 });

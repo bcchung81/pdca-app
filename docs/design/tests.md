@@ -382,18 +382,22 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/reports/mg-biz.test.ts`(저장값을 비운 주요사업 초안) | 저장값을 비운 주요사업 초안의 지어낸 숫자는 경영관리 숫자 근거가 아님(`bizUnknown` = 저장값 ∪ 원장·붙임으로 다시 센 값), 원장·붙임 두 값으로 셈한 값은 근거로 남음 |
 | `lib/auth/redirect.test.ts`·`lib/hwpx/hwpx.test.ts`·`lib/reports/section-md.test.ts`·`lib/reports/dom-hwpx/pictures.test.ts`·`lib/cards/hwp/sync.test.ts`·`parse.test.ts`(처리 시간) | 사용자 글에 도는 판정·변환이 긴 입력에서 초선형으로 느려지는 회귀: 메일 모양 판정(254자 상한 먼저, 예전 정규식과 같은 답 — 무작위 표본 대조), 개조식 `==` 강조·kordoc 입력 줄 끝·초안 글 한 줄(`mdText`), 스냅숏 CSS `url(…)` 읽기(예전 정규식과 같은 결과), 원본 양식 줄 읽기(`htmlLines`), 카드 칸 앞뒤 공백 — 모두 긴 입력도 정해진 시간 안 |
 | `lib/cards/hwp/parse.test.ts`(표 칸 병합 값) | 병합 값을 정수 1 이상·열 상한(`COLSPAN_MAX`)·남은 행 수까지(안쪽 표 포함)로 맞춤, 한 표의 격자 칸이 `GRID_CELLS_MAX`를 넘으면 읽기를 멈춤. 실제 카드 출력은 그대로(59·43장 왕복) |
-| `lib/ai/envelope.test.ts` | 카드 글·경평 첨부가 `<card>`·`<attachment>` 봉투를 못 벗어남(닫는 태그·빈칸·대소문자 변형), `{{…}}` 다시 채우지 않음, 실제 카드 글(`R&D <…&…>`)은 바뀌지 않음, 파일 이름 `"`로 속성 못 덧붙임, 이스케이프된 인용(`R&amp;D`)도 원문 확인, 15개 기능 시스템 프롬프트에 「자료 속 지시 따르기」 규칙(`_shared/data-rule.md`), `cardOutline` 출력 불변 |
+| `lib/ai/envelope.test.ts` | 카드 글·경평 첨부가 `<card>`·`<attachment>` 봉투를 못 벗어남(닫는 태그·빈칸·대소문자 변형), `{{…}}` 다시 채우지 않음, 실제 카드 글(`R&D <…&…>`)은 바뀌지 않음, 파일 이름 `"`로 속성 못 덧붙임, 이스케이프된 인용(`R&amp;D`)도 원문 확인, 15개 기능 시스템 프롬프트에 「자료 속 지시 따르기」 규칙(`_shared/data-rule.md`), `cardOutline` 출력 불변 · 2026-11-17: 그림자 글 무력화(보이지 않는 글자·전각·닮은 글자·대소문자 꼴, `comment`, 꺾쇠 한 글자만 바뀜), 두 트랙 올해 실적 줄·첨부 이름·형제 라벨·도식 후보 이유·PDCA 뼈대 줄 / `inspect-mg.test.ts` 발췌 머리·형제 지적 행 / `run.test.ts` 갈래 형제·경영관리 형제 짜임·도식 이유, `recordedModelLabel` |
 
 ## 시큐어 코딩 교차 재점검 후속(2026-11-17, 3차)이 더한 시험
 
 | 테스트 | 막는 것 |
 |---|---|
-| `lib/db/migrations.test.ts`(첨부 읽은 글 서버만, `20261117100000`) | 로그인 사용자(부서·성과관리팀·관리자)가 `card_materials`·`report_materials`의 읽은 글 칸(`parsed_text`·`parse_status`·`parser_version`·`parsed_at`·`parse_error`·`parsed_chars`·`sha256`)을 고치거나 등록(insert) 때 함께 넣는 것 — 등록은 등록 칸만, 기본 pending. 서비스 키는 씀 |
+| `lib/db/migrations.test.ts`(첨부 읽은 글, `20261117100000` → `20261117170000`) | 표지가 있으면 쓸 수 있는 사람만 읽은 글 칸만 고침, 표지 없음·다른 칸·남의 자료·잠긴 근거 자료·제출 뒤 부서는 거절(3차의 「누구도 못 고침」을 사용자 권한 + 표지로 바꿈) |
 | `lib/db/migrations.test.ts`(AI 호출 기록 값 상한, `20261117100000`) | `start_ai_request`가 `FEATURE_TIER` 밖 기능 이름(공백 붙은 이름·빈 값 포함)을 받음, mode 60자 초과, `finish_ai_request`의 model 100자·토큰 0~200만·소요 시간 0~하루·객체가 아니거나 4,000자를 넘는 timings — `FEATURE_TIER`에 기능을 더하면 이 시험이 DB 허용 목록 누락을 잡음(DB 먼저 반영) |
-| `lib/ai/material-text.test.ts`(`saveParsed`) | 사용자 권한으로 읽을 수 있고 경로가 같은 행만 서비스 키로 그 행·그 경로 조건으로 읽은 글 칸만 씀, 읽을 수 없는 행·경로가 다른 행·내려받지 못한 결과는 서비스 키를 부르지 않음 |
+| `lib/ai/material-text.test.ts`(`saveParsed`) | 사용자 권한 클라이언트 하나로 — 보이는 행·경로가 같을 때만 읽은 글 칸만 쓰고, RLS 0행이면 false(서비스 키 안 씀, 2026-11-17) |
 | `lib/reports/draft-recount.test.ts`(실패하면 막힘) | 깨진 초안(빈 행 객체·null·글이 아닌 칸·모르는 블록 종류·그림 크기)·글 칸 2,000자·전체 30만 자·값 5만 개를 넘는 초안은 던지지 않고 「없는 숫자 확인 불가」(막힘)·칠할 숫자는 저장값뿐, 다시 세기가 던져도 같음, 무작위 변형 2,400건 중 검사를 지난 초안은 화면 함수가 던지지 않음, 두 트랙 정상 초안은 검사를 지남, 저장값은 300개·40자 상한 |
 | `lib/reports/mg-biz.test.ts`(깨진 참고 초안) | 깨진 주요사업 초안 하나는 그 주요사업만 빼고(원장·붙임 포함) 「(읽을 수 없음)」 — 경영관리 화면·집필이 오류가 되지 않음 |
 | `lib/reports/warning-levels.test.ts` | 앞머리 대조에 `draft-recount.ts`(「없는 숫자 확인 불가」 막힘) |
+| `lib/db/size-checks.test.ts`(크기 상한, `20261117160000`) | 큰 jsonb·글 열 크기 상한·jsonb 모양·프로필 이름 길이: 상한까지 통과, +1바이트 위반, 모양 위반, 운영 최대 크기 통과, postgres로 써도 걸림, 머리 주석 확인 SQL이 돎 |
+| `lib/db/migrations.test.ts`·`app-write-rpc.test.ts`(사용 중지 계정, `20261117170000`) | 사용 중지 계정은 남은 토큰으로도 `start_ai_request`가 거절(표지 확인은 여전히 첫 문장) |
+| `lib/db/migrations.test.ts`(카드 영구 삭제 기록 `card_purged`) | 영구 삭제 때 행위자·과제 번호·제목이 남고, 서비스 키 삭제는 via system, 로그인 사용자의 직접 넣기는 거절 |
+| `lib/cards/hwp/parse.test.ts`·`lib/hwp/hwpx.test.ts`·`write.test.ts`·`lib/hwpx/hwpx.test.ts`·`render.test.ts`·`blocks.test.ts`·`chunk-cache.test.ts`·`login.test.ts`·`assist-thread.test.ts`(낮음 정리, 2026-11-17) | 카드 파서 끝 괄호 나누기(`timingTail`·`splitParen`·`countTail`·`splitGroupTitle`·`splitBundleHead`) — 예전 정규식과 무작위 대조, 긴 글 선형 / 원본 배치 표 크기 상한(열 100·행 1,000·칸 ≤ 행×열·행마다 칸 ≤ 열, 병합은 표 끝까지) / 9.16 서식·경평 개조식 HWPX에 U+FFFE·U+FFFF 없음 / 계량지표 칸 이름·도식 크기 이상값에 렌더러가 던지지 않음 / 조각 캐시 배열 복사 / 로그인 응답 최소 시간 / 로그인·로그인 확인 화면에서 탭 기록(`TAB_KEYS`) 지우기 |
 | `lib/reports/section.test.ts`(「문체 끝말 정리(styleTail)」)·`prose.test.ts`(관리 정보 판정) | 문체 경고 끝말 정리와 관리 정보 판정이 예전 정규식과 같은 결과, 긴 빈칸·괄호·마침표·숫자 글도 다시 점검이 빨리 끝남 |
 | `lib/cards/hwp/sync.test.ts`(줄 비교 상한) | 앞뒤 같은 줄을 걷고도 줄 수 곱이 `DIFF_CELLS_MAX`를 넘으면 그 블록은 「비교 불가」(기본 반영 제외, 직접 고르면 반영), 정상 크기는 예전 비교와 같음 |
 | `lib/reports/business-layout.test.ts`(판면 높이 상한) | 저장된 판면 어림을 과제당 30쪽(`SECTION_PAGES_MAX`)에서 자르고 쪽 나누기도 멈춤 |

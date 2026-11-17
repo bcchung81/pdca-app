@@ -142,3 +142,10 @@ test("긴 글도 빨리 끝남: 줄 끝 공백이 긴 줄(kordoc 입력) · == �
   assert.equal(summary.highlights, 1);
   assert.ok(performance.now() - t0 < 3000, "== 많은 글");
 });
+
+test("경평 한글: XML에 쓸 수 없는 글자(U+FFFE·U+FFFF)는 본문 XML에 남기지 않음(2026-11-17 웹 취약점 점검 W5)", async () => {
+  const { bytes } = await draftToKcaHwpx("□ 가￾나￿다\n");
+  const sec = await (await JSZip.loadAsync(bytes)).file("Contents/section0.xml")!.async("string");
+  assert.ok(sec.includes("가나다"));
+  assert.ok(!/[￾￿]/.test(sec));
+});

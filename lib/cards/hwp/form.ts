@@ -503,6 +503,9 @@ export function condenseFaces(header: string, prefix = "한컴 윤고딕", spaci
   });
 }
 
+/** XML 1.0에 쓸 수 없는 글자 — kordoc은 C0 조종 문자만 걷고 U+FFFE·U+FFFF는 남김(카드 글에 들어 있으면 한글이 파일을 못 열 수 있음, 2026-11-17 웹 취약점 점검 W5) */
+const XML_BAD = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+
 /** kordoc이 프로필로 만든 카드 HWPX → 원본 서식 마무리 + 한컴 정품 패키지 */
 export async function finishCardHwpx(input: Uint8Array, layout: CardLayout): Promise<Uint8Array> {
   const files = await readHwpxFiles(input);
@@ -514,7 +517,7 @@ export async function finishCardHwpx(input: Uint8Array, layout: CardLayout): Pro
   const head = normalizeBold(dec.decode(header));
   const cp = new CharPrs(head);
   const pp = new ParaPrs(head);
-  files.set("Contents/section0.xml", enc.encode(styleSection(dec.decode(section), layout, cp, pp)));
+  files.set("Contents/section0.xml", enc.encode(styleSection(dec.decode(section), layout, cp, pp).replace(XML_BAD, "")));
   files.set("Contents/header.xml", enc.encode(coreFillBrush(condenseFaces(normalizeBold(pp.finish(cp.finish()))))));
   return (await writeHwpxPackage(files)).bytes;
 }

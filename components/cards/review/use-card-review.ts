@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type CommentJobData, runCardComments } from "../../../app/(app)/cards/actions";
 import { fetchAiResults, trackAiJob, waitAiJob } from "../../workspace/ai-jobs";
+import { TAB_KEYS } from "../../../lib/ai/assist-thread.ts";
 import type { VerifiedEdit } from "../../../lib/ai/comments.ts";
 import { type CommentBatch, type TaggedEdit, editTargets, mergeEdits, toggleComment } from "../../../lib/cards/patch.ts";
 import type { LooseJson } from "../../../lib/loose-json.ts";
@@ -57,7 +58,7 @@ export const GRACE_MS = 5_000;
 const MAX_BATCH = 12;
 const TRANSIENT: NoteStatus[] = ["grace", "queued", "sending"];
 
-const storeKey = (uid: string) => `card-review|${uid}`;
+const storeKey = (uid: string) => `${TAB_KEYS.cardReview}${uid}`;
 function load(uid: string): ReviewNote[] {
   try {
     const raw = sessionStorage.getItem(storeKey(uid));

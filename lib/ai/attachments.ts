@@ -6,7 +6,6 @@ import { parse } from "kordoc";
 import { isRetryableDescribeError } from "./describe.ts";
 import { type ReadDeps, readAttachmentWith } from "./read-attachment.ts";
 import { type AiRequestStart, DESCRIBE_FEATURE, startAiRequest } from "./request-log.ts";
-import { createAdminClient } from "../supabase/admin.ts";
 import { AttachmentError, type MaterialDoc, type MaterialRow, type MaterialTable, type ParseOutcome, materialState, saveParsed } from "./material-text.ts";
 import { AiUnavailableError, aiErrorMessage, aiProvider, callDescribe } from "./run.ts";
 import { ATTACH_LABEL, isAttachableName } from "./writer.ts";
@@ -73,22 +72,18 @@ export async function parseStored(supabase: SupabaseClient, bucket: string, path
 }
 
 /**
- * 등록된 첨부 행 하나를 저장소에서 사용자 권한으로 내려받아 읽고, 읽은 결과를 서버가 그 행에 저장(saveParsed — 서비스 키로 읽은 글 칸만,
- * 사용자가 그 행을 읽을 수 있고 경로가 같을 때만). 읽은 글 칸은 로그인 사용자가 못 씀(20261117100000). 저장 실패는 기록만 하고 읽은 결과는 돌려줌
+ * 등록된 첨부 행 하나를 저장소에서 사용자 권한으로 내려받아 읽고, 읽은 결과를 같은 사용자 권한으로 그 행에 저장(saveParsed — 읽은 글 칸만,
+ * 그 행이 보이고 경로가 같을 때만, 쓰기 판정은 RLS — 20261117170000). 저장 실패(잠긴 근거·쓰기 권한 없음·DB 오류)는 기록만 하고 읽은 결과는 돌려줌
  */
 export async function parseAndStore(supabase: SupabaseClient, table: MaterialTable, row: { id: string; storage_path: string; file_name: string }, cardId: string | null = null): Promise<ParseOutcome> {
   const o = await parseStored(supabase, table === "card_materials" ? "card-materials" : "report-materials", row.storage_path, row.file_name, cardId);
   if (!o.sha256) return o;
-  try {
-    if (!(await saveParsed(supabase, createAdminClient(), table, row.id, row.storage_path, o))) console.error("parseAndStore", table, "저장 안 됨(읽을 수 없는 행·경로 다름·DB 오류)");
-  } catch (e) {
-    console.error("parseAndStore", table, e instanceof Error ? e.message : e); // 서비스 키 없음 등 — 다음 요청에서 다시 읽음
-  }
+  if (!(await saveParsed(supabase, table, row.id, row.storage_path, o))) console.error("parseAndStore", table, "저장 안 됨(읽을 수 없는 행·경로 다름·잠김·쓰기 권한 없음·DB 오류)"); // 다음 요청에서 다시 읽음
   return o;
 }
 
 /**
- * 요청 때 첨부 글 모으기(행 순서대로). 저장본이 같은 판이면 그대로 쓰고, 아직 안 읽었거나 판이 다르면 읽어서 서버가 저장합니다(parseAndStore).
+ * 요청 때 첨부 글 모으기(행 순서대로). 저장본이 같은 판이면 그대로 쓰고, 아직 안 읽었거나 판이 다르면 읽어서 저장합니다(parseAndStore).
  * 못 읽은 자료는 failed로 돌려줌.
  */
 export async function loadMaterialTexts(
@@ -110,7 +105,7 @@ export async function loadMaterialTexts(
       failed.push({ id, name: r.file_name, error: r.parse_error ?? "읽지 못했습니다" });
       continue;
     }
-    // 읽어서 서버가 저장(parseAndStore — 이 행을 읽을 수 있는 사람이면 누가 일으켜도 같은 파일·같은 판의 글). 저장 실패는 무시 — 다음 요청에서 다시 읽음.
+    // 읽어서 저장(parseAndStore — 같은 파일·같은 판이면 누가 일으켜도 같은 글, 저장은 그 자료를 쓸 수 있는 사람만). 저장 실패는 무시 — 다음 요청에서 다시 읽음.
     // 보류(pending)도 저장해 사유를 보이되 같은 판이어도 요청 때 다시 읽어 봄. 그림 설명은 이 사용자의 호출 기록·그림 설명 한도 안에서 — 한도에 걸리면 보류
     const o = await parseAndStore(supabase, table, { id, storage_path: r.storage_path, file_name: r.file_name });
     if (o.status === "parsed") docs.push({ id, kind, name: r.file_name, text: o.text });

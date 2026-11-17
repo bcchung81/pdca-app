@@ -271,3 +271,27 @@ test("해제 상한: 풀린 크기가 한도를 넘는 항목이 든 HWPX는 「
   for (let i = lied.indexOf("PK\x01\x02", 0, "latin1"); i >= 0; i = lied.indexOf("PK\x01\x02", i + 4, "latin1")) lied.writeUInt32LE(1, i + 24);
   await assert.rejects(readHwpx(lied, 50), (e: unknown) => e instanceof HwpReadError && /너무 커서/.test(e.message));
 });
+
+test("원본 배치 표 크기 상한: 행·열 수가 상한을 넘거나 칸이 격자보다 많으면 「표가 너무 큽니다」, 병합은 표 끝까지 — 보통 표는 그대로", async () => {
+  const pos = { treatAsChar: true, affectLineSpacing: false, vertRelTo: "PARA" as const, horzRelTo: "PARA" as const, vertAlign: "TOP" as const, horzAlign: "LEFT" as const, vertOffset: 0, horzOffset: 0, width: 2000, height: 1000, wrap: "TOP_AND_BOTTOM" as const, zOrder: 1, outMargin: [0, 0, 0, 0] as [number, number, number, number] };
+  const cell = (row: number, col: number, colSpan = 1) => ({ row, col, rowSpan: 1, colSpan, width: 1000 * colSpan, height: 500, margin: [0, 0, 0, 0] as [number, number, number, number], ownMargin: false, borderFill: 0, vertAlign: "TOP" as const, paras: [para("가")] });
+  const table = { kind: "table" as const, pos, rows: 2, cols: 2, cellSpacing: 0, inMargin: [0, 0, 0, 0] as [number, number, number, number], borderFill: 0, pageBreak: "CELL" as const, repeatHeader: false, cells: [cell(0, 0, 2), cell(1, 0), cell(1, 1)] };
+  const files = hwpxFiles({ doc: tinyDoc(), page, paras: [{ ...para(""), items: [{ kind: "obj", pos: 0, charPr: 0, obj: table }] }], images: new Map() });
+  const sec = dec.decode(files.get("Contents/section0.xml")!);
+  const read = async (edit: (x: string) => string) => {
+    const f = new Map(files);
+    f.set("Contents/section0.xml", new TextEncoder().encode(edit(sec)));
+    const back = await readHwpx((await writeHwpxPackage(f)).bytes);
+    const it: any = back.sections[0].paras[0].items.find((x) => x.kind === "obj");
+    return it.obj;
+  };
+  const same = await read((x) => x);
+  assert.deepEqual([same.rows, same.cols, same.cells.map((c: any) => [c.row, c.col, c.rowSpan, c.colSpan])], [2, 2, [[0, 0, 1, 2], [1, 0, 1, 1], [1, 1, 1, 1]]]);
+  const big = (e: unknown) => e instanceof HwpReadError && /표가 너무 큽니다/.test(e.message);
+  await assert.rejects(read((x) => x.replace('rowCnt="2"', 'rowCnt="1001"')), big);
+  await assert.rejects(read((x) => x.replace('colCnt="2"', 'colCnt="101"')), big);
+  await assert.rejects(read((x) => x.replace('rowCnt="2"', 'rowCnt="1"')), big, "칸이 격자보다 많음");
+  await assert.rejects(read((x) => x.replaceAll('rowAddr="1"', 'rowAddr="0"')), big, "한 행에서 시작하는 칸이 열보다 많음");
+  const clamped = await read((x) => x.replace('colSpan="2" rowSpan="1"', 'colSpan="2147483647" rowSpan="2147483647"'));
+  assert.deepEqual([clamped.cells[0].rowSpan, clamped.cells[0].colSpan], [2, 2]);
+});

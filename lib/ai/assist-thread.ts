@@ -47,9 +47,26 @@ export const ASSIST_KEEP = 12;
 /** 이보다 오래 「쓰는 중」인 요청은 끊긴 것으로 봄(화면을 새로 고치는 등) — AI 제한 시간(8분)보다 넉넉히 */
 export const PENDING_STALE_MS = 12 * 60_000;
 
-export const assistKey = (uid: string) => `card-assist|${uid}`;
+/**
+ * 이 탭(sessionStorage)에 카드 uid로 남기는 기록의 열쇠 앞머리: 작성지원 대화·합치기 전 AI 대화·카드 리뷰 메모(use-card-review.ts)·초안 검토 메모(draft-review.tsx).
+ * 열쇠에 사용자 구분이 없어 로그인 화면에 오면(로그아웃 뒤 등) 모두 지움(clearTabStore — 2026-11-17 웹 취약점 점검 N4)
+ */
+export const TAB_KEYS = { assist: "card-assist|", legacyChat: "card-chat|", cardReview: "card-review|", draftReview: "draft-review|" } as const;
+export const assistKey = (uid: string) => `${TAB_KEYS.assist}${uid}`;
 /** 합치기 전 「AI 대화」가 쓰던 자리(한 번 옮겨 담고 지움) */
-export const legacyChatKey = (uid: string) => `card-chat|${uid}`;
+export const legacyChatKey = (uid: string) => `${TAB_KEYS.legacyChat}${uid}`;
+
+/** 이 탭에 남은 카드 기록(TAB_KEYS 앞머리)을 모두 지움 — 같은 탭에서 다음에 로그인한 사람에게 앞사람의 AI 대화·검토 메모가 보이지 않게. 지운 수 */
+export function clearTabStore(store: Pick<Storage, "length" | "key" | "removeItem">): number {
+  const prefixes: string[] = Object.values(TAB_KEYS);
+  const keys: string[] = [];
+  for (let i = 0; i < store.length; i++) {
+    const k = store.key(i);
+    if (k !== null && prefixes.some((p) => k.startsWith(p))) keys.push(k);
+  }
+  for (const k of keys) store.removeItem(k);
+  return keys.length;
+}
 
 const isMode = (m: unknown): m is TurnMode => m === "chat" || (typeof m === "string" && (m in WRITER_MODES || m in LEGACY_MODES));
 

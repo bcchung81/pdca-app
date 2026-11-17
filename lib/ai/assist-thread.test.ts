@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ASK_CLIP, ASSIST_KEEP, type AssistTurn, PENDING_STALE_MS, askLines, chatHistory, fromChatMessages, modeLabel, patchTurn, pushTurn, readTurns, threadMarkdown, turnHeadline, turnMarkdown } from "./assist-thread.ts";
+import { ASK_CLIP, ASSIST_KEEP, type AssistTurn, PENDING_STALE_MS, TAB_KEYS, askLines, assistKey, clearTabStore, legacyChatKey, chatHistory, fromChatMessages, modeLabel, patchTurn, pushTurn, readTurns, threadMarkdown, turnHeadline, turnMarkdown } from "./assist-thread.ts";
 
 const result = {
   headline: "전년 지적 2건 중 1건은 반영, 1건은 보강 필요",
@@ -260,4 +260,19 @@ test("mergeServerTurns: 결과 행 없이 실패한 작업은 쓰는 중 차례�
   const kept = mergeServerTurns([], many);
   assert.equal(kept.length, ASSIST_KEEP);
   assert.equal(kept.at(-1)!.id, `s${ASSIST_KEEP + 2}`);
+});
+
+test("탭 기록 지우기(로그인 화면): 카드 AI 대화·옛 AI 대화·카드 리뷰·초안 검토 열쇠만 지우고 다른 열쇠는 둠(2026-11-17 웹 취약점 점검 N4)", () => {
+  const m = new Map<string, string>([
+    [assistKey("u1"), "[]"],
+    [legacyChatKey("u1"), "[]"],
+    [`${TAB_KEYS.cardReview}u1`, "[]"],
+    [`${TAB_KEYS.draftReview}u2`, "[]"],
+    ["ai-jobs-seen", "[1]"],
+    ["card-assist", "앞머리만 같고 구분자 없음"],
+  ]);
+  const store = { get length() { return m.size; }, key: (i: number) => [...m.keys()][i] ?? null, removeItem: (k: string) => void m.delete(k) };
+  assert.equal(clearTabStore(store), 4);
+  assert.deepEqual([...m.keys()], ["ai-jobs-seen", "card-assist"]);
+  assert.equal(clearTabStore(store), 0);
 });

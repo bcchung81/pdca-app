@@ -91,3 +91,20 @@ test("공개 rpc 표지 확인은 맨 앞: 로그인 없음이어도 표지 거�
   await assert.rejects(() => run(RPCS.start_ai_request.sql, RPCS.start_ai_request.params, KEY, null), /로그인이 필요/);
   await assert.rejects(() => run(RPCS.finish_ai_request.sql, RPCS.finish_ai_request.params, KEY, null), /로그인이 필요/);
 });
+
+test("AI 호출 시작(20261117170000): 표지가 맞아도 사용 중지 계정은 거절하고 행을 남기지 않음 — 표지 거절이 여전히 먼저, 되살리면 다시 됨", async () => {
+  const before = await aiRows();
+  await db.query("update public.profiles set active = false where id = $1", [USER]);
+  try {
+    await assert.rejects(() => run(RPCS.start_ai_request.sql, RPCS.start_ai_request.params, null), refused, "표지 없음 → 표지 거절이 먼저");
+    await assert.rejects(
+      () => run(RPCS.start_ai_request.sql, RPCS.start_ai_request.params, KEY),
+      (e: unknown) => (e as { code?: string }).code === "42501" && /사용 중지/.test((e as Error).message),
+    );
+    assert.equal(await aiRows(), before, "거절된 시작은 행을 남기지 않음");
+  } finally {
+    await db.query("update public.profiles set active = true where id = $1", [USER]);
+  }
+  const r = (await run(RPCS.start_ai_request.sql, [[sha("rpc-test-restored")]], KEY)).rows[0].r as { ok: boolean };
+  assert.equal(r.ok, true, "되살린 계정은 다시 시작");
+});

@@ -11,8 +11,7 @@ import { supabaseEnv } from "./env.ts";
  * (docs/reference-materials.md §8, 결정 D13).
  * 예외 둘: 계정 만들기 기록(access_events user_added — lib/users/service.ts logUserAdded). 계정이 서비스 키로 만들어져
  * DB 트리거가 행위자를 모르므로 앱이 남깁니다(20261116120000). 사용 중지·복구 때 로그인 차단 실패 기록(ban_failed — logBanFailed)도 같은 까닭.
- * 예외 셋: 첨부 읽은 글(card_materials·report_materials의 parsed_text 등 — lib/ai/material-text.ts saveParsed). 숫자 근거라 서버가
- * 저장소에서 직접 읽은 결과만 그 칸에 씁니다 — 사용자 권한으로 그 행을 읽을 수 있고 경로가 같을 때만(20261117100000).
+ * (첨부 읽은 글은 3차(20261117100000)에 서비스 키로 썼으나 20261117170000부터 사용자 권한 + 앱 서버 경유 표지로 씁니다 — 예외 아님.)
  */
 export function createAdminClient() {
   const key = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;

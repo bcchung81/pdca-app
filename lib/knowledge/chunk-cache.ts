@@ -8,15 +8,16 @@
 export const CHUNK_TTL_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; rows: unknown[] }>();
 
+/** 캐시의 조각 목록 — 넣을 때·꺼낼 때 배열을 복사함(부르는 쪽이 sort 같은 제자리 변경을 해도 다음 요청에 번지지 않게, 2026-11-17 웹 취약점 점검 후속). 조각 객체는 함께 씀 */
 export function cachedChunks<T>(key: string, now = Date.now()): T[] | null {
   const hit = cache.get(key);
-  return hit && now - hit.at < CHUNK_TTL_MS ? (hit.rows as T[]) : null;
+  return hit && now - hit.at < CHUNK_TTL_MS ? ([...hit.rows] as T[]) : null;
 }
 
 /** 조각을 캐시에 둠 — 빈 배열은 두지 않음(비구성원의 RLS 빈 결과·아직 적재 전). 이미 있는 값도 빈 배열로 덮지 않음 */
 export function storeChunks(key: string, rows: unknown[], now = Date.now()): void {
   if (!rows.length) return;
-  cache.set(key, { at: now, rows });
+  cache.set(key, { at: now, rows: [...rows] });
 }
 
 export function clearChunkCache(): void {

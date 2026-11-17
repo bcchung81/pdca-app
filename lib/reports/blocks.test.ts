@@ -309,3 +309,8 @@ test("blockOutSchema: focus는 선택(없는 칸도 통과) — 주요사업 설
   const mg = blockOutSchema(reportDraftPromptsMg().prompts.schema);
   assert.deepEqual(cellProps(mg), ["head", "tag", "bullets", "note"], "경영관리 답 스키마는 그대로");
 });
+
+test("도식 크기: 모르는 크기 값은 M — 저장된 초안 JSON에 이상한 값이 있어도 그리기가 오류로 끝나지 않음(2026-11-17 웹 취약점 점검 W6)", () => {
+  for (const size of ["ZZ", "constructor", null]) assert.deepEqual(figureMm({ kind: "photo", desc: "", pos: "right", size } as never), FIGURE_MM.M);
+  assert.deepEqual(figureMm({ kind: "photo", desc: "", pos: "right", size: "L" }), FIGURE_MM.L);
+});

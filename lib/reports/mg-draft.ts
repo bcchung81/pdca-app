@@ -211,7 +211,8 @@ const yy = (n: number) => String(n % 100).padStart(2, "0");
 export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext, year: number, evals: number[], files: ReportFile[] = [], lens: LensRef[] = [], actuals?: YearActuals): string {
   const r = (key: RequestKey, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
   const lines = [r("header", { year, indicator: ctx.indicator, taskNo: ctx.taskNo, title: dataText(String(card?.title ?? "")), markers: ctx.markers.join("·") || r("markers.none"), card: dataEnvelope("card", inspectionCardText(card)), asOf: ctx.cardAsOf || "시점 모름" })];
-  const pdca = mgPdcaPrompt(p, mgPdcaSkeleton(card));
+  // PDCA 뼈대 줄은 카드 글 그대로(봉투 밖) — 봉투 이름 태그만 무력화(dataText, 틀 글에는 봉투 이름이 없음)
+  const pdca = dataText(mgPdcaPrompt(p, mgPdcaSkeleton(card)));
   if (pdca) lines.push("", pdca);
   lines.push("", r("skeleton.head", { priorYear: year - 1 }));
   const sk = skeletonLines(ctx.prior);
@@ -219,18 +220,20 @@ export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext,
   else lines.push(r("skeleton.none"));
   lines.push(r("skeleton.defaults", { evals: ctx.evals.length ? ctx.evals.map((n) => `평가내용 ${n}`).join("·") : "—" }));
   if (actuals) {
+    // 봉투 밖 줄이라 카드 칸 값은 dataText(봉투 이름 태그만 무력화 — 다른 글자는 그대로, 2026-11-17)
     lines.push("", r("actuals.head", { year, today: actuals.today || "—" }));
     for (const k of actuals.kpi) {
-      const actual = k.outcome ? r("actuals.kpiOutcome", { value: k.outcome }) : k.expected ? r("actuals.kpiExpected", { value: k.expected }) : r("actuals.kpiNone", { yy: yy(year), name: k.name });
-      lines.push(r("actuals.kpi", { name: k.name, unit: k.unit || "—", prevYY: yy(year - 1), prev: k.prev || "—", yy: yy(year), target: k.target || "—", actual }));
+      const name = dataText(k.name);
+      const actual = k.outcome ? r("actuals.kpiOutcome", { value: dataText(k.outcome) }) : k.expected ? r("actuals.kpiExpected", { value: dataText(k.expected) }) : r("actuals.kpiNone", { yy: yy(year), name });
+      lines.push(r("actuals.kpi", { name, unit: dataText(k.unit) || "—", prevYY: yy(year - 1), prev: dataText(k.prev) || "—", yy: yy(year), target: dataText(k.target) || "—", actual }));
     }
     if (actuals.monthly.length) {
       lines.push(r("actuals.monthlyHead", { yy: yy(year) }));
-      for (const m of actuals.monthly) lines.push(r("actuals.monthlyItem", { period: m.period || "—", line: m.line }));
+      for (const m of actuals.monthly) lines.push(r("actuals.monthlyItem", { period: dataText(m.period) || "—", line: dataText(m.line) }));
     } else lines.push(r("actuals.monthlyNone"));
     if (actuals.outcome?.length) {
       lines.push(r("actuals.outcomeHead"));
-      for (const line of actuals.outcome) lines.push(r("actuals.outcomeItem", { line }));
+      for (const line of actuals.outcome) lines.push(r("actuals.outcomeItem", { line: dataText(line) }));
     }
   }
   if (lens.length) {
@@ -259,7 +262,7 @@ export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext,
   if (files.length) {
     lines.push("", r("files.head", { count: files.length }));
     files.forEach((f, i) => {
-      lines.push("", r("files.item", { n: i + 1, name: f.name, relation: r(`files.relation.${f.relation === "same-report" ? "same" : (f.relation ?? "card")}` as RequestKey) }));
+      lines.push("", r("files.item", { n: i + 1, name: dataText(f.name), relation: r(`files.relation.${f.relation === "same-report" ? "same" : (f.relation ?? "card")}` as RequestKey) }));
       // 첨부 글은 봉투에 넣음(글은 그대로 — 봉투 이름의 여닫는 태그만 무력화, lib/ai/envelope.ts)
       lines.push(dataEnvelope("attachment", f.text));
     });
