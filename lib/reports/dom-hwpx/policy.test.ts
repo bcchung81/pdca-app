@@ -1,5 +1,5 @@
 // 「한글 내려받기(화면 그대로)」 판정 테스트 — 합성 스냅숏 고정 자료(fixtures/ — 합성 글만, 기관 자료·실명 없음).
-// 지키는 것: 스냅숏 검사(판·틀 폭 170±0.5mm·노드 수·깊이·PNG 서명·IHDR 크기·모양) · 라우트 판정(401·413·400·404·409·200 — 순서 포함) ·
+// 지키는 것: 스냅숏 검사(판·틀 폭 170±0.5mm·노드 수·깊이·PNG 서명·IHDR 크기·모양·style 글 칸 길이 상한) · 라우트 판정(401·413·400·404·409·200 — 순서 포함) ·
 // 글꼴 정책(본문·돋움 없으면 막음, 라벨·제목만 없으면 경고) · 판면 넘침(주요사업 분량 쪽 올림 × 255mm, 경영관리 재지 않음) ·
 // 흉내 자간 되돌리기 표(빠진 갈래의 별칭·--k-ls 값) · 쪽 본문 상수 = section-hwpx.ts REPORT_PAGE_MM · 맨 위 표 나눔 높이 ·
 // 변환기 쪽 정의 인자(용지·여백이 그대로 한글 용지로)·여러 쪽 표 나눔(글자처럼 취급 안 함 + TABLE/CELL)·흉내 자간 되돌리기 · 고정 자료 둘 다 validateHwpx 통과
@@ -11,7 +11,7 @@ import { validateHwpx } from "kordoc";
 import type { Table } from "../../hwp/model.ts";
 import { REPORT_PAGE_MM } from "../section-hwpx.ts";
 import { bodyMmOf, pageDefOf, SPLIT_OVER_SHARE, snapshotHwpxInput, snapshotToHwpx } from "./convert.ts";
-import { DOM_HWPX_MAX_BYTES, REPORT_BODY_MM, SNAP_LIMITS, fontGate, judgeDomHwpx, judgeSnapshotPost, overflowLimitMm, overflowMm, parseDomHwpxPost, spacingUndoFor, validateSnapshot } from "./policy.ts";
+import { DOM_HWPX_MAX_BYTES, REPORT_BODY_MM, SNAP_LIMITS, STYLE_STR_MAX, fontGate, judgeDomHwpx, judgeSnapshotPost, overflowLimitMm, overflowMm, parseDomHwpxPost, spacingUndoFor, validateSnapshot } from "./policy.ts";
 import type { LayoutSnapshot } from "./snapshot.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -62,6 +62,39 @@ test("validateSnapshot: 고정 자료 둘 통과 · 판·틀 폭(±0.5mm)·노�
   }, /깊이/);
   assert.equal(validateSnapshot(null).ok, false);
   assert.equal(validateSnapshot("{}").ok, false);
+});
+
+test("validateSnapshot: style 글 칸 길이 상한(2026-11-17) — 칸마다 상한 길이는 통과(모두 한꺼번에도) · 한 자 넘으면 거절(상자·의사요소·테두리) · 라우트는 400", () => {
+  const one = fixture("one-page.snapshot.json");
+  const keys = ["display", "position", "bg", "bgImage", "radius", "shadow", "clipPath", "fontFamily", "fontStyle", "color", "textAlign", "textAlignLast", "textJustify", "verticalAlign", "textDecoration", "whiteSpace", "wordBreak", "bgSize", "bgPosition", "bgRepeat"];
+  const maxOf = (k: string) => (STYLE_STR_MAX as Record<string, number>)[k] ?? STYLE_STR_MAX.other;
+  const check = (f: (st: any, s: any) => void) => {
+    const s = clone(one) as any;
+    f(s.root.children[0].style, s);
+    return validateSnapshot(s);
+  };
+  for (const k of keys) {
+    assert.equal(check((st) => (st[k] = "x".repeat(maxOf(k)))).ok, true, `${k} 상한 길이는 통과`);
+    const v = check((st) => (st[k] = "x".repeat(maxOf(k) + 1)));
+    assert.equal(v.ok, false, `${k} 상한 + 1자는 거절`);
+    if (!v.ok) assert.match(v.reason, /상자 노드/);
+  }
+  assert.equal(check((st) => keys.forEach((k) => (st[k] = "x".repeat(maxOf(k))))).ok, true, "모든 칸이 상한 길이여도 통과");
+  for (const at of ["style", "color"] as const) {
+    assert.equal(check((st) => (st.border[2][at] = "x".repeat(STYLE_STR_MAX.other))).ok, true);
+    assert.equal(check((st) => (st.border[2][at] = "x".repeat(STYLE_STR_MAX.other + 1))).ok, false, `테두리 ${at} 상한 + 1자는 거절`);
+  }
+  const pseudo = check((st, s) => (s.root.children[0].before = { text: "", style: { ...clone(st), fontFamily: "x".repeat(STYLE_STR_MAX.fontFamily + 1) }, rect: null }));
+  assert.equal(pseudo.ok, false);
+  if (!pseudo.ok) assert.match(pseudo.reason, /의사요소/);
+  // 정상 화면 값(고정 자료)은 상한보다 한참 짧음
+  const longest = (n: any): number => (n.kind !== "box" ? 0 : Math.max(n.style.fontFamily.length, ...n.children.map(longest)));
+  assert.ok(longest(one.root) * 10 <= STYLE_STR_MAX.fontFamily);
+  const snap = clone(one) as any;
+  snap.root.children[0].style.fontFamily = "x".repeat(STYLE_STR_MAX.fontFamily + 1);
+  const r = judgeSnapshotPost({ body: { version: "v1", snapshot: snap }, version: "v1", frameW: REPORT_BODY_MM.w });
+  assert.equal(r.ok ? 200 : r.status, 400);
+  if (!r.ok) assert.match(r.message, /화면 배치 자료를 읽을 수 없습니다/);
 });
 
 test("라우트 판정: 401(로그인 없음 — 본문보다 먼저) · 413(2MB 넘음) · 400(JSON 아님·version·snapshot 없음) · 404(초안 없음) · 409(판 다름) · 400(스냅숏·글꼴) · 200", () => {

@@ -763,6 +763,12 @@ class Converter {
   readonly stats: DomHwpxStats = { paras: 0, tables: 0, cells: 0, depth: 0, lined: 0, squeezed: 0, pics: 0, images: 0, imageFills: 0, imageVoids: 0, rules: 0, split: 0, tight: 0, stacked: 0, marked: 0, flat: 0 };
   readonly fills: FillProbe[] = [];
   private paints = new WeakMap<SnapStyle, Paint>();
+  // style 객체별 글꼴 판정 기억(face·missingFont·spacingPt): 글 조각마다 부모 style로 다시 불려 font-family 목록 나누기가 글꼴 목록 길이 × 글 조각 수로
+  // 커지던 것을 막음(2026-11-17 웹 취약점 재점검 N1). 판정은 style 한 객체의 값(fontFamily·fontWeight·fontSize·letterSpacing)과 변환기 값(undo)만 봄 —
+  // 변환기는 스냅숏 style을 고치지 않고 바꾼 style은 새 객체로 만듦. 부수 효과(글꼴 등록·근사 기록)는 기억한 결과로 부를 때마다 그대로 되풀이
+  private faceMemo = new WeakMap<SnapStyle, { name: string; bold: boolean; alt: string | null; unknown: boolean }>();
+  private missingMemo = new WeakMap<SnapStyle, boolean>();
+  private spacingMemo = new WeakMap<SnapStyle, { pt: number; undone: boolean }>();
   private parents = new WeakMap<SnapBox, SnapBox>();
   /** 그림 id → 바이트(같은 그림은 한 번만 — 빈 그림 id는 바이트 없음) */
   readonly images = new Map<number, HwpxImage>();
@@ -786,17 +792,26 @@ class Converter {
   /** 흉내 자간을 뺀 자간(pt): font-family 목록에서 되돌리기 표에 있는 첫 이름의 값 중 가장 가까운 것 s — 자간(em)이 s 쪽으로 s의 절반 이상이면 뺌 */
   spacingPt(st: SnapStyle): number {
     if (!this.undo.size || !st.fontSize) return st.letterSpacing;
+    let m = this.spacingMemo.get(st);
+    if (!m) {
+      m = this.spacingOf(st);
+      this.spacingMemo.set(st, m);
+    }
+    if (m.undone) this.notes.add("빠진 글꼴 갈래의 흉내 자간 → 되돌림(한글은 진짜 글꼴 이름)");
+    return m.pt;
+  }
+  /** spacingPt의 판정(부수 효과 없음): 자간(pt)과 흉내 자간을 뺐는지 */
+  private spacingOf(st: SnapStyle): { pt: number; undone: boolean } {
     const fam = st.fontFamily
       .split(",")
       .map((f) => f.trim().replace(/^["']|["']$/g, ""))
       .find((f) => this.undo.has(f));
     const vals = fam ? (this.undo.get(fam) as readonly number[]) : [];
-    if (!vals.length) return st.letterSpacing;
+    if (!vals.length) return { pt: st.letterSpacing, undone: false };
     const em = st.letterSpacing / st.fontSize;
     const s = vals.reduce((a, v) => (Math.abs(v - em) < Math.abs(a - em) ? v : a), vals[0]);
-    if (s === 0 || em / s < 0.5) return st.letterSpacing;
-    this.notes.add("빠진 글꼴 갈래의 흉내 자간 → 되돌림(한글은 진짜 글꼴 이름)");
-    return st.letterSpacing - s * st.fontSize;
+    if (s === 0 || em / s < 0.5) return { pt: st.letterSpacing, undone: false };
+    return { pt: st.letterSpacing - s * st.fontSize, undone: true };
   }
 
   // ── 글꼴·글자 모양
@@ -804,11 +819,16 @@ class Converter {
   /** 빠진 글꼴 갈래인가: font-family 목록에서 앱 글꼴 별칭(report-fonts.ts — face()와 같은 첫 별칭)이 흉내 자간 되돌리기 표에 있음 */
   missingFont(st: SnapStyle): boolean {
     if (!this.undo.size) return false;
-    const alias = st.fontFamily
-      .split(",")
-      .map((f) => f.trim().replace(/^["']|["']$/g, ""))
-      .find((f) => Object.values(REPORT_FONTS).some((g) => g.alias === f));
-    return alias !== undefined && this.undo.has(alias);
+    let m = this.missingMemo.get(st);
+    if (m === undefined) {
+      const alias = st.fontFamily
+        .split(",")
+        .map((f) => f.trim().replace(/^["']|["']$/g, ""))
+        .find((f) => Object.values(REPORT_FONTS).some((g) => g.alias === f));
+      m = alias !== undefined && this.undo.has(alias);
+      this.missingMemo.set(st, m);
+    }
+    return m;
   }
   /** 빠진 글꼴 갈래의 한 줄 글 폭 합(mm): 글 마디는 부모 스타일로 봄. 화면에서 여러 줄로 나뉜 글은 뺌(한글이 어차피 다시 나눔) */
   missingTextMm(nodes: readonly SnapNode[], st: SnapStyle): number {
@@ -845,6 +865,17 @@ class Converter {
 
   /** font-family 목록 → 한글 글꼴 이름: 앱 글꼴 별칭(report-fonts.ts)이면 그 굵기의 한글 이름, 아니면 목록의 첫 실제 이름 */
   face(st: SnapStyle): { name: string; bold: boolean } {
+    let m = this.faceMemo.get(st);
+    if (!m) {
+      m = this.faceOf(st);
+      this.faceMemo.set(st, m);
+    }
+    if (m.unknown) this.notes.add("글꼴 별칭 표에 없는 글꼴 → 목록의 첫 이름 그대로");
+    this.sh.face(m.name, m.alt);
+    return { name: m.name, bold: m.bold };
+  }
+  /** face의 판정(부수 효과 없음): 한글 글꼴 이름(= 등록할 이름)·굵게·대체 글꼴·별칭 표에 없었는지 */
+  private faceOf(st: SnapStyle): { name: string; bold: boolean; alt: string | null; unknown: boolean } {
     const fams = st.fontFamily.split(",").map((f) => f.trim().replace(/^["']|["']$/g, ""));
     const generic = fams.find((f) => f === "serif" || f === "sans-serif");
     const alt = generic === "serif" ? "함초롬바탕" : generic === "sans-serif" ? "함초롬돋움" : null;
@@ -858,17 +889,11 @@ class Converter {
       const face = at(w) ?? nearestFace;
       const regular = at(400) ?? faces[0];
       // 굵은 이름이 보통 이름 + 「 Bold」처럼 같은 글꼴 묶음이면(맑은 고딕 → 맑은 고딕 Bold) 보통 이름 + 굵게 속성(한글 저장본 관행)
-      if (face !== regular && face.names[0].startsWith(`${regular.names[0]} `)) {
-        this.sh.face(regular.names[0], alt);
-        return { name: regular.names[0], bold: true };
-      }
-      this.sh.face(face.names[0], alt);
-      return { name: face.names[0], bold: w >= 600 && face.weight[1] < 600 };
+      if (face !== regular && face.names[0].startsWith(`${regular.names[0]} `)) return { name: regular.names[0], bold: true, alt, unknown: false };
+      return { name: face.names[0], bold: w >= 600 && face.weight[1] < 600, alt, unknown: false };
     }
     const real = fams.find((f) => f && !["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"].includes(f)) ?? "함초롬바탕";
-    this.notes.add("글꼴 별칭 표에 없는 글꼴 → 목록의 첫 이름 그대로");
-    this.sh.face(real, alt);
-    return { name: real, bold: w >= 600 };
+    return { name: real, bold: w >= 600, alt, unknown: true };
   }
 
   /**

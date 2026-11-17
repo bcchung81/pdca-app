@@ -36,13 +36,26 @@ const isRect = (x: unknown) => isObj(x) && isNum(x.x) && isNum(x.y) && isNum(x.w
 const STYLE_STR = ["display", "position", "bg", "bgImage", "radius", "shadow", "clipPath", "fontFamily", "fontStyle", "color", "textAlign", "textAlignLast", "textJustify", "verticalAlign", "textDecoration", "whiteSpace", "wordBreak"] as const;
 const STYLE_NUM = ["opacity", "fontSize", "fontWeight", "letterSpacing", "wordSpacing", "textIndent"] as const;
 const STYLE_OPT_STR = ["bgSize", "bgPosition", "bgRepeat"] as const;
+/**
+ * style 글 칸 길이 상한(글자 — 2026-11-17 웹 취약점 재점검 N1: 변환기가 글 조각마다 부모 style을 읽으므로 긴 글꼴 목록 × 많은 글 조각이 처리 시간을 곱으로 키웠음).
+ * 정상 화면 최대의 10배 이상으로 넉넉히 잡음. 근거: 경평 초안 스냅숏 103장 계산값 실측 + 과제관리카드 261103판 103장 원본 배치 HTML(lib/hwp/html.ts)의 인라인 값 어림
+ * (계산값은 색이 rgb(…)로 늘어 조금 더 길어짐):
+ *  · bgImage 16,384: 초안 최대 129자(줄무늬 그라데이션). 카드는 테두리 배경 층 4개 합 746자, 그림 채우기 url(서명 주소 — 주소 상한 PICTURE_URL_MAX 4,096자),
+ *    그러데이션(HWP5는 색 64개까지 — 1.6천 자 안팎) 중 하나
+ *  · fontFamily 1,024: 초안 최대 89자, 카드 76자(fontStack — 파일 글꼴 이름·다른 이름·대체 글꼴·한컴바탕 + 기호 글꼴)
+ *  · shadow·clipPath·radius·bgSize·bgPosition·bgRepeat 2,048: 초안 최대 126(3겹 그림자)·108(polygon)·9·10·13·9자, 카드 그림자 113자 — 층·꼭짓점이 늘어도 넉넉히
+ *  · 그 밖(표시 방식·색·정렬·테두리 종류·색 등 낱말 하나 또는 색 함수 하나) 256: 초안 최대 18자
+ */
+export const STYLE_STR_MAX = { bgImage: 16384, fontFamily: 1024, shadow: 2048, clipPath: 2048, radius: 2048, bgSize: 2048, bgPosition: 2048, bgRepeat: 2048, other: 256 } as const;
+const strMax = (k: string) => (k in STYLE_STR_MAX ? STYLE_STR_MAX[k as keyof typeof STYLE_STR_MAX] : STYLE_STR_MAX.other);
+const isShortStr = (x: unknown, max: number) => isStr(x) && x.length <= max;
 function isStyle(x: unknown): boolean {
   if (!isObj(x)) return false;
-  if (!STYLE_STR.every((k) => isStr(x[k])) || !STYLE_NUM.every((k) => isNum(x[k]))) return false;
-  if (!STYLE_OPT_STR.every((k) => x[k] === undefined || isStr(x[k]))) return false;
+  if (!STYLE_STR.every((k) => isShortStr(x[k], strMax(k))) || !STYLE_NUM.every((k) => isNum(x[k]))) return false;
+  if (!STYLE_OPT_STR.every((k) => x[k] === undefined || isShortStr(x[k], strMax(k)))) return false;
   if (!(x.lineHeight === null || isNum(x.lineHeight))) return false;
   const b = x.border;
-  if (!Array.isArray(b) || b.length !== 4 || !b.every((s) => isObj(s) && isNum(s.w) && isStr(s.style) && isStr(s.color))) return false;
+  if (!Array.isArray(b) || b.length !== 4 || !b.every((s) => isObj(s) && isNum(s.w) && isShortStr(s.style, STYLE_STR_MAX.other) && isShortStr(s.color, STYLE_STR_MAX.other))) return false;
   const p = x.pad;
   return Array.isArray(p) && p.length === 4 && p.every(isNum);
 }

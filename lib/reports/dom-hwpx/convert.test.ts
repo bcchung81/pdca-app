@@ -14,7 +14,8 @@
 // 큰 글자 상자 안 작은 글 → 비율 기준은 글 크기 · 겹침 점검(overlapCheck): 줄 간격 < 글자 × 0.9 문단·같은 칸 세로 겹침 문단(표 안까지) ·
 // 글 보존(2026-10-28): 딱지(안에 블록이 든 inline-block) 옆 글자 크기 0 inline이 감싼 글 → 버리지 않고 딱지와 한 행 나란히 ·
 // 격자에서 칸을 얻지 못하는 글 흐름(상자 높이가 거의 0이고 글이 상자 밖으로 넘침) → 버리지 않고 차례로 쌓음 · 딱지 아래 줄로 감긴 글은 옆 상자가 아님(글 보존) ·
-// 소스 규칙: 추출기·변환기·스냅숏·사본 뜨기(capture)·판정(policy)·그림 받기(pictures)에 화면 클래스(k-…)·블록 종류 이름·클래스 선택자가 없음(범용성).
+// 소스 규칙: 추출기·변환기·스냅숏·사본 뜨기(capture)·판정(policy)·그림 받기(pictures)에 화면 클래스(k-…)·블록 종류 이름·클래스 선택자가 없음(범용성) ·
+// 글꼴 판정 기억(2026-11-17): 같은 style 아래 글 조각이 많아도 글꼴 목록은 style마다 한 번 — 글자 모양·근사 기록 횟수 그대로, 시간은 글 조각 수에 비례.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -860,4 +861,21 @@ test("내어쓰기(2026-10-28): 부호 + 빈칸 두 줄 문단 — 화면 둘째
   assert.equal(pn.left, 0);
   assert.deepEqual([stats.marked, stats.flat], [3, 0]);
   assert.deepEqual(hangCheck(input), { marked: 3, flat: 0, samples: [] });
+});
+
+test("글꼴 판정 기억(2026-11-17): 같은 style 아래 글 조각이 많아도 글꼴 목록은 style마다 한 번 읽음 — 글자 모양·근사 기록 횟수는 그대로, 시간은 글 조각 수에 비례", () => {
+  // 별칭 표에 없는 이름이 앞에 길게 붙은 글꼴 목록(검증 상한보다 긴 값 — 변환기만 시험). 빠진 갈래(라벨) 흉내 자간 −0.04em이 걸린 글
+  const fam = `${Array.from({ length: 20000 }, (_, i) => `F${i}`).join(", ")}, KcaLabel, sans-serif`;
+  const N = 2000;
+  const kids = Array.from({ length: N }, (_, i) => text("가", rect(2 + (i % 10) * 0.001, 1, 0.01, 4)));
+  const chip = box("span", rect(0, 0, 20, 6), kids, { bg: "rgb(215, 216, 215)", fontFamily: fam, letterSpacing: -0.4 });
+  const label = box("span", rect(22, 0, 40, 6), [text("이름", rect(22, 1, 10, 4))]);
+  const t0 = performance.now();
+  const { input, approx } = snapshotHwpxInput(snap([chip, label], 30), { lines: false, page: PAGE, spacingUndo: [{ family: "KcaLabel", em: [-0.04] }] });
+  const ms = performance.now() - t0;
+  const label0 = input.doc.charPrs.filter((c) => c.face[0] === "맑은 고딕");
+  assert.ok(label0.length > 0 && label0.every((c) => c.spacing[0] === 0), "흉내 자간을 뺀 자간 0");
+  assert.equal(approx.find((a) => a.kind.startsWith("빠진 글꼴 갈래의 흉내 자간"))?.count, 2001, "근사 기록 횟수는 기억 전 코드와 같음(글 조각마다)");
+  // 시간 상한은 넉넉히(기억 전에는 이 입력이 수 초 걸림)
+  assert.ok(ms < 2000, `${Math.round(ms)}ms`);
 });
