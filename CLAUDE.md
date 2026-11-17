@@ -229,7 +229,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 스키마는 `supabase/migrations/`에만 씀(대시보드 직접 변경 금지). **모든 테이블에 RLS**, 판정은 `private` 함수(`can_read_card` 등), 새 테이블·정책은 `lib/db/migrations.test.ts`에 역할별 사례. 저장소 키에 한글 금지(카드는 `uid`)
 - `SUPABASE_SECRET_KEY`는 서버·스크립트만(`NEXT_PUBLIC_*` 금지). 서비스 키(`lib/supabase/admin.ts`)는 Auth 관리 API 때만 `requireRole` 뒤에, 데이터 수정은 사용자 권한(RLS)
 - 업무 규칙은 서버 액션과 DB 트리거 둘 다에(목록은 아래 상세). 반영 순서는 마이그레이션 머리 주석대로
-- 쓰기 정책엔 서버 표지 `private.app_write()`(`x-app-write`는 서버 클라이언트만), 새 표·rpc는 명시 grant + `grants.test.ts`
+- 쓰기 정책·definer rpc엔 서버 표지 `private.app_write()`(FOR ALL 금지, `grants.test.ts` 구조 시험), 새 표·rpc는 명시 grant
 - 검색 질의는 반드시 `lib/knowledge/search-query.ts`의 `buildSearchQuery`로(전체 정규화하면 `OR`가 낱말 `or`가 됨). PGroonga는 `pnpm db:check-search`. DB 연결은 Session pooler(직접 연결은 IPv6 전용)
 
 ### 로그인(Supabase 매직링크)

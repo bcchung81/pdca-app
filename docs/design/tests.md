@@ -398,12 +398,15 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/reports/business-layout.test.ts`(판면 높이 상한) | 저장된 판면 어림을 과제당 30쪽(`SECTION_PAGES_MAX`)에서 자르고 쪽 나누기도 멈춤 |
 | `lib/knowledge/rich-text.test.ts`·`lib/cards/hwp/parse.test.ts`·`lib/reports/dom-hwpx/pictures.test.ts`(범위 밖 문자 참조) | 0x10FFFF를 넘거나 대리 영역인 문자 참조로 던지지 않음(HTML은 원문 그대로, CSS는 U+FFFD) |
 
-## 근본책 0·1단계(2026-11-17)가 더한 시험
+## 근본책 0~3단계(2026-11-17)가 더한 시험
 
 | 테스트 | 막는 것 |
 |---|---|
 | `lib/db/grants.test.ts`(권한 위생 `20261117110000`) | 호스티드 Supabase 기본 권한 흉내(`lib/db/supabase-stub.ts`) 위에 모든 마이그레이션을 올린 뒤 로그인 사용자·비로그인의 공개 표·열 쓰기 권한(넣기·고치기·지우기·비우기·참조·트리거)·시퀀스 권한·공개 함수 실행 권한이 기대 목록과 똑같음(권한을 넓히는 마이그레이션은 이 목록부터 고쳐야 함) · 비로그인은 공개 표를 못 읽고 private 스키마도 못 씀 · 앞으로 만드는 공개 표·시퀀스·함수는 기본으로 닫히고 새 private 판정 함수는 로그인 사용자가 실행, 서비스 키는 그대로 |
 | `lib/db/migrations.test.ts`(앱 서버 경유 표지 `20261117120000`·`20261117130000`) | 확인 함수 `app_write_probe()`는 맞는 표지만 true(없음·빈 값·다른 값·뒤 공백은 false), 키 표는 관리자도 못 읽고 못 씀·해시 모양·2행 상한 · 경평 초안 표 3개(`card_report_drafts`·`report_draft_edits`·`eval_unit_report_parts`)는 표지가 없거나 빈·틀린 값이면 부서·성과관리팀·관리자 모두 쓰기 거절·읽기 불변(B 파일이 없으면 건너뜀). `as()`는 맞는 표지를 기본으로 실음 |
+| `lib/db/grants.test.ts`(쓰기 정책 구조, 근본책 2·3단계) | 공개 표에 FOR ALL 정책 없음, 로그인 사용자·비로그인·PUBLIC 허용 정책의 넣기·고치기 WITH CHECK·지우기 USING의 맨 위 AND 항에 `private.app_write()`(OR·NOT 안·글자 속은 불인정 — 판정 도우미 시험), 실행 가능한 공개 security definer 함수는 plpgsql 첫 문장이 표지 확인(예외는 이유를 적은 목록 — 정책 없음, `app_write_probe`), 실패 메시지에 빠진 정책·함수 이름 |
+| `lib/db/migrations.test.ts`(근본책 2·3단계 `20261117140000`) | 남은 표마다 쓸 수 있는 역할이 표지 없음·빈 값·틀린 값이면 넣기·고치기 RLS 오류·지우기 0행·표 지문 불변, 읽기 행 수는 4역할 모두 그대로, 맞는 표지면 예전대로 · invoker 트리거(초안 → 보고서 상태)는 같은 요청의 표지로 통과 |
+| `lib/db/app-write-rpc.test.ts`(근본책 2단계 `20261117150000`) | 공개 security definer rpc 7개가 맨 앞에서 표지 확인(없음·빈 값·틀림·뒤 공백은 42501, 호출 기록 0행), 맞는 표지면 오류 없이 예전대로(sql → plpgsql 감싸기의 반환 열 형식까지), 로그인 없음이어도 표지 거절이 먼저 |
 | `lib/supabase/app-write.test.ts` | 서버 클라이언트(`server.ts`·`job-client.ts`)에만 `x-app-write`(값 있을 때), 브라우저 클라이언트 요청에는 없음, `APP_WRITE_KEY`를 읽는 곳은 한 곳·가져가는 곳은 server-only뿐·`NEXT_PUBLIC_` 이름 없음 |
 | `scripts/smoke/material-parse-compare.test.ts`(읽기 전용 점검) | 저장된 첨부 읽은 글 대조: 판정 순서(내려받기 실패 → sha → 판 → 그림 설명 → 글), sha 다름·판 다름은 다시 읽지 않음, `--dry`는 글·파일을 읽지 않음, 출력에 글·파일 이름·경로 없음, 쓰기·AI 호출 없음, kordoc 옵션이 `lib/ai/attachments.ts`와 같음(앱이 바꾸면 깨짐) |
 | `scripts/db/app-write-key.test.ts` | 운영자 해시 스크립트가 DB `sha256`과 같은 해시를 냄, 비밀은 어디에도 출력하지 않음, `--new`는 권한 600·덮어쓰기 거절·저장소 안 경로 거절 |

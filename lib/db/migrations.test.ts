@@ -20,6 +20,8 @@ const MIGRATIONS = join(ROOT, "supabase/migrations");
 const SKIP = [/_search(_\w+)?\.sql$/];
 // 근본책 1단계 B(초안 표 정책)는 운영 관문 확인 뒤 따로 올리는 파일 — 없으면 그 시험만 이유를 적고 건너뜀
 const NO_DRAFT_MARKER = !existsSync(join(MIGRATIONS, "20261117130000_app_write_drafts.sql")) && "근본책 1단계 B 마이그레이션(20261117130000) 없음";
+// 근본책 2·3단계(남은 표 정책) — 없으면 그 시험만 건너뜀
+const NO_TABLE_MARKER = !existsSync(join(MIGRATIONS, "20261117140000_app_write_tables.sql")) && "근본책 2·3단계 표 마이그레이션(20261117140000) 없음";
 
 let db: PGlite;
 // 카드 59장 원본(seed/cards — git 밖)으로 팀·카드를 채운 DB 위에서 모든 시험이 돌므로, 원본이 없으면 DB를 만들지 않고 시험 전부를 건너뜀
@@ -555,8 +557,13 @@ test("AI 호출 기록 쓰기(20261116110000 — 웹 취약점 점검): 로그�
     await rejects(() => startAi("inspector", { hashes: ["x"] }), /올바르지 않습니다/);
     await rejects(() => startAi("inspector", { hashes: [aiKey("1").hash, aiKey("2").hash] }), /올바르지 않습니다/);
     await rejects(() => startAi("license", { job: "nope" }), /check constraint|violates/);
-    // 로그인 없음·anon
-    await rejects(() => db.query("select public.start_ai_request('card_assist', null, null, null, $1::text[])", [[aiKey("z").hash]]), /로그인이 필요/);
+    // 로그인 없음·anon — 로그인 확인을 보려고 표지만 실음(표지 없음 → 표지 거절이 먼저인 순서는 app-write-rpc.test.ts)
+    await setHeaders({ "x-app-write": TEST_WRITE_KEY });
+    try {
+      await rejects(() => db.query("select public.start_ai_request('card_assist', null, null, null, $1::text[])", [[aiKey("z").hash]]), /로그인이 필요/);
+    } finally {
+      await setHeaders(null);
+    }
     await db.exec("set role anon");
     try {
       await rejects(() => db.query("select public.start_ai_request('card_assist', null, null, null, $1::text[])", [[aiKey("z").hash]]), /permission denied/);
@@ -1941,14 +1948,17 @@ test("부서 확정 조건 재료(report_submit_cards rpc, 2026-11-03 §5-1): �
   const [cardA, cardB] = g.ids;
   // 시험 계정: 같은 팀 담당자 A·B, 다른 팀 담당자 C(가입 트리거가 부서 담당자로 만듦)
   const temp = { a: "00000000-0000-0000-0000-0000000000a1", b: "00000000-0000-0000-0000-0000000000b1", c: "00000000-0000-0000-0000-0000000000c1" };
+  // 앱 서버를 거친 요청처럼 표지를 실음(rpc가 맨 앞에서 확인 — 20261117150000)
   const asId = async <T,>(id: string, fn: () => Promise<T>): Promise<T> => {
     await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [id]);
+    await setHeaders({ "x-app-write": TEST_WRITE_KEY });
     await db.exec("set role authenticated");
     try {
       return await fn();
     } finally {
       await db.exec("reset role");
       await db.query(`select set_config('request.jwt.claim.sub', '', false)`);
+      await setHeaders(null);
     }
   };
   type Row = { card_id: string; task_no: string; included: boolean; sort: number | null; data_rev: number; has_draft: boolean; has_outline: boolean; spec_head: unknown; source_rev: number | null; mine: boolean };
@@ -2284,5 +2294,295 @@ test("주요사업 초안 참고(mg_biz_refs·mg_biz_ref_texts·mg_biz_stale, 20
     await db.query("delete from public.card_assignees where card_id = any($1)", [[mg1, mg2]]);
     await db.query("delete from public.cards where id = any($1)", [[mg1, mg2]]);
     await db.query("delete from public.eval_units where id = 'MG-95'");
+  }
+});
+
+// ── 근본책 2·3단계(20261117140000): 남은 표 쓰기 정책 전부에 앱 서버 경유 표지 ─────────────────────────
+
+/** SQL 문자열 리터럴(시험이 만든 고정 값만 넣음) */
+const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
+
+/** 쓰기가 막혔는지: 오류로 거절됐거나 0행 */
+async function blocked(fn: () => Promise<{ affectedRows?: number }>): Promise<boolean> {
+  try {
+    return ((await fn()).affectedRows ?? 0) === 0;
+  } catch {
+    return true;
+  }
+}
+
+/** 표지 없음·빈 값·틀린 값이면 역할과 무관하게 읽기 결과가 맞는 표지와 같은지 */
+async function sameReadsWithoutMark(table: string) {
+  for (const user of ["inspector", "license", "pmo", "admin"] as const) {
+    const sql = `select 1 from public.${table}`;
+    const want = await as(user, () => count(sql));
+    for (const bad of [null, "", "wrong"]) assert.equal(await as(user, () => count(sql), bad), want, `${user} ${table} 읽기는 표지와 무관(${JSON.stringify(bad)})`);
+  }
+}
+
+/**
+ * 표 하나 × 명령: who(맞는 표지면 예전 정책대로 쓸 수 있는 역할)가 표지 없이 넣기·고치기 → RLS 오류, 지우기 → 0행.
+ * 다른 역할도 표지 없이는 아무것도 못 바꿈(표 전체 지문이 그대로). 그다음 맞는 표지로 who가 넣기·고치기·지우기를 예전처럼 함.
+ * setup·cleanup은 소유자 권한(RLS 밖)으로 돎
+ */
+interface MarkCase {
+  name: string;
+  table: string;
+  who: keyof typeof users;
+  setup?: string;
+  insert?: string;
+  update?: string;
+  del?: string;
+  cleanup: string;
+}
+
+async function checkMarkCase(k: MarkCase) {
+  if (k.setup) await db.exec(k.setup);
+  try {
+    const fingerprint = async () =>
+      (await db.query<{ h: string }>(`select md5(coalesce(string_agg(t::text, '|' order by t::text), '')) as h from public.${k.table} t`)).rows[0].h;
+    const before = await fingerprint();
+    for (const user of ["inspector", "pmo", "admin"] as const) {
+      for (const bad of [null, "", "wrong"]) {
+        const tag = `${k.name} — ${user} 표지 ${JSON.stringify(bad)}`;
+        for (const [op, sql] of [["넣기", k.insert], ["고치기", k.update]] as const) {
+          if (!sql) continue;
+          if (user === k.who) await rejects(() => as(user, () => db.query(sql), bad), /row-level security/);
+          else assert.ok(await blocked(() => as(user, () => db.query(sql), bad)), `${tag} ${op}`);
+        }
+        if (k.del) assert.equal((await as(user, () => db.query(k.del!), bad)).affectedRows ?? 0, 0, `${tag} 지우기`);
+      }
+    }
+    assert.equal(await fingerprint(), before, `${k.name}: 표지 없는 쓰기는 아무것도 바꾸지 못함`);
+    // 맞는 표지면 예전과 같음
+    if (k.insert) await as(k.who, () => db.query(k.insert!));
+    if (k.update) assert.ok(((await as(k.who, () => db.query(k.update!))).affectedRows ?? 0) > 0, `${k.name}: 맞는 표지로 고치기`);
+    if (k.del) assert.ok(((await as(k.who, () => db.query(k.del!))).affectedRows ?? 0) > 0, `${k.name}: 맞는 표지로 지우기`);
+  } finally {
+    await db.exec(k.cleanup);
+  }
+}
+
+test("앱 서버 경유 표지 — 남은 표 전부(20261117140000): 표지 없음·빈 값·틀린 값이면 부서·성과관리팀·관리자 모두 넣기·고치기·지우기가 막히고 읽기는 그대로, 맞는 표지면 예전과 같음(FOR ALL을 나눈 표 포함)", { skip: NO_SEED_CARDS || NO_TABLE_MARKER }, async () => {
+  const own = (await db.query<{ eval_unit_id: string; team_id: number }>(
+    "select c.eval_unit_id, c.team_id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 and c.status = 'active' limit 1",
+    [users.inspector],
+  )).rows[0];
+  const unit = lit(own.eval_unit_id);
+  const team = own.team_id;
+  // 고정 카드: F·F4(검사기획팀 담당자 지정 — 부서가 쓰는 표), F2·F3(같은 팀, 지정 안 함 — 담당 지정·목록표)
+  const [F, F2, F3, F4, G, H] = ["표지시험/F", "표지시험/F2", "표지시험/F3", "표지시험/F4", "표지시험/G", "표지시험/H"].map(lit);
+  const newCard = (id: string, no: string) => `insert into public.cards (id, eval_unit_id, task_no, title, edition, data, team_id, status) values (${id}, ${unit}, '${no}', '표지 시험', 'e', '{}', ${team}, 'active')`;
+  const insp = lit(users.inspector);
+  const pmo = lit(users.pmo);
+  await db.exec(`
+    ${newCard(F, "표지-F")}; ${newCard(F2, "표지-F2")}; ${newCard(F3, "표지-F3")}; ${newCard(F4, "표지-F4")};
+    insert into public.card_assignees (card_id, user_id) values (${F}, ${insp}), (${F4}, ${insp});
+    insert into public.reports (eval_unit_id, year, team_id, status) values (${unit}, 2050, ${team}, 'preparing');
+    insert into public.knowledge_documents (doc_id, title, file_name) values ('표지시험-base', '표지 시험', 'x.pdf');
+    insert into public.knowledge_chunks (chunk_key, doc_id, seq, unit_type, track, title, context_prefix, blocks, text, search_text)
+      select '표지시험-k' || n, '표지시험-base', n, 'section', '주요사업', '조각', '', '[]', '글', '글' from generate_series(1, 3) n;
+  `);
+  const R = (await db.query<{ id: number }>("select id from public.reports where eval_unit_id = $1 and year = 2050 and team_id = $2", [own.eval_unit_id, team])).rows[0].id;
+  const reportMaterial = (path: string) => `(select id from public.report_materials where storage_path = '${path}')`;
+  const cases: MarkCase[] = [
+    // ① 부서도 쓰는 표
+    {
+      name: "카드 원장(성과관리팀 — FOR ALL을 나눔)", table: "cards", who: "pmo",
+      setup: newCard(G, "표지-G"), insert: newCard(H, "표지-H"),
+      update: `update public.cards set title = title where id in (${G}, ${H})`, del: `delete from public.cards where id in (${G}, ${H})`,
+      cleanup: `delete from public.cards where id in (${G}, ${H})`,
+    },
+    { name: "카드 원장(부서 내용 고치기)", table: "cards", who: "inspector", update: `update public.cards set updated_by = auth.uid() where id = ${F}`, cleanup: `update public.cards set updated_by = null where id = ${F}` },
+    {
+      // 카드마다 열린 작성본은 하나(card_versions_one_open_idx) — 넣기는 다른 담당 카드 F4에
+      name: "작성본", table: "card_versions", who: "inspector",
+      setup: `insert into public.card_versions (card_id, period, version, status, data) values (${F}, '2050-01', 1, 'draft', '{}')`,
+      insert: `insert into public.card_versions (card_id, period, version, status, data) values (${F4}, '2050-01', 1, 'draft', '{}')`,
+      update: `update public.card_versions set note = note where card_id in (${F}, ${F4})`, del: `delete from public.card_versions where card_id in (${F}, ${F4}) and status = 'draft'`,
+      cleanup: `delete from public.card_versions where card_id in (${F}, ${F4})`,
+    },
+    {
+      name: "보고서(성과관리팀)", table: "reports", who: "pmo",
+      setup: `insert into public.reports (eval_unit_id, year, team_id) values (${unit}, 2052, ${team})`,
+      insert: `insert into public.reports (eval_unit_id, year, team_id) values (${unit}, 2053, ${team})`,
+      update: `update public.reports set inputs = inputs where eval_unit_id = ${unit} and team_id = ${team} and year in (2052, 2053)`,
+      del: `delete from public.reports where eval_unit_id = ${unit} and team_id = ${team} and year in (2052, 2053)`,
+      cleanup: `delete from public.reports where eval_unit_id = ${unit} and team_id = ${team} and year in (2052, 2053)`,
+    },
+    { name: "보고서(부서 고치기)", table: "reports", who: "inspector", update: `update public.reports set inputs = inputs where id = ${R}`, cleanup: "" },
+    { name: "편집 기록(부서 넣기)", table: "card_edits", who: "inspector", insert: `insert into public.card_edits (card_id, edited_by, before, after) values (${F}, auth.uid(), '{}', '{}')`, cleanup: `delete from public.card_edits where card_id = ${F}` },
+    {
+      name: "편집 기록(성과관리팀 넣기·이어 쓰기)", table: "card_edits", who: "pmo",
+      setup: `insert into public.card_edits (card_id, edited_by, before, after) values (${F}, ${pmo}, '{}', '{}')`,
+      insert: `insert into public.card_edits (card_id, edited_by, before, after) values (${F}, auth.uid(), '{}', '{}')`,
+      update: `update public.card_edits set summary = summary where card_id = ${F} and edited_by = auth.uid()`,
+      cleanup: `delete from public.card_edits where card_id = ${F}`,
+    },
+    {
+      name: "현행화 묶음(부서 작성본용)", table: "card_imports", who: "inspector",
+      setup: `insert into public.card_imports (scope, target_card_id, created_by) values ('draft', ${F}, ${insp})`,
+      insert: `insert into public.card_imports (scope, target_card_id, created_by) values ('draft', ${F}, auth.uid())`,
+      update: `update public.card_imports set status = status where target_card_id = ${F} and created_by = auth.uid()`,
+      cleanup: `delete from public.card_imports where target_card_id = ${F}`,
+    },
+    {
+      name: "현행화 묶음(성과관리팀 원장)", table: "card_imports", who: "pmo",
+      setup: `insert into public.card_imports (scope, created_by, files) values ('ledger', ${pmo}, '["표지 시험 묶음"]')`,
+      insert: `insert into public.card_imports (scope, created_by, files) values ('ledger', auth.uid(), '["표지 시험 묶음"]')`,
+      update: `update public.card_imports set status = status where files = '["표지 시험 묶음"]'`, del: `delete from public.card_imports where files = '["표지 시험 묶음"]'`,
+      cleanup: `delete from public.card_imports where files = '["표지 시험 묶음"]'`,
+    },
+    {
+      name: "현행화 항목(FOR ALL을 나눔)", table: "card_import_items", who: "pmo",
+      setup: `insert into public.card_imports (scope, created_by, files) values ('ledger', ${pmo}, '["표지 시험 항목"]');
+        insert into public.card_import_items (import_id, file_n, seq, parsed, match) select id, 1, 1, '{}', 'none' from public.card_imports where files = '["표지 시험 항목"]'`,
+      insert: `insert into public.card_import_items (import_id, file_n, seq, parsed, match) select id, 1, 2, '{}', 'none' from public.card_imports where files = '["표지 시험 항목"]'`,
+      update: `update public.card_import_items set match_reason = match_reason where import_id = (select id from public.card_imports where files = '["표지 시험 항목"]')`,
+      del: `delete from public.card_import_items where import_id = (select id from public.card_imports where files = '["표지 시험 항목"]')`,
+      cleanup: `delete from public.card_imports where files = '["표지 시험 항목"]'`,
+    },
+    {
+      name: "카드 전용 자료", table: "card_materials", who: "inspector",
+      setup: `insert into public.card_materials (card_id, storage_path, file_name, uploaded_by) values (${F}, 'pyoji/a.txt', 'a.txt', ${insp})`,
+      insert: `insert into public.card_materials (card_id, storage_path, file_name, uploaded_by) values (${F}, 'pyoji/b.txt', 'b.txt', auth.uid())`,
+      del: `delete from public.card_materials where card_id = ${F}`, cleanup: `delete from public.card_materials where card_id = ${F}`,
+    },
+    {
+      name: "보고서 추가자료", table: "report_materials", who: "inspector",
+      setup: `insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values (${R}, 'pyoji-r/a.pdf', 'a.pdf', ${insp})`,
+      insert: `insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values (${R}, 'pyoji-r/b.pdf', 'b.pdf', auth.uid())`,
+      del: `delete from public.report_materials where storage_path like 'pyoji-r/%'`, cleanup: `delete from public.report_materials where storage_path like 'pyoji-r/%'`,
+    },
+    {
+      name: "보고서 검토 코멘트", table: "report_comments", who: "inspector",
+      setup: `insert into public.report_comments (report_id, kind, body, author_id) values (${R}, '질문', '표지 시험', ${insp})`,
+      insert: `insert into public.report_comments (report_id, kind, body, author_id) values (${R}, '질문', '표지 시험 2', auth.uid())`,
+      update: `update public.report_comments set status = status where report_id = ${R}`, del: `delete from public.report_comments where report_id = ${R}`,
+      cleanup: `delete from public.report_comments where report_id = ${R}`,
+    },
+    {
+      name: "추가자료 ↔ 과제 연결", table: "report_material_cards", who: "inspector",
+      setup: `insert into public.report_materials (report_id, storage_path, file_name, uploaded_by) values (${R}, 'pyoji-m/a.pdf', 'a.pdf', ${insp}), (${R}, 'pyoji-m/b.pdf', 'b.pdf', ${insp});
+        insert into public.report_material_cards (material_id, card_id, method) values (${reportMaterial("pyoji-m/a.pdf")}, ${F}, 'human')`,
+      insert: `insert into public.report_material_cards (material_id, card_id, method) values (${reportMaterial("pyoji-m/b.pdf")}, ${F}, 'human')`,
+      update: `update public.report_material_cards set basis = basis where card_id = ${F}`, del: `delete from public.report_material_cards where card_id = ${F}`,
+      cleanup: `delete from public.report_materials where storage_path like 'pyoji-m/%'`,
+    },
+    {
+      name: "AI 답 보관", table: "ai_results", who: "inspector",
+      setup: `insert into public.ai_requests (user_id, card_id, feature, status, job) values (${insp}, ${F}, 'card_chat', 'ok', 'chat'), (${insp}, ${F}, 'card_chat', 'ok', 'chat');
+        insert into public.ai_results (request_id, user_id, card_id, feature, result) select min(id), ${insp}, ${F}, 'card_chat', '{}' from public.ai_requests where card_id = ${F}`,
+      insert: `insert into public.ai_results (request_id, user_id, card_id, feature, result) select max(id), auth.uid(), ${F}, 'card_chat', '{}' from public.ai_requests where card_id = ${F}`,
+      del: `delete from public.ai_results where card_id = ${F}`,
+      cleanup: `delete from public.ai_requests where card_id = ${F}`,
+    },
+    { name: "매칭 작업 요청", table: "prep_jobs", who: "inspector", insert: `insert into public.prep_jobs (kind, target, requested_by) values ('match_knowledge', ${F}, auth.uid())`, cleanup: `delete from public.prep_jobs where target = ${F}` },
+    { name: "프로필(본인)", table: "profiles", who: "inspector", update: "update public.profiles set display_name = display_name where id = auth.uid()", cleanup: "" },
+    // ② 점검표
+    {
+      name: "점검표(성과관리팀)", table: "inspections", who: "pmo",
+      setup: `insert into public.inspections (card_id, period, status) values (${F}, '2050-01', 'draft')`,
+      insert: `insert into public.inspections (card_id, period, status) values (${F}, '2050-02', 'draft')`,
+      update: `update public.inspections set model = model where card_id = ${F}`, del: `delete from public.inspections where card_id = ${F} and status = 'draft'`,
+      cleanup: `delete from public.inspections where card_id = ${F}`,
+    },
+    {
+      name: "점검표(부서 확인)", table: "inspections", who: "inspector",
+      setup: `insert into public.inspections (card_id, period, status) values (${F}, '2050-03', 'sent')`,
+      update: `update public.inspections set status = 'acknowledged' where card_id = ${F} and period = '2050-03'`,
+      cleanup: `delete from public.inspections where card_id = ${F}`,
+    },
+    // ③·④ FOR ALL을 나눈 성과관리팀·관리자 표
+    {
+      name: "과제 담당자", table: "card_assignees", who: "pmo",
+      setup: `insert into public.card_assignees (card_id, user_id) values (${F3}, ${insp})`,
+      insert: `insert into public.card_assignees (card_id, user_id) values (${F2}, ${insp})`,
+      del: `delete from public.card_assignees where card_id in (${F2}, ${F3})`, cleanup: `delete from public.card_assignees where card_id in (${F2}, ${F3})`,
+    },
+    {
+      name: "과제 대응표", table: "card_knowledge_scope", who: "pmo",
+      setup: `insert into public.card_knowledge_scope (card_id, chunk_key, method) values (${F}, '표지시험-k1', 'human')`,
+      insert: `insert into public.card_knowledge_scope (card_id, chunk_key, method) values (${F}, '표지시험-k2', 'human')`,
+      update: `update public.card_knowledge_scope set basis = basis where card_id = ${F}`, del: `delete from public.card_knowledge_scope where card_id = ${F}`,
+      cleanup: `delete from public.card_knowledge_scope where card_id = ${F}`,
+    },
+    {
+      name: "평가단위", table: "eval_units", who: "pmo",
+      setup: "insert into public.eval_units (id, track, name, sort) values ('MG-93', '경영관리', '시험 지표 93', 93)",
+      insert: "insert into public.eval_units (id, track, name, sort) values ('MG-94', '경영관리', '시험 지표 94', 94)",
+      update: "update public.eval_units set name = name where id in ('MG-93', 'MG-94')", del: "delete from public.eval_units where id in ('MG-93', 'MG-94')",
+      cleanup: "delete from public.eval_units where id in ('MG-93', 'MG-94')",
+    },
+    {
+      name: "공통 지식 문서(관리자)", table: "knowledge_documents", who: "admin",
+      setup: "insert into public.knowledge_documents (doc_id, title, file_name) values ('표지시험-d2', '표지 시험', 'x.pdf')",
+      insert: "insert into public.knowledge_documents (doc_id, title, file_name) values ('표지시험-d3', '표지 시험', 'x.pdf')",
+      update: "update public.knowledge_documents set title = title where doc_id in ('표지시험-d2', '표지시험-d3')",
+      del: "delete from public.knowledge_documents where doc_id in ('표지시험-d2', '표지시험-d3')",
+      cleanup: "delete from public.knowledge_documents where doc_id in ('표지시험-d2', '표지시험-d3')",
+    },
+    {
+      name: "공통 지식 조각(관리자)", table: "knowledge_chunks", who: "admin",
+      insert: "insert into public.knowledge_chunks (chunk_key, doc_id, seq, unit_type, track, title, context_prefix, blocks, text, search_text) values ('표지시험-k9', '표지시험-base', 9, 'section', '주요사업', '조각', '', '[]', '글', '글')",
+      update: "update public.knowledge_chunks set title = title where chunk_key in ('표지시험-k3', '표지시험-k9')",
+      del: "delete from public.knowledge_chunks where chunk_key in ('표지시험-k3', '표지시험-k9')",
+      cleanup: "delete from public.knowledge_chunks where chunk_key = '표지시험-k9'",
+    },
+    {
+      name: "보고서 목차", table: "report_outline", who: "pmo",
+      setup: `insert into public.report_outline (card_id, year, eval_unit_id, section) values (${F}, 2050, ${unit}, '표지')`,
+      insert: `insert into public.report_outline (card_id, year, eval_unit_id, section) values (${F}, 2051, ${unit}, '표지')`,
+      update: `update public.report_outline set section = section where card_id = ${F}`, del: `delete from public.report_outline where card_id = ${F}`,
+      cleanup: `delete from public.report_outline where card_id = ${F}`,
+    },
+    {
+      name: "과제 기준 목록표", table: "task_map", who: "pmo",
+      setup: `insert into public.task_map (card_id) values (${F2})`, insert: `insert into public.task_map (card_id) values (${F3})`,
+      update: `update public.task_map set note = note where card_id in (${F2}, ${F3})`, del: `delete from public.task_map where card_id in (${F2}, ${F3})`,
+      cleanup: `delete from public.task_map where card_id in (${F2}, ${F3})`,
+    },
+  ];
+  try {
+    for (const k of cases) {
+      await checkMarkCase(k);
+      await sameReadsWithoutMark(k.table);
+    }
+    // 쓰기 권한이 아예 없는 표(위생 20261117110000) — 정책은 나눴고 쓰기는 표지와 무관하게 예전처럼 권한 오류, 읽기는 그대로
+    for (const t of ["teams", "knowledge_card_links", "card_knowledge_select"]) {
+      for (const mark of [TEST_WRITE_KEY, null]) await rejects(() => as("admin", () => db.query(`delete from public.${t}`), mark), /permission denied/);
+      await sameReadsWithoutMark(t);
+    }
+  } finally {
+    await db.exec(`
+      delete from public.reports where eval_unit_id = ${unit} and team_id = ${team} and year >= 2050;
+      delete from public.prep_jobs where target in (${F}, ${F2}, ${F3}, ${F4});
+      delete from public.ai_requests where card_id in (${F}, ${F2}, ${F3}, ${F4});
+      delete from public.cards where id in (${F}, ${F2}, ${F3}, ${F4}, ${G}, ${H});
+      delete from public.knowledge_documents where doc_id like '표지시험-%';
+      delete from public.eval_units where id in ('MG-93', 'MG-94');
+    `);
+  }
+});
+
+test("앱 서버 경유 표지 — invoker 트리거가 다른 표에 쓰는 흐름(20261117140000): 맞는 표지로 첫 과제별 초안을 넣으면 같은 요청 안의 보고서 상태 전환(reports_update)도 통과, 표지 없으면 둘 다 안 바뀜", { skip: NO_SEED_CARDS || NO_TABLE_MARKER }, async () => {
+  const own = (await db.query<{ id: string; eval_unit_id: string; team_id: number }>(
+    "select c.id, c.eval_unit_id, c.team_id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 and c.status = 'active' limit 1",
+    [users.inspector],
+  )).rows[0];
+  const year = 2054;
+  await db.query("insert into public.reports (eval_unit_id, year, team_id, status) values ($1, $2, $3, 'preparing')", [own.eval_unit_id, year, own.team_id]);
+  const status = async () => (await db.query<{ status: string }>("select status from public.reports where eval_unit_id = $1 and year = $2 and team_id = $3", [own.eval_unit_id, year, own.team_id])).rows[0].status;
+  const insertDraft = () => db.query("insert into public.card_report_drafts (card_id, year, spec) values ($1, $2, '{}')", [own.id, year]);
+  try {
+    for (const bad of [null, "wrong"]) {
+      await rejects(() => as("inspector", insertDraft, bad), /row-level security/);
+      assert.equal(await status(), "preparing", `표지 ${JSON.stringify(bad)}: 보고서 상태 그대로`);
+    }
+    await as("inspector", insertDraft);
+    assert.equal(await status(), "drafting", "트리거(invoker)가 같은 요청의 표지로 reports_update를 통과");
+  } finally {
+    await db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [own.id, year]);
+    await db.query("delete from public.reports where eval_unit_id = $1 and year = $2 and team_id = $3", [own.eval_unit_id, year, own.team_id]);
   }
 });

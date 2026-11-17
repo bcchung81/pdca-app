@@ -237,3 +237,141 @@ test("앞으로 만드는 공개 표·시퀀스·함수는 기본으로 닫힘(�
     await db.exec("drop table public.zz_new; drop function public.zz_rpc(); drop function private.zz_check();");
   }
 });
+
+// ── 쓰기 정책 구조(근본책 2·3단계, 2026-11-17) ─────────────────────────────────────────
+// 로그인 사용자(또는 PUBLIC)에게 걸린 공개 표의 쓰기 정책은 모두 「앱 서버 경유 표지」(private.app_write())를 쓰기 쪽 식의
+// **맨 위 AND 항 하나로** 가져야 합니다(삽입·갱신은 WITH CHECK, 삭제는 USING). OR·NOT·CASE 안에 들어가면 무력해지므로 인정하지 않습니다.
+// FOR ALL 정책은 두지 않습니다(USING이 읽기에도 쓰여 표지를 넣으면 읽기까지 막히고, 안 넣으면 삭제가 표지 없이 통과).
+// 로그인 사용자가 부를 수 있는 공개 security definer 함수는 본문 첫 문장에서 표지를 확인해야 합니다(RLS를 거치지 않으므로).
+// 새 표·정책·rpc를 만들 때 표지를 잊으면 여기서 실패합니다. 예외는 이름과 이유를 적어 아래 배열에 — 비어 있는 것이 목표.
+
+/** 표지 없이 두는 쓰기 정책 `표.정책` → 이유 */
+const POLICY_EXCEPTIONS: Record<string, string> = {};
+/** 표지 확인 없이 두는 공개 security definer 함수 이름 → 이유 */
+const DEFINER_EXCEPTIONS: Record<string, string> = {
+  app_write_probe: "확인용 — 표지가 실렸는지 true·false만 돌려주고 아무것도 쓰지 않음",
+};
+
+/** 따옴표·괄호 밖의 맨 위 단계에서 sep(대문자 키워드)로 나눔. 겉을 감싼 괄호는 벗김 */
+function topLevel(expr: string, sep: "AND" | "OR"): string[] {
+  let s = expr.trim();
+  const wrapped = (x: string) => {
+    if (!x.startsWith("(") || !x.endsWith(")")) return false;
+    let depth = 0;
+    let q = false;
+    for (let i = 0; i < x.length; i++) {
+      const ch = x[i];
+      if (ch === "'") q = !q;
+      if (q) continue;
+      if (ch === "(") depth++;
+      if (ch === ")" && --depth === 0 && i < x.length - 1) return false;
+    }
+    return true;
+  };
+  while (wrapped(s)) s = s.slice(1, -1).trim();
+  const parts: string[] = [];
+  let depth = 0;
+  let q = false;
+  let start = 0;
+  const tok = ` ${sep} `;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "'") q = !q;
+    if (q) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && s.startsWith(tok, i)) {
+      parts.push(s.slice(start, i).trim());
+      start = i + tok.length;
+      i += tok.length - 1;
+    }
+  }
+  parts.push(s.slice(start).trim());
+  return parts;
+}
+
+/** 식의 맨 위 AND 항 가운데 하나가 정확히 private.app_write() 인가(OR가 맨 위에 있으면 AND 항이 식 전체 하나라서 거짓) */
+function hasAppWriteConjunct(expr: string | null): boolean {
+  if (!expr) return false;
+  if (topLevel(expr, "OR").length > 1) return false;
+  const unwrap = (x: string) => topLevel(x, "AND").length === 1 ? topLevel(x, "AND")[0] : x;
+  return topLevel(expr, "AND").some((p) => unwrap(p) === "private.app_write()");
+}
+
+test("표지 판정 도우미: 맨 위 AND 항만 인정하고 OR·NOT 안의 표지는 인정하지 않음", () => {
+  assert.equal(hasAppWriteConjunct("(private.can_write_card(card_id) AND private.app_write())"), true);
+  assert.equal(hasAppWriteConjunct("((a = 'x AND private.app_write()') AND (private.app_write()))"), true);
+  assert.equal(hasAppWriteConjunct("private.app_write()"), true);
+  assert.equal(hasAppWriteConjunct("(private.can_write_card(card_id) OR private.app_write())"), false);
+  assert.equal(hasAppWriteConjunct("((private.is_staff() AND private.app_write()) OR private.is_admin())"), false);
+  assert.equal(hasAppWriteConjunct("(private.is_staff() AND (private.is_admin() OR private.app_write()))"), false);
+  assert.equal(hasAppWriteConjunct("(private.is_staff() AND (NOT private.app_write()))"), false);
+  assert.equal(hasAppWriteConjunct("(private.is_staff() AND (a = 'private.app_write()'))"), false);
+  assert.equal(hasAppWriteConjunct(null), false);
+});
+
+type PolicyRow = { tbl: string; name: string; cmd: string; permissive: boolean; qual: string | null; check: string | null };
+
+/** 공개 표 정책 가운데 로그인 사용자·비로그인·PUBLIC에 걸린 것(식은 pg_get_expr로 되살린 글) */
+async function clientPolicies(): Promise<PolicyRow[]> {
+  return rows<PolicyRow>(
+    `select c.relname as tbl, p.polname as name, p.polcmd::text as cmd, p.polpermissive as permissive,
+            pg_get_expr(p.polqual, p.polrelid) as qual, pg_get_expr(p.polwithcheck, p.polrelid) as check
+       from pg_policy p join pg_class c on c.oid = p.polrelid join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public'
+        and (0 = any(p.polroles) or exists (select 1 from pg_roles r where r.oid = any(p.polroles) and r.rolname in ('authenticated', 'anon')))
+      order by 1, 2`,
+  );
+}
+
+test("공개 표에 FOR ALL 정책이 없다(명령별로 나누고 읽기 정책은 따로)", async () => {
+  const all = (await clientPolicies()).filter((p) => p.cmd === "*").map((p) => `${p.tbl}.${p.name}`);
+  assert.deepEqual(all, [], `FOR ALL 정책: ${all.join(", ")}`);
+});
+
+test("공개 표의 쓰기 정책(삽입·갱신 WITH CHECK, 삭제 USING)은 모두 맨 위 AND 항에 private.app_write()가 있다 — 예외는 POLICY_EXCEPTIONS에 이유와 함께", async () => {
+  const missing: string[] = [];
+  for (const p of await clientPolicies()) {
+    if (!p.permissive) continue; // 제한(RESTRICTIVE) 정책은 허용 범위를 좁히기만 함
+    const key = `${p.tbl}.${p.name}`;
+    if (key in POLICY_EXCEPTIONS) continue;
+    const need =
+      p.cmd === "a" ? [["WITH CHECK", p.check]] :
+      p.cmd === "w" ? [["WITH CHECK", p.check]] :
+      p.cmd === "d" ? [["USING", p.qual]] :
+      p.cmd === "*" ? [["USING", p.qual], ["WITH CHECK", p.check ?? p.qual]] : [];
+    for (const [where, expr] of need) if (!hasAppWriteConjunct(expr as string | null)) missing.push(`${key}(${p.cmd === "a" ? "INSERT" : p.cmd === "w" ? "UPDATE" : p.cmd === "d" ? "DELETE" : "ALL"} ${where})`);
+  }
+  assert.deepEqual(missing, [], `표지 빠진 정책 ${missing.length}개:\n  ${missing.join("\n  ")}`);
+  const names = new Set((await clientPolicies()).map((p) => `${p.tbl}.${p.name}`));
+  assert.deepEqual(Object.keys(POLICY_EXCEPTIONS).filter((k) => !names.has(k)), [], "예외 목록에 남은 없는 정책");
+});
+
+/** 본문에서 주석을 지우고 첫 begin 다음 첫 문장이 표지 확인(거절)인가 */
+function guardsFirst(src: string): boolean {
+  const s = src.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "").toLowerCase();
+  const m = /\bbegin\b([\s\S]*)/.exec(s);
+  if (!m) return false;
+  return /^\s*if\s+not\s+private\.app_write\(\)\s+then\s+raise\s+exception\b[^;]*;\s*end\s+if\s*;/.test(m[1]);
+}
+
+test("표지 확인 도우미: 첫 문장이 「if not private.app_write() then raise …; end if;」일 때만 인정", () => {
+  const ok = "\ndeclare v int;\nbegin\n  -- 앱 서버 경유\n  if not private.app_write() then raise exception '앱 서버를 거친 요청만 받습니다' using errcode = '42501'; end if;\n  return 1;\nend;";
+  assert.equal(guardsFirst(ok), true);
+  assert.equal(guardsFirst("\nbegin\n  perform 1;\n  if not private.app_write() then raise exception 'x'; end if;\nend;"), false);
+  assert.equal(guardsFirst("\nbegin\n  if not private.app_write() or true then raise exception 'x'; end if;\nend;"), false);
+  assert.equal(guardsFirst(" select private.app_write() "), false);
+});
+
+test("로그인 사용자가 부를 수 있는 공개 security definer 함수는 본문 첫 문장에서 표지를 확인한다 — 예외는 DEFINER_EXCEPTIONS에 이유와 함께", async () => {
+  const fns = await rows<{ name: string; lang: string; src: string }>(
+    `select p.proname as name, l.lanname as lang, p.prosrc as src
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_language l on l.oid = p.prolang
+      where n.nspname = 'public' and p.prosecdef and (has_function_privilege('authenticated', p.oid, 'EXECUTE') or has_function_privilege('anon', p.oid, 'EXECUTE'))
+      order by 1`,
+  );
+  const missing = fns.filter((f) => !(f.name in DEFINER_EXCEPTIONS) && !(f.lang === "plpgsql" && guardsFirst(f.src))).map((f) => `${f.name}(${f.lang})`);
+  assert.deepEqual(missing, [], `표지 확인 빠진 security definer 함수 ${missing.length}개: ${missing.join(", ")}`);
+  const unused = Object.keys(DEFINER_EXCEPTIONS).filter((k) => !fns.some((f) => f.name === k));
+  assert.deepEqual(unused, [], "예외 목록에 남은 없는 함수");
+});
