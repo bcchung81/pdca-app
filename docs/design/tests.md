@@ -398,6 +398,16 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/reports/business-layout.test.ts`(판면 높이 상한) | 저장된 판면 어림을 과제당 30쪽(`SECTION_PAGES_MAX`)에서 자르고 쪽 나누기도 멈춤 |
 | `lib/knowledge/rich-text.test.ts`·`lib/cards/hwp/parse.test.ts`·`lib/reports/dom-hwpx/pictures.test.ts`(범위 밖 문자 참조) | 0x10FFFF를 넘거나 대리 영역인 문자 참조로 던지지 않음(HTML은 원문 그대로, CSS는 U+FFFD) |
 
+## 근본책 0·1단계(2026-11-17)가 더한 시험
+
+| 테스트 | 막는 것 |
+|---|---|
+| `lib/db/grants.test.ts`(권한 위생 `20261117110000`) | 호스티드 Supabase 기본 권한 흉내(`lib/db/supabase-stub.ts`) 위에 모든 마이그레이션을 올린 뒤 로그인 사용자·비로그인의 공개 표·열 쓰기 권한(넣기·고치기·지우기·비우기·참조·트리거)·시퀀스 권한·공개 함수 실행 권한이 기대 목록과 똑같음(권한을 넓히는 마이그레이션은 이 목록부터 고쳐야 함) · 비로그인은 공개 표를 못 읽고 private 스키마도 못 씀 · 앞으로 만드는 공개 표·시퀀스·함수는 기본으로 닫히고 새 private 판정 함수는 로그인 사용자가 실행, 서비스 키는 그대로 |
+| `lib/db/migrations.test.ts`(앱 서버 경유 표지 `20261117120000`·`20261117130000`) | 확인 함수 `app_write_probe()`는 맞는 표지만 true(없음·빈 값·다른 값·뒤 공백은 false), 키 표는 관리자도 못 읽고 못 씀·해시 모양·2행 상한 · 경평 초안 표 3개(`card_report_drafts`·`report_draft_edits`·`eval_unit_report_parts`)는 표지가 없거나 빈·틀린 값이면 부서·성과관리팀·관리자 모두 쓰기 거절·읽기 불변(B 파일이 없으면 건너뜀). `as()`는 맞는 표지를 기본으로 실음 |
+| `lib/supabase/app-write.test.ts` | 서버 클라이언트(`server.ts`·`job-client.ts`)에만 `x-app-write`(값 있을 때), 브라우저 클라이언트 요청에는 없음, `APP_WRITE_KEY`를 읽는 곳은 한 곳·가져가는 곳은 server-only뿐·`NEXT_PUBLIC_` 이름 없음 |
+| `scripts/smoke/material-parse-compare.test.ts`(읽기 전용 점검) | 저장된 첨부 읽은 글 대조: 판정 순서(내려받기 실패 → sha → 판 → 그림 설명 → 글), sha 다름·판 다름은 다시 읽지 않음, `--dry`는 글·파일을 읽지 않음, 출력에 글·파일 이름·경로 없음, 쓰기·AI 호출 없음, kordoc 옵션이 `lib/ai/attachments.ts`와 같음(앱이 바꾸면 깨짐) |
+| `scripts/db/app-write-key.test.ts` | 운영자 해시 스크립트가 DB `sha256`과 같은 해시를 냄, 비밀은 어디에도 출력하지 않음, `--new`는 권한 600·덮어쓰기 거절·저장소 안 경로 거절 |
+
 ## 원본 필요 시험(git 밖 — 없으면 이유를 적고 건너뜀)
 
 기관 원본과 그 파생물은 git에 넣지 않으므로(CLAUDE.md 「저장소 경계」) 아래 시험은 원본이 있는 컴퓨터에서만 돕니다. 원본이 없으면 통과가 아니라 **건너뜀**이고, `pnpm test`가 끝에 「■ 건너뛴 시험 N개」와 시험 이름·이유를 크게 출력합니다(보고기 `scripts/test/skip-summary.ts`, 2026-10-10 개선 계획 P2-1 — 이유 없는 `skip: true`도 「이유 없음」으로 드러남). 새 원본 시험은 `{ skip: !있음 && "무엇이 없음(경로)" }`처럼 이유를 적습니다. 공개 저장소로 옮기며(2026-10-26) 카드 59장 원본·지침 사본·초안 고정 자료도 git에서 뺐고, 이 셋의 경로·있음 여부·이유는 시험 도우미 `lib/testing/originals.ts`(`NO_SEED_CARDS`·`NO_PDCA_GUIDES`, 없으면 빈 값을 돌려줌) 한 곳에 둡니다 — 한 파일 안에서도 원본이 필요한 시험만 건너뜀. 익명화 표본(카드 1~2장)을 저장소에 넣을지는 기관 자료라 사용자 결정으로 남겨 둠.

@@ -17,6 +17,7 @@
     "harness:sync": "node scripts/harness/sync.ts",
     "db:seed": "node --env-file-if-exists=.env.local scripts/db/seed.ts",
     "db:push": "node --env-file-if-exists=.env.local scripts/db/push.ts",
+    "db:app-write-key": "node --env-file-if-exists=.env.local scripts/db/app-write-key.ts",
     "db:check-search": "node --env-file-if-exists=.env.local scripts/db/check-search.ts",
     "db:user": "node --env-file-if-exists=.env.local scripts/db/user.ts",
     "db:layout": "node --env-file-if-exists=.env.local scripts/db/layout.ts",

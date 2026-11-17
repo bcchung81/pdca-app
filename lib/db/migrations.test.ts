@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
@@ -18,6 +18,8 @@ import { AI_LIMITS, DESCRIBE_FEATURE, DESCRIBE_LIMITS } from "../ai/request-log.
 const ROOT = resolve(import.meta.dirname, "../..");
 const MIGRATIONS = join(ROOT, "supabase/migrations");
 const SKIP = [/_search(_\w+)?\.sql$/];
+// 근본책 1단계 B(초안 표 정책)는 운영 관문 확인 뒤 따로 올리는 파일 — 없으면 그 시험만 이유를 적고 건너뜀
+const NO_DRAFT_MARKER = !existsSync(join(MIGRATIONS, "20261117130000_app_write_drafts.sql")) && "근본책 1단계 B 마이그레이션(20261117130000) 없음";
 
 let db: PGlite;
 // 카드 59장 원본(seed/cards — git 밖)으로 팀·카드를 채운 DB 위에서 모든 시험이 돌므로, 원본이 없으면 DB를 만들지 않고 시험 전부를 건너뜀
@@ -37,15 +39,28 @@ async function insertJson(table: string, list: Array<Record<string, unknown>>, c
   await db.query(`insert into ${table} (${colList}) select ${colList} from jsonb_populate_recordset(null::${table}, $1::jsonb)`, [JSON.stringify(list)]);
 }
 
-/** 사용자로 한 번 실행(세션 설정 후 원래대로) */
-async function as<T>(user: keyof typeof users, fn: () => Promise<T>): Promise<T> {
+/** 시험용 앱 서버 경유 표지(20261117120000) — before에서 그 sha256을 키 표에 넣음. 운영 키와 무관한 고정 값 */
+const TEST_WRITE_KEY = "test-app-write-key-not-a-secret";
+
+/** 요청 머리글 설정(PostgREST가 request.headers에 넣는 모양). null이면 설정 자체를 비움(직접 연결과 같음) */
+async function setHeaders(headers: Record<string, string> | null) {
+  await db.query(`select set_config('request.headers', $1, false)`, [headers ? JSON.stringify(headers) : ""]);
+}
+
+/**
+ * 사용자로 한 번 실행(세션 설정 후 원래대로). 앱 서버를 거친 요청처럼 맞는 표지(x-app-write)를 기본으로 실음 —
+ * mark에 null(머리글 없음)·다른 값을 주면 앱 밖 직접 요청을 흉내 냄
+ */
+async function as<T>(user: keyof typeof users, fn: () => Promise<T>, mark: string | null = TEST_WRITE_KEY): Promise<T> {
   await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [users[user]]);
+  await setHeaders(mark === null ? null : { "x-app-write": mark });
   await db.exec("set role authenticated");
   try {
     return await fn();
   } finally {
     await db.exec("reset role");
     await db.query(`select set_config('request.jwt.claim.sub', '', false)`);
+    await setHeaders(null);
   }
 }
 
@@ -76,6 +91,8 @@ before(async () => {
   await db.exec(SUPABASE_STUB);
   const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql") && !SKIP.some((s) => s.test(f))).sort();
   for (const f of files) await db.exec(readFileSync(join(MIGRATIONS, f), "utf8"));
+  // 운영자가 하는 해시 등록(20261117120000 머리 주석)을 시험 키로
+  await db.query("insert into private.app_write_key (hash, note) values ($1, '시험')", [createHash("sha256").update(TEST_WRITE_KEY).digest("hex")]);
 
   await insertJson("public.teams", rows.teams);
   await insertJson("public.eval_units", rows.evalUnits);
@@ -988,6 +1005,88 @@ test("보고서 과제별 초안: 부서는 지정된 자기 부서 카드만 �
   }
 });
 
+test("앱 서버 경유 표지(20261117120000): 맞는 표지만 true — 머리글 없음·빈 값·다른 값은 false, 키 표는 로그인 사용자가 읽지도 쓰지도 못하고 교체 때도 2개까지", { skip: NO_SEED_CARDS }, async () => {
+  const probe = async (mark: string | null) => (await as("inspector", () => db.query<{ ok: boolean }>("select public.app_write_probe() as ok"), mark)).rows[0].ok;
+  assert.equal(await probe(TEST_WRITE_KEY), true);
+  for (const bad of [null, "", "wrong", `${TEST_WRITE_KEY} `]) assert.equal(await probe(bad), false, `표지 ${JSON.stringify(bad)}`);
+  // 로그인 전(anon)도 확인 함수는 부를 수 있음(운영 관문 확인용) — 결과는 표지대로
+  for (const [mark, want] of [[TEST_WRITE_KEY, true], [null, false]] as const) {
+    await setHeaders(mark === null ? null : { "x-app-write": mark });
+    await db.exec("set role anon");
+    try {
+      assert.equal((await db.query<{ ok: boolean }>("select public.app_write_probe() as ok")).rows[0].ok, want);
+    } finally {
+      await db.exec("reset role");
+      await setHeaders(null);
+    }
+  }
+  await rejects(() => as("admin", () => db.query("select 1 from private.app_write_key")), /permission denied/);
+  await rejects(() => as("admin", () => db.query("insert into private.app_write_key (hash) values (repeat('a', 64))")), /permission denied/);
+  // 로그인 사용자는 정책 평가 때문에 app_write()를 부를 수 있어야 함(결과는 표지대로)
+  assert.equal((await as("admin", () => db.query<{ ok: boolean }>("select private.app_write() as ok"), null)).rows[0].ok, false);
+  assert.equal((await as("admin", () => db.query<{ ok: boolean }>("select private.app_write() as ok"))).rows[0].ok, true);
+  // 해시 모양만(sha256 hex 64자), 교체 기간 2행까지 — 3행째 거절
+  await rejects(() => db.query("insert into private.app_write_key (hash) values ('NOT-HEX')"), /check constraint/);
+  await db.query("insert into private.app_write_key (hash, note) values (repeat('b', 64), '교체 시험')");
+  try {
+    await rejects(() => db.query("insert into private.app_write_key (hash) values (repeat('c', 64))"), /2개까지/);
+  } finally {
+    await db.query("delete from private.app_write_key where hash in (repeat('b', 64), repeat('c', 64))");
+  }
+  assert.equal(await count("select 1 from private.app_write_key"), 1);
+});
+
+test("앱 서버 경유 표지 — 경평 초안 표 3개(20261117130000): 표지 없음·빈 값·틀린 값이면 부서·성과관리팀·관리자 모두 넣기·고치기·지우기가 거절되고 읽기는 그대로, 맞는 표지면 예전과 같음", { skip: NO_SEED_CARDS || NO_DRAFT_MARKER }, async () => {
+  const own = (await db.query<{ id: string }>(
+    "select c.id from public.cards c join public.card_assignees a on a.card_id = c.id where a.user_id = $1 and c.status = 'active' limit 1",
+    [users.inspector],
+  )).rows[0].id;
+  const year = 2041; // 다른 시험·보고서 잠금과 겹치지 않는 연도
+  const insp = (await db.query<{ id: number }>("select id from public.teams where name = '검사기획팀'")).rows[0].id;
+  await db.query("insert into public.eval_units (id, track, name, sort, lead_team_id) values ('MG-92', '경영관리', '시험 지표 92', 92, $1)", [insp]);
+  // 고치기·지우기 대상 행은 소유자 권한(RLS 밖)으로 미리 넣음
+  await db.query("insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, '{\"version\":1,\"rows\":[]}', 'm', 1)", [own, year]);
+  await db.query("insert into public.eval_unit_report_parts (eval_unit_id, year, part, spec) values ('MG-92', $1, 'findings', '{}')", [year]);
+  const writes = [
+    { name: "초안 넣기", sql: "insert into public.card_report_drafts (card_id, year, spec) values ($1, $2 + 1, '{}')", args: [own, year] },
+    { name: "초안 upsert", sql: "insert into public.card_report_drafts (card_id, year, spec) values ($1, $2, '{}') on conflict (card_id, year) do update set spec = excluded.spec", args: [own, year] },
+    { name: "초안 판정값 고치기", sql: "update public.card_report_drafts set unknown_numbers = '{}', warnings = '[]' where card_id = $1 and year = $2", args: [own, year] },
+    { name: "고치기 이력 넣기", sql: "insert into public.report_draft_edits (card_id, year, block_index, kind, before, after, edited_by) values ($1, $2, 0, 'edit', '{}', '{}', auth.uid())", args: [own, year] },
+    { name: "지표 부분 넣기", sql: "insert into public.eval_unit_report_parts (eval_unit_id, year, part, spec) values ('MG-92', $1, 'prior', '{}')", args: [year] },
+    { name: "지표 부분 고치기", sql: "update public.eval_unit_report_parts set spec = '{\"x\":1}' where eval_unit_id = 'MG-92' and year = $1", args: [year] },
+  ];
+  const deletes = [
+    { name: "초안 지우기", sql: "delete from public.card_report_drafts where card_id = $1 and year = $2", args: [own, year] },
+    { name: "지표 부분 지우기", sql: "delete from public.eval_unit_report_parts where eval_unit_id = 'MG-92' and year = $1", args: [year] },
+  ];
+  const reads = ["select 1 from public.card_report_drafts", "select 1 from public.report_draft_edits", "select 1 from public.eval_unit_report_parts"];
+  const snapshot = async () => (await db.query<{ s: string }>(
+    "select (select coalesce(jsonb_agg(d order by d.card_id, d.year), '[]') from public.card_report_drafts d where d.year >= $1)::text || (select count(*) from public.report_draft_edits where year >= $1)::text || (select coalesce(jsonb_agg(p order by p.part), '[]') from public.eval_unit_report_parts p where p.eval_unit_id = 'MG-92')::text as s",
+    [year],
+  )).rows[0].s;
+  try {
+    const before = await snapshot();
+    for (const user of ["inspector", "pmo", "admin"] as const) {
+      for (const bad of [null, "", "wrong"]) {
+        for (const w of writes) await rejects(() => as(user, () => db.query(w.sql, w.args), bad), /row-level security/);
+        for (const d of deletes) assert.equal((await as(user, () => db.query(d.sql, d.args), bad)).affectedRows ?? 0, 0, `${user} ${JSON.stringify(bad)} ${d.name}`);
+        for (const r of reads) assert.equal(await as(user, () => count(r), bad), await as(user, () => count(r)), `${user} 읽기는 표지와 무관: ${r}`);
+      }
+    }
+    assert.equal(await snapshot(), before, "표지 없는 쓰기는 아무것도 바꾸지 못함");
+    // 맞는 표지: 행 판정은 예전 그대로(부서는 자기 카드·주관 지표, 지우기는 초안만 — 지표 부분 지우기는 성과관리팀)
+    for (const w of writes) await as("inspector", () => db.query(w.sql, w.args));
+    assert.equal((await as("inspector", () => db.query(deletes[1].sql, deletes[1].args))).affectedRows ?? 0, 0, "부서는 지표 부분을 못 지움(예전과 같음)");
+    assert.equal((await as("inspector", () => db.query(deletes[0].sql, deletes[0].args))).affectedRows, 1);
+    assert.equal((await as("pmo", () => db.query(deletes[1].sql, deletes[1].args))).affectedRows, 2);
+  } finally {
+    await db.query("delete from public.report_draft_edits where card_id = $1 and year >= $2", [own, year]);
+    await db.query("delete from public.card_report_drafts where card_id = $1 and year >= $2", [own, year]);
+    await db.query("delete from public.eval_unit_report_parts where eval_unit_id = 'MG-92'");
+    await db.query("delete from public.eval_units where id = 'MG-92'");
+  }
+});
+
 test("경평 초안 구성안(2단계): 부서는 자기 카드에 구성안만 있는 행을 넣고 읽음, spec·outline 둘 다 없거나 outline만 있고 status가 없으면 거절, 성과관리팀은 전부", { skip: NO_SEED_CARDS }, async () => {
   const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' limit 1")).rows[0].id;
   const other = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '자격기획팀' limit 1")).rows[0].id;
@@ -1355,7 +1454,7 @@ test("과제 대응표(3단계): 카드를 볼 수 있는 사람만 읽고, 확�
   });
 });
 
-test("공통 지식 선별 결과(card_knowledge_select): 부서 담당자는 지정된 카드 행만 읽고 쓰지 못함, 성과관리팀·관리자는 읽고 씀, 순위는 1부터, 익명 차단, 조각이 지워지면 함께", { skip: NO_SEED_CARDS }, async () => {
+test("공통 지식 선별 결과(card_knowledge_select): 부서 담당자는 지정된 카드 행만 읽고, 로그인 사용자는 성과관리팀·관리자도 쓰지 못함(쓰기는 선별 스크립트의 서비스 키만 — 20261117110000), 순위는 1부터, 익명 차단, 조각이 지워지면 함께", { skip: NO_SEED_CARDS }, async () => {
   const own = (await firstCard("검사기획팀")).id;
   const other = (await firstCard("자격기획팀")).id;
   await withKnowledgeFixture(async () => {
@@ -1372,17 +1471,24 @@ test("공통 지식 선별 결과(card_knowledge_select): 부서 담당자는 �
     } finally {
       await assignTeams();
     }
-    // 부서 담당자는 쓰지 못함
-    await rejects(() => as("inspector", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [own])), /row-level security/);
-    assert.equal((await as("inspector", () => db.query("update public.card_knowledge_select set rank = 5 where card_id = $1", [own]))).affectedRows, 0, "담당자는 못 고침");
-    assert.equal((await as("inspector", () => db.query("delete from public.card_knowledge_select where card_id = $1", [own]))).affectedRows, 0, "담당자는 못 지움");
-    // 성과관리팀·관리자는 넣고 고치고 지움
-    await as("pmo", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [own]));
-    assert.equal((await as("pmo", () => db.query("update public.card_knowledge_select set rank = 3 where card_id = $1 and chunk_key = 'prep-test/2'", [own]))).affectedRows, 1);
-    assert.equal((await as("admin", () => db.query("delete from public.card_knowledge_select where card_id = $1 and chunk_key = 'prep-test/2'", [own]))).affectedRows, 1);
-    await as("admin", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [other]));
-    await rejects(() => as("admin", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 0, 'x')", [own])), /check/);
-    await rejects(() => as("admin", () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank) values ($1, 'prep-test/2', 1)", [own])), /null/);
+    // 로그인 사용자는 누구도 쓰지 못함(앱 화면에 쓰는 곳이 없음 — 위생 마이그레이션이 쓰기 권한을 거둠)
+    for (const u of ["inspector", "pmo", "admin"] as const) {
+      await rejects(() => as(u, () => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [own])), /permission denied/);
+      await rejects(() => as(u, () => db.query("update public.card_knowledge_select set rank = 5 where card_id = $1", [own])), /permission denied/);
+      await rejects(() => as(u, () => db.query("delete from public.card_knowledge_select where card_id = $1", [own])), /permission denied/);
+    }
+    // 선별 스크립트(서비스 키)는 넣고 고치고 지움, 순위·판정 제약은 그대로
+    await db.exec("set role service_role");
+    try {
+      await db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [own]);
+      assert.equal((await db.query("update public.card_knowledge_select set rank = 3 where card_id = $1 and chunk_key = 'prep-test/2'", [own])).affectedRows, 1);
+      assert.equal((await db.query("delete from public.card_knowledge_select where card_id = $1 and chunk_key = 'prep-test/2'", [own])).affectedRows, 1);
+      await db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 2, 'x')", [other]);
+      await rejects(() => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank, judge) values ($1, 'prep-test/2', 0, 'x')", [own]), /check/);
+      await rejects(() => db.query("insert into public.card_knowledge_select (card_id, chunk_key, rank) values ($1, 'prep-test/2', 1)", [own]), /null/);
+    } finally {
+      await db.exec("reset role");
+    }
     await db.exec("set role anon");
     try {
       await rejects(() => db.query("select 1 from public.card_knowledge_select"), /permission denied/);

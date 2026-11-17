@@ -1464,5 +1464,6 @@ test("문체 끝말 정리(styleTail): 예전 정규식과 같은 결과, 빈칸
   const t = performance.now();
   styleWarnings(draft);
   recheckSection(draft, { taskNo: "3-나", title: "가짜" }, "", 2026, "2026-11-17");
-  assert.ok(performance.now() - t < 3000, `${Math.round(performance.now() - t)}ms`);
+  // 혼자 돌리면 약 1초. pnpm test가 시험 파일을 동시에 돌려 CPU를 나눠 쓰므로 넉넉히 — 예전(2제곱)은 20만 자면 수 분이라 10초로도 회귀를 잡음
+  assert.ok(performance.now() - t < 10_000, `${Math.round(performance.now() - t)}ms`);
 });
