@@ -6,3 +6,16 @@ allowBuilds:
   unrs-resolver: false
 minimumReleaseAgeExclude:
   - kordoc@4.15.3
+# 2026-11-18 cyber-check(osv-scanner) 점검 대응. kordoc 4.15.3은 그대로 두고(앱은 kordoc의 MCP·PDF 경로를 안 씀)
+# 하위 의존성만 부모 semver 범위 안의 고친 판으로 올림. kordoc을 올릴 때 이 항목들을 다시 볼 것(불필요하면 지움).
+overrides:
+  "@modelcontextprotocol/sdk": 1.32.0
+  markdown-it: 14.3.3
+  sharp: 0.35.5
+  source-map-js: 1.2.2
+  "@hono/node-server": 2.1.6
+  hono: 4.13.16
+  body-parser: 2.4.0
+  qs: 6.16.1
+  fast-uri: 3.1.9
+  ip-address: 10.7.4
