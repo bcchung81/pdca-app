@@ -163,7 +163,8 @@ export function bizStaleLabel(items: BizStaleItem[]): { text: string; title: str
 
 /**
  * 머리 더보기 메뉴. HWPX 내려받기(2026-10-28): 두 트랙 모두 「화면 그대로」(DOM 방식 — 초안 판 version이 있을 때)가 기본이고,
- * 실패하면 기존 양식을 안내 — 주요사업은 「HWPX(기존 양식)」(A안 ?form=a)·「HWPX(개조식)」, 경영관리는 「HWPX(개조식)」(경영관리의 기존 양식)
+ * 실패하면 기존 양식을 안내(주요사업 A안 ?form=a — 메뉴 항목은 없고 대체 안내로만, 경영관리는 개조식).
+ * 메뉴의 HWPX 항목은 두 트랙 모두 「HWPX 내려받기」·「HWPX(개조식)」 2개
  */
 export function menuOf(o: { uid: string; teamQs: string; selfHref: string; reportId: number | null; staffView: boolean; mg: boolean; evalUnitId: string; hasSpec: boolean; version: string | null; module: number }): MenuItem[] {
   const { uid, teamQs, selfHref } = o;
@@ -186,9 +187,8 @@ export function menuOf(o: { uid: string; teamQs: string; selfHref: string; repor
     ...(o.reportId !== null ? [{ href: withReturn(`/reports/${o.reportId}${teamQs}#평가내용2`, selfHref), label: "보고서에서 보기", hint: "이 사업·부서 보고서의 평가내용2에 모아 보기" }] : []),
     // 사업 조판은 성과관리팀 화면(부서 담당자는 열 수 없음 — 부서 화면 보기에서도 숨김)
     ...(o.staffView && !o.mg ? [{ href: withReturn(`/reports/business/${encodeURIComponent(o.evalUnitId)}#bz-${uid}`, selfHref), label: "사업 조판에서 보기", hint: "주요사업 전체를 쪽에 이어 붙인 모습에서 이 과제" }] : []),
-    // 한글: 화면 그대로(기본) + 기존 양식(주요사업 A안 — 경영실적보고서 용지, 상자·칸 도식, 그림은 크기대로 빈 자리) + 개조식 원고(route.ts)
+    // 한글: 화면 그대로(기본) + 개조식 원고(route.ts). 기존 양식(?form=a)은 메뉴에서 뺌 — 화면 그대로 실패 때 대체로만
     ...dom,
-    ...(o.hasSpec && !o.mg ? [{ ...formA, hint: "예전 변환(HWPX) — 초안을 양식대로 다시 짬, 그림은 크기대로 빈 자리", download: true }] : []),
     ...(o.hasSpec ? [{ ...gaejo, hint: "개조식 원고(HWPX) — 도식은 표·목록으로 펼침, 그림은 자리표시 줄", download: true }] : []),
     { href: "/help#report-fonts", label: "글꼴 안내", hint: "화면·한글을 같은 글꼴로 — KoPub 2.0 설치" },
   ];

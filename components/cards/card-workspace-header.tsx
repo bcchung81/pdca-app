@@ -9,7 +9,6 @@ import { ListIconButton, PhoneBackButton } from "../workspace/list-icon-button";
 import { ArchiveCardForm } from "./archive-controls";
 import type { WorkspaceProps } from "./card-workspace";
 import { useAsk } from "../ui/confirm-dialog";
-import { cardDomTarget, useDomHwpx } from "../reports/dom-hwpx-download";
 import { T } from "../ui/kit";
 import { ReviewBar } from "./card-workspace-bars";
 import type { CardWorkspaceState } from "./use-card-workspace";
@@ -188,15 +187,12 @@ function HeaderButtons({ props, ws }: HeaderProps) {
   );
 }
 
-/** 더보기 메뉴: HWPX 내려받기(다시 올리기용 · 화면 그대로) · 작성본 채우기 · 보관. 항목은 이름만, 설명은 title(마우스 올림)로(2026-11-10) */
+/** 더보기 메뉴: HWPX 내려받기(다시 올리기용) · 작성본 채우기 · 보관. 항목은 이름만, 설명은 title(마우스 올림)로(2026-11-10) */
 function MoreMenu({ props, ws }: HeaderProps) {
   const { draft } = props;
   const { menu, setMenu, draftMode, menuRef } = ws;
-  // 한글(화면 그대로): 원본 배치가 있는 카드만(숨은 사본이 원본 배치로 그림). 편집 중인 글을 먼저 저장해 사본(서버 내용)이 화면과 같게
-  const dom = useDomHwpx();
   return (
     <div ref={menuRef} className="relative">
-      {dom.ui}
       <button type="button" aria-haspopup="menu" aria-expanded={menu} aria-label="더보기" title="더보기 — HWPX 내려받기·채우기·보관" onClick={() => setMenu(!menu)} className={`${T.iconLabelBtn} ${menu ? "border-navy text-navy" : "border-field-line text-ink hover:border-navy"}`}>
         <Ellipsis size={16} aria-hidden />
         <span className={T.deskOnly}>더보기</span>
@@ -204,23 +200,8 @@ function MoreMenu({ props, ws }: HeaderProps) {
       {menu && (
         <div role="menu" aria-label="카드 더보기" className="absolute top-9 right-0 z-menu flex w-60 flex-col rounded-md border border-line-strong bg-paper py-1 text-ui shadow-menu">
           <a role="menuitem" href={`/cards/${props.uid}/hwpx`} download onClick={() => setMenu(false)} title={`지금 보이는 ${draftMode ? "작성본" : "원장"} · ${props.layout ? "원본 모양" : "9.16 양식"} · 채우기·현행화에 다시 올림`} className="px-3 py-2 text-ink no-underline hover:bg-row-hover">
-            HWPX 내려받기(다시 올리기용)
+            HWPX 내려받기
           </a>
-          {props.layout && (
-            <button
-              role="menuitem"
-              type="button"
-              disabled={dom.busy}
-              onClick={() => {
-                setMenu(false);
-                dom.startTarget(cardDomTarget(props.uid, async () => (await ws.editor.current?.flush()) ?? true));
-              }}
-              title="보기용 — 다시 올리기에는 위 파일"
-              className={`px-3 py-2 text-left text-ink hover:bg-row-hover ${T.off}`}
-            >
-              HWPX 내려받기(화면 그대로)
-            </button>
-          )}
           {draftMode && !props.readOnly && (
             <button
               role="menuitem"
