@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { AI_LIMITS, DESCRIBE_FEATURE, DESCRIBE_LIMITS, batchLimitMessage, startAiRequest, startAiRequests } from "./request-log.ts";
+import { AI_LIMITS, AI_PAUSED_MESSAGE, DESCRIBE_FEATURE, DESCRIBE_LIMITS, batchLimitMessage, startAiRequest, startAiRequests } from "./request-log.ts";
 import { fakeAiRequestRpc } from "./request-log-fake.ts";
 
 type Row = Record<string, any>;
@@ -155,4 +155,14 @@ test("startAiRequests: 안마다 running 행 하나(같은 기능·mode), 끝맺
   const no = await startAiRequests(busy.db, { userId: me, feature: "report_outline" }, 2, NOW);
   assert.equal(no.ok, false);
   assert.equal(busy.rows.length, 1, "거절하면 행을 넣지 않음");
+});
+
+test("AI 일시 중지(start_ai_request가 paused — 20261118140000): 한 건·여러 안 모두 관리자 멈춤 안내로 거절(한도 안내가 아님), 끝맺기 함수 없음", async () => {
+  assert.equal(AI_PAUSED_MESSAGE, "관리자가 AI 기능을 잠시 멈췄습니다. 잠시 뒤 다시 시도하세요.");
+  const calls: string[] = [];
+  const db: any = { rpc: async (fn: string) => (calls.push(fn), { data: { ok: false, paused: true }, error: null }), from: (t: string) => assert.fail(`표 직접 접근 없음(${t})`) };
+  assert.deepEqual(await startAiRequest(db, { feature: "card_assist" }, NOW), { ok: false, message: AI_PAUSED_MESSAGE });
+  assert.deepEqual(await startAiRequests(db, { feature: "report_outline" }, 3, NOW), { ok: false, message: AI_PAUSED_MESSAGE });
+  assert.deepEqual(await startAiRequest(db, { feature: DESCRIBE_FEATURE }, NOW), { ok: false, message: AI_PAUSED_MESSAGE }, "그림 설명도");
+  assert.deepEqual(calls, ["start_ai_request", "start_ai_request", "start_ai_request"]);
 });

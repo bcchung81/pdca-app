@@ -5,6 +5,7 @@ import { currentPeriod } from "../../../../lib/cards/view.ts";
 import { csvResponse } from "../../../../lib/csv.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
 import { fmtDate, monthLabel } from "../../../../lib/format.ts";
+import { logAccess } from "../../../../lib/ops/access-log.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 
 /** 과제 원장 목록 내려받기(CSV) — 성과관리팀·관리자 */
@@ -29,5 +30,7 @@ export async function GET() {
     r.fixedLocked ? "확정" : "",
     fmtDate(r.updatedAt),
   ]);
-  return csvResponse(`과제원장${track === "경영관리" ? "_경영관리" : ""}_${period}.csv`, [header, ...body]);
+  const name = `과제원장${track === "경영관리" ? "_경영관리" : ""}_${period}.csv`;
+  await logAccess(supabase, { action: "download", target: `${track} ${period}`, detail: { kind: "cards_csv", name, count: body.length } });
+  return csvResponse(name, [header, ...body]);
 }

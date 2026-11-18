@@ -105,7 +105,7 @@ async function run() {
   const limit = value("--limit") ? Number(value("--limit")) : undefined;
   const budgetMs = (value("--budget") ? Number(value("--budget")) : 3600) * 1000;
   const result = await drainPrepJobs({ store: prepStore(db), handlers: PREP_HANDLERS, kinds: runnable, budgetMs, maxJobs: limit });
-  console.log(`  완료 ${result.done} · 실패 ${result.failed} · 재시도 대기 ${result.requeued} · 멈춘 작업 되돌림 ${result.reclaimed} · 남은 대기 ${result.left}`);
+  console.log(`  완료 ${result.done} · 실패 ${result.failed} · 재시도 대기 ${result.requeued} · 멈춘 작업 되돌림 ${result.reclaimed} · 남은 대기 ${result.left}${result.paused ? " · AI 일시 중지로 멈춤(대기 작업 그대로)" : ""}`);
 }
 
 const commands: Record<string, () => Promise<void>> = { status, enqueue, run };

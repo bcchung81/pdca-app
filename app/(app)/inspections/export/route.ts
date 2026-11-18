@@ -6,6 +6,7 @@ import { csvResponse } from "../../../../lib/csv.ts";
 import { fmtDate, isPeriod, monthLabel } from "../../../../lib/format.ts";
 import { STATUS_LABEL, TABLE_KEYS, checklistCounts, formTablesOf, judgeStatus, linkText, readResult, remedyText, tally } from "../../../../lib/inspections/model.ts";
 import { inspectionsForPeriod } from "../../../../lib/inspections/queries.ts";
+import { logAccess } from "../../../../lib/ops/access-log.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 import { TRACK_SPECS } from "../../../../lib/tracks/index.ts";
 import { getTrack } from "../../../../lib/tracks/current.ts";
@@ -91,5 +92,7 @@ export async function GET(request: NextRequest) {
         : []),
     ];
   });
-  return csvResponse(`월간점검_${monthLabel(period)}_${period}.csv`, [header, ...body]);
+  const name = `월간점검_${monthLabel(period)}_${period}.csv`;
+  await logAccess(supabase, { action: "download", target: `${track} ${period}`, detail: { kind: "inspections_csv", name, count: body.length } });
+  return csvResponse(name, [header, ...body]);
 }

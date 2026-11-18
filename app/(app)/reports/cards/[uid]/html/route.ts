@@ -7,6 +7,7 @@ import { readDraftSpec, recountFailWarning } from "../../../../../../lib/reports
 import { recountStored } from "../../../../../../lib/reports/draft-recount-queries.ts";
 import { DRAFT_VERSION_META } from "../../../../../../lib/reports/dom-hwpx/policy.ts";
 import { sectionDocument } from "../../../../../../lib/reports/section-html.ts";
+import { logAccess } from "../../../../../../lib/ops/access-log.ts";
 import { createClient } from "../../../../../../lib/supabase/server.ts";
 
 /**
@@ -43,6 +44,8 @@ export async function GET(request: NextRequest, { params }: RouteContext<"/repor
   if (doc === null) return brokenDoc("초안을 그리지 못함");
   const html = recount.failed ? doc.replace("<body>", `<body>\n${failBand(recountFailWarning(recount.failed))}`) : doc;
   const name = `보고서초안_${card.task_no}.html`;
+  // 접속 기록은 이 내려받기(attachment)만 — ?for=hwpx 숨은 사본(inline, 한글 변환 재료)·안내 문서(422 inline)는 내려받기가 아님
+  await logAccess(supabase, { action: "download", target: uid, detail: { kind: "report_html", name } });
   return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",

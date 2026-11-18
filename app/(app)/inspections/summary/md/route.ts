@@ -6,6 +6,7 @@ import { isPeriod } from "../../../../../lib/format.ts";
 import { readResult } from "../../../../../lib/inspections/model.ts";
 import { inspectionsForPeriod } from "../../../../../lib/inspections/queries.ts";
 import { type SummaryInput, summarize, summaryMarkdown } from "../../../../../lib/inspections/summary.ts";
+import { logAccess } from "../../../../../lib/ops/access-log.ts";
 import { createClient } from "../../../../../lib/supabase/server.ts";
 import { getTrack } from "../../../../../lib/tracks/current.ts";
 import { TRACK_SPECS } from "../../../../../lib/tracks/index.ts";
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
     return c ? [{ card: { taskNo: c.taskNo, title: c.title, business: c.business, department: c.department, team: c.team }, status: ins.status, result: readResult(ins.result) }] : [];
   });
   const md = summaryMarkdown(period, summarize(list, TRACK_SPECS[track].inspectionForm));
+  await logAccess(supabase, { action: "download", target: `${track} ${period}`, detail: { kind: "inspection_summary_md", name: `월간점검_취합보고_${period}.md` } });
   return new Response(md, {
     headers: {
       "content-type": "text/markdown; charset=utf-8",

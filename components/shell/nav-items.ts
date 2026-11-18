@@ -10,6 +10,8 @@ export type NavMode = "open" | "collapsed" | "auto";
 export interface NavTab {
   href: string;
   label: string;
+  /** 이 역할 이상에게만 보임(없으면 메뉴를 볼 수 있는 모두) */
+  min?: AppRole;
 }
 
 export interface NavItem {
@@ -99,6 +101,9 @@ const ADMIN: NavItem[] = [
     icon: "usage",
     tabs: [
       { href: "/admin/usage", label: "AI 사용량" },
+      // 화면은 접속 기록 표(2단계)와 함께 들어옴 — 접속 기록은 관리자만 봄
+      { href: "/admin/access-log", label: "접속 기록", min: "admin" },
+      { href: "/admin/access-events", label: "권한 변경 기록" },
       { href: "/admin/library", label: "공통 자료·틀" },
     ],
   },
@@ -115,7 +120,7 @@ export function navSectionsFor(role: AppRole): NavSection[] {
     { id: "dept", title: "부서 화면", items: DEPT_VIEW },
   ];
   // 관리 메뉴는 성과관리팀도 봄(조회 — 올리기·지우기는 화면·서버 액션이 관리자만 허용)
-  if (atLeast(role, "pmo")) sections.push({ id: "admin", title: "관리", items: ADMIN });
+  if (atLeast(role, "pmo")) sections.push({ id: "admin", title: "관리", items: ADMIN.map((i) => (i.tabs ? { ...i, tabs: i.tabs.filter((t) => !t.min || atLeast(role, t.min)) } : i)) });
   return sections;
 }
 

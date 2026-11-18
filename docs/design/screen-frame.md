@@ -12,7 +12,7 @@
 |---|---|
 | `Screen({ header, peek })` | 머리(고정, 스크롤 영역 밖) + 본문(`pt-3 pb-4 gap-3`, 세로 스크롤) + 옆 창 자리 |
 | `PageHeader({ title, children })` | 한 줄 머리 `min-h-14`. **`sub`·`eyebrow` 속성 없음**(타입이 막아 부제가 다시 생기지 않게 함). 오른쪽 = 화면 선택 세그먼트 + 버튼들 |
-| `GroupSeg` (`group-seg.tsx`) | 메뉴 탭(`nav-items.ts` `tabs`)을 세그먼트로 그림. `?team=`(부서 화면 보기)·`?period=`(월간 점검) 유지, 전체 보기(`isFullView`)에서는 안 그림, 탭 배지(할 일) 유지 |
+| `GroupSeg` (`group-seg.tsx`) | 메뉴 탭(`nav-items.ts` `tabs`)을 세그먼트로 그림. `?team=`(부서 화면 보기)·`?period=`(월간 점검) 유지, 전체 보기(`isFullView`)에서는 안 그림, 탭 배지(할 일) 유지. 탭의 `min`(최소 역할)이 있으면 `navSectionsFor`가 그 역할 미만에게서 탭을 뺌(2026-11-18 — 관리 탭: AI 사용량 · 접속 기록(관리자만 — 머리 거르기 기간 오늘·7일·30일·이번 달·지난달/사용자/행위, StatPanel 4칸, 200줄씩 더 보기 상한 2,000) · 권한 변경 기록 · 공통 자료·틀) |
 | `NavProvider`·`useNav` (`nav-context.tsx`) | layout이 역할별 메뉴·배지를 client context로 내려 줌 — 서버 컴포넌트인 `PageHeader`가 안에서 `GroupSeg`를 그릴 수 있게 |
 | `Toolbar` | 머리 아래 도구 줄(검색·필터 칩·건수를 한 줄에) |
 | `StatPanel` | 통계 카드를 대체. `segments`(상태 분포 누적 막대 + 범례 = 필터, `allHref`/`allOn`, 범례 보충 `sub`)와 `metrics`(독립 지표, 값 + `/분모` + 진행 막대). segments 없이 metrics만 주면 지표 칸을 격자로 나열 |

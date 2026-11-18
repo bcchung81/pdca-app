@@ -1,8 +1,11 @@
 "use server";
 
 import type { EmailOtpType } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { confirmErrorMessage, safeNext } from "../../../lib/auth/redirect.ts";
+import { logAccess } from "../../../lib/ops/access-log.ts";
+import { SEEN_COOKIE, SEEN_COOKIE_OPTIONS, seenValue } from "../../../lib/ops/access-log-core.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 
 export type ConfirmState = { status: "idle" } | { status: "error"; message: string };
@@ -23,12 +26,15 @@ export async function confirmLogin(_prev: ConfirmState, formData: FormData): Pro
   const supabase = await createClient();
 
   let failed: { code?: string; message: string } | null = null;
+  let userId: string | null = null;
   if (tokenHash && OTP_TYPES.includes(type)) {
-    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+    const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
     if (error) failed = error;
+    else userId = data.user?.id ?? null;
   } else if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) failed = error;
+    else userId = data.user?.id ?? null;
   } else {
     failed = { message: "missing token" };
   }
@@ -37,5 +43,9 @@ export async function confirmLogin(_prev: ConfirmState, formData: FormData): Pro
     // 사용 중지 계정이면 그렇다고(메일함 주인만 오는 단계), 나머지는 만료·이미 쓰임 — lib/auth/redirect.ts confirmErrorMessage
     return { status: "error", message: confirmErrorMessage(failed) };
   }
+  // 접속 기록(로그인 — 20261118140000): 같은 클라이언트가 방금 받은 세션으로 부름(@supabase/ssr 서버 저장소는 이번 요청에 쓴 쿠키를 먼저 읽음 —
+  // auth.uid() = 새로 로그인한 사람). 실패해도 로그인은 그대로(한 줄 로그). 같은 날 「첫 접속」이 또 남지 않게 표식 쿠키도 여기서 심음
+  await logAccess(supabase, { action: "login" });
+  if (userId) (await cookies()).set(SEEN_COOKIE, seenValue(userId, Date.now()), SEEN_COOKIE_OPTIONS);
   redirect(next);
 }

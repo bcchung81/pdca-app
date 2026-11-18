@@ -4,8 +4,8 @@
 /** 처리기가 쓸 수 있는 표 — 3-5 재정의(2026-09-30)로 report_material_cards(자료의 과제는 사람이 고름)는 뺌, card_context_manifest 표는 정리 마이그레이션으로 삭제 */
 export const PREP_WRITE_TABLES = ["prep_jobs", "card_knowledge_scope", "ai_requests"] as const;
 
-/** 처리기가 읽기만 하는 표(매칭·목록표의 입력) */
-export const PREP_READ_ONLY_TABLES = ["cards", "card_materials", "report_materials", "reports", "knowledge_documents", "knowledge_chunks", "task_map"] as const;
+/** 처리기가 읽기만 하는 표(매칭·목록표의 입력 + AI 일시 중지 스위치 app_switches — 20261118140000) */
+export const PREP_READ_ONLY_TABLES = ["cards", "card_materials", "report_materials", "reports", "knowledge_documents", "knowledge_chunks", "task_map", "app_switches"] as const;
 
 export type PrepMode = "read" | "write";
 

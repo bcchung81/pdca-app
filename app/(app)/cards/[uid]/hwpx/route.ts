@@ -6,6 +6,7 @@ import { bodyMmOf, snapshotToHwpx } from "../../../../../lib/reports/dom-hwpx/co
 import { PICTURES_HEADER, picturesHeader, resolvePictures, snapshotPictureUrls } from "../../../../../lib/reports/dom-hwpx/pictures.ts";
 import { judgeSnapshotPost, parseDomHwpxPost } from "../../../../../lib/reports/dom-hwpx/policy.ts";
 import { readSnapshotText } from "../../../../../lib/reports/dom-hwpx/read-body.ts";
+import { logAccess } from "../../../../../lib/ops/access-log.ts";
 import { supabaseEnv } from "../../../../../lib/supabase/env.ts";
 import { createClient } from "../../../../../lib/supabase/server.ts";
 
@@ -35,7 +36,9 @@ export async function GET(_req: Request, ctx: RouteContext<"/cards/[uid]/hwpx">)
   if (!src) return new Response("카드를 찾을 수 없습니다.", { status: 404 });
   try {
     const bytes = await cardToHwpx(supabase, src.uid, src.data, src.layout);
-    return new Response(Buffer.from(bytes), { headers: hwpxHeaders(hwpxFileName(src.taskNo, String(src.data.title ?? src.title))) });
+    const name = hwpxFileName(src.taskNo, String(src.data.title ?? src.title));
+    await logAccess(supabase, { action: "download", target: src.uid, detail: { kind: "card_hwpx", name } });
+    return new Response(Buffer.from(bytes), { headers: hwpxHeaders(name) });
   } catch (e) {
     console.error("card hwpx", e);
     return new Response("한글 파일을 만들지 못했습니다.", { status: 500 });
@@ -79,7 +82,9 @@ export async function POST(request: Request, ctx: RouteContext<"/cards/[uid]/hwp
     if (pics.skipped.length) console.warn("card hwpx dom pictures", JSON.stringify({ uid: src.uid, skipped: pics.skipped.map((s) => ({ reason: s.reason, url: s.url.split("?")[0].slice(0, 200) })) }));
     // 카드는 여러 쪽 — 맨 위 표 중 쪽 본문의 1/4보다 높은 것은 쪽 경계에서 나눔(경평 경영관리와 같은 기준)
     const { bytes } = await snapshotToHwpx(v.snap, { lines: false, title: [src.taskNo, title].filter(Boolean).join(" "), page, splitOverMm: bodyMmOf(page).h / 4, pictures: pics.pictures });
-    const headers: Record<string, string> = { ...hwpxHeaders(hwpxFileName(src.taskNo, `${title} 화면`)), [PICTURES_HEADER]: picturesHeader(pics) };
+    const name = hwpxFileName(src.taskNo, `${title} 화면`);
+    const headers: Record<string, string> = { ...hwpxHeaders(name), [PICTURES_HEADER]: picturesHeader(pics) };
+    await logAccess(supabase, { action: "download", target: src.uid, detail: { kind: "card_hwpx_screen", name } });
     return new Response(Buffer.from(bytes), { headers });
   } catch (e) {
     console.error("card hwpx dom", e);

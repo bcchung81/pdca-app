@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { type AppRole, type CurrentUser, requireAtLeast } from "../../../lib/auth/dal.ts";
 import { allowedEmailDomains } from "../../../lib/auth/redirect.ts";
 import { createAdminClient } from "../../../lib/supabase/admin.ts";
+import { logAccess } from "../../../lib/ops/access-log.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { checkDisplayName } from "../../../lib/users/name.ts";
 import { type PlanContext, extractEmail, planRows } from "../../../lib/users/plan.ts";
@@ -92,6 +93,8 @@ export async function updateUser(_prev: UserFormState, formData: FormData): Prom
     console.error("updateUser", updErr?.message ?? "0 rows");
     return error("저장하지 못했습니다.");
   }
+  // 접속 기록(관리 행위 — 바뀐 내용은 access_events 트리거가 남김, 여기는 작업 이름만)
+  await logAccess(supabase, { action: "user_manage", target: id, detail: { op: "updateUser" } });
   let assigned = 0;
   if (role === "dept_user" && team !== null && team !== target.team_id) {
     try {
@@ -130,6 +133,7 @@ export async function inviteUser(_prev: UserFormState, formData: FormData): Prom
 
   const made = await createAccount(supabase, me.id, "form", email, displayName, { team_id: team, role });
   if (!made.ok) return error(made.message);
+  await logAccess(supabase, { action: "user_manage", target: made.id, detail: { op: "inviteUser" } });
   let assigned = 0;
   if (role === "dept_user" && team !== null) {
     try {
@@ -166,6 +170,7 @@ export async function setUserActive(id: string, active: boolean): Promise<{ ok: 
     console.error("setUserActive", updErr?.message ?? "0 rows");
     return { ok: false, message: "바꾸지 못했습니다." };
   }
+  await logAccess(supabase, { action: "user_manage", target: id, detail: { op: "setUserActive", active } });
   const { error: banErr } = await createAdminClient().auth.admin.updateUserById(id, { ban_duration: active ? "none" : BAN_FOREVER });
   revalidatePath("/users");
   if (banErr) {
@@ -215,6 +220,7 @@ export async function setUserAssignments(userId: string, cardIds: string[]): Pro
       return { ok: false, message: "담당 과제를 빼지 못했습니다." };
     }
   }
+  if (add.length || drop.length) await logAccess(supabase, { action: "user_manage", target: userId, detail: { op: "setUserAssignments", added: add.length, removed: drop.length } });
   revalidatePath("/users");
   return { ok: true, message: add.length || drop.length ? `담당 과제 ${want.size}장으로 맞췄습니다(추가 ${add.length} · 제외 ${drop.length}).` : "바뀐 것이 없습니다." };
 }
@@ -278,6 +284,10 @@ export async function applyUserPaste(input: ApplyRowInput[], options: { autoAssi
       results.push({ line, email: plan.email, status: "error", message: "처리하지 못했습니다.", assigned: 0 });
     }
   }
+  // 일괄은 한 줄에 건수만(대상 사용자마다 남기지 않음 — 바뀐 내용은 access_events)
+  const created = results.filter((r) => r.status === "created").length;
+  const updated = results.filter((r) => r.status === "updated").length;
+  if (created || updated) await logAccess(supabase, { action: "user_manage", detail: { op: "applyUserPaste", count: created + updated, created, updated, errors: results.filter((r) => r.status === "error").length } });
   revalidatePath("/users");
   return { ok: true, rows: results };
 }

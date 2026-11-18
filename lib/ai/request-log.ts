@@ -46,6 +46,8 @@ export type AiRequestStart = { ok: true; id: number; finish: (o: AiRequestFinish
 type StartInput = { userId?: string; cardId?: string | null; feature: string; mode?: string | null; job?: string };
 
 const LOG_FAIL = "AI 호출 기록을 남기지 못해 요청을 멈췄습니다. 잠시 뒤 다시 시도해 주세요.";
+/** 관리자가 AI 일시 중지를 켰을 때(start_ai_request가 paused — 20261118140000) */
+export const AI_PAUSED_MESSAGE = "관리자가 AI 기능을 잠시 멈췄습니다. 잠시 뒤 다시 시도하세요.";
 
 /** 한도에 걸렸을 때 안내(한 건) */
 function limitMessage(s: { running: number; recent: number }, feature: string): string {
@@ -108,11 +110,12 @@ async function callStart(db: SupabaseClient, o: StartInput, n: number, batch: bo
     p_key_hashes: keys.map((k) => k.hash),
     p_batch: batch,
   });
-  const res = data as { ok?: boolean; ids?: number[]; running?: number; recent?: number } | null;
+  const res = data as { ok?: boolean; ids?: number[]; running?: number; recent?: number; paused?: boolean } | null;
   if (error || !res) {
     if (error) console.error("startAiRequest", error.message);
     return { ok: false, running: 0, recent: 0, message: LOG_FAIL };
   }
+  if (!res.ok && res.paused) return { ok: false, running: 0, recent: 0, message: AI_PAUSED_MESSAGE };
   if (!res.ok) return { ok: false, running: Number(res.running ?? 0), recent: Number(res.recent ?? 0) };
   const ids = (res.ids ?? []).map(Number);
   if (ids.length !== n) return { ok: false, running: 0, recent: 0, message: LOG_FAIL };

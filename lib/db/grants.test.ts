@@ -190,6 +190,9 @@ const SEQUENCES = [
 const FUNCTIONS = [
   "anon EXECUTE public.app_write_probe()",
   "authenticated EXECUTE public.app_write_probe()",
+  // 접속 기록 넣기·AI 일시 중지(20261118140000 — 둘 다 표지 확인 맨 앞, set_ai_paused는 관리자만)
+  "authenticated EXECUTE public.log_access(p_action text, p_target text, p_ip text, p_ua text, p_detail jsonb)",
+  "authenticated EXECUTE public.set_ai_paused(p_on boolean, p_reason text)",
   "authenticated EXECUTE public.finish_ai_request(p_id bigint, p_key text, p_status text, p_model text, p_input_tokens integer, p_output_tokens integer, p_cache_read_tokens integer, p_cache_write_tokens integer, p_cache_write_1h_tokens integer, p_error text, p_duration_ms integer, p_timings jsonb)",
   "authenticated EXECUTE public.mg_biz_ref_texts(p_card_id text, p_year integer, p_biz_ids text[])",
   "authenticated EXECUTE public.mg_biz_refs(p_card_id text, p_year integer)",
@@ -228,6 +231,28 @@ test("경평 초안 판 기록 표(card_report_draft_versions — 20261118120000
     "select p.prosecdef as definer, has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth, has_function_privilege('anon', p.oid, 'EXECUTE') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'private' and p.proname = 'keep_card_report_draft_version'",
   );
   assert.deepEqual(fn, [{ definer: true, auth: false, anon: false }], "트리거 함수: private security definer, 로그인 사용자·비로그인 실행 권한 없음");
+});
+
+test("접속 기록 표(access_logs)·운영 스위치 표(app_switches — 20261118140000): 로그인 사용자는 읽기만(쓰기 권한·쓰기 정책 없음 — rpc만 씀), 시퀀스·트리거 함수 실행 권한 없음, 읽기 정책은 접속 기록 관리자만·스위치 전체", async () => {
+  for (const t of ["access_logs", "app_switches"]) {
+    const r = await rows<{ role: string; sel: boolean; ins: boolean; upd: boolean; del: boolean }>(
+      `select r.role, has_table_privilege(r.role, $1, 'SELECT') as sel, has_table_privilege(r.role, $1, 'INSERT') as ins,
+              has_table_privilege(r.role, $1, 'UPDATE') as upd, has_table_privilege(r.role, $1, 'DELETE') as del
+         from (values ('anon'), ('authenticated')) r(role) order by 1`,
+      [`public.${t}`],
+    );
+    assert.deepEqual(r.map((x) => [x.role, x.sel, x.ins, x.upd, x.del]), [["anon", false, false, false, false], ["authenticated", true, false, false, false]], t);
+  }
+  const policies = (await clientPolicies()).filter((p) => p.tbl === "access_logs" || p.tbl === "app_switches").map((p) => `${p.tbl}.${p.name}:${p.cmd}:${p.qual}`);
+  assert.deepEqual(policies, ["access_logs.access_logs_read:r:private.is_admin()", "app_switches.app_switches_read:r:true"]);
+  const seq = await rows<{ p: boolean }>("select has_sequence_privilege('authenticated', 'public.access_logs_id_seq', 'USAGE') or has_sequence_privilege('anon', 'public.access_logs_id_seq', 'USAGE') as p");
+  assert.equal(seq[0].p, false, "시퀀스 권한 없음");
+  const fn = await rows<{ auth: boolean; anon: boolean }>(
+    "select has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth, has_function_privilege('anon', p.oid, 'EXECUTE') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'private' and p.proname = 'access_logs_immutable'",
+  );
+  assert.deepEqual(fn, [{ auth: false, anon: false }], "위·변조 막기 트리거 함수: 로그인 사용자·비로그인 실행 권한 없음");
+  const trg = await rows<{ t: string }>("select tgname as t from pg_trigger where tgrelid = 'public.access_logs'::regclass and not tgisinternal order by 1");
+  assert.deepEqual(trg.map((x) => x.t), ["access_logs_no_delete", "access_logs_no_truncate", "access_logs_no_update"]);
 });
 
 test("비로그인은 공개 표를 읽지도 못하고 private 스키마도 못 씀", async () => {

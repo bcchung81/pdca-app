@@ -572,7 +572,7 @@ test("AI 호출 기록: 캐시 쓰기 중 1시간 캐시 몫을 따로 남긴다
 
 /** 끝맺기 키와 그 sha256(hex) — 서버(lib/ai/request-log.ts)가 시작 때 해시만 보내고 끝맺을 때 키를 보냄 */
 const aiKey = (k: string) => ({ key: k, hash: createHash("sha256").update(k, "utf8").digest("hex") });
-type AiStart = { ok: boolean; ids?: number[]; running?: number; recent?: number };
+type AiStart = { ok: boolean; ids?: number[]; running?: number; recent?: number; paused?: boolean };
 /** start_ai_request rpc(20261116110000)를 사용자로 부름 */
 async function startAi(who: keyof typeof users, o: { feature?: string; card?: string | null; job?: string | null; hashes?: string[]; batch?: boolean } = {}): Promise<AiStart> {
   const r = await as(who, () =>
@@ -750,6 +750,92 @@ test("AI 호출 시작 rpc 한도(start_ai_request): 동시·1분 수를 TS 한�
     assert.equal(await count("select 1 from public.ai_requests where user_id = $1 and status = 'error' and error like '중단%'", [users.inspector]), 2);
     assert.equal(await count("select 1 from public.ai_requests where user_id = $1 and status = 'running'", [users.inspector]), 2);
   } finally {
+    await clearAi();
+  }
+});
+
+// ── 접속 기록·AI 일시 중지(20261118140000) ─────────────────────────────────────────────────────
+/** log_access rpc를 사용자로 부름(표지 mark — 기본은 맞는 표지) */
+const logAs = (who: keyof typeof users, args: unknown[] = ["visit", null, "203.0.113.7", "Chrome · Windows", null], mark: string | null = TEST_WRITE_KEY) =>
+  as(who, () => db.query("select public.log_access($1, $2, $3, $4, $5::jsonb)", args), mark);
+
+test("접속 기록(access_logs): rpc log_access로 자기 이름으로만 넣고(표지 없으면 거절·허용 목록 밖 거절), 관리자만 읽고(성과관리팀·부서 0행), 누구도 고치거나 지우지 못함(서비스 키·postgres 포함)", { skip: NO_SEED_CARDS }, async () => {
+  const before = await count("select 1 from public.access_logs");
+  // 표지 없음·틀린 표지 → 42501, 행 없음
+  await rejects(() => logAs("inspector", undefined, null), /앱 서버를 거친 요청만/);
+  await rejects(() => logAs("inspector", undefined, "wrong"), /앱 서버를 거친 요청만/);
+  assert.equal(await count("select 1 from public.access_logs"), before);
+  // 표에 직접 넣기 권한 없음(남의 이름으로 쓰기 시도 포함)
+  await rejects(() => as("inspector", () => db.query("insert into public.access_logs (user_id, action) values ($1, 'login')", [users.admin])), /permission denied/);
+  // 넣기: user_id는 auth.uid() — 인자로 남의 id를 줄 칸이 없음
+  await logAs("inspector", ["download", "uid-1", "203.0.113.7", "Chrome · Windows", JSON.stringify({ kind: "card_hwpx", name: "1-가.hwpx" })]);
+  await logAs("pmo", ["login", null, null, null, null]);
+  assert.equal(await count("select 1 from public.access_logs where user_id = $1 and action = 'download' and target = 'uid-1' and ip = '203.0.113.7' and detail->>'kind' = 'card_hwpx'", [users.inspector]), 1);
+  assert.equal(await count("select 1 from public.access_logs where user_id = $1 and action = 'login'", [users.pmo]), 1);
+  // 허용 목록 밖·길이·detail 모양은 거절(22023)
+  for (const args of [["page_view", null, null, null, null], ["visit", "x".repeat(201), null, null, null], ["visit", null, "1".repeat(101), null, null], ["visit", null, null, "u".repeat(201), null], ["visit", null, null, null, "[1]"], ["visit", null, null, null, JSON.stringify({ t: "a".repeat(5000) })]])
+    await rejects(() => logAs("inspector", args), /올바르지 않습니다/);
+  // 로그인 없음(표지는 맞음) → 거절
+  await setHeaders({ "x-app-write": TEST_WRITE_KEY });
+  try {
+    await rejects(() => db.query("select public.log_access('visit')"), /로그인이 필요/);
+  } finally {
+    await setHeaders(null);
+  }
+  // anon은 실행 권한 없음
+  await db.exec("set role anon");
+  try {
+    await rejects(() => db.query("select public.log_access('visit')"), /permission denied/);
+  } finally {
+    await db.exec("reset role");
+  }
+  // 읽기: 관리자만
+  const total = await count("select 1 from public.access_logs");
+  assert.equal(await as("admin", () => count("select 1 from public.access_logs")), total);
+  assert.equal(await as("pmo", () => count("select 1 from public.access_logs")), 0, "성과관리팀은 자기 기록도 0행");
+  assert.equal(await as("inspector", () => count("select 1 from public.access_logs")), 0, "부서 담당자 0행");
+  // 고치기·지우기: 로그인 사용자(관리자 포함)는 권한 없음
+  for (const who of ["admin", "pmo", "inspector"] as const) {
+    await rejects(() => as(who, () => db.query("update public.access_logs set ip = '0.0.0.0'")), /permission denied/);
+    await rejects(() => as(who, () => db.query("delete from public.access_logs")), /permission denied/);
+  }
+  // 서비스 키·postgres도 트리거가 막음(수정·삭제·비우기)
+  for (const role of ["service_role", null]) {
+    if (role) await db.exec(`set role ${role}`);
+    try {
+      await rejects(() => db.query("update public.access_logs set ip = '0.0.0.0'"), /고치거나 지울 수 없습니다/);
+      await rejects(() => db.query("delete from public.access_logs"), /고치거나 지울 수 없습니다/);
+      if (!role) await rejects(() => db.query("truncate public.access_logs"), /고치거나 지울 수 없습니다/);
+    } finally {
+      if (role) await db.exec("reset role");
+    }
+  }
+  assert.equal(await count("select 1 from public.access_logs where ip = '0.0.0.0'"), 0);
+  assert.equal(await count("select 1 from public.access_logs"), total, "지워진 행 없음");
+});
+
+test("AI 일시 중지(app_switches·set_ai_paused·start_ai_request): 관리자만 켜고 끄고(표지 필요), 켜면 시작이 paused를 돌려주고 running 행을 만들지 않음, 끄면 예전과 같음 — 스위치는 로그인 사용자 모두 읽음", { skip: NO_SEED_CARDS }, async () => {
+  const pause = (who: keyof typeof users, on: boolean, mark: string | null = TEST_WRITE_KEY) => as(who, () => db.query<{ r: { on: boolean; reason: string | null } }>("select public.set_ai_paused($1, $2) as r", [on, on ? "점검 중" : null]), mark);
+  try {
+    assert.equal((await as("inspector", () => db.query<{ is_on: boolean }>("select is_on from public.app_switches where name = 'ai_paused'"))).rows[0].is_on, false, "기본 꺼짐·부서도 읽음");
+    await rejects(() => pause("pmo", true), /관리자만/);
+    await rejects(() => pause("inspector", true), /관리자만/);
+    await rejects(() => pause("admin", true, null), /앱 서버를 거친 요청만/);
+    await rejects(() => as("admin", () => db.query("update public.app_switches set is_on = true")), /permission denied/);
+    await rejects(() => as("admin", () => db.query("select public.set_ai_paused(true, $1)", ["가".repeat(201)])), /올바르지 않습니다/);
+    assert.deepEqual((await pause("admin", true)).rows[0].r.on, true);
+    assert.equal(await count("select 1 from public.app_switches where name = 'ai_paused' and is_on and reason = '점검 중' and updated_by = $1", [users.admin]), 1);
+    // 멈춤: 모두(관리자 포함) paused, 행 없음 — 여러 안 묶음도
+    for (const who of ["inspector", "pmo", "admin"] as const) assert.deepEqual(await startAi(who), { ok: false, paused: true });
+    assert.deepEqual(await startAi("inspector", { batch: true, hashes: [aiKey("p1").hash, aiKey("p2").hash] }), { ok: false, paused: true });
+    assert.equal(await count("select 1 from public.ai_requests where user_id = any($1)", [Object.values(users)]), 0, "running 행을 만들지 않음");
+    // 다시 켜기(멈춤 끄기) → 예전과 같음
+    assert.equal((await pause("admin", false)).rows[0].r.on, false);
+    const s = await startAi("inspector");
+    assert.equal(s.ok, true);
+    assert.equal(s.ids?.length, 1);
+  } finally {
+    await db.query("update public.app_switches set is_on = false, reason = null where name = 'ai_paused'");
     await clearAi();
   }
 });

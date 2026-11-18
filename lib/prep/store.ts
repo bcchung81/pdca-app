@@ -65,6 +65,17 @@ export function prepStore(db: SupabaseClient = createAdminClient()): PrepStore {
       return back;
     },
 
+    async aiPaused() {
+      // 스위치를 못 읽으면(마이그레이션 20261118140000 전 등) 멈추지 않고 예전처럼 돎 — 경고 한 줄
+      assertPrepTable("app_switches", "read");
+      const { data, error } = await db.from("app_switches").select("is_on").eq("name", "ai_paused").maybeSingle();
+      if (error) {
+        console.warn("[prep] AI 스위치 읽기 실패", error.message);
+        return false;
+      }
+      return data?.is_on === true;
+    },
+
     async countQueued(kinds: PrepKind[]) {
       const { count, error } = await jobs().select("id", { count: "exact", head: true }).eq("status", "queued").in("kind", kinds);
       if (error) throw new Error(`대기 작업 세기 실패: ${error.message}`);

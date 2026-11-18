@@ -152,8 +152,8 @@ export default async function UsersPage({ searchParams }: PageProps<"/users">) {
               </colgroup>
               <thead>
                 <tr className="h-10 bg-thead text-left text-xs font-semibold text-muted">
-                  {["이름", "메일", "팀", "역할", "담당 과제", "최근 접속"].map((h, i) => (
-                    <th key={h} scope="col" className={`border-b border-line px-3 whitespace-nowrap ${i === 0 ? T.stickTh : ""}`}>
+                  {["이름", "메일", "팀", "역할", "담당 과제", "최근 로그인"].map((h, i) => (
+                    <th key={h} scope="col" title={h === "최근 로그인" ? "메일 링크로 마지막 로그인한 시각입니다. 로그인한 채로 다시 들어온 것은 관리 › 접속 기록에서 봅니다." : undefined} className={`border-b border-line px-3 whitespace-nowrap ${i === 0 ? T.stickTh : ""}`}>
                       {h}
                     </th>
                   ))}

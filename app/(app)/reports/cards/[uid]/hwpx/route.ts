@@ -10,6 +10,7 @@ import { readSnapshotText } from "../../../../../../lib/reports/dom-hwpx/read-bo
 import { REPORT_PAGE_MM, sectionToHwpx } from "../../../../../../lib/reports/section-hwpx.ts";
 import { sectionMarkdown } from "../../../../../../lib/reports/section-md.ts";
 import { readSection } from "../../../../../../lib/reports/section.ts";
+import { logAccess } from "../../../../../../lib/ops/access-log.ts";
 import { createClient } from "../../../../../../lib/supabase/server.ts";
 
 /** 내려받기 머리(파일 이름은 GET·POST 같은 규칙 — hwpxFileName) */
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest, { params }: RouteContext<"/repor
     }
     const title = spec.card.title || card.title;
     const name = hwpxFileName(card.task_no, gaejo && !isMgmtCard(card.data) ? `${title} 개조식` : title);
+    await logAccess(supabase, { action: "download", target: uid, detail: { kind: "report_hwpx", name } });
     return new Response(Buffer.from(bytes), { headers: hwpxHeaders(name) });
   } catch (e) {
     console.error("report hwpx", e);
@@ -85,8 +87,10 @@ export async function POST(request: NextRequest, { params }: RouteContext<"/repo
   try {
     const title = spec?.card.title || card?.title || "";
     const { bytes } = await snapshotToHwpx(v.snap, { lines: false, title, page: REPORT_PAGE_MM, spacingUndo: spacingUndoFor(v.snap.fontMark) });
-    const headers = hwpxHeaders(hwpxFileName(card?.task_no ?? "", title));
+    const name = hwpxFileName(card?.task_no ?? "", title);
+    const headers = hwpxHeaders(name);
     if (v.overflowMm > 0) headers[OVERFLOW_HEADER] = v.overflowMm.toFixed(1);
+    await logAccess(supabase, { action: "download", target: uid, detail: { kind: "report_hwpx_screen", name } });
     return new Response(Buffer.from(bytes), { headers });
   } catch (e) {
     console.error("report hwpx dom", e);

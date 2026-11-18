@@ -115,3 +115,26 @@ test("두 처리기가 동시에 돌아도 같은 작업을 두 번 처리하지
   assert.equal(a.done + b.done, 6);
   assert.equal(new Set(seen).size, 6);
 });
+
+test("AI 일시 중지(app_switches — 20261118140000): 켜져 있으면 작업을 잡지 않고 대기로 남김(실패로 닫지 않음), 드레인 도중 켜지면 다음 작업부터 멈춤, 끄면 다시 처리", async () => {
+  const { rows, store } = fakeStore([{ kind: "match_knowledge", target: "A" }, { kind: "match_knowledge", target: "B" }]);
+  let paused = true;
+  const s: PrepStore = { ...store, aiPaused: async () => paused };
+  let calls = 0;
+  const handler: PrepHandler = async () => {
+    calls++;
+    paused = true; // 첫 작업을 처리하는 동안 관리자가 멈춤
+    return {};
+  };
+  const r = await drainPrepJobs({ store: s, kinds: ["match_knowledge"], budgetMs: 1000, handlers: { match_knowledge: handler } });
+  assert.deepEqual([r.done, r.failed, r.requeued, r.left, r.paused], [0, 0, 0, 2, true]);
+  assert.equal(calls, 0, "AI를 부르지 않음");
+  assert.ok(rows.every((x) => x.status === "queued" && x.attempts === 0), "시도 횟수도 그대로");
+  paused = false;
+  const r2 = await drainPrepJobs({ store: s, kinds: ["match_knowledge"], budgetMs: 1000, handlers: { match_knowledge: handler } });
+  assert.deepEqual([r2.done, r2.left, r2.paused], [1, 1, true], "도중에 켜지면 다음 작업은 잡지 않음");
+  paused = false;
+  const r3 = await drainPrepJobs({ store: s, kinds: ["match_knowledge"], budgetMs: 1000, handlers: { match_knowledge: async () => ({}) } });
+  assert.deepEqual([r3.done, r3.left, r3.paused], [1, 0, undefined]);
+  assert.ok(rows.every((x) => x.status === "done"));
+});

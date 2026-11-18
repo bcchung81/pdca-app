@@ -1,5 +1,5 @@
 // 앱 서버 경유 표지를 요구하는 공개 rpc(2026-11-17 근본책 2단계 — supabase/migrations/20261117150000_app_write_rpcs.sql).
-// 공개 security definer 함수 7개는 맨 앞에서 표지(private.app_write())를 확인합니다: 로그인 사용자라도 표지가 없거나 틀리면 42501로 거절하고
+// 공개 security definer 함수 7개(+ 20261118140000의 log_access·set_ai_paused)는 맨 앞에서 표지(private.app_write())를 확인합니다: 로그인 사용자라도 표지가 없거나 틀리면 42501로 거절하고
 // 아무것도 하지 않으며, 맞는 표지면 첫 줄을 지나 예전처럼 돕니다. sql에서 plpgsql로 바꾼 5개는 0행이어도 반환 열 형식이 맞아야 오류 없이 끝나므로
 // 「맞는 표지 → 오류 없음」이 본문 구조까지 확인합니다. 각 함수의 행 판정·한도는 migrations.test.ts가 표지를 싣고(as) 확인합니다.
 // 카드 원본(seed) 없이 마이그레이션만 올리므로 늘 돕니다. PGroonga 검색 마이그레이션(search_knowledge — security invoker)은 건너뜁니다.
@@ -31,6 +31,9 @@ const RPCS = {
   mg_biz_ref_texts: { sql: "select * from public.mg_biz_ref_texts('MG-0', 2026, '{}'::text[])", params: [] },
   mg_biz_stale: { sql: "select * from public.mg_biz_stale('{}'::text[], 2026)", params: [] },
   report_outline_context: { sql: "select * from public.report_outline_context('BZ-0', 2026)", params: [] },
+  // 접속 기록·AI 일시 중지(20261118140000)
+  log_access: { sql: "select public.log_access('visit', null, '203.0.113.7', 'Chrome · Windows', null)", params: [] },
+  set_ai_paused: { sql: "select public.set_ai_paused(false, null) as r", params: [] },
 } as const;
 type RpcName = keyof typeof RPCS;
 const NAMES = Object.keys(RPCS) as RpcName[];
@@ -66,13 +69,21 @@ async function run(sql: string, params: readonly unknown[], mark: string | null,
 const refused = (e: unknown) => (e as { code?: string }).code === "42501" && (e as Error).message.includes(REFUSED);
 const aiRows = async () => (await db.query<{ n: number }>("select count(*)::int as n from public.ai_requests where user_id = $1", [USER])).rows[0].n;
 
-test("공개 rpc 표지 확인(20261117150000): 로그인 사용자라도 표지가 없거나 틀리면 7개 모두 42501로 거절하고 아무것도 쓰지 않음", async () => {
+test("공개 rpc 표지 확인(20261117150000·20261118140000): 로그인 사용자라도 표지가 없거나 틀리면 9개 모두 42501로 거절하고 아무것도 쓰지 않음", async () => {
   for (const name of NAMES) {
     for (const mark of [null, "", "wrong", `${KEY} `]) {
       await assert.rejects(() => run(RPCS[name].sql, RPCS[name].params, mark), refused, `${name} 표지 ${JSON.stringify(mark)}`);
     }
   }
   assert.equal(await aiRows(), 0, "거절된 호출 기록 시작은 행을 남기지 않음");
+  assert.equal((await db.query<{ n: number }>("select count(*)::int as n from public.access_logs")).rows[0].n, 0, "거절된 접속 기록은 행을 남기지 않음");
+});
+
+test("접속 기록·AI 스위치 rpc(20261118140000): 맞는 표지면 log_access는 자기 이름으로 한 줄, set_ai_paused는 표지 다음에 관리자 확인(부서 담당자 거절)", async () => {
+  await run(RPCS.log_access.sql, [], KEY);
+  const r = (await db.query<{ user_id: string; action: string; ip: string }>("select user_id, action, ip from public.access_logs")).rows;
+  assert.deepEqual(r.map((x) => ({ ...x })), [{ user_id: USER, action: "visit", ip: "203.0.113.7" }]);
+  await assert.rejects(() => run(RPCS.set_ai_paused.sql, [], KEY), (e: unknown) => (e as { code?: string }).code === "42501" && /관리자만/.test((e as Error).message));
 });
 
 test("공개 rpc 표지 확인: 맞는 표지면 7개 모두 첫 줄을 지나 예전처럼 끝남(시작 → 끝맺기, 읽기는 해당 없는 인자라 0행)", async () => {

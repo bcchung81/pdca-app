@@ -181,3 +181,15 @@ test("마이그레이션 머리 주석의 반영 전 확인 SQL이 그대로 돌
   // 확인 SQL이 모든 대상 표를 훑는지(표 이름이 빠지지 않게)
   for (const t of new Set([...COLS.map((c) => c.table), "profiles"])) assert.ok(sql.includes(`public.${t} `), `확인 SQL에 ${t}`);
 });
+
+test("접속 기록(access_logs — 20261118140000): 고칠 수 없는 표라 넣을 때 상한 — detail object 4 KiB·target 200자·ip 100자·ua 200자, 넘으면 제약 위반(postgres로 넣어도)", async () => {
+  const insert = (cols: string, vals: string) => db.query(`insert into public.access_logs (user_id, action, ${cols}) values ('${USER}', 'visit', ${vals})`);
+  const violated = (name: string) => (e: { code?: string; constraint?: string }) => e.code === "23514" && e.constraint === name;
+  await insert("detail", sized("object", 4096));
+  await assert.rejects(() => insert("detail", sized("object", 4097)), violated("access_logs_detail_size"));
+  await assert.rejects(() => insert("detail", "'[]'::jsonb"), violated("access_logs_detail_shape"));
+  await insert("target, ip, ua", `repeat('가', 200), repeat('1', 100), repeat('u', 200)`);
+  await assert.rejects(() => insert("target", "repeat('가', 201)"), violated("access_logs_target_length"));
+  await assert.rejects(() => insert("ip", "repeat('1', 101)"), violated("access_logs_ip_length"));
+  await assert.rejects(() => insert("ua", "repeat('u', 201)"), violated("access_logs_ua_length"));
+});

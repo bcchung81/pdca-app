@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AiSwitchPanel } from "../../../../components/admin/ai-switch-panel";
 import { Empty, NoAccess, PageHeader, Panel, Screen, StatPanel, T, Tag } from "../../../../components/ui/kit";
 import { aiProvider } from "../../../../lib/ai/run.ts";
 import { estimateUsd, isCliModel } from "../../../../lib/ai/pricing.ts";
@@ -18,7 +19,8 @@ const fmtKrw = (usd: number) => `약 ${fmtInt(Math.round(usd * USD_KRW))}원`;
 
 type UsageRow = {
   id: number;
-  user_id: string;
+  /** 과제 매칭 처리기가 건 작업(사람이 건 것이 아님)은 null — prep_jobs.requested_by가 없을 때(20260930090000) */
+  user_id: string | null;
   card_id: string | null;
   feature: string;
   mode: string | null;
@@ -70,6 +72,12 @@ async function loadUsageRows(supabase: Awaited<ReturnType<typeof createClient>>,
 export const metadata: Metadata = { title: "AI 사용량 · 경평AI비서" };
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+/** 사용자 거르기·묶기 열쇠: 사람이 건 것이 아닌(user_id 없음) 백그라운드 기록 */
+const BG = "bg";
+const BG_NAME = "백그라운드(과제 매칭)";
+const STATUS_FILTER: Record<string, string> = { ok: "성공", error: "오류", running: "진행 중" };
+const LIST_PAGE = 100;
+const LIST_READ = 2000;
 const MODE_LABEL: Record<string, string> = {
   improve: "개선 제안",
   review: "점검 대비 리뷰(이전)",
@@ -98,12 +106,23 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
   const me = await requireAtLeast("pmo", "/admin/usage");
   if (!me) return <NoAccess title="AI 사용량" need="성과관리팀" />;
   const sp = await searchParams;
+  // 「최근 AI 호출」 목록 거르기: 허용 목록에 있는 값만 받고 모르는 값은 무시(집계는 기간 전체 그대로)
+  const fUserRaw = one(sp.user);
+  const fFeatureRaw = one(sp.feature);
+  const fStatusRaw = one(sp.status);
+  const fFeature = fFeatureRaw in FEATURE_LABEL ? fFeatureRaw : "";
+  const fStatus = fStatusRaw in STATUS_FILTER ? fStatusRaw : "";
+  const nRaw = Number(one(sp.n));
+  const shownMax = Number.isFinite(nRaw) && nRaw > LIST_PAGE ? Math.min(LIST_READ, Math.ceil(nRaw / LIST_PAGE) * LIST_PAGE) : LIST_PAGE;
   const period = isPeriod(one(sp.period)) ? one(sp.period) : currentPeriod();
   const next = shiftPeriod(period, 1);
   const supabase = await createClient();
   const [{ rows: list, error: loadError }, { data: people }, { data: cards }] = await Promise.all([loadUsageRows(supabase, period, next), supabase.from("profiles").select("id, display_name, email, role"), supabase.from("cards").select("id, uid, task_no, title")]);
   const provider = aiProvider();
   const who = new Map((people ?? []).map((p) => [p.id, p.display_name || p.email || "—"]));
+  // user_id가 없으면 과제 매칭 처리기(백그라운드), 있는데 프로필이 없으면(권한 밖·삭제) 알 수 없는 사용자
+  const nameOf = (id: string | null) => (id === null ? BG_NAME : (who.get(id) ?? "알 수 없는 사용자"));
+  const fUser = fUserRaw === BG || (fUserRaw !== "" && who.has(fUserRaw)) ? fUserRaw : "";
   const card = new Map((cards ?? []).map((c) => [c.id, c]));
   const sum = (k: "input_tokens" | "output_tokens" | "cache_read_tokens" | "cache_write_tokens") => list.reduce((n, r) => n + (r[k] ?? 0), 0);
   const totalUsd = list.reduce((n, r) => n + (usdOf(r) ?? 0), 0);
@@ -131,10 +150,27 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
   // 코멘트 묶음은 개수가 달라도 한 줄로
   // 블록 고치기는 mode(edit+b3+1f)에 블록 번호가 있어 고치기·질문 두 줄로만
   const byMode = group((r) => `${r.feature}|${r.feature === "card_comment" || r.feature === "card_chat" ? "" : r.feature === "report_block" ? (r.mode ?? "").split("+")[0] : (r.mode ?? "")}`);
-  const byUser = group((r) => r.user_id);
+  const byUser = group((r) => r.user_id ?? BG);
+
+  const filtering = Boolean(fUser || fFeature || fStatus);
+  const matched = list.filter((r) => (!fUser || (fUser === BG ? r.user_id === null : r.user_id === fUser)) && (!fFeature || r.feature === fFeature) && (!fStatus || r.status === fStatus));
+  const visible = matched.slice(0, shownMax);
+  /** 거르기 주소(기간·거르기 값·더 보기 상한) */
+  const href = (over: { user?: string; feature?: string; status?: string; n?: number }) => {
+    const p = new URLSearchParams();
+    p.set("period", period);
+    const u = over.user ?? fUser;
+    const f = over.feature ?? fFeature;
+    const st = over.status ?? fStatus;
+    if (u) p.set("user", u);
+    if (f) p.set("feature", f);
+    if (st) p.set("status", st);
+    if (over.n) p.set("n", String(over.n));
+    return `/admin/usage?${p.toString()}`;
+  };
 
   // 이름 칸: 기능 이름(위 줄) + 모드(아래 작은 줄)로 나눠 — 좁은 칸에서도 서로 다른 행이 「보고서 과제별 초…」로 똑같이 잘리지 않게(줄바꿈은 안 하고 두 줄로만 나눔)
-  const small = (title: string, entries: Array<[string, { n: number; input: number; output: number; usd: number; errors: number; rows: UsageRow[] }]>, label: (k: string) => { name: string; sub?: string }) => (
+  const small = (title: string, entries: Array<[string, { n: number; input: number; output: number; usd: number; errors: number; rows: UsageRow[] }]>, label: (k: string) => { name: string; sub?: string }, link?: (k: string) => string) => (
     <Panel title={title} className="min-h-0">
       {entries.length === 0 ? (
         <p className="px-5 py-6 text-center text-ui text-muted">기록 없음</p>
@@ -165,9 +201,15 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
                 return (
                   <tr key={k} className="hover:bg-row-hover">
                     <td className="border-b border-row-line px-3 py-1.5 align-middle">
-                      <span className="block truncate text-ui text-ink" title={sub ? `${name} · ${sub}` : name}>
-                        {name}
-                      </span>
+                      {link ? (
+                        <Link href={link(k)} className="block truncate text-ui text-navy no-underline hover:underline" title={`${sub ? `${name} · ${sub}` : name} — 이 조건으로 최근 AI 호출 거르기`}>
+                          {name}
+                        </Link>
+                      ) : (
+                        <span className="block truncate text-ui text-ink" title={sub ? `${name} · ${sub}` : name}>
+                          {name}
+                        </span>
+                      )}
                       {sub && (
                         <span className="block truncate text-xs text-muted-2" title={sub}>
                           {sub}
@@ -199,6 +241,7 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
           <span>
             <Tag tone={provider === "cli" ? "warn" : "navy"}>AI 연결 · {provider === "cli" ? "Claude Code CLI(임시)" : "Claude API"}</Tag>
           </span>
+          <AiSwitchPanel canEdit={me.role === "admin"} />
           <nav aria-label="기간" className="flex items-center gap-1">
             <Link href={`/admin/usage?period=${shiftPeriod(period, -1)}`} className={T.btn} aria-label="이전 달">
               ‹
@@ -223,7 +266,7 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
           { label: "캐시 읽기 토큰", value: fmtInt(sum("cache_read_tokens")), sub: "지침 캐시 재사용" },
           { label: "캐시 쓰기 토큰", value: fmtInt(sum("cache_write_tokens")), sub: "지침 캐시 처음 저장" },
           { label: "출력 토큰", value: fmtInt(sum("output_tokens")), sub: "제안·검토 결과" },
-          { label: "오류", value: errors, sub: errors ? "아래 최근 기록 확인" : "없음", tone: errors ? "warn" : undefined },
+          { label: "오류", value: errors, sub: errors ? "아래 최근 AI 호출 확인" : "없음", tone: errors ? "warn" : undefined },
         ]}
       />
       <StatPanel
@@ -240,12 +283,65 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
             const [f, m] = k.split("|");
             if (f === "report_block") return { name: FEATURE_LABEL[f] ?? f, sub: `${m === "ask" ? "질문" : "고치기"} · ${tierOf(f)}` };
             return { name: FEATURE_LABEL[f] ?? f, sub: `${m ? `${MODE_LABEL[m] ?? m} · ` : ""}${tierOf(f)}` };
-          })}
-          {small("사용자별", byUser, (k) => ({ name: who.get(k) ?? "삭제된 사용자" }))}
+          }, (k) => href({ feature: k.split("|")[0], n: 0 }))}
+          {small("사용자별", byUser, (k) => ({ name: nameOf(k === BG ? null : k) }), (k) => href({ user: k, n: 0 }))}
         </div>
-        <Panel title="최근 기록" aside={list.length > 50 ? "최근 50건" : undefined} className="min-h-0 lg:flex-1">
-          {list.length === 0 ? (
-            <Empty title={loadError ? "AI 호출 기록을 읽지 못했습니다." : `${periodLabel(period)} AI 호출이 없습니다.`} />
+        <Panel
+          title="최근 AI 호출"
+          aside={
+            <>
+              <span title="AI 호출 기록입니다. 사람이 화면에 접속·로그인한 기록은 관리 › 접속 기록에서 봅니다.">
+                AI 호출 기록(접속 기록 아님)
+                {list.length >= LIST_READ ? " · 앞 2,000건만 집계" : ""}
+                {` · ${fmtInt(visible.length)}${matched.length > visible.length ? `/${fmtInt(matched.length)}` : ""}건`}
+              </span>
+              {filtering && (
+                <>
+                  <span>
+                    {[fUser ? nameOf(fUser === BG ? null : fUser) : "", fFeature ? FEATURE_LABEL[fFeature] : "", fStatus ? STATUS_FILTER[fStatus] : ""].filter(Boolean).join(" · ")}
+                  </span>
+                  <Link href={href({ user: "", feature: "", status: "", n: 0 })} className="text-link no-underline hover:underline">
+                    거르기 해제
+                  </Link>
+                </>
+              )}
+            </>
+          }
+          className="min-h-0 lg:flex-1"
+        >
+          <form method="get" action="/admin/usage" className="flex min-w-0 flex-wrap items-center gap-2 border-b border-line px-5 py-2">
+            <input type="hidden" name="period" value={period} />
+            <select name="user" defaultValue={fUser} aria-label="사용자" className="h-8 max-w-[200px] min-w-0 rounded-md border border-field-line bg-paper px-2 text-sm text-ink">
+              <option value="">모든 사용자</option>
+              <option value={BG}>{BG_NAME}</option>
+              {(people ?? []).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.display_name || p.email || "—"}
+                </option>
+              ))}
+            </select>
+            <select name="feature" defaultValue={fFeature} aria-label="기능" className="h-8 max-w-[220px] min-w-0 rounded-md border border-field-line bg-paper px-2 text-sm text-ink">
+              <option value="">모든 기능</option>
+              {Object.entries(FEATURE_LABEL).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <select name="status" defaultValue={fStatus} aria-label="상태" className="h-8 min-w-0 rounded-md border border-field-line bg-paper px-2 text-sm text-ink">
+              <option value="">모든 상태</option>
+              {Object.entries(STATUS_FILTER).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className={T.btn}>
+              거르기
+            </button>
+          </form>
+          {list.length === 0 || matched.length === 0 ? (
+            <Empty title={loadError ? "AI 호출 기록을 읽지 못했습니다." : list.length === 0 ? `${periodLabel(period)} AI 호출이 없습니다.` : "조건에 맞는 AI 호출이 없습니다."} />
           ) : (
             <div className="max-h-[420px] min-h-0 flex-1 overflow-auto lg:max-h-none">
               <table className={`${T.table} min-w-[1210px]`}>
@@ -269,13 +365,13 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
                   </tr>
                 </thead>
                 <tbody>
-                  {list.slice(0, 50).map((r) => {
+                  {visible.map((r) => {
                     const c = r.card_id ? card.get(r.card_id) : undefined;
                     const usd = usdOf(r);
                     return (
                       <tr key={r.id} className={T.row}>
                         <td className={`${T.td} font-mono text-xs text-muted`}>{fmtDateTime(r.created_at)}</td>
-                        <td className={`${T.td} truncate`}>{who.get(r.user_id) ?? "—"}</td>
+                        <td className={`${T.td} truncate`}>{nameOf(r.user_id)}</td>
                         <td className={`${T.td} truncate`}>
                           {c ? (
                             <Link href={withReturn(`/cards/${c.uid}`, `/admin/usage?period=${period}`)} className="text-navy no-underline hover:underline" title={c.title}>
@@ -321,6 +417,17 @@ export default async function UsagePage({ searchParams }: PageProps<"/admin/usag
                   })}
                 </tbody>
               </table>
+              {matched.length > visible.length && (
+                <div className="px-5 py-3 text-center">
+                  {shownMax < LIST_READ ? (
+                    <Link href={href({ n: shownMax + LIST_PAGE })} className={T.btn}>
+                      더 보기
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-muted">읽어 온 앞 2,000건까지만 보입니다.</span>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </Panel>

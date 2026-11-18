@@ -19,6 +19,8 @@ export interface PrepStore {
   /** 실행 중인 채 오래된 작업을 대기로 되돌린다. 되돌린 건수 */
   reclaimStuck(now: Date): Promise<number>;
   countQueued(kinds: PrepKind[]): Promise<number>;
+  /** 관리자 AI 일시 중지가 켜져 있나(app_switches ai_paused — 20261118140000). 없으면 멈추지 않음(시험용 저장소) */
+  aiPaused?(): Promise<boolean>;
   /** 읽기: 한정 목록 안의 표에서 select만 열어 줌(고치기·지우기는 타입에도 런타임에도 없음). 목록 밖 표는 던진다 */
   table(name: string, mode: "read"): ReadTable;
   /** 쓰기: 쓸 수 있는 표(PREP_WRITE_TABLES)만. 읽기 전용 표·목록 밖 표는 던진다 */
@@ -54,6 +56,8 @@ export interface DrainResult {
   reclaimed: number;
   /** 아직 대기 중인 작업 수 */
   left: number;
+  /** AI 일시 중지로 작업을 잡지 않고 멈춤(대기 작업은 그대로 — 다음 처리 때 다시 함) */
+  paused?: true;
 }
 
 const MESSAGE_MAX = 500;
@@ -70,6 +74,11 @@ export async function drainPrepJobs(opts: DrainOptions): Promise<DrainResult> {
   const max = opts.maxJobs ?? Number.POSITIVE_INFINITY;
 
   while (result.done + result.failed + result.requeued < max && now() - start < opts.budgetMs) {
+    // 작업마다 AI를 부르므로 잡기 전마다 스위치 확인 — 멈춤이면 잡지 않고(실패로 닫지 않음) 남겨 둠
+    if (await opts.store.aiPaused?.()) {
+      result.paused = true;
+      break;
+    }
     const job = await opts.store.claim(kinds, retried);
     if (!job) break;
     try {

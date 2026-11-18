@@ -21,6 +21,8 @@ CLAUDE.md의 「사용자 등록·과제 담당자」 절의 상세(2026-09-30).
 | 성과관리팀·관리자 계정 만들기, 역할 변경, 그 행 수정·중지 | — | — | ✔ |
 | 본인 계정 중지 / 마지막 관리자 중지·강등 | — | 안 됨 | 안 됨 |
 
+사용자 목록의 「최근 로그인」은 auth `last_sign_in_at`(메일 링크로 마지막 로그인한 시각)이라 로그인한 채 다시 들어온 활동은 안 보입니다 — 활동은 관리 › 「접속 기록」(관리자만)에서 봅니다(2026-11-18, 예전 이름 「최근 접속」).
+
 DB가 마지막 판정: `profiles_update` 정책(본인 · 관리자 · 성과관리팀이 `role = 'dept_user'` 행)과 `guard_profile_update` 트리거(id·email 불변, 역할·부서·활성은 관리자 또는 「성과관리팀이 부서 담당자로 남는 부서 담당자(본인 아님)」). 서비스 키·마이그레이션은 트리거를 통과한다.
 
 ## 일괄 등록 (`/users/import`, 엑셀 붙여넣기)
@@ -72,7 +74,8 @@ DB가 마지막 판정: `profiles_update` 정책(본인 · 관리자 · 성과�
 
 ## 기록·데이터 정정
 
-- `access_events(actor_id, target_user_id, action, detail)`: `user_added`·`user_updated`·`user_deactivated`·`user_restored`·`assigned`·`unassigned`·`ban_failed`. 성과관리팀·관리자가 읽기만 하고 **로그인 사용자는 아무도 쓰지 못한다**(위조 막기, `20261116120000` — 2026-11-16 시큐어 코딩 2차 점검).
+- **접속 기록**(「개인정보의 안전성 확보조치 기준」 제8조 — 식별자·일시·접속지·처리한 정보주체·수행업무, 2026-11-18 `20261118140000`): `access_logs(user_id, created_at, action, target, ip, ua, detail)`. 남기는 것은 로그인 성공(`app/auth/confirm/actions.ts`) · 하루 첫 접속(`proxy.ts`, 표식 쿠키 `pdca_seen` = 서울 날짜 + 사용자, 화면 문서 GET만 — `isDocumentVisit`) · 내려받기 9곳(카드·초안 한글 GET·POST, 검토용 HTML 내려받기, 지표 한 파일, 취합 MD, 원장·점검 CSV — 숨은 한글 변환 사본 `?for=hwpx`는 안 남김) · 사용자 관리 5개 액션(op만 — 바뀐 내용은 `access_events`) · AI 스위치. 화면은 관리 › 「접속 기록」(`/admin/access-log`, **관리자만**). IP는 `x-forwarded-for` 첫 값, 기기는 「브라우저 · OS」 요약(`lib/ops/access-log-core.ts`). **1년 이상 보관·자동 삭제 없음·수정 삭제 불가**. 기록이 실패해도 로그인·내려받기·관리 작업은 막지 않고 서버 로그 `"kind":"access_log_error"` 한 줄.
+- `access_events(actor_id, target_user_id, action, detail)`: `user_added`·`user_updated`·`user_deactivated`·`user_restored`·`assigned`·`unassigned`·`ban_failed`·`card_purged`(관리자의 과제 영구 삭제, `20261117170000`). 화면은 관리 › 「권한 변경 기록」(`/admin/access-events`, 성과관리팀 이상·읽기 전용, 한국어 이름·한 줄 요약은 `lib/admin/access-events.ts` — 모르는 action은 원래 이름, 2026-11-18). 성과관리팀·관리자가 읽기만 하고 **로그인 사용자는 아무도 쓰지 못한다**(위조 막기, `20261116120000` — 2026-11-16 시큐어 코딩 2차 점검).
   - **DB 트리거가 남김**: `profiles`의 역할·팀·활성이 바뀌면 행 트리거 `private.log_profile_access_event`가 한 줄(활성이 바뀌면 중지·복구, 아니면 `user_updated`; detail은 바뀐 칸만 `{role|team|active: {from, to}}`, 이름 바꾸기는 안 남김). `card_assignees` 추가·삭제는 문장 트리거 `private.log_assignee_access_event`가 사용자마다 한 줄(`{count, card_ids(앞 60개)}`, 팀·역할 변경·카드 이동·영구 삭제에 딸려 지워지면 `auto: true`). 화면을 거치지 않은 직접 변경(PostgREST)도 남는다. 계정 자체가 지워지는 연쇄(`auth.users` 삭제)에서는 남기지 않음(외래 키가 삭제를 막지 않게).
   - 행위자는 `auth.uid()`. 서비스 키·DB 직접 변경(`pnpm db:user`·시드·e2e)은 `actor_id` null + `detail.via = "system"`.
   - **계정 만들기(`user_added`)만 앱이 남김**: 계정은 서비스 키(Auth 관리 API)로 만들어 DB가 행위자를 모르므로 `createAccount`가 `logUserAdded`(서비스 키, `{via: form|paste, role, team_id}`)로 남기고, 이어지는 이름·부서·역할 지정과 팀 과제 지정은 트리거가 `user_updated`·`assigned`로 남긴다. 이 기록의 실패만 본 작업을 막지 않고 서버 로그에 남는다.

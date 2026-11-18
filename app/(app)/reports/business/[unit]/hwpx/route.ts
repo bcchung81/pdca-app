@@ -5,6 +5,7 @@ import { currentPeriod } from "../../../../../../lib/cards/view.ts";
 import { draftToKcaHwpx } from "../../../../../../lib/hwpx/generate.ts";
 import { loadMgUnitLayout } from "../../../../../../lib/reports/unit-layout-queries.ts";
 import { unitReportMarkdown } from "../../../../../../lib/reports/unit-report-md.ts";
+import { logAccess } from "../../../../../../lib/ops/access-log.ts";
 import { createClient } from "../../../../../../lib/supabase/server.ts";
 import { loadUnitParts } from "../parts/actions";
 
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest, { params }: RouteContext<"/repor
     const { bytes } = await draftToKcaHwpx(md);
     // 평가단위 id(MG-N)는 식별자라 파일 이름에 쓰지 않고 지침 08의 지표 번호 표기(지표N)로
     const name = hwpxFileName(`지표${unit.replace(/^MG-/, "")}`, `${u.name} ${year}년도 경영실적보고서`);
+    await logAccess(supabase, { action: "download", target: unit, detail: { kind: "unit_hwpx", name } });
     return new Response(Buffer.from(bytes), {
       headers: {
         "content-type": HWPX_MIME,

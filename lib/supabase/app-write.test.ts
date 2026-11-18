@@ -1,5 +1,5 @@
 // 앱 서버 경유 표지(lib/supabase/app-write.ts, 근본책 1단계 2026-11-17) 시험.
-// 막는 회귀: ① 서버 클라이언트(server.ts·job-client.ts)가 표지를 안 실어 표지 정책을 건 DB에서 쓰기가 모두 거절됨
+// 막는 회귀: ① 서버 클라이언트(server.ts·job-client.ts · 접속 기록 rpc lib/ops/access-log.ts — 그 요청에만)가 표지를 안 실어 표지 정책을 건 DB에서 쓰기가 모두 거절됨
 // ② 표지가 브라우저로 새어 앱 밖 요청도 정책을 통과함(브라우저 클라이언트에 싣거나, NEXT_PUBLIC_로 만들거나, 클라이언트 컴포넌트가 읽음)
 // ③ 값이 없을 때(로컬·시험) 빈 머리글을 실음 — 설치된 @supabase/ssr를 그대로 돌려 실제 요청 머리글을 봄(네트워크 없음)
 
@@ -89,7 +89,7 @@ test("표지 비밀은 브라우저 번들로 가는 길이 없음: 읽는 곳�
   assert.ok(!/NEXT_PUBLIC_APP_WRITE/.test(src(".env.example")));
   assert.match(src(".env.example"), /^APP_WRITE_KEY=$/m, "서버 전용 이름으로 적힘(값은 비움)");
   const importers = all.filter((p) => /from\s+"[^"]*\/app-write\.ts"/.test(readFileSync(p, "utf8"))).map(rel).sort();
-  assert.deepEqual(importers, ["lib/supabase/job-client.ts", "lib/supabase/server.ts"]);
+  assert.deepEqual(importers, ["lib/ops/access-log.ts", "lib/supabase/job-client.ts", "lib/supabase/server.ts"]);
   for (const f of importers) assert.match(src(f), /^import "server-only";/m, f);
   // 클라이언트 컴포넌트가 server.ts·job-client.ts를 직접 가져가면 빌드가 server-only로 멈춤 — 그래도 「use client」 파일에 서버 클라이언트 import가 없음을 같이 봄
   const client = all.filter((p) => /^\s*["']use client["']/.test(readFileSync(p, "utf8")));
