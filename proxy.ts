@@ -9,10 +9,19 @@ import { isPublicPath } from "./lib/auth/public-paths.ts";
 import { authCallbackSearch } from "./lib/auth/redirect.ts";
 import { SEEN_COOKIE, SEEN_COOKIE_OPTIONS, isDocumentVisit, seenToday, seenValue } from "./lib/ops/access-log-core.ts";
 import { logAccessFrom } from "./lib/ops/access-log.ts";
+import { makeNonce, reportOnlyApplies, reportOnlyCsp } from "./lib/security/csp.ts";
 
 
 export async function proxy(request: NextRequest, event: NextFetchEvent) {
-  let response = NextResponse.next({ request });
+  // 스크립트 CSP(Report-Only — lib/security/csp.ts): 요청 머리글로 넘기면 Next가 nonce를 읽어 프레임워크 스크립트에 붙임.
+  // 사본은 NextResponse.next를 만들 때마다 그 시점의 request.headers로 새로 만듦(setAll이 갱신 쿠키를 request에 반영한 뒤여야 서버 컴포넌트까지 감)
+  const csp = reportOnlyCsp(makeNonce(), process.env.NODE_ENV === "development");
+  const withCsp = () => {
+    const headers = new Headers(request.headers);
+    headers.set("content-security-policy-report-only", csp);
+    return { request: { headers } };
+  };
+  let response = NextResponse.next(withCsp());
   const { url, publishableKey } = supabaseEnv();
   const supabase = createServerClient(url, publishableKey, {
     // 세션 쿠키는 httpOnly(스크립트가 못 읽음 — lib/supabase/cookie-options.ts)
@@ -23,7 +32,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
       },
       setAll(cookiesToSet, headers) {
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
-        response = NextResponse.next({ request });
+        response = NextResponse.next(withCsp());
         for (const { name, value, options } of cookiesToSet) response.cookies.set(name, value, options);
         for (const [key, value] of Object.entries(headers)) response.headers.set(key, value);
       },
@@ -66,6 +75,7 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
       response.cookies.set(SEEN_COOKIE, seenValue(sub, now), SEEN_COOKIE_OPTIONS);
     }
   }
+  if (reportOnlyApplies(path)) response.headers.set("Content-Security-Policy-Report-Only", csp);
   return response;
 }
 
