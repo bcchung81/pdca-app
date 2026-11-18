@@ -114,7 +114,24 @@ export function WorkspaceBody({ props, ws }: { props: WorkspaceProps; ws: CardWo
         )}
         {side === "history" && (
           <div className={sidePane} style={sidePaneStyle}>
-            <HistoryPanel uid={props.uid} version={ws.savedTick} onClose={() => ws.setOther(null)} />
+            <HistoryPanel
+              uid={props.uid}
+              version={ws.savedTick}
+              onClose={() => ws.setOther(null)}
+              // 원장 되돌리기: 성과관리팀 원장 편집에서만(부서 작성본·부서 화면 보기·보관 등 읽기 전용은 단추 없음 — 서버도 역할·Referer로 거절)
+              revert={
+                !draft && !props.readOnly && !props.preview
+                  ? {
+                      flush: async () => (await editor.current?.flush()) ?? true,
+                      onDone: (r) => {
+                        ws.setImageUrls((u) => ({ ...u, ...r.imageUrls }));
+                        editor.current?.reset(r.data, r.rev, { label: "되돌림" });
+                        ws.onSaved();
+                      },
+                    }
+                  : undefined
+              }
+            />
           </div>
         )}
       </NarrowSheet>

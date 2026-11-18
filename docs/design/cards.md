@@ -24,6 +24,7 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
   - 원본의 PDCA 화살표(그리기 개체)는 칸 채움으로, 줄마다 다른 자간은 대표값으로 바꿨습니다. kordoc 미리보기(`renderDocument`)는 근사 조판이라 최종 모양은 한글에서 확인합니다.
 - **과제 삭제는 보관**(`cards.status = retired` + 사유): 목록·AI·저장에서 빠지고 옆 창은 읽기 전용 안내만. 보관함(`/cards/archive`)에서 되살리고, 완전 삭제는 관리자만(과제번호를 쳐서 확인).
 - kordoc(MIT, 순수 JS)은 Vercel 서버 함수 안에서 그대로 돕니다(별도 서버 없음). `next.config.ts`의 `serverExternalPackages: ["kordoc"]`와 `outputFileTracingExcludes`(쓰지 않는 무거운 선택 의존성: sharp·onnx·pdfium·puppeteer 등)를 지우지 않습니다. `lib/hwpx/postprocess.ts`(HWPX 패키지 쓰기·읽기·글자/문단 모양 도구)는 카드 한글 내려받기(`lib/cards/hwp/export.ts`·`form.ts`)가 운영에서 쓰고, 나머지 경평 초안 KCA 표준보고서 양식은 참고 구현이라 화면에 연결하지 않았습니다(틀 적재 뒤).
+- **원장 되돌리기**(수정 이력 창 「이 시점으로」·가장 오래된 행 「이 수정 전으로」, 성과관리팀·관리자, 서버 액션 `revertCard`): 카드 내용(data·title·original_html)만 — 원본 배치·팀·본부·판·단계·고정 잠금은 그대로(2026-11-18 결정 1). 고정 영역이 확정된 카드도 고정 영역 내용을 같이 되돌림(잠금 여부만 그대로). 현행화 앞 시점·새 과제 등록 전·보관·식별 값 다름은 막음(결정 2, `lib/cards/revert.ts` `planRevert`). 쓰기는 `saveCard`와 같은 규칙(조건부 update·`data_rev`+1·`renderCard`·`prepCardChanged`), 이력은 합치지 않는 새 행 「되돌림: <서울 시각> 시점(이력 #id)」 — 자동 저장 합치기는 `historyMergeable`(되돌림 행 제외)
 
 ### 과제관리카드는 원본 그대로(한글 원본 배치)
 

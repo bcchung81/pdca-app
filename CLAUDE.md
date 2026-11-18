@@ -160,6 +160,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 카드 삭제는 항상 보관(`cards.status = retired`), 완전 삭제는 관리자만 + 과제번호 확인. 월별 실적은 기간별로 합쳐 잃지 않음(빈 상자도)
 - 비교 관용: 줄 끝 공백은 같은 글, 수식(`$…$`)만·그림만 빠진 블록은 [유지]. 렌더러가 던지면 「비교 불가」(`BlockStatus` `unknown`) — 기본 유지, 일괄 반영 제외. `next.config.ts`의 `serverExternalPackages: ["kordoc"]`·`outputFileTracingExcludes`를 지우지 않음
 - 경영관리 카드(`경영관리N/N-M`, `MG-1`~`MG-14`): 파서 `lib/cards/hwp/parse-mgmt.ts`, 렌더러 `render-mgmt.ts`(`isMgmtCard`), 올리기 `pnpm db:cards-mg [--dry-run|--write]`. 계량지표 부칸 글은 `kpi.rows[].sub`. 고정 영역(환류·지적 및 개선방안·계량지표)은 `fixedSectionsOf`·`fixedLabelOf`(`lib/cards/fixed.ts`) + DB 트리거 `guard_card_version`이 같이 잠금. 주요사업 현행화는 경영관리 파일을 거절(`looksLikeMgmtFile`). 지적/환류 행 추가·삭제는 원장 편집(성과관리팀 이상)만 — `edit.ts insertPairRow`·`deletePairRow`, 원본 배치는 행을 글로 맞춰 복제·뺌(`layout-render.ts`, 한글 내려받기와 같은 함수 — 43장 왕복 같은 행 수)
+- 원장 되돌리기는 카드 내용만(고정 영역 내용 포함, 잠금 여부·배치·팀·판은 그대로), 현행화 앞 시점·등록 전·보관은 막음(`lib/cards/revert.ts`). 이력은 합치지 않는 새 행(`historyMergeable`)
 
 ### 과제관리카드는 원본 그대로(한글 원본 배치)
 
@@ -199,7 +200,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 도식은 「이 과제만의 요소」(근거가 있어야 씀, 신호는 카드·첨부 글로만)와 「기본 도식」으로 나눠 고르고 시각 블록 하나 이상은 이 과제만의 요소 후보에서. 지적 인용은 1칸까지, 전후 비교 괄호 표기는 두 값이 모두 근거에 있을 때만
 - **코드가 이미 정한 값(이야기 틀 등)은 답 스키마에서 literal/한 값 enum으로 묶지 않음**(구조화 출력 파싱이 통째로 실패) — 문자열로 받아 코드가 덮어 씀(`withPlanStory`·`withFixedStory`)
 - 자동 고치기(`shouldFix`·`draftScore`, `lib/ai/fix-policy.ts`): 문장 문제만이면 안 고침. Vercel에서만 `FIX_DEADLINE_MS` 690초 안일 때(`fixDeadlineMs`·`canFixAgain`), 1차 먼저 저장(`onFirst`), 키 `report_fix`. 상자 채움 경고(`hollowBoxes`)는 고치기 사유가 아님
-- **쓰기·상태**: 초안·구성안 쓰기는 `saveDraftRow`(`lib/reports/draft-store.ts`, `updated_at` 조건)로만. 보고서 상태는 전이 표 `canMove`(`lib/reports/model.ts`)만이고 DB `report_transition_ok`가 같은 표
+- **쓰기·상태**: 초안·구성안 쓰기는 `saveDraftRow`(`lib/reports/draft-store.ts`, `updated_at` 조건)로만. 보고서 상태는 전이 표 `canMove`(`lib/reports/model.ts`)만이고 DB `report_transition_ok`가 같은 표 저장 직전 판은 트리거가 `card_report_draft_versions`에 남기고(직접 고침은 같은 사람이 이어 저장하면 마지막 저장부터 10분 안은 판 하나로 묶음·30판), 되돌리기는 `version-actions.ts restoreDraftVersion`(제출·승인이면 누구도 못 함)
 - 구성안 승인 뒤 근거 없는 이 과제만의 요소는 화면·서버 둘 다 막힘. 사람이 쓴 라벨·메모는 집필 지시일 뿐 근거가 아님
 - 블록 고치기는 고른 글이 든 블록 하나만 다시 씀(이력 `report_draft_edits`; 추진성과 상자 `block_index` -1). 모양 바꾸기는 `previewBlockShapes`(저장 안 함) → 고른 안만 `applyBlockShape`(`lib/reports/block-shape.ts`). 직접 고침은 `data-t`·`data-raw`와 `saveDraftTexts`(`lib/reports/draft-text.ts`)
 - 배치 필드는 구성안이 정하고 `applyPlanLayout`이 옮기며 폭·판면 어림은 `layoutGroups`(`lib/reports/layout.ts`) 하나만 씀. **배치 필드·제목 앞 칩이 없으면 출력·높이는 예전과 바이트까지 같아야 함**

@@ -23,6 +23,7 @@ import { recheckMgSection } from "../../../../lib/reports/mg-draft.ts";
 import { type DraftSources, type Prepared, beginAi, logAiError, prepareDraft, refresh } from "./draft-prepare.ts";
 import { type DraftPick, mergeSources, readPick, specSources, withFileSources } from "../../../../lib/reports/draft-sources.ts";
 import { withBizSources } from "../../../../lib/reports/mg-biz.ts";
+import { DRAFT_SAVE_HEADER, type DraftSaveKind } from "../../../../lib/reports/draft-versions.ts";
 
 // ---------------------------------------------------------------------------
 // 블록 고치기(드래그 「AI 수정 요청」·「질문」 — lib/reports/block-edit.ts, 2026-09-27 사용자 결정 「블록 단위 · 이력은 DB · 도구줄은 수정 요청·질문」)
@@ -71,18 +72,20 @@ const recheck = (p: Prepared, spec: ReportSectionSpec) => (spec.mg ? recheckMgSe
 /** 수정 이력 한 행(블록 하나 — 추진성과(blockIndex RESULT_INDEX)면 before·after가 추진성과 칸) */
 type EditLog = { blockIndex: number; kind: "edit" | "undo"; request: string; quote: string; reply: string; before: Block | ResultBox; after: Block | ResultBox; model: string | null; wasHuman: boolean; refId?: number };
 
-async function saveEditedDraft(p: Prepared, edited: ReportSectionSpec, version: string, edit: EditLog | EditLog[] | null): Promise<{ ok: true; version: string; editId: number | null; unknown: number; fit: ReportSectionSpec["fit"] | null } | { ok: false; message: string; conflict?: boolean }> {
+async function saveEditedDraft(p: Prepared, edited: ReportSectionSpec, version: string, edit: EditLog | EditLog[] | null, kind?: DraftSaveKind): Promise<{ ok: true; version: string; editId: number | null; unknown: number; fit: ReportSectionSpec["fit"] | null } | { ok: false; message: string; conflict?: boolean }> {
   // 블록 고치기에 새로 고른 자료를 넣었으면 초안 근거 목록에도 더함(다음 직접 고침·되돌리기의 숫자 대조 근거)
   // 새로 쓴 첨부·새로 고른 주요사업 초안(경영관리 — 그때 지문)을 초안 근거 목록에 더함(다음 직접 고침·되돌리기의 숫자 대조가 그 자료를 근거로 씀)
   const spec: ReportSectionSpec = { ...edited, sources: withBizSources(withFileSources(edited.sources, p.files), p.biz?.sources ?? []) };
   const checked = recheck(p, spec);
-  const { data: saved, error } = await p.supabase
+  let q = p.supabase
     .from("card_report_drafts")
     .update({ spec: checked.spec, warnings: checked.warnings, unknown_numbers: checked.unknownNumbers })
     .eq("card_id", p.card.id)
     .eq("year", p.year)
-    .eq("updated_at", version)
-    .select("updated_at");
+    .eq("updated_at", version);
+  // 판 기록의 저장 종류(직접 고침 = 같은 사람 10분 안 묶음 — lib/reports/draft-versions.ts, 트리거가 머리글로 읽음)
+  if (kind) q = q.setHeader(DRAFT_SAVE_HEADER, kind);
+  const { data: saved, error } = await q.select("updated_at");
   if (error) {
     console.error("saveEditedDraft", error.message);
     return { ok: false, message: "초안을 저장하지 못했습니다(권한을 확인해 주세요)." };
@@ -348,7 +351,7 @@ export async function saveDraftTexts(uid: string, raw: { edits: Array<{ path: st
     const after = blockAt(next, i);
     return before && after ? [{ blockIndex: i, kind: "edit" as const, request: "직접 고침", quote: "", reply: "", before, after, model: null, wasHuman: (d.spec.humanEdits ?? []).includes(i) }] : [];
   });
-  const saved = await saveEditedDraft(p, next, d.version, logs);
+  const saved = await saveEditedDraft(p, next, d.version, logs, "text");
   if (!saved.ok) return saved;
   refresh(uid);
   return { ok: true, version: saved.version, changed, unknown: saved.unknown, message: `저장했습니다(${changed}곳)${saved.unknown ? ` — 근거에 없는 숫자 ${saved.unknown}개(붉은 점선)를 확인해 주세요` : ""}.` };

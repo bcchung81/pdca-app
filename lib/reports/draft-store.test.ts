@@ -108,3 +108,29 @@ test("saveUnitPartRow(지표 단위 부분, R5b): 같은 버전 조건 — 키�
   const raced = await saveUnitPartRow(empty.db, k, { spec: {} }, null);
   assert.deepEqual(raced, { ok: false, conflict: true, message: UNIT_PART_CONFLICT_MSG }, "그 사이 누가 먼저 넣음");
 });
+
+test("saveDraftRow: 저장 종류(kind)를 주면 그 저장에만 판 기록 머리글 x-draft-save를 싣고, 안 주면 싣지 않음", async () => {
+  const seen: Array<Record<string, string>> = [];
+  const db: any = {
+    from: () => ({
+      update: () => {
+        const headers: Record<string, string> = {};
+        const q: any = {
+          eq: () => q,
+          setHeader(name: string, value: string) {
+            headers[name] = value;
+            return q;
+          },
+          select: async () => {
+            seen.push(headers);
+            return { data: [{ updated_at: "t1" }], error: null };
+          },
+        };
+        return q;
+      },
+    }),
+  };
+  assert.equal((await saveDraftRow(db, key, { spec: {} }, "t0", "restore")).ok, true);
+  assert.equal((await saveDraftRow(db, key, { spec: {} }, "t0")).ok, true);
+  assert.deepEqual(seen, [{ "x-draft-save": "restore" }, {}]);
+});

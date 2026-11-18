@@ -14,6 +14,8 @@ import { Clamp } from "../ui/clamp";
 import type { AskStep } from "../ui/confirm-dialog";
 import { T } from "../ui/kit";
 import { Markdown } from "../ui/markdown";
+import { PaneTabs } from "../workspace/pane-tabs";
+import { DraftVersions } from "./draft-versions";
 
 // 경평 초안 과제별 초안 「블록 고치기」 화면 부품(과제원장 카드 리뷰어 — components/cards/review/와 같은 쓰임새):
 // 초안 판에서 글을 끌어 고르면 도구줄(「AI 수정 요청」·「질문」) → 여백 작성 카드 → 5초 뒤 서버가 그 글이 든 블록 하나를 고침(runDraftBlockEdit).
@@ -699,8 +701,12 @@ const SHAPE_REQUEST = "모양 바꾸기";
 /** 블록 글 줄(전후 비교) — 추진성과 이력이면 추진성과 줄 + 강조 띠 */
 const lines = (b: Block | ResultBox | null | undefined) => (!b ? [] : "kind" in b ? blockTexts(b) : [...(b.results ?? []), b.resultBand].filter(Boolean));
 
-/** 오른쪽 자리의 「수정 이력」 패널(과제원장 수정 이력처럼 머리 시계 단추로 바꿔 열고 ✕·Esc로 탭에 돌아감): 블록 고치기·되돌리기 이력(DB, 최근 50건) */
+/**
+ * 오른쪽 자리의 「수정 이력」 패널(과제원장 수정 이력처럼 머리 시계 단추로 바꿔 열고 ✕·Esc로 탭에 돌아감): 블록 고치기·되돌리기 이력(DB, 최근 50건).
+ * 머리 탭 「판 기록」(2026-11-18): 저장 직전 판 목록과 되돌리기(components/reports/draft-versions.tsx)
+ */
 export function DraftHistory(props: { uid: string; version: string | null; onClose: () => void; onGoto: (blockIndex: number) => void }) {
+  const [tab, setTab] = useState<"edits" | "versions">("edits");
   const [state, setState] = useState<{ loading: boolean; items: DraftEditItem[]; error: string | null }>({ loading: true, items: [], error: null });
   useEffect(() => {
     let alive = true;
@@ -713,16 +719,24 @@ export function DraftHistory(props: { uid: string; version: string | null; onClo
   }, [props.uid, props.version]);
   return (
     <section aria-label="수정 이력" className="flex min-h-0 grow flex-col">
-      <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line px-5">
-        <h3 className="min-w-0 truncate text-sm font-bold text-navy" title="블록 고치기·되돌리기 이력 — 다시 만들어 덮인 초안의 고친 내용도 여기 남음">
-          수정 이력 {state.items.length ? state.items.length : ""}
-        </h3>
-        <button type="button" onClick={props.onClose} aria-label="수정 이력 닫기" title="닫고 탭으로 (Esc)" className="flex size-7 shrink-0 items-center justify-center rounded-md border border-field-line text-muted hover:border-navy">
+      <div className="flex h-14 shrink-0 items-stretch justify-between gap-2 border-b border-line px-5">
+        <PaneTabs
+          ariaLabel="수정 이력·판 기록"
+          tabs={[
+            { key: "edits", label: `수정 이력${state.items.length ? ` ${state.items.length}` : ""}`, title: "블록 고치기·되돌리기 이력 — 다시 만들어 덮인 초안의 고친 내용도 여기 남음" },
+            { key: "versions", label: "판 기록", title: "저장할 때마다 남긴 직전 판(초안 + 구성안) — 고른 판으로 되돌리기" },
+          ]}
+          active={tab}
+          onChange={setTab}
+        />
+        <button type="button" onClick={props.onClose} aria-label="수정 이력 닫기" title="닫고 탭으로 (Esc)" className="flex size-7 shrink-0 items-center justify-center self-center rounded-md border border-field-line text-muted hover:border-navy">
           ✕
         </button>
       </div>
       <div className="min-h-0 grow overflow-y-auto px-5 py-4">
-        {state.loading ? (
+        {tab === "versions" ? (
+          <DraftVersions uid={props.uid} version={props.version} />
+        ) : state.loading ? (
           <p className="py-6 text-center text-ui text-muted">불러오는 중…</p>
         ) : state.error ? (
           <p role="alert" className="py-6 text-center text-ui text-error">

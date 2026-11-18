@@ -18,12 +18,14 @@ import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../lib/auth/previe
 import { type CardChange, diffCards } from "../../../lib/cards/diff.ts";
 import { checkEditable, recomputeDerived } from "../../../lib/cards/edit.ts";
 import { canonicalJson, fixedSectionsOf } from "../../../lib/cards/fixed.ts";
+import { AUTOSAVE_SUMMARY, type EditPoint, REVERT_SIDES, type RevertBlock, type RevertSide, historyMergeable, planRevert } from "../../../lib/cards/revert.ts";
 import { mergeIntoLedger } from "../../../lib/cards/confirm.ts";
 import { editTargets } from "../../../lib/cards/patch.ts";
 import { openVersion } from "../../../lib/cards/versions.ts";
 import { renderCard } from "../../../lib/cards/render.ts";
 import { type InspectionResult, readResult } from "../../../lib/inspections/model.ts";
 import { currentPeriod } from "../../../lib/cards/view.ts";
+import { signedImageUrls } from "../../../lib/cards/queries.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
 import { prepCardChanged } from "../../../lib/prep/triggers.ts";
@@ -34,11 +36,10 @@ export type SaveState = { status: "idle" } | { status: "ok"; message: string; at
 
 const STALE_LEDGER = "다른 곳에서 원장이 바뀌었습니다(작성본 확정·다른 창의 수정). 화면을 새로 고친 뒤 다시 고쳐 주세요.";
 const RETIRED = "보관한(삭제한) 과제입니다. 보관함에서 되살린 뒤 고칠 수 있습니다.";
+const STALE_REVERT = "그사이 원장이 바뀌었습니다. 수정 이력을 새로 불러왔으니 확인한 뒤 다시 되돌려 주세요.";
 
 const STAGES = ["Plan", "Do", "Check", "Act"];
 const STATUSES = ["진행중", "완료", "보류"];
-const HISTORY_MERGE_MS = 30 * 60 * 1000;
-const AUTOSAVE_SUMMARY = "내용·운영 값";
 
 /** 과제 속성(PDCA 단계·진도율·상태) 읽기. 편집기가 이 값을 아예 안 보내면(카드 전체 쪽처럼 편집 칩이 없는 화면) null — 원장 값을 그대로 둠(지움 아님) */
 function parseMeta(p: { stage?: unknown; progress?: unknown; workStatus?: unknown }): { stage: string | null; progress: number | null; workStatus: string } | string | null {
@@ -120,8 +121,8 @@ export async function saveCard(_prev: SaveState, formData: FormData): Promise<Sa
   const workStatusLabel = meta ? meta.workStatus : row.work_status;
   const summary = `${AUTOSAVE_SUMMARY}(${stageLabel}·${progressLabel}%·${workStatusLabel})`;
   const { data: last } = await supabase.from("card_edits").select("id, edited_by, edited_at, summary").eq("card_id", row.id).order("edited_at", { ascending: false }).limit(1).maybeSingle();
-  // 자동 저장 이력끼리만 합침(작성본 확정 같은 다른 기록은 그대로 둠)
-  const merge = last && last.edited_by === me.id && String(last.summary ?? "").startsWith(AUTOSAVE_SUMMARY) && Date.now() - new Date(last.edited_at).getTime() < HISTORY_MERGE_MS;
+  // 자동 저장 이력끼리만 합침(작성본 확정·되돌림 같은 다른 기록은 그대로 둠 — lib/cards/revert.ts historyMergeable)
+  const merge = historyMergeable(last, me.id, Date.now());
   const { error: logError } = merge
     ? await supabase.from("card_edits").update({ after, summary, edited_at: now }).eq("id", last!.id)
     : await supabase.from("card_edits").insert({ card_id: row.id, edited_by: me.id, before: row.data, after, summary });
@@ -454,6 +455,9 @@ export async function returnDraft(versionId: number, note: string): Promise<{ ok
   return { ok: true };
 }
 
+/** 이력 행 한쪽(after·before)으로 되돌릴 수 있나: ok, 또는 막는 까닭(same = 지금과 같음 — 화면은 단추를 안 그림) */
+export type RevertMark = { ok: true } | { ok: false; code: RevertBlock; reason: string };
+
 export interface HistoryEntry {
   id: number;
   at: string;
@@ -461,24 +465,100 @@ export interface HistoryEntry {
   summary: string;
   changes: CardChange[];
   more: number;
+  /** 「이 시점으로」(그 수정 직후) */
+  revertAfter: RevertMark;
+  /** 「이 수정 전으로」 — 목록의 가장 오래된 행에만 */
+  revertBefore?: RevertMark;
 }
 
-/** 카드 수정 이력(원장 변경·작성본 확정) — 카드를 볼 수 있는 사람. 칸별 전후 비교를 함께 */
-export async function getCardHistory(uid: string): Promise<{ ok: boolean; items?: HistoryEntry[]; message?: string }> {
+const HISTORY_LIMIT = 30;
+const markOf = (plan: ReturnType<typeof planRevert>): RevertMark => (plan.ok ? { ok: true } : { ok: false, code: plan.code, reason: plan.reason });
+
+/**
+ * 카드 수정 이력(원장 변경·작성본 확정) — 카드를 볼 수 있는 사람. 칸별 전후 비교를 함께.
+ * rev = 지금 원장 개정 번호(되돌리기가 「그사이 원장이 바뀌었나」 확인에 씀), 행마다 되돌릴 수 있나(revertCard와 같은 planRevert — 단추는 화면이 성과관리팀 원장 편집에서만 그림)
+ */
+export async function getCardHistory(uid: string): Promise<{ ok: boolean; items?: HistoryEntry[]; rev?: number; message?: string }> {
   await requireUser("/cards");
   const supabase = await createClient();
-  const { data: card } = await supabase.from("cards").select("id").eq("uid", uid).maybeSingle();
+  const { data: card } = await supabase.from("cards").select("id, data, data_rev, status").eq("uid", uid).maybeSingle();
   if (!card) return { ok: false, message: "카드를 찾을 수 없습니다." };
-  const { data: rows, error } = await supabase.from("card_edits").select("id, edited_by, edited_at, summary, before, after").eq("card_id", card.id).order("edited_at", { ascending: false }).limit(30);
+  const { data: rows, error } = await supabase.from("card_edits").select("id, edited_by, edited_at, summary, before, after").eq("card_id", card.id).order("edited_at", { ascending: false }).limit(HISTORY_LIMIT);
   if (error) return { ok: false, message: "이력을 읽지 못했습니다." };
   const ids = [...new Set((rows ?? []).map((r) => r.edited_by).filter(Boolean))] as string[];
   const { data: people } = ids.length ? await supabase.from("profiles").select("id, display_name, email").in("id", ids) : { data: [] };
   const name = new Map((people ?? []).map((p) => [p.id, p.display_name || p.email || ""]));
-  const items = (rows ?? []).map((r) => {
+  const list = rows ?? [];
+  const current = { data: card.data, retired: card.status !== "active" };
+  const items = list.map((r, i) => {
     const changes = diffCards(r.before, r.after);
-    return { id: r.id, at: r.edited_at, who: name.get(r.edited_by ?? "") || "성과관리팀", summary: r.summary ?? "수정", changes: changes.slice(0, 40), more: Math.max(0, changes.length - 40) };
+    // 최근 순 목록이라 앞쪽 행(0..i-1)이 이 행보다 뒤의 수정(목록은 최근 30행이라 뒤의 행은 모두 들어 있음)
+    const pick: EditPoint = { id: r.id, at: r.edited_at, summary: r.summary, before: r.before, after: r.after };
+    const later = list.slice(0, i);
+    return {
+      id: r.id,
+      at: r.edited_at,
+      who: name.get(r.edited_by ?? "") || "성과관리팀",
+      summary: r.summary ?? "수정",
+      changes: changes.slice(0, 40),
+      more: Math.max(0, changes.length - 40),
+      revertAfter: markOf(planRevert(pick, "after", later, current)),
+      ...(i === list.length - 1 ? { revertBefore: markOf(planRevert(pick, "before", later, current)) } : {}),
+    };
   });
-  return { ok: true, items };
+  return { ok: true, items, rev: card.data_rev };
+}
+
+export type RevertResult = { ok: true; message: string; data: Record<string, unknown>; rev: number; imageUrls: Record<string, string> } | { ok: false; message: string };
+
+/**
+ * 원장 「이 시점으로 되돌리기」 — 성과관리팀·관리자. 고른 이력 행의 after(그 수정 직후) 또는 before(가장 오래된 행의 수정 전) 카드 내용으로.
+ * 카드 내용(cards.data·title·original_html)만 되돌리고 원본 배치·팀·본부·판·단계·고정 잠금은 그대로(2026-11-18 결정 1).
+ * 판정은 lib/cards/revert.ts planRevert(현행화 뒤 시점·새 과제 등록 전·보관·식별 값·지금과 같음), 쓰기는 saveCard와 같은 규칙
+ * (rev = 화면이 이력을 불러온 때의 원장 개정 번호 — 다르면 거절, 조건부 update로 1 올림, 이력은 합치지 않는 새 행, 저장 뒤 매칭 준비)
+ */
+export async function revertCard(uid: string, editId: number, side: RevertSide, rev: number): Promise<RevertResult> {
+  const me = await requireRole(["pmo", "admin"], "/cards");
+  if (!me) return { ok: false, message: "성과관리팀·관리자만 되돌릴 수 있습니다." };
+  if (await previewWriteBlocked()) return { ok: false, message: PREVIEW_WRITE_MSG };
+  if (!REVERT_SIDES.includes(side) || !Number.isSafeInteger(editId) || !Number.isSafeInteger(rev)) return { ok: false, message: "되돌릴 시점을 다시 골라 주세요." };
+  const supabase = await createClient();
+  const { data: row } = await supabase.from("cards").select("id, data, data_rev, status").eq("uid", String(uid)).maybeSingle();
+  if (!row) return { ok: false, message: "카드를 찾을 수 없습니다." };
+  if (row.status !== "active") return { ok: false, message: RETIRED };
+  if (rev !== row.data_rev) return { ok: false, message: STALE_REVERT };
+  const { data: pick } = await supabase.from("card_edits").select("id, edited_at, summary, before, after").eq("card_id", row.id).eq("id", editId).maybeSingle();
+  if (!pick) return { ok: false, message: "이력을 찾을 수 없습니다. 수정 이력을 다시 열어 주세요." };
+  // 고른 시점보다 뒤의 이력(요약만 — 현행화가 있으면 막음). 같은 시각은 뒤로 쳐 막는 쪽으로
+  const { data: later, error: laterError } = await supabase.from("card_edits").select("id, summary").eq("card_id", row.id).gte("edited_at", pick.edited_at).neq("id", pick.id);
+  if (laterError) return { ok: false, message: "이력을 읽지 못했습니다." };
+  const plan = planRevert({ id: pick.id, at: pick.edited_at, summary: pick.summary, before: pick.before, after: pick.after }, side, later ?? [], { data: row.data });
+  if (!plan.ok) return { ok: false, message: plan.reason };
+  let html: string;
+  try {
+    html = renderCard(plan.data);
+  } catch (e) {
+    console.error("revertCard render", e);
+    return { ok: false, message: "그 시점 내용을 원본 양식으로 그리지 못했습니다." };
+  }
+  const { data: updated, error } = await supabase
+    .from("cards")
+    .update({ data: plan.data, title: String(plan.data.title).trim(), original_html: html, data_rev: rev + 1, updated_by: me.id })
+    .eq("id", row.id)
+    .eq("data_rev", rev)
+    .select("id, data_rev");
+  if (error || !updated?.length) {
+    console.error("revertCard update", error?.message ?? "0 rows");
+    return { ok: false, message: STALE_REVERT };
+  }
+  // 이력: 늘 새 행(앞 행에 합치지 않음 — 뒤이은 자동 저장도 historyMergeable이 이 행에 합치지 않음)
+  const { error: logError } = await supabase.from("card_edits").insert({ card_id: row.id, edited_by: me.id, before: row.data, after: plan.data, summary: plan.summary });
+  if (logError) console.error("revertCard history", logError.message);
+  await prepCardChanged(supabase, me.id, row.id, row.data, plan.data);
+  revalidatePath("/cards");
+  // 되돌린 내용에만 있는 그림(옛 현행화 그림 등)의 서명 주소 — 편집기가 처음 받은 주소에 더함
+  const imageUrls = Object.fromEntries(await signedImageUrls(uid, html));
+  return { ok: true, message: `${plan.summary.slice(plan.summary.indexOf(" ") + 1)}으로 되돌렸습니다.`, data: plan.data, rev: updated[0].data_rev as number, imageUrls };
 }
 
 export interface CardInspection {

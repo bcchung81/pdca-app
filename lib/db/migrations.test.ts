@@ -1245,6 +1245,142 @@ test("경평 초안 블록 고치기 이력(report_draft_edits): 부서는 자�
   }
 });
 
+test("경평 초안 판 기록(card_report_draft_versions — 20261118120000): spec·outline이 바뀐 저장마다 직전 판 +1(같은 값·처음 넣기는 없음), 직접 고침은 같은 사람 10분 안 묶음, 31번째에 가장 오래된 판이 지워짐", { skip: NO_SEED_CARDS }, async () => {
+  const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' and c.status = 'active' limit 1")).rows[0].id;
+  const year = 2041;
+  const versions = (y = year) => count("select 1 from public.card_report_draft_versions where card_id = $1 and year = $2", [own, y]);
+  const spec = (n: number) => JSON.stringify({ version: 3, n });
+  const save = (n: number) => db.query("update public.card_report_drafts set spec = $3::jsonb where card_id = $1 and year = $2", [own, year, spec(n)]);
+  /** 직접 고침 저장(앱이 x-draft-save: text를 실음 — 표지 머리글과 함께) */
+  const saveText = (n: number) =>
+    db.query(`select set_config('request.headers', $1, false)`, [JSON.stringify({ "x-app-write": TEST_WRITE_KEY, "x-draft-save": "text" })]).then(() => save(n));
+
+  // 처음 넣기는 판 없음
+  await as("inspector", () => db.query("insert into public.card_report_drafts (card_id, year, spec, model, source_rev) values ($1, $2, $3::jsonb, 'm', 1)", [own, year, spec(0)]));
+  assert.equal(await versions(), 0, "처음 만들 때는 덮인 것이 없음");
+  // 저장하면 직전 판 +1 — 판 내용은 덮이기 전 값, 시각은 그 행의 updated_at, 덮은 사람은 로그인 사용자
+  const before = (await db.query<{ updated_at: string }>("select updated_at::text from public.card_report_drafts where card_id = $1 and year = $2", [own, year])).rows[0].updated_at;
+  await as("inspector", () => save(1));
+  assert.equal(await versions(), 1, "저장마다 판 하나");
+  const v1 = (await db.query<{ spec: { n: number }; state_at: string; replaced_by: string; changed: string; save_kind: string | null; model: string; source_rev: number }>(
+    "select spec, state_at::text, replaced_by::text, changed, save_kind, model, source_rev from public.card_report_draft_versions where card_id = $1 and year = $2", [own, year],
+  )).rows[0];
+  assert.deepEqual([v1.spec.n, v1.state_at, v1.replaced_by, v1.changed, v1.save_kind, v1.model, v1.source_rev], [0, before, users.inspector, "draft", null, "m", 1]);
+  // 같은 값 저장·spec/outline 밖 칸만 바꾼 저장은 판 없음
+  await as("inspector", () => save(1));
+  await as("inspector", () => db.query("update public.card_report_drafts set model = 'm2', warnings = '[\"w\"]' where card_id = $1 and year = $2", [own, year]));
+  assert.equal(await versions(), 1, "같은 값·다른 칸만 바뀐 저장은 판 없음");
+  // 구성안만 바꾸면 changed = outline, 둘 다면 both
+  const outline = (m: string) => JSON.stringify({ version: 1, message: m, points: [], story: "", storyWhy: "", alternative: "", blocks: [], results: "", materials: [], memo: "" });
+  await as("inspector", () => db.query("update public.card_report_drafts set outline = $3::jsonb, outline_status = 'draft' where card_id = $1 and year = $2", [own, year, outline("a")]));
+  await as("inspector", () => db.query("update public.card_report_drafts set outline = $3::jsonb, spec = $4::jsonb where card_id = $1 and year = $2", [own, year, outline("b"), spec(2)]));
+  const changed = (await db.query<{ changed: string }>("select changed from public.card_report_draft_versions where card_id = $1 and year = $2 order by id", [own, year])).rows.map((r) => r.changed);
+  assert.deepEqual(changed, ["draft", "outline", "both"]);
+
+  // 직접 고침 묶음: 같은 사람 10분 안은 판 하나(고치기 시작 전 판), 표시 없는 저장 뒤의 직접 고침은 새 판
+  await db.query("delete from public.card_report_draft_versions where card_id = $1 and year = $2", [own, year]);
+  await as("inspector", () => saveText(10));
+  await as("inspector", () => saveText(11));
+  await as("inspector", () => saveText(12));
+  const merged = (await db.query<{ n: number; save_kind: string }>("select (spec->>'n')::int as n, save_kind from public.card_report_draft_versions where card_id = $1 and year = $2 order by id", [own, year])).rows;
+  assert.deepEqual(merged, [{ n: 2, save_kind: "text" }], "같은 사람 10분 안 직접 고침 3번 = 고치기 시작 전 판 하나");
+  // 다른 사람(성과관리팀)의 직접 고침은 새 판
+  await as("pmo", () => saveText(13));
+  assert.equal(await versions(), 2, "다른 사람이면 새 판");
+  // 표시 없는 저장(AI 고치기 등) 뒤의 직접 고침은 새 판(가장 최근 판이 직접 고침 판이 아님)
+  await as("inspector", () => save(14));
+  await as("inspector", () => saveText(15));
+  assert.equal(await versions(), 4, "표시 없는 저장 뒤의 직접 고침은 새 판");
+  // 10분은 마지막 저장부터 셈: 묶음의 첫 판이 11분 전이어도 마지막 저장이 9분 전이면 묶이고, 마지막 저장이 11분 전이면 새 판
+  const lastSaveAgo = async (mins: number) => {
+    await db.query("alter table public.card_report_drafts disable trigger card_report_drafts_touch");
+    await db.query("update public.card_report_drafts set updated_at = now() - make_interval(mins => $3) where card_id = $1 and year = $2", [own, year, mins]);
+    await db.query("alter table public.card_report_drafts enable trigger card_report_drafts_touch");
+  };
+  await db.query("update public.card_report_draft_versions set replaced_at = now() - interval '11 minutes' where card_id = $1 and year = $2", [own, year]);
+  await lastSaveAgo(9);
+  await as("inspector", () => saveText(16));
+  assert.equal(await versions(), 4, "마지막 저장부터 10분 안이면 묶임(묶음의 첫 판이 11분 전이어도)");
+  await lastSaveAgo(11);
+  await as("inspector", () => saveText(17));
+  assert.equal(await versions(), 5, "마지막 저장이 10분 넘게 지나면 새 판");
+  await as("inspector", () => saveText(20));
+  assert.equal(await versions(), 5, "새 묶음 안에서는 다시 묶임");
+  // 되돌리기 표시(restore)는 묶지 않고 save_kind만 남김. 모르는 표시 값은 표시 없음으로
+  await as("inspector", () => db.query(`select set_config('request.headers', $1, false)`, [JSON.stringify({ "x-app-write": TEST_WRITE_KEY, "x-draft-save": "restore" })]).then(() => save(18)));
+  await as("inspector", () => db.query(`select set_config('request.headers', $1, false)`, [JSON.stringify({ "x-app-write": TEST_WRITE_KEY, "x-draft-save": "zzz" })]).then(() => save(19)));
+  const kinds = (await db.query<{ save_kind: string | null }>("select save_kind from public.card_report_draft_versions where card_id = $1 and year = $2 order by id desc limit 2", [own, year])).rows.map((r) => r.save_kind);
+  assert.deepEqual(kinds, [null, "restore"]);
+
+  // 보관 상한: 30판까지, 31번째에 가장 오래된 판이 지워짐
+  await db.query("delete from public.card_report_draft_versions where card_id = $1 and year = $2", [own, year]);
+  for (let i = 100; i < 130; i++) await as("inspector", () => save(i));
+  assert.equal(await versions(), 30);
+  const oldest = (await db.query<{ n: number }>("select (spec->>'n')::int as n from public.card_report_draft_versions where card_id = $1 and year = $2 order by id limit 1", [own, year])).rows[0].n;
+  await as("inspector", () => save(130));
+  assert.equal(await versions(), 30, "31번째 저장 뒤에도 30판");
+  const kept = (await db.query<{ n: number }>("select (spec->>'n')::int as n from public.card_report_draft_versions where card_id = $1 and year = $2 order by id", [own, year])).rows.map((r) => r.n);
+  assert.equal(kept.includes(oldest), false, "가장 오래된 판이 지워짐");
+  assert.equal(kept[kept.length - 1], 129, "가장 최근 판 = 이번 저장 직전 값");
+  // 다른 과제·연도의 판은 상한 정리에 안 걸림
+  await as("inspector", () => db.query("insert into public.card_report_drafts (card_id, year, spec) values ($1, $2, $3::jsonb)", [own, year + 1, spec(0)]));
+  await as("inspector", () => db.query("update public.card_report_drafts set spec = $3::jsonb where card_id = $1 and year = $2", [own, year + 1, spec(1)]));
+  assert.equal(await versions(year + 1), 1);
+  assert.equal(await versions(), 30);
+  // 초안 행을 지우면 그 과제·연도의 판도 cascade로 사라지고 새 판은 생기지 않음
+  await as("inspector", () => db.query("delete from public.card_report_drafts where card_id = $1 and year = $2", [own, year + 1]));
+  assert.equal(await versions(year + 1), 0, "초안 행을 지우면 판도 사라짐");
+  assert.equal(await versions(), 30, "다른 연도 판은 그대로");
+  await db.query("delete from public.card_report_draft_versions where card_id = $1 and year >= $2", [own, year]);
+  await db.query("delete from public.card_report_drafts where card_id = $1 and year >= $2", [own, year]);
+});
+
+test("경평 초안 판 기록 권한: 부서 담당자는 자기 과제 판만 읽고, 성과관리팀은 전부, 사용자가 판 표에 직접 넣기·고치기·지우기는 거절, 비로그인 불가", { skip: NO_SEED_CARDS }, async () => {
+  await db.query("update public.reports set status = 'drafting' where eval_unit_id = 'BZ-1' and status in ('submitted', 'approved')");
+  const own = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' and c.status = 'active' limit 1")).rows[0].id;
+  const other = (await db.query<{ id: string }>("select c.id from public.cards c join public.teams t on t.id = c.team_id where t.name = '자격기획팀' and c.status = 'active' limit 1")).rows[0].id;
+  const year = 2043;
+  for (const [user, card] of [["inspector", own], ["license", other]] as const) {
+    await as(user, () => db.query("insert into public.card_report_drafts (card_id, year, spec) values ($1, $2, '{\"version\":3,\"n\":0}'::jsonb)", [card, year]));
+    await as(user, () => db.query("update public.card_report_drafts set spec = '{\"version\":3,\"n\":1}'::jsonb where card_id = $1 and year = $2", [card, year]));
+  }
+  const read = (user: keyof typeof users) => as(user, () => db.query<{ card_id: string }>("select card_id from public.card_report_draft_versions where year = $1 order by card_id", [year])).then((r) => r.rows.map((x) => x.card_id));
+  assert.deepEqual(await read("inspector"), [own], "부서는 자기 과제 판만");
+  assert.deepEqual(await read("license"), [other]);
+  assert.deepEqual(await read("pmo"), [own, other].sort(), "성과관리팀은 전부");
+  // 지정이 빠진 과제는 같은 팀이어도 판을 못 읽음(카드 읽기와 같은 판정)
+  await db.query("delete from public.card_assignees where card_id = $1", [own]);
+  try {
+    assert.deepEqual(await read("inspector"), [], "지정이 빠지면 판도 안 보임");
+  } finally {
+    await assignTeams();
+  }
+  // 사용자 쓰기는 표 권한에서 거절(트리거만 씀) — 표지가 있어도
+  const id = (await db.query<{ id: number }>("select id from public.card_report_draft_versions where card_id = $1 and year = $2", [own, year])).rows[0].id;
+  for (const user of ["inspector", "pmo", "admin"] as const) {
+    await rejects(() => as(user, () => db.query("insert into public.card_report_draft_versions (card_id, year, spec, state_at, changed) values ($1, $2, '{}'::jsonb, now(), 'draft')", [own, year])), /permission denied/);
+    await rejects(() => as(user, () => db.query("update public.card_report_draft_versions set spec = '{}'::jsonb where id = $1", [id])), /permission denied/);
+    await rejects(() => as(user, () => db.query("delete from public.card_report_draft_versions where id = $1", [id])), /permission denied/);
+  }
+  await rejects(() => as("inspector", () => db.query("select private.keep_card_report_draft_version()")), /permission denied|trigger functions can only be called as triggers/);
+  await db.exec("set role anon");
+  try {
+    await rejects(() => db.query("select 1 from public.card_report_draft_versions"), /permission denied/);
+  } finally {
+    await db.exec("reset role");
+  }
+  // 앱 밖 직접 저장(표지 없음)은 초안 표 정책이 거절 → 판도 생기지 않음
+  const n = await count("select 1 from public.card_report_draft_versions where card_id = $1 and year = $2", [own, year]);
+  await rejects(() => as("inspector", () => db.query("update public.card_report_drafts set spec = '{\"version\":3,\"n\":9}'::jsonb where card_id = $1 and year = $2", [own, year]), null), /row-level security/);
+  assert.equal(await count("select 1 from public.card_report_draft_versions where card_id = $1 and year = $2", [own, year]), n, "거절된 저장은 판을 남기지 않음");
+  // 크기·모양 제약(20261117160000과 같은 꼴)은 표 주인(postgres)에게도 걸림
+  const put = "insert into public.card_report_draft_versions (card_id, year, spec, state_at, changed) values ($1, $2, $3::jsonb, now(), 'draft')";
+  await rejects(() => db.query(put, [own, year, "[]"]), /card_report_draft_versions_spec_shape/);
+  await rejects(() => db.query(put, [own, year, JSON.stringify({ t: "가".repeat(1_400_000) })]), /card_report_draft_versions_spec_size/);
+  await db.query("delete from public.card_report_draft_versions where year = $1", [year]);
+  await db.query("delete from public.card_report_drafts where year = $1", [year]);
+});
+
 test("경평 초안 부서 제출 잠금(report_locked·guard_card_report_draft): 부서 보고서가 제출·승인이면 부서는 그 카드 초안·구성안·이력을 못 고침, 성과관리팀은 그대로, 취소하면 다시 됨", { skip: NO_SEED_CARDS }, async () => {
   const own = (await db.query<{ id: string; eval_unit_id: string }>("select c.id, c.eval_unit_id from public.cards c join public.teams t on t.id = c.team_id where t.name = '검사기획팀' limit 1")).rows[0];
   const insp = (await db.query<{ id: number }>("select id from public.teams where name = '검사기획팀'")).rows[0].id;

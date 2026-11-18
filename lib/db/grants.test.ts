@@ -149,6 +149,7 @@ const TABLE_WRITES = [
   "authenticated DELETE public.report_comments",
   // 블록 고치기 이력(넣기만)
   "authenticated INSERT public.report_draft_edits",
+  // (card_report_draft_versions — 경평 초안 판 기록은 쓰기 권한 없음: 트리거만 씀, 아래 「판 기록 표」 시험)
   // 추가자료 ↔ 과제 연결
   "authenticated INSERT public.report_material_cards",
   "authenticated UPDATE public.report_material_cards",
@@ -210,6 +211,23 @@ test("공개 시퀀스: 로그인 사용자는 USAGE만(값 바꾸기 없음), �
 
 test("공개 함수 실행 권한(rpc로 부를 수 있는 것)이 기대 목록과 같다 — 비로그인은 확인용 app_write_probe만", async () => {
   assert.deepEqual(sorted(await functionGrants()), sorted(FUNCTIONS));
+});
+
+test("경평 초안 판 기록 표(card_report_draft_versions — 20261118120000): 로그인 사용자는 읽기만(쓰기 권한·쓰기 정책 없음 — 트리거만 씀), 시퀀스·트리거 함수 실행 권한 없음", async () => {
+  const t = await rows<{ role: string; sel: boolean; ins: boolean; upd: boolean; del: boolean }>(
+    `select r.role, has_table_privilege(r.role, 'public.card_report_draft_versions', 'SELECT') as sel, has_table_privilege(r.role, 'public.card_report_draft_versions', 'INSERT') as ins,
+            has_table_privilege(r.role, 'public.card_report_draft_versions', 'UPDATE') as upd, has_table_privilege(r.role, 'public.card_report_draft_versions', 'DELETE') as del
+       from (values ('anon'), ('authenticated')) r(role) order by 1`,
+  );
+  assert.deepEqual(t.map((x) => [x.role, x.sel, x.ins, x.upd, x.del]), [["anon", false, false, false, false], ["authenticated", true, false, false, false]]);
+  const policies = (await clientPolicies()).filter((p) => p.tbl === "card_report_draft_versions").map((p) => `${p.name}:${p.cmd}`);
+  assert.deepEqual(policies, ["card_report_draft_versions_read:r"], "읽기 정책 하나뿐");
+  const seq = await rows<{ p: boolean }>("select has_sequence_privilege('authenticated', 'public.card_report_draft_versions_id_seq', 'USAGE') or has_sequence_privilege('anon', 'public.card_report_draft_versions_id_seq', 'USAGE') as p");
+  assert.equal(seq[0].p, false, "시퀀스 권한 없음");
+  const fn = await rows<{ definer: boolean; auth: boolean; anon: boolean }>(
+    "select p.prosecdef as definer, has_function_privilege('authenticated', p.oid, 'EXECUTE') as auth, has_function_privilege('anon', p.oid, 'EXECUTE') as anon from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'private' and p.proname = 'keep_card_report_draft_version'",
+  );
+  assert.deepEqual(fn, [{ definer: true, auth: false, anon: false }], "트리거 함수: private security definer, 로그인 사용자·비로그인 실행 권한 없음");
 });
 
 test("비로그인은 공개 표를 읽지도 못하고 private 스키마도 못 씀", async () => {

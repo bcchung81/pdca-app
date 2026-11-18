@@ -421,6 +421,10 @@ CLAUDE.md에서 옮긴 상세(2026-09-28). 원문을 그대로 옮겼습니다(�
 | `lib/storage/remove.test.ts` | 덜 지움·오류는 한 줄 로그(`storage_remove_failed`), 던지지 않음 |
 | `lib/db/grants.test.ts`(저장소 구조 시험) | 저장소 객체의 쓰기 정책(정책 14개 목록 고정) |
 | `lib/db/migrations.test.ts`(앱 서버 경유 표지 — 저장소 객체) | 저장소 쓰기 정책의 표지 7사례 |
+| `lib/cards/revert.test.ts` | 원장 되돌리기 판정(현행화 뒤 시점·before 빈 객체·보관·식별 값·구역 빠짐·지금과 같음은 막음, 파생 칸 재계산), 요약 서울 시각, 30분 합치기는 같은 사람의 자동 저장 행만(되돌림·현행화 행 제외) |
+| `lib/db/migrations.test.ts` 「경평 초안 판 기록」 2건 | 저장 직전 판 +1·같은 값 없음·직접 고침 같은 사람 마지막 저장부터 10분 묶음·30판 정리·초안 행 삭제 cascade·읽기 범위·직접 쓰기 거절·크기 제약 |
+| `lib/db/grants.test.ts` 「판 기록 표」 | authenticated select만·읽기 정책 하나·시퀀스·트리거 함수 실행 권한 없음 |
+| `lib/reports/draft-versions.test.ts` | 트리거 상수(머리글·30·10분) 대조·목록 정리·되돌리기 판정 순서·되쓸 칸·판 spec 읽기 검사 |
 
 ## 원본 필요 시험(git 밖 — 없으면 이유를 적고 건너뜀)
 
