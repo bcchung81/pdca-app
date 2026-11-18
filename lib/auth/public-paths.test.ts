@@ -5,10 +5,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isPublicPath } from "./public-paths.ts";
 
-test("isPublicPath: 로그인·메일 링크 확인·크론 처리기·CSP 위반 보고만 공개", () => {
-  for (const p of ["/login", "/auth/confirm", "/auth/callback", "/api/prep/run", "/api/csp-report"]) assert.equal(isPublicPath(p), true, p);
+test("isPublicPath: 로그인·메일 링크 확인·크론 처리기만 공개", () => {
+  for (const p of ["/login", "/auth/confirm", "/auth/callback", "/api/prep/run"]) assert.equal(isPublicPath(p), true, p);
 });
 
 test("isPublicPath: 같은 접두사의 다른 경로는 공개 아님(/api/prep/ 아래 새 라우트·/loginx 등)", () => {
-  for (const p of ["/api/prep/other", "/api/prep/run/x", "/api/prep", "/loginx", "/auth", "/", "/cards", "/api/other", "/api/csp-report/x", "/api/csp"]) assert.equal(isPublicPath(p), false, p);
+  for (const p of ["/api/prep/other", "/api/prep/run/x", "/api/prep", "/loginx", "/auth", "/", "/cards", "/api/other"]) assert.equal(isPublicPath(p), false, p);
 });
