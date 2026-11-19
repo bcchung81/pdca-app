@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { rulesDigestPrompts } from "../prompts/sets.ts";
 import type { BundleChunk } from "./bundle.ts";
-import { type DigestAnswer, checkDigest, checkProblems, digestChunks, digestInputs, digestMarkdown, digestPrompt, digestTarget, quoteInText, staleDigest, unknownNumbersIn } from "./rules-digest.ts";
+import { type DigestAnswer, checkDigest, checkProblems, chunkHash, digestBlock, digestChunks, digestInputs, digestMarkdown, digestPrompt, digestTarget, quoteInText, staleDigest, unknownNumbersIn } from "./rules-digest.ts";
+import { createHash } from "node:crypto";
 
 let seq = 0;
 const chunk = (o: Partial<BundleChunk> & Pick<BundleChunk, "chunk_key" | "unit_type">): BundleChunk => ({
@@ -145,4 +146,14 @@ test("부분 갱신: 바뀌거나 빠진 조각을 가리키는 절과 다시 �
   assert.deepEqual(r.removed, ["plan/hb-common"]);
   assert.deepEqual(r.sections, ["평가 기준·배점", "다른 절"]);
   assert.notEqual(digestInputs(edited)[0].hash, prev.inputs[0].hash);
+});
+
+test("판 표지가 붙는 조각은 표지까지 해시에 넣어 표지가 바뀌면 규칙 문서가 낡음 — 표지 없는 조각의 해시는 예전 식 그대로, 입력 글 where에도 표지", () => {
+  const base = { doc_id: "plan-2607", seq: 1, unit_type: "plan_section", track: "주요사업", business: null, title: "제목", text: "개선(안) 표", context_prefix: "위치", meta: null } as BundleChunk;
+  const old = (c: BundleChunk) => createHash("sha256").update(JSON.stringify([c.unit_type, c.title, c.context_prefix ?? "", c.text ?? ""])).digest("hex").slice(0, 16);
+  const plain = { ...base, chunk_key: "plan-2607/narr/II/1/s2" };
+  assert.equal(chunkHash(plain), old(plain), "표지 없는 조각은 예전 해시와 같음(낡음으로 안 잡힘)");
+  const noted = { ...base, chunk_key: "plan-2607/narr/II/ref2/s2" };
+  assert.notEqual(chunkHash(noted), old(noted), "7월판 개선(안) 조각은 「수정본에서 다르게 확정됨」 표지가 생겨 해시가 바뀜");
+  assert.match(digestBlock([noted]), /where="위치 · ※ 7월판 개선\(안\) — 11\.13 수정본에서 다르게 확정됨/);
 });

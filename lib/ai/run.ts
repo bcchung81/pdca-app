@@ -9,7 +9,7 @@ import { AttachmentError } from "./material-text.ts";
 import { BudgetError, checkBudget } from "./budget.ts";
 import type { MaterialDoc } from "./material-text.ts";
 import { userBlocks } from "./user-blocks.ts";
-import { type BundleChunk, type KnowledgeBundle, listText, relevantRefs, sharedTexts } from "../knowledge/bundle.ts";
+import { type BundleChunk, type KnowledgeBundle, listText, outlineBundle, relevantRefs, sharedTexts } from "../knowledge/bundle.ts";
 import type { EditTarget } from "../cards/patch.ts";
 import { CliFailedError, CliUnavailableError, runClaudeCli } from "./cli.ts";
 import { isDegenerateChat, isDegenerateWriter, retryIfDegenerate } from "./degenerate.ts";
@@ -48,7 +48,7 @@ import type { PlanRevise } from "../reports/draft-sources.ts";
 import type { UnitAiOutput } from "../reports/unit-parts-ai.ts";
 import { cardBundles, linkedBundles } from "../reports/mg-bundles.ts";
 import { ledgerOutcomeItems } from "../reports/mg-close.ts";
-import { MG_LIMITS, type MgOutlineOutput, type MgPartRedo, type MgSibling, mgBundlePrompt, mgClosePrompt, mgDiagramPrompt, mgOutcomePrompt, mgPartPrompt, mgSiblingsPrompt } from "../reports/mg-outline.ts";
+import { MG_LIMITS, type MgOutlineOutput, type MgPartRedo, type MgSibling, mgBundlePrompt, mgClosePrompt, mgDiagramPrompt, mgItemsPrompt, mgOutcomePrompt, mgPartPrompt, mgSiblingsPrompt } from "../reports/mg-outline.ts";
 import type { DiagramHint } from "../reports/diagram-hints.ts";
 import { DEFAULT_TRACK, MGMT_TRACK, type TrackSpec, trackSpecOfUnit } from "../tracks/index.ts";
 import { type InspectContext, type InspectOutput, inspectSystemText, inspectionPrompt } from "./inspect.ts";
@@ -573,6 +573,11 @@ export function mgDiagramAsk(p: PromptSet, hints: DiagramHint[]): string {
   return mgDiagramPrompt(p, hints.map((h) => ({ ...h, why: dataText(h.why) })));
 }
 
+/** '26 편람 평가 항목 절(mgItemsPrompt) — 항목표가 없으면 빈 글 */
+export function mgItemsAsk(p: PromptSet, ctx: MgDraftContext): string {
+  return mgItemsPrompt(p, (ctx.items ?? []).map((it) => ({ ...it, title: dataText(it.title), points: it.points.map(dataText) })), { evals: ctx.evals, taskNo: ctx.taskNo });
+}
+
 /** 같은 지표 다른 카드의 짜임 절(mgSiblingsPrompt) — 절 이름·칩은 그 카드 구성안의 글이라 봉투 이름 태그만 무력화(dataText, 2026-11-17) */
 export function mgSiblingsAsk(p: PromptSet, siblings: MgSibling[]): string {
   return mgSiblingsPrompt(p, siblings.map((sb) => ({ ...sb, parts: sb.parts.map((x) => ({ ...x, label: dataText(x.label), ...(x.chip ? { chip: dataText(x.chip) } : {}) })) })));
@@ -588,6 +593,8 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
   const ask = (files: ReportFile[]) =>
     [
       mgMaterialsPrompt(draft, input.card, input.ctx, input.year, input.ctx.evals, files, input.lens ?? [], input.actuals),
+      // '26 편람 평가 항목(B1 — 항목 id·착안사항·담당, 답 coverage — 2026-11-19): 전체 구성안만(절 다시 짜기는 그 절만 바꿈). 편람 조각 글이라 봉투 이름 태그만 무력화(dataText)
+      input.part ? "" : mgItemsAsk(prompts, input.ctx),
       mgDiagramAsk(prompts, input.hints ?? []),
       mgSiblingsAsk(prompts, input.siblings ?? []),
       outlineInspectionPrompt(prompts, input.inspection ?? null),
@@ -611,7 +618,8 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
       .join("\n\n");
   // 요청이 주요사업의 약 두 배(지표 공통 지식 ③에 전년 보고서·실사 답변이 다 들어감 — 8-1 실측 약 17.7만 자)라 CLI 제한을 집필과 같게
   // CLI 제한 15분 — 2026-11-12 측정: 참고 없음 구성안 출력 약 6만 토큰으로 10분 근처, 주요사업 2건 참고 시 10분 초과 2회·900초 제한으로 총 633.8초 성공 — 로컬 CLI만, Vercel은 api(환경변수 CLAUDE_CLI_TIMEOUT_MS가 앞섬)
-  const r = await reportStructured("report_outline", outlineSystem(prompts), schema, input.files ?? [], ask, input.kb, { kbp: draft, timeoutMs: 900_000 });
+  // 공통 지식은 구성안 몫까지 펼친 묶음(경영관리 외부 컨설팅 의견 — 그 지표 ③ 끝, outlineBundle, 2026-11-19 A3). 숫자 근거(relevantRefs(input.kb))는 report 묶음 그대로
+  const r = await reportStructured("report_outline", outlineSystem(prompts), schema, input.files ?? [], ask, input.kb && outlineBundle(input.kb), { kbp: draft, timeoutMs: 900_000 });
   return { ...r, promptVersion: prompts.version };
 }
 

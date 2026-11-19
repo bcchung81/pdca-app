@@ -16,7 +16,8 @@ import { type FrameInput, type OutlineFrame, framePrompt } from "./framework-pic
 import { hasFigure } from "./actuals.ts";
 import { CLOSE_LABEL, outcomeRefs } from "./mg-outcomes.ts";
 import { type FigureBundle, type MgBundle, materialBundle } from "./mg-bundles.ts";
-import { type MgOutcome, type MgPart, mgPartKey } from "./mg-types.ts";
+import { MG_COVERAGE_STATES, type MgCoverage, type MgCoverageState, type MgOutcome, type MgPart, mgPartKey } from "./mg-types.ts";
+import { MG_CARD_EVALS, type MgItem, isNewItem, mgItemTag, to26 } from "./mg-items.ts";
 import { type PdcaSkeleton, cleanStage, pdcaIssues } from "./mg-pdca.ts";
 import { cleanConflicts, sameConflict } from "./mg-consistency.ts";
 import { cleanLine, clipLine, quoteFoundIn, sourceKey } from "./section.ts";
@@ -41,7 +42,10 @@ export const mgMaterialCap = (parts: number) => Math.min(40, Math.max(COMPOSITIO
 export interface MgPriorSection {
   /** 조각 키 */
   key: string;
+  /** 평가내용 번호 — 지표(unit)를 주고 읽으면 '26 편람 번호(mg-items.ts to26), 아니면 2025 연번 그대로 */
   evalNo: number;
+  /** 2025 보고서 평가내용 번호(지표를 주고 읽었을 때만 — 출처 이름 「2025 보고서 평가내용 N」용) */
+  evalNo2025?: number;
   evalTitle: string;
   themeNo: number;
   themeTitle: string;
@@ -53,8 +57,11 @@ export interface MgPriorSection {
   page: number | null;
 }
 
-/** 조각 한 줄 → 전년 절(세부평가내용별 장의 절 report_section·절 없는 대주제 본문 detail_theme만 — 그 밖은 null) */
-export function toMgPriorSection(row: { chunk_key: string; text?: string | null; meta?: Json; report_page_2025?: number | null }): MgPriorSection | null {
+/**
+ * 조각 한 줄 → 전년 절(세부평가내용별 장의 절 report_section·절 없는 대주제 본문 detail_theme만 — 그 밖은 null).
+ * unit(MG-N)을 주면 평가내용 번호를 '26 편람 번호로 옮기고(to26 — 2026-11-19 D1 안 2) 2025 번호는 evalNo2025에 남김
+ */
+export function toMgPriorSection(row: { chunk_key: string; text?: string | null; meta?: Json; report_page_2025?: number | null }, unit?: string): MgPriorSection | null {
   const m = row.meta ?? {};
   const evalNo = Number(m.eval_no);
   const themeNo = Number(m.theme_no);
@@ -64,7 +71,8 @@ export function toMgPriorSection(row: { chunk_key: string; text?: string | null;
   // 절이 있는 대주제의 도입 글(has_sections)은 골격의 칸이 아님 — 절에 붙여 읽음(근거 글로는 씀)
   return {
     key: row.chunk_key,
-    evalNo,
+    evalNo: unit ? to26(unit, evalNo) : evalNo,
+    ...(unit ? { evalNo2025: evalNo } : {}),
     evalTitle: String(m.eval_title ?? ""),
     themeNo,
     themeTitle: String(m.theme_title ?? ""),
@@ -76,8 +84,12 @@ export function toMgPriorSection(row: { chunk_key: string; text?: string | null;
   };
 }
 
-/** 골격 글(요청·화면): 평가내용 → 대주제 → 절 제목 줄 */
-export function skeletonLines(secs: MgPriorSection[]): string[] {
+/**
+ * 골격 글(요청·화면): 평가내용 → 대주제 → 절 제목 줄. items(편람 항목표 — '26 번호)를 주면 평가내용 줄은 항목표 순서·제목이고(수정·신설 표지, 2025 번호가 다르면 괄호),
+ * 2025에 없는 신설 항목은 「대주제 하나를 새로」 줄과 2025 참고 절(짜임 참고 — 근거 아님)을 붙임. 없으면 예전 그대로(2025 골격만)
+ */
+export function skeletonLines(secs: MgPriorSection[], items?: readonly MgItem[]): string[] {
+  if (items?.length) return itemSkeletonLines(secs, items);
   const out: string[] = [];
   let ev = -1;
   let th = "";
@@ -97,63 +109,48 @@ export function skeletonLines(secs: MgPriorSection[]): string[] {
   return out;
 }
 
+/** 항목표 기준 골격 줄(skeletonLines items) */
+function itemSkeletonLines(secs: MgPriorSection[], items: readonly MgItem[]): string[] {
+  const out: string[] = [];
+  const sorted = [...secs].sort(partOrder);
+  for (const it of items) {
+    const tag = mgItemTag(it.kind);
+    const moved = it.from2025 !== null && it.from2025 !== it.no ? ` (2025 평가내용 ${it.from2025})` : "";
+    out.push(`평가내용 ${it.no}. ${it.title}${tag ? ` [${tag}]` : ""}${moved}`);
+    const mine = sorted.filter((s) => s.evalNo === it.no);
+    if (!mine.length) {
+      out.push(`  (2025 보고서에 없음${isNewItem(it) ? " — 신설 평가내용: 대주제 하나를 새로(번호 1)" : ""}${it.ref25 ? ` · 2025 참고: ${it.ref25.label} — 짜임 참고일 뿐 근거 아님` : ""})`);
+      continue;
+    }
+    let th = -1;
+    for (const s of mine) {
+      if (s.themeNo !== th) {
+        th = s.themeNo;
+        out.push(`  대주제 ${s.themeNo}. ${s.themeTitle || "(제목 없음)"}${s.mark ? "" : " — 절 없이 대주제 본문"}`);
+      }
+      if (s.mark) out.push(`    ${s.mark}. ${s.title}`);
+    }
+  }
+  return out;
+}
+
 const MARK_ORDER = "가나다라마바사아자차카타파하";
 const markRank = (m: string) => (m ? MARK_ORDER.indexOf(m) + 1 || 99 : 0);
 /** 평가내용 → 대주제 → 절 표지 순(대주제 본문이 그 대주제의 절보다 앞) */
 export const partOrder = (a: { evalNo: number; themeNo: number; mark: string }, b: { evalNo: number; themeNo: number; mark: string }) => a.evalNo - b.evalNo || a.themeNo - b.themeNo || markRank(a.mark) - markRank(b.mark);
 
 /**
- * 카드 ↔ 2025 보고서 평가내용 첫 대응(분석 문서 §5 — 카드 제목과 평가내용 제목 대조, 신뢰도 중~낮음 칸 포함). 구성안의 추천 기본값으로만 쓰고(설계 결정 2026-10-09),
- * 불명한 칸(3-1·9-3·10-2)은 후보를 여럿 둠 — 구성안에서 사람이 고름. 혁신가점 12·13은 2025 평가내용이 하나라 키 없음(그 지표의 평가내용 모두)
- * 2026-11-05 새 판 카드(261103판, 47장) 대응: 3-4(여성 임원) → 4 · 7장 과제분리로 7-1(상생·우선구매)·7-2(공정계약) → 1, 7-3(소상공인·사회적경제, 옛 7-2) → 1,
- * 7-4(지역공부방, 옛 7-3) → 2, 7-5(시설·장비 개방, 옛 7-4) → 3 · 14는 평가내용이 넷이라 14-1(국정과제 이행관리) → 1, 14-2(청년인턴) → 3(2·4는 대응 카드 없음)
+ * 카드 ↔ 평가내용 추천 기본값('26 편람 번호 — 표는 lib/reports/mg-items.ts, 2026-11-19 사용자 결정 D8·D10으로 4-3 → 2·3-1 → 1·3·5·6·6-1 → 1·6·7-4 → 3·7-5 → 4).
+ * 구성안의 추천 기본값으로만 쓰고(설계 결정 2026-10-09) 사람이 구성안·목차에서 고름
  */
-export const MG_CARD_EVALS: Record<string, number[]> = {
-  "1-1": [1],
-  "1-2": [2],
-  "2-1": [1],
-  "2-2": [2],
-  "2-3": [3],
-  "3-1": [1, 3],
-  "3-2": [2],
-  "3-3": [4],
-  "3-4": [4],
-  "4-1": [1],
-  "4-2": [1],
-  "4-3": [1],
-  "5-1": [1],
-  "5-2": [1],
-  "5-3": [1],
-  "6-1": [1],
-  "6-2": [2],
-  "6-3": [3],
-  "6-4": [4],
-  "7-1": [1],
-  "7-2": [1],
-  "7-3": [1],
-  "7-4": [2],
-  "7-5": [3],
-  "8-1": [1],
-  "8-2": [2],
-  "8-3": [3],
-  "9-1": [1],
-  "9-2": [2],
-  "9-3": [3, 4],
-  "9-4": [5],
-  "10-1": [2],
-  "10-2": [1, 2],
-  "10-3": [3],
-  "11-1": [3],
-  "11-2": [1],
-  "11-3": [2],
-  "11-4": [2],
-  "14-1": [1],
-  "14-2": [3],
-};
+export { MG_CARD_EVALS };
 
-/** 이 카드의 추천 평가내용(전년 골격에 있는 번호만 — 대응이 없거나 골격에 없으면 그 지표의 평가내용 모두) */
-export function defaultEvals(taskNo: string, secs: MgPriorSection[]): number[] {
-  return evalsFor(taskNo, secs.map((s) => s.evalNo));
+/**
+ * 이 카드의 추천 평가내용(그 지표 평가내용에 있는 번호만 — 대응이 없거나 없는 번호면 그 지표의 평가내용 모두). items(편람 항목표)를 주면 항목표 번호(신설 포함),
+ * 아니면 전년 골격 번호
+ */
+export function defaultEvals(taskNo: string, secs: MgPriorSection[], items?: readonly MgItem[]): number[] {
+  return evalsFor(taskNo, items?.length ? items.map((x) => x.no) : secs.map((s) => s.evalNo));
 }
 
 /** defaultEvals를 평가내용 번호 목록으로(목차·쪽 배정 lib/reports/mg-page-plan.ts도 씀) */
@@ -204,6 +201,11 @@ export const MG_OUTLINE_OUT_FIELDS = [
   "conflict.drop",
   "conflict.keep",
   "conflict.why",
+  "coverage",
+  "coverage.item",
+  "coverage.part",
+  "coverage.state",
+  "coverage.why",
 ] as const;
 
 export function mgOutlineOutSchema(desc?: Descriptions) {
@@ -257,6 +259,8 @@ export function mgOutlineOutSchema(desc?: Descriptions) {
     splitAxis: d(z.string(), "splitAxis").optional(),
     // 값 충돌(2026-10-30 — 선택 목록, 모두 문자열: 정리가 근거 수치로 거름 — mg-consistency.ts cleanConflicts)
     conflicts: d(z.array(z.object({ item: d(z.string(), "conflict.item"), drop: d(z.string(), "conflict.drop"), keep: d(z.string(), "conflict.keep"), why: d(z.string(), "conflict.why") })), "conflicts").optional(),
+    // 편람 항목 대응(B1 — 2026-11-19, 선택 목록): item(「E6」·「E6.1」)·state(씀·자료 필요·다른 카드)는 코드가 이미 정한 값이라 enum·literal로 묶지 않고 문자열로 받아 정리가 맞춤(cleanCoverage — 한 글자 어긋남으로 답 전체 파싱이 실패하지 않게)
+    coverage: d(z.array(z.object({ item: d(z.string(), "coverage.item"), part: d(z.number(), "coverage.part"), state: d(z.string(), "coverage.state"), why: d(z.string(), "coverage.why") })), "coverage").optional(),
   });
 }
 export const MgOutlineOut = mgOutlineOutSchema();
@@ -265,7 +269,7 @@ export type MgOutlineOutput = z.infer<typeof MgOutlineOut>;
 /** 경영관리 구성안 프롬프트 파일(resources/prompts/report-outline-mg)에 있어야 하는 절 */
 export const MG_OUTLINE_PROMPT_SPEC: PromptSpec = {
   system: ["system"],
-  request: ["task", "memo", "storyHints", "storyHints.item", "storyHints.none", "storyHints.siblings", "siblings.head", "siblings.item", "diagram.head", "diagram.item", "part.head", "part.asked.story", "part.asked.free", "part.story", "part.storyFree", "part.item", "volume.head", "volume.part", "volume.tail", "close.strict", "close.majority", "close.loose", "close.none", ...INSPECTION_INPUT_SECTIONS, ...FRAME_INPUT_SECTIONS, ...SPLIT_INPUT_SECTIONS, "siblings.axis", "part.split", "outcomes.head", "outcomes.item", "outcomes.from.quantitative", "outcomes.from.monthly", "outcomes.from.qualitative", "outcomes.figure", "outcomes.plain", "outcomes.used", "outcomes.listed", "bundles.head", "bundles.item", "bundles.from.kpi", "bundles.from.monthly", "bundles.from.linked", "bundles.more", "bundles.cut"],
+  request: ["task", "memo", "storyHints", "storyHints.item", "storyHints.none", "storyHints.siblings", "siblings.head", "siblings.item", "diagram.head", "diagram.item", "part.head", "part.asked.story", "part.asked.free", "part.story", "part.storyFree", "part.item", "volume.head", "volume.part", "volume.tail", "close.strict", "close.majority", "close.loose", "close.none", ...INSPECTION_INPUT_SECTIONS, ...FRAME_INPUT_SECTIONS, ...SPLIT_INPUT_SECTIONS, "siblings.axis", "part.split", "outcomes.head", "outcomes.item", "outcomes.from.quantitative", "outcomes.from.monthly", "outcomes.from.qualitative", "outcomes.figure", "outcomes.plain", "outcomes.used", "outcomes.listed", "bundles.head", "bundles.item", "bundles.from.kpi", "bundles.from.monthly", "bundles.from.linked", "bundles.more", "bundles.cut", "items.head", "items.item", "items.point", "items.mine", "items.other", "items.candidates", "items.none", "items.taken", "items.ref", "items.tail"],
   schema: MG_OUTLINE_OUT_FIELDS,
 };
 
@@ -327,8 +331,10 @@ export function sortByParts(blocks: PlanBlock[], parts: MgPart[]): PlanBlock[] {
  * 절마다 첫 블록의 재료가 지적 재료로 시작하면 지적 재료를 첫 비지적 재료 뒤로 옮김(findingAfterFirst).
  * ctx.files(요청 글 첨부 — 순서 그대로)가 있으면 숫자 근거가 아닌 첨부(연결하지 않은 같은 보고서 자료)를 출처로 든 수치 재료는 「자료 필요」로(composition.ts unlinkedToNeed),
  * 그 첨부의 값을 쓸 값으로 고른 값 충돌은 뺌(unlinkedConflicts).
+ * ctx.items(편람 항목표 — '26 번호, 2026-11-19 B1)를 주면: 평가내용 제목은 항목표 제목(같음 = 2025 제목, 수정·신설 = 편람 문구), 번호 확인은 항목표 기준(「편람 항목표에 없는 번호」),
+ * AI 답 coverage를 정리해 mg.coverage에 남기고(cleanCoverage), 「자료 필요」 항목에 need 재료가 없으면 앱이 하나 더함(coverageNeeds — 블록 없음, 부서 자료 요청으로 흐름)
  */
-export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: Set<string>, ctx: { indicator: string; prior: MgPriorSection[]; axis?: string; outcomes?: MgOutcome[]; files?: readonly OutlineFile[] }): { composition: Composition; warnings: string[] } {
+export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: Set<string>, ctx: { indicator: string; prior: MgPriorSection[]; axis?: string; outcomes?: MgOutcome[]; files?: readonly OutlineFile[]; items?: readonly MgItem[] }): { composition: Composition; warnings: string[] } {
   // 재료 상한의 절 수 = AI가 낸 절 중 번호가 맞는 서로 다른 절(절 상한까지)
   const partCount = Math.min(MG_LIMITS.parts, new Set((out.parts ?? []).filter((x) => Math.round(Number(x?.evalNo)) >= 1 && Math.round(Number(x?.themeNo)) >= 1).map((x) => mgPartKey(Math.round(Number(x.evalNo)), Math.round(Number(x.themeNo)), cleanMark(x.mark)))).size);
   const files = ctx.files ?? [];
@@ -354,6 +360,7 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
         continue;
       }
       const ev = ctx.prior.find((s) => s.evalNo === evalNo);
+      const it = ctx.items?.find((x) => x.no === evalNo);
       const th = ctx.prior.find((s) => s.evalNo === evalNo && s.themeNo === themeNo);
       const story = matchName(raw?.story, MG_MAIN_STORIES);
       const sub = matchName(raw?.subStory, MG_MAIN_STORIES);
@@ -362,7 +369,7 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
       parts.push({
         key,
         evalNo,
-        evalTitle: ev?.evalTitle ?? "",
+        evalTitle: it?.title ?? ev?.evalTitle ?? "",
         themeNo,
         themeTitle: cleanLine(raw?.themeTitle, 80) || th?.themeTitle || "",
         mark,
@@ -397,14 +404,21 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
   const empty = parts.filter((p) => !used.has(p.key));
   if (empty.length) warnings.push(`구성: 블록이 없는 절 ${empty.length}개(${empty.map(mgPartLabel).join(" / ")})를 뺐습니다.`);
   const kept = parts.filter((p) => used.has(p.key));
-  // 평가내용 번호 확인(2026-10-12 C11): 전년 골격이 있는데 그 번호가 없으면 경고만(버리지 않음 — 올해 새 평가내용일 수 있음)
-  if (ctx.prior.length) {
+  // 평가내용 번호 확인(2026-10-12 C11 → 2026-11-19 항목표 기준): 그 번호가 없으면 경고만(버리지 않음). 항목표가 없으면 예전처럼 전년 골격 기준
+  if (ctx.items?.length) {
+    const nos = ctx.items.map((x) => x.no);
+    for (const n of [...new Set(kept.map((p) => p.evalNo))].filter((n) => !nos.includes(n))) warnings.push(`평가내용: ${n}번은 편람 항목표에 없는 번호입니다('26 편람: ${nos.join("·")}) — 평가내용 상자가 제목 없이 나옵니다. 맞는 번호로 다시 만들어 주세요.`);
+  } else if (ctx.prior.length) {
     const knownEvals = new Set(ctx.prior.map((s) => s.evalNo));
     for (const n of [...new Set(kept.map((p) => p.evalNo))].filter((n) => !knownEvals.has(n))) warnings.push(`평가내용: ${n}번은 2025 보고서에 없는 번호입니다(2025: ${[...knownEvals].sort((a, b) => a - b).join("·")}) — 평가내용 상자가 제목 없이 나옵니다. 새 평가내용이면 확인하고, 아니면 맞는 번호로 다시 만들어 주세요.`);
   }
   const cut = unlinkedConflicts(cleanConflicts(out.conflicts, hayKey, known), files);
   const conflicts = cut.conflicts;
   if (cut.dropped) warnings.push(`재료: 이 과제에 연결하지 않은 같은 보고서 자료의 값을 쓸 값으로 고른 값 충돌 ${cut.dropped}건을 뺐습니다 — 그 자료를 이 과제에 연결하면 근거로 씁니다.`);
+  // 편람 항목 대응(B1): 항목표가 있을 때만 — AI 답 coverage 정리, 「자료 필요」 항목에 need 재료가 없으면 앱이 더함
+  const coverage = ctx.items?.length ? cleanCoverage(out.coverage, ctx.items, keyAt, kept) : null;
+  const added = coverage ? coverageNeeds(coverage, ctx.items!, materials) : [];
+  if (added.length) warnings.push(`평가내용: 「자료 필요」로 둔 편람 항목 ${[...new Set(coverage!.filter((x) => x.state === "자료 필요").map((x) => x.item))].filter((n) => added.some((m) => m.text.includes(`평가내용 ${n}(`))).join("·")}에 필요한 자료(need 재료)가 없어 앱이 ${added.length}건 더했습니다 — 부서 자료 요청에 들어갑니다.`);
   const composition: Composition = {
     version: 1,
     message: cleanLine(out.message, 120),
@@ -415,11 +429,141 @@ export function cleanMgComposition(out: MgOutlineOutput, hayKey: string, known: 
     blocks: findingAfterFirst(sortByParts(figs.blocks, kept), materials, kept),
     results: "",
     resultShape: "bullets",
-    materials,
+    materials: [...materials, ...added],
     memo: "",
-    mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}), ...(ctx.outcomes?.length ? { outcomes: ctx.outcomes } : {}), ...(conflicts.length ? { conflicts } : {}) },
+    mg: { indicator: ctx.indicator, parts: kept, ...(mgCloseRule(ctx.prior).strict ? { strictClose: true } : {}), ...(axis ? { axis } : {}), ...(ctx.outcomes?.length ? { outcomes: ctx.outcomes } : {}), ...(conflicts.length ? { conflicts } : {}), ...(coverage ? { coverage } : {}) },
   };
   return { composition, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// 편람 항목 대응(B1 — 2026-11-19, 설계 .team/H3-design.md §5)
+
+/** 대응 상태 글 → 세 값(띄어쓰기·어미 차이 허용). 모르는 글은 null(버림) */
+function coverageState(raw: unknown): MgCoverageState | null {
+  const t = String(raw ?? "").replace(/\s/g, "");
+  if (!t) return null;
+  if (/자료|필요/.test(t)) return "자료 필요";
+  if (/다른/.test(t)) return "다른 카드";
+  if (/씀|작성|썼/.test(t)) return "씀";
+  return (MG_COVERAGE_STATES as readonly string[]).includes(t) ? (t as MgCoverageState) : null;
+}
+
+/**
+ * AI 답 coverage → 저장할 대응(항목 번호 순): item은 「E6」·「E6.1」·「6」처럼 적힌 번호(항목표에 없으면 버림), state는 세 값으로(모르면 버림).
+ * 「씀」은 part(1부터 — 답의 parts 순서)를 절 열쇠로 바꾸고, 그 절이 빠졌으면(블록 없는 절 등) 같은 평가내용의 남은 첫 절, 그것도 없으면 「자료 필요」.
+ * 착안사항 번호는 「자료 필요」일 때만 남김(사용자 결정 D9). 같은 항목·착안사항이 여럿이면 앞의 것
+ */
+export function cleanCoverage(raw: unknown, items: readonly MgItem[], keyAt: ReadonlyArray<string | null>, kept: readonly MgPart[]): MgCoverage[] {
+  if (!Array.isArray(raw)) return [];
+  const keys = new Set(kept.map((p) => p.key));
+  const out: MgCoverage[] = [];
+  const seen = new Set<string>();
+  for (const x of raw.slice(0, 60) as Json[]) {
+    const m = /(\d+)(?:\s*\.\s*(\d+))?/.exec(String(x?.item ?? ""));
+    const it = m ? items.find((i) => i.no === Number(m[1])) : undefined;
+    let state = coverageState(x?.state);
+    if (!it || !state) continue;
+    let part: string | undefined;
+    if (state === "씀") {
+      const key = keyAt[Math.round(Number(x?.part)) - 1] ?? null;
+      part = key && keys.has(key) ? key : kept.find((p) => p.evalNo === it.no)?.key;
+      if (!part) state = "자료 필요";
+    }
+    const pn = m?.[2] ? Number(m[2]) : 0;
+    const point = state === "자료 필요" && pn >= 1 && pn <= it.points.length ? pn : undefined;
+    const id = `${it.no}.${point ?? 0}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({ item: it.no, ...(point ? { point } : {}), state, ...(part ? { part } : {}), why: cleanLine(x?.why, 160) });
+  }
+  return out.sort((a, b) => a.item - b.item || (a.point ?? 0) - (b.point ?? 0));
+}
+
+/** need 재료가 그 항목을 가리키는지: 글에 「평가내용 N」 또는 짧은 이름(띄어쓰기 무시) */
+const needCovers = (m: { text: string }, it: MgItem) => new RegExp(`평가내용\\s*${it.no}(?!\\d)|E${it.no}(?!\\d)`).test(m.text) || m.text.replace(/\s/g, "").includes(it.short.replace(/\s/g, ""));
+
+/**
+ * 「자료 필요」 항목인데 그 항목을 가리키는 need 재료가 없으면 앱이 더할 need 재료(다음 m 번호 — 블록에 넣지 않음, 부서 「자료 요청」(material-requests.ts needRequestsOf)으로 흐름).
+ * 글 = 「'26 편람 평가내용 N(짧은 이름) 올해 실적 자료 — 착안사항: …」(착안사항 번호가 적힌 줄이 있으면 그 착안사항, 없으면 첫 착안사항)
+ */
+export function coverageNeeds(coverage: readonly MgCoverage[], items: readonly MgItem[], materials: Composition["materials"]): Composition["materials"] {
+  const out: Composition["materials"] = [];
+  let top = Math.max(0, ...materials.map((m) => materialNo(m.id)));
+  for (const no of [...new Set(coverage.filter((x) => x.state === "자료 필요").map((x) => x.item))]) {
+    const it = items.find((x) => x.no === no);
+    if (!it || materials.some((m) => m.kind === "need" && needCovers(m, it))) continue;
+    const asked = coverage.filter((x) => x.item === no && x.point).map((x) => it.points[x.point! - 1]).filter(Boolean);
+    const pts = (asked.length ? asked : it.points.slice(0, 1)).map((t) => clipLine(t, 60)).join(" · ");
+    out.push({ id: `m${++top}`, kind: "need", text: cleanLine(`'26 편람 평가내용 ${no}(${it.short}) 올해 실적 자료${pts ? ` — 착안사항: ${pts}` : ""}`, 200), when: "", source: "편람 항목표", quote: "", found: false });
+  }
+  return out;
+}
+
+/** 계획·예정 재료(올해 실적이 아님 — 억지 절 판정) */
+const planLike = (m: { kind: string; text: string; when: string }) => m.kind === "need" || /예정|계획|추진할|착수 예정/.test(`${m.text} ${m.when}`);
+
+/**
+ * 편람 항목 점검(B1 — 참고 경고, 결정론): ① 이 카드 추천 항목(evals)인데 절도 대응(coverage)도 없음 ② 신설 항목 절의 재료가 모두 자료 필요·계획(「억지 절」 — 실적이 없으면 절 대신 「자료 필요」)
+ * ③ 추천 카드가 따로 있는 항목에 절을 두었고 그 카드 구성안(형제)도 같은 항목에 절이 있음(「나눔 확인」). 같은 열쇠·제목 겹침은 mgOverlapIssues가 맡음
+ */
+export function mgItemIssues(c: Composition, items: readonly MgItem[], opts: { evals: readonly number[]; taskNo: string; siblings?: readonly MgSibling[] }): string[] {
+  if (!items.length || !c.mg) return [];
+  const out: string[] = [];
+  const parts = c.mg.parts;
+  const cov = c.mg.coverage ?? [];
+  const name = (it: MgItem) => `편람 항목 ${it.no}(${it.short})`;
+  for (const no of opts.evals) {
+    const it = items.find((x) => x.no === no);
+    if (it && !parts.some((p) => p.evalNo === no) && !cov.some((x) => x.item === no)) out.push(`평가내용: ${name(it)}은 이 카드 추천 항목인데 절도 대응도 없습니다 — 실적이 있으면 절로 쓰고, 없으면 「자료 필요」로 남겨 주세요.`);
+  }
+  for (const it of items.filter(isNewItem)) {
+    const mine = parts.filter((p) => p.evalNo === it.no);
+    if (!mine.length) continue;
+    const ids = new Set(c.blocks.filter((b) => mine.some((p) => p.key === b.at)).flatMap((b) => b.materials));
+    const used = c.materials.filter((m) => ids.has(m.id));
+    if (!used.length || used.every(planLike)) out.push(`평가내용: 신설 ${name(it)}의 절 재료가 모두 자료 필요·계획입니다(억지 절) — 올해 실적이 없으면 절을 빼고 「자료 필요」로 남겨 주세요.`);
+  }
+  for (const it of items) {
+    if (!it.cards.length || it.cards.includes(opts.taskNo) || !parts.some((p) => p.evalNo === it.no)) continue;
+    const owners = (opts.siblings ?? []).filter((sb) => it.cards.includes(sb.taskNo) && sb.parts.some((x) => x.evalNo === it.no)).map((sb) => sb.taskNo);
+    if (owners.length) out.push(`평가내용: ${name(it)}은 ${owners.join("·")} 카드 추천 항목이고 그 카드 구성안도 절을 두었습니다(나눔 확인) — 이 카드 근거가 그 항목 착안사항에 직접 답할 때만, 그 카드와 다른 대주제·절로 써 주세요.`);
+  }
+  return out;
+}
+
+/**
+ * 구성안 요청 「'26 편람 평가 항목」(report-outline-mg/request.md items.* — B1, 2026-11-19): 항목표의 항목 id(E번호)·제목·수정/신설 표지·담당(이 카드 추천·다른 추천 카드·후보·없음)·
+ * 다른 카드 구성안이 둔 절 수·2025 참고 절, 착안사항 id(E번호.k). 항목표가 없으면 빈 글
+ */
+export function mgItemsPrompt(p: PromptSet, items: readonly MgItem[], ctx: { evals: readonly number[]; taskNo: string }): string {
+  if (!items.length) return "";
+  const r = (key: string, vars: Record<string, string | number> = {}) => fillFrom(p, "request", key, vars);
+  const lines = [r("items.head", { count: items.length })];
+  for (const it of items) {
+    const tag = mgItemTag(it.kind);
+    const others = it.cards.filter((t) => t !== ctx.taskNo);
+    const who = [
+      ctx.evals.includes(it.no) ? r("items.mine") : "",
+      others.length ? r("items.other", { cards: others.join("·") }) : "",
+      it.candidates.length ? r("items.candidates", { cards: it.candidates.join("·") }) : "",
+      !it.cards.length && !it.candidates.length && !ctx.evals.includes(it.no) ? r("items.none") : "",
+    ].join("");
+    const taken = it.taken.filter((x) => x.taskNo !== ctx.taskNo);
+    lines.push(
+      r("items.item", {
+        no: it.no,
+        title: it.title,
+        tag: tag ? ` [${tag}]` : "",
+        who,
+        taken: taken.length ? r("items.taken", { list: taken.map((x) => `${x.taskNo} 절 ${x.parts}`).join("·") }) : "",
+        ref: it.ref25 ? r("items.ref", { label: it.ref25.label }) : "",
+      }),
+    );
+    it.points.forEach((t, i) => lines.push(r("items.point", { no: it.no, k: i + 1, text: t })));
+  }
+  lines.push(r("items.tail"));
+  return lines.join("\n");
 }
 
 /**

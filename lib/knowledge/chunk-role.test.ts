@@ -27,6 +27,7 @@ const TABLE: [string, string, ChunkRole][] = [
   ["rpt25-mg-01", "report_chapter", "prior"],
   ["peer25-biz", "peer_case", "case"],
   ["core25-mg", "core_item", "evidence"],
+  ["consult26-mg", "consult_comment", "advice"],
 ];
 
 test("분류표: 실측 unit_type 전부가 기대 성격으로 나온다", () => {
@@ -46,9 +47,9 @@ test("모르는 unit_type은 other, meta 없어도 동작", () => {
   assert.equal(chunkRole({ doc_id: "x", unit_type: "constructor" }), "other");
 });
 
-test("DIGEST_ROLES와 SELECTABLE_ROLES는 겹치지 않고, 둘 다 method·evidence·other를 포함하지 않는다", () => {
+test("DIGEST_ROLES와 SELECTABLE_ROLES는 겹치지 않고, 둘 다 method·advice·evidence·other를 포함하지 않는다", () => {
   for (const r of DIGEST_ROLES) assert.ok(!SELECTABLE_ROLES.includes(r), r);
-  for (const bad of ["method", "evidence", "other"] as const) {
+  for (const bad of ["method", "advice", "evidence", "other"] as const) {
     assert.ok(!DIGEST_ROLES.includes(bad), `DIGEST ${bad}`);
     assert.ok(!SELECTABLE_ROLES.includes(bad), `SELECTABLE ${bad}`);
   }

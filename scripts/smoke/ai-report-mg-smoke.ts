@@ -37,11 +37,11 @@ import { selectionFromDir } from "../lib/select-dir.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { materialState, MATERIAL_COLS, type MaterialRow } from "../../lib/ai/material-text.ts";
 import { fileRelation } from "../../lib/reports/material-match.ts";
-import { aiProvider, callReportBlock, callReportDraftMg, callReportOutlineMg, modelLabel, outlineSystem, reportSystem } from "../../lib/ai/run.ts";
+import { aiProvider, callReportBlock, callReportDraftMg, callReportOutlineMg, mgItemsAsk, modelLabel, outlineSystem, reportSystem } from "../../lib/ai/run.ts";
 import { fixDeadlineMs } from "../../lib/ai/fix-policy.ts";
 import { type FillPlan, type FillTarget, type MgFillInput, type MgFillReasons, mgAdherenceWarning, mgFillPatch, mgFillReasons, missingBlocks, runMgFill } from "../../lib/reports/mg-fill.ts";
 import { isoDay } from "../../lib/format.ts";
-import { sharedTexts, listText, relevantRefs } from "../../lib/knowledge/bundle.ts";
+import { sharedTexts, listText, outlineBundle, relevantRefs } from "../../lib/knowledge/bundle.ts";
 import { mgStoryHintsFor } from "../../lib/reports/story-hints-mg.ts";
 import { reportBlockPromptsMg, reportDraftPromptsMg, reportOutlinePromptsMg } from "../../lib/prompts/sets.ts";
 import { yearActuals } from "../../lib/reports/actuals.ts";
@@ -51,8 +51,8 @@ import { mgPdcaSkeleton } from "../../lib/reports/mg-pdca.ts";
 import { PDCA_STAGES } from "../../lib/tracks/index.ts";
 import { sectionDocument } from "../../lib/reports/section-html.ts";
 import { addMgDataBlocks } from "../../lib/reports/mg-data-blocks.ts";
-import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgBundlePrompt, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOutcomePrompt, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
-import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../lib/reports/mg-queries.ts";
+import { MG_LIMITS, type MgSibling, cleanMgComposition, defaultEvals, isMgMainStory, mgItemIssues, mgBundlePrompt, mgCloseRule, mgClosePrompt, mgCompositionIssues, mgDiagramPrompt, mgHintOptions, mgOutcomePrompt, mgOverlapIssues, mgPartLabel, mgPartRedo, mgSiblingOf, mgSiblingsPrompt, replaceMgPart } from "../../lib/reports/mg-outline.ts";
+import { loadMgCardPages, loadMgItems, loadMgNumberEvidence, loadMgPrior } from "../../lib/reports/mg-queries.ts";
 import { type ReportSectionSpec, cleanLine, draftEvidence, evidenceOf, sectionHints } from "../../lib/reports/section.ts";
 import { cardBundles, linkedBundles } from "../../lib/reports/mg-bundles.ts";
 import { ledgerOutcomeItems } from "../../lib/reports/mg-close.ts";
@@ -123,7 +123,9 @@ for (const path of addPaths) {
 }
 const [prior, lens, kb, pages] = await Promise.all([loadMgPrior(db, card.eval_unit_id), loadLens(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }), loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "report"), loadMgCardPages(db, card, year)]);
 const taskNo = String(card.data?.taskNo ?? "");
-const ctx: MgDraftContext = { unit: card.eval_unit_id, indicator: indicator.name, taskNo, markers: mgMarkers(card.data), prior, evals: defaultEvals(taskNo, prior), pages, cardAsOf: mgCardAsOf(card) };
+// 편람 항목표(서버 prepareMgDraft와 같음 — '26 번호·추천 평가내용, 2026-11-19). 다른 카드 구성안 절 수(taken)는 형제를 읽은 뒤 다시 채움
+const items0 = await loadMgItems(db, card.eval_unit_id, prior);
+const ctx: MgDraftContext = { unit: card.eval_unit_id, indicator: indicator.name, taskNo, markers: mgMarkers(card.data), prior, ...(items0.length ? { items: items0 } : {}), evals: defaultEvals(taskNo, prior, items0), pages, cardAsOf: mgCardAsOf(card) };
 const actuals = yearActuals(card.data, isoDay(), { wide: true });
 const numbers = await loadMgNumberEvidence(db, card.eval_unit_id);
 const ev = draftEvidence(files, [], lens, actuals, relevantRefs(kb));
@@ -198,6 +200,7 @@ const siblings = (sibRows ?? [])
   .filter((x): x is MgSibling => Boolean(x))
   .sort((a, b) => a.taskNo.localeCompare(b.taskNo, "ko", { numeric: true }))
   .slice(0, 12);
+if (ctx.items) ctx.items = await loadMgItems(db, card.eval_unit_id, prior, siblings);
 const hints = sectionHints(card.data, [], files, lens, actuals, year, mgHintOptions(ctx));
 const { data: ins } = await db.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
 const inspection = followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
@@ -207,8 +210,9 @@ const volumeClose = [mgVolumePrompt(outline, ctx.pages), mgClosePrompt(outline, 
 const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files: withoutBizFiles(reqFiles), siblings });
 // 갈래 축 사전(서버 callReportOutlineMg와 같은 절 — 전체 구성안만, 2026-10-13)
 const splitHead = splitHeadPrompt(outline, "mg");
-const extra = [mgDiagramPrompt(outline, hints), mgSiblingsPrompt(outline, siblings), outlineInspectionPrompt(outline, inspection), storyHints, volumeClose, splitHead].filter(Boolean).join("\n\n");
-const shared = sharedTexts(draft, kb).join("\n").length;
+const extra = [mgItemsAsk(outline, ctx), mgDiagramPrompt(outline, hints), mgSiblingsPrompt(outline, siblings), outlineInspectionPrompt(outline, inspection), storyHints, volumeClose, splitHead].filter(Boolean).join("\n\n");
+// 구성안 요청의 공통 지식 = 구성안 몫까지 펼친 묶음(서버 callReportOutlineMg와 같음 — outlineBundle, 2026-11-19)
+const shared = sharedTexts(draft, outlineBundle(kb)).join("\n").length;
 // 선별 방식을 요청했는데 이 카드가 선별되지 못하면 통째로 넣기로 감(비교가 무의미 — meta에 남김)
 const fellBack = Boolean(selectDir) && !kb.select;
 if (selectDir) console.log(fellBack ? `경고: 선별 방식(--select-dir ${selectDir})인데 이 카드는 선별되지 못해 통째로 넣기로 감(fellBack — KNOWLEDGE_SELECT에 report가 없거나 선별 결과·규칙 문서 없음)` : `공통 지식: 선별 방식 — 고른 조각 ${kb.select!.picked.length}개 · 제목만 ${kb.select!.unpicked.length}개`);
@@ -443,13 +447,13 @@ const outlineMs = Date.now() - t0;
 // 단계별 시간(다음 측정용 — 2026-11-12 CLI 제한 결정): 구성안 초·출력 토큰을 집필 전에 먼저 찍음(집필이 멈춰도 남게)
 console.log(`단계 시간 — 구성안 ${Math.round(outlineMs / 1000)}초 · 출력 ${call.usage.output}토큰(입력 ${call.usage.input}·캐시 읽기 ${call.usage.cacheRead})`);
 const { hayKey, known } = evidenceOf(card.data, ...evidenceArgs);
-const cleaned = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity) });
+const cleaned = cleanMgComposition(call.output, hayKey, known, { indicator: indicator.name, prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity), items: ctx.items });
 // 데이터 블록 넣기(S2 — 서버 runReportOutlineMg와 같음)
 const data = addMgDataBlocks(cleaned.composition, ctx.pages);
 const composition = data.composition;
 // 서버 runReportOutlineMg가 저장하는 구성안 경고와 같은 목록
-const outlineWarnings = [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, siblings), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))];
-console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}${b.variant ? `:${b.variant}` : ""}`), materials: composition.materials.length, warnings: outlineWarnings }, null, 1));
+const outlineWarnings = [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, siblings), ...mgItemIssues(composition, ctx.items ?? [], { evals: ctx.evals, taskNo, siblings }), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))];
+console.log(JSON.stringify({ model: modelLabel(call), sec: Math.round(outlineMs / 1000), usage: call.usage, axis: composition.mg?.axis ?? null, parts: composition.mg?.parts.map((p) => `${mgPartLabel(p)} [${p.story}]${p.chip ? ` 칩 [${p.chip}]` : ""}`), blocks: composition.blocks.map((b) => `${b.at} ${b.label || "전폭"}:${b.kind}${b.variant ? `:${b.variant}` : ""}`), materials: composition.materials.length, coverage: composition.mg?.coverage ?? null, warnings: outlineWarnings }, null, 1));
 // 구성안만 돌릴 때도 구성안 JSON을 남김(2026-11-10 T1 — 모양 비교용, 저장 안 함)
 if (!withDraft && args[1]) writeFileSync(`${args[1]}.outline.json`, JSON.stringify(composition, null, 1));
 if (withDraft) {

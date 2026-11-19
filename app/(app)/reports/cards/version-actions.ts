@@ -7,6 +7,8 @@ import { reportLockedFor } from "../../../../lib/reports/queries.ts";
 import { saveDraftRow } from "../../../../lib/reports/draft-store.ts";
 import { type DraftVersionItem, type DraftVersionListRow, DRAFT_VERSION_KEEP, RESTORE_SELECT, VERSION_LIST_COLS, restoreBlockReason, restoreRow, versionItems } from "../../../../lib/reports/draft-versions.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
+import { loadMgRenumberCtx } from "../../../../lib/reports/mg-queries.ts";
+import { renumberDraftRow } from "../../../../lib/reports/mg-renumber.ts";
 import { refresh } from "./draft-prepare.ts";
 
 // 경평 초안 「판 기록」(2026-11-18 사용자 결정 3~6): 저장 직전 판(초안 + 구성안 — DB 트리거가 card_report_draft_versions에 남김) 목록과 고른 판으로 되돌리기.
@@ -89,6 +91,13 @@ export async function restoreDraftVersion(uid: string, year: number, versionId: 
   if (!v) return { ok: false, message: "되돌릴 판을 찾지 못했습니다(30판이 넘어 정리됐을 수 있음). 판 기록을 새로 고쳐 주세요." };
   const r = restoreRow(v);
   if (!r.ok) return { ok: false, message: r.message };
+  // 2025 연번으로 저장된 옛 판(상생 MG-7 — 2026-11-19 '26 편람 번호로 옮기기 전)은 되돌릴 때 같은 변환을 적용(mg-renumber.ts — 이미 옮긴 판은 그대로)
+  const rn = await loadMgRenumberCtx(s.supabase, String(s.card.eval_unit_id ?? ""));
+  if (rn) {
+    const x = renumberDraftRow({ outline: r.row.outline as never, spec: r.row.spec as never }, rn);
+    if (x.outline) r.row.outline = x.outline;
+    if (x.spec) r.row.spec = x.spec;
+  }
   const saved = await saveDraftRow(s.supabase, { cardId: s.card.id, year: y }, r.row, version, "restore");
   if (!saved.ok) {
     if (!saved.conflict) console.error("restoreDraftVersion save", saved.message);

@@ -16,6 +16,7 @@
     "knowledge:parse": "node --conditions=react-server scripts/knowledge/parse.ts",
     "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./scripts/test/skip-summary.ts --test-reporter-destination=stdout \"lib/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "harness:sync": "node scripts/harness/sync.ts",
+    "reports:mg-renumber": "node --conditions=react-server --env-file-if-exists=.env.local scripts/reports/mg-renumber.ts",
     "db:seed": "node --env-file-if-exists=.env.local scripts/db/seed.ts",
     "db:push": "node --env-file-if-exists=.env.local scripts/db/push.ts",
     "db:app-write-key": "node --env-file-if-exists=.env.local scripts/db/app-write-key.ts",

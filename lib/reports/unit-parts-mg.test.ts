@@ -13,7 +13,9 @@ import type { Block } from "./blocks.ts";
 import type { ReportSectionSpec } from "./section.ts";
 import { unitPartsHtml } from "./unit-parts-html.ts";
 import { unitPartsMarkdown } from "./unit-parts-md.ts";
+import { MG_ITEM_PLAN, from26 } from "./mg-items.ts";
 import {
+  COVER_REVISED_NOTE,
   type MgUnitMaterials,
   type UnitCard,
   type UnitChunk,
@@ -22,6 +24,7 @@ import {
   buildOutcomePart,
   buildPriorPart,
   buildUnitPartsMg,
+  revisedCriteria,
   cardEvals,
   cellBullets,
   evalShort,
@@ -35,6 +38,7 @@ import {
   readNumber,
   sourceChanges,
   table2025Rows,
+  unitPartsNeeds,
   unitPartsSource,
 } from "./unit-parts-mg.ts";
 
@@ -214,7 +218,7 @@ test("표지: 편람 지표 조각(비계량·가점 — 계량 구성요소는 
   const handbook: UnitChunk[] = [
     { chunk_key: "plan-2607/handbook26/MG-8/k1", title: "'26 편람 · 재무예산관리 · 비계량", text, unit_type: "handbook_indicator", meta: { weight_quasi_gov: 3, weight_basis: "위탁집행형 준정부기관" } },
     { chunk_key: "plan-2607/handbook26/MG-8/k0", title: "'26 편람 · 재무예산관리 · 계량 (1/2)", text, unit_type: "handbook_indicator", meta: { weight_quasi_gov: 1 } },
-    { chunk_key: "plan-2607/handbook26/BZ-1", title: "'26 편람 · 주요사업1 · 비계량", text, unit_type: "handbook_indicator", meta: {} },
+    { chunk_key: "plan-2607/handbook26/BZ-2", title: "'26 편람 · 주요사업2 · 비계량", text, unit_type: "handbook_indicator", meta: {} },
   ];
   const { part, warnings } = buildCoverPart({ unit: "MG-8", handbook });
   assert.equal(part.code.indicator, "재무예산관리");
@@ -223,11 +227,34 @@ test("표지: 편람 지표 조각(비계량·가점 — 계량 구성요소는 
   assert.deepEqual([c.kind, c.method, c.weight, c.weightBasis, c.note], ["비계량", "9등급 평가", 3, "위탁집행형 준정부기관", ""]);
   assert.equal(c.definition, "지속가능하고 건전한 재무구조 및 합리적 예산운용을 평가한다.");
   assert.deepEqual(c.criteria, ["재무구조의 안정성 및 건전성 유지를 위한 기관의 노력과 성과", "사업선정 및 타당성 확보(예비타당성 조사 등)를 통한 예산편성"]);
-  assert.match(z.note, /7월판 개선\(안\) 기준/, "7월판이 다른 조각은 판 표지");
+  assert.match(z.note, /11\.13 수정본 기준/, "편람 수정본으로 바뀐 조각은 판 표지");
   assert.equal(z.weight, null);
   assert.deepEqual(part.human.contacts, []);
   assert.deepEqual(warnings, []);
   assert.deepEqual(buildCoverPart({ unit: "MG-8", handbook: [] }).warnings, ["표지: 편람 지표 조각(비계량·가점)이 없음 — 표지를 채우지 못함"]);
+});
+
+test("표지: 편람 수정본 조각(hb26r-2611 — 바뀐 칸만, 「⋮」로 줄임)은 따로 구성요소가 되지 않고 옛 조각 자리에 합침 — 항목은 번호로 덮어쓰고 줄인 번호는 옛 그대로, 배점·지표정의는 수정본", () => {
+  const old = "지표정의: • 옛 정의\n\n적용대상(배점): • 공기업 : 비계량 3점, 준정부기관 비계량 1점\n\n세부평가내용: ① 옛 일자리 창출\n② 민간 일자리\n③ 사회형평 채용\n④ 정규직 전환\n⑤ 균등한 기회";
+  const rev = "지표정의: • 새 정의\n\n적용대상(배점): • 공기업 : 비계량 3점, 준정부기관 비계량 1점\n\n세부평가내용: ① 청년 등의 신규채용을 포함한 일자리 창출\n* 덧붙임\n② 민간 일자리\n⋮\n⑥ 공정채용";
+  const handbook: UnitChunk[] = [
+    { chunk_key: "hb26r-2611/handbook26/MG-3/k2", title: "'26 편람(11.13 수정) · 일자리 및 균등한 기회 · 비계량 (2/2)", text: rev, unit_type: "handbook_indicator", meta: { revision: "2026.11.13", supersedes: ["plan-2607/handbook26/MG-3/k2"], weight_quasi_gov: 1, weight_basis: "준정부기관" } },
+    { chunk_key: "plan-2607/handbook26/MG-3/k1", title: "'26 편람 · 일자리 및 균등한 기회 · 계량 (1/2)", text: old, unit_type: "handbook_indicator", meta: { weight_quasi_gov: 2 } },
+    { chunk_key: "plan-2607/handbook26/MG-3/k2", title: "'26 편람 · 일자리 및 균등한 기회 · 비계량 (2/2)", text: old, unit_type: "handbook_indicator", meta: { weight_quasi_gov: 9, weight_basis: "옛 배점" } },
+  ];
+  const { part } = buildCoverPart({ unit: "MG-3", handbook });
+  assert.equal(part.code.components.length, 1, "수정본 조각이 구성요소를 하나 더 만들지 않음");
+  const [c] = part.code.components;
+  assert.deepEqual([c.chunkKey, c.label, c.weight, c.weightBasis, c.definition, c.note], ["plan-2607/handbook26/MG-3/k2", "비계량 (2/2)", 1, "준정부기관", "새 정의", COVER_REVISED_NOTE]);
+  assert.deepEqual(c.criteria, ["청년 등의 신규채용을 포함한 일자리 창출", "민간 일자리", "사회형평 채용", "정규직 전환", "균등한 기회", "공정채용"]);
+  assert.deepEqual(revisedCriteria(old, "세부평가내용: ③ 바뀐 셋째"), ["옛 일자리 창출", "민간 일자리", "바뀐 셋째", "정규직 전환", "균등한 기회"]);
+  // 옛 조각이 없으면(조회에 수정본만 왔을 때) 수정본이 혼자 구성요소
+  const only = buildCoverPart({ unit: "MG-3", handbook: [handbook[0]] }).part.code.components;
+  assert.deepEqual(only.map((x) => [x.chunkKey, x.weight]), [["hb26r-2611/handbook26/MG-3/k2", 1]]);
+  // 수정본이 없으면 예전과 같음(옛 조각 + 판 표지)
+  const before = buildCoverPart({ unit: "MG-3", handbook: handbook.slice(1) }).part.code.components;
+  assert.deepEqual(before.map((x) => [x.weight, x.criteria.length]), [[9, 5]]);
+  assert.match(before[0].note, /^※ 11\.13 수정본 기준: ①이 「청년 등의 신규채용을 포함한 일자리 창출」로 바뀌고/);
 });
 
 test("지표별 부분: 지표 1~11은 넷, 혁신가점 12~14는 표지만, 모르는 단위는 없음", () => {
@@ -365,8 +392,10 @@ test("2025 틀 재현(지표 1~11): 평가내용 행 = 2025 전년 대비 표 �
     c.id = `경영관리${n}/${n}-1`;
     const { parts } = buildUnitPartsMg({ unit, year: 2025, cards: [c], drafts: [], report2025: rpt, evaluator: [evaluator(f25.map((f, i) => ({ no: i + 1, text: f.join(" ") })))], handbook: [], today: "" });
     const priorCount = rpt.filter((x) => x.meta?.chapter === "prior").length;
-    assert.equal(parts.prior!.rows.length, priorCount, `${unit} 평가내용 행`);
-    assert.ok(parts.prior!.rows.every((r) => r.human.upTo.length > 0), `${unit} ’24까지·’25 출발값`);
+    // 2026-11-19: 평가내용 행 = 편람 항목표('26 번호) — 2025 평가내용 + 2025에 없는 신설 항목(일자리 ⑤⑥·창업 ⑤⑥·상생 ②), 신설 행은 ’25까지 출발값 없음
+    const added = (MG_ITEM_PLAN[unit] ?? []).filter((x) => x.from === undefined).length;
+    assert.equal(parts.prior!.rows.length, priorCount + added, `${unit} 평가내용 행`);
+    assert.ok(parts.prior!.rows.filter((r) => from26(unit, r.code.evalNo) !== null).every((r) => r.human.upTo.length > 0), `${unit} ’24까지·’25 출발값`);
     assert.equal(f25.length, FINDINGS_2025[n], `${unit} 2025 지적 행`);
     assert.equal(parts.findings!.rows.length, FINDINGS_2025[n], `${unit} 코어 지적 행`);
     assert.ok(parts.findings!.rows.every((r) => r.code.source && !r.code.differs), `${unit} 지적 짝`);
@@ -376,10 +405,34 @@ test("2025 틀 재현(지표 1~11): 평가내용 행 = 2025 전년 대비 표 �
     // 달성률 셈 재현: 2025 표의 실적 값을 ’26 실적 칸에 넣고 셈(실적 칸의 출처 — 원장 줄 — 은 위 계량 표 시험이 봄)
     const miss = parts.outcome!.kpi.filter((k, i) => kpiRate({ ...k, code: { ...k.code, actual: k25[i].actual } }).text !== k25[i].rate).map((k) => k.code.name);
     assert.deepEqual(miss, RATE_DIFF[n] ?? [], `${unit} 2025 달성률을 다시 못 내는 행`);
-    assert.equal(parts.outcome!.qual.length, priorCount, `${unit} 비계량 행 = 평가내용 수`);
+    assert.equal(parts.outcome!.qual.length, priorCount + added, `${unit} 비계량 행 = 평가내용 수`);
     assert.equal(table2025Rows(chapter("outcome", "나")!.text).length, QUAL_2025[n], `${unit} 2025 비계량 행`);
     assert.equal(table2025Rows(rpt.find((x) => x.meta?.chapter === "outcome" && x.meta?.theme_no === 2)!.text).length, PLAN_2025[n], `${unit} 2025 개선계획 행`);
     table.push(`${unit} 평가내용 ${priorCount} · 지적 ${f25.length} · 계량 ${k25.length}(달성률 다름 ${miss.length}) · 비계량 2025 ${QUAL_2025[n]}/코어 ${priorCount} · 개선계획 2025 ${PLAN_2025[n]}/코어 ${priorCount}`);
   }
   assert.equal(table.length, 11);
+});
+
+test("평가내용 행(2026-11-19 '26 편람 번호): 상생은 행 1~4(옛 2 → 3·옛 3 → 4, ② 지역업체 신설), 2025 「전년 대비」 글은 옮긴 번호로 짝, 담당 카드 없는 행은 ’26 칸에 【확인】(채우면 사라짐)", async () => {
+  const { mergeUnitPart, applyUnitPartEdits } = await import("./unit-parts-edit.ts");
+  const rpt: UnitChunk[] = [
+    ...[1, 2, 3].map((n) => ({ chunk_key: `rpt25-mg-07/d${n}`, text: "", meta: { chapter: "detail", eval_no: n, eval_title: `2025 평가내용 ${n}` } })),
+    { chunk_key: "rpt25-mg-07/p2", text: "구분 | ’24까지 | ’25\n\n∙ 옛 | ∙ 지역공부방 | 〃", meta: { chapter: "prior", eval_no: 2 } },
+  ];
+  const cards = ["7-1", "7-4", "7-5"].map((t) => card(t));
+  const { part, warnings } = buildPriorPart({ unit: "MG-7", cards, report2025: rpt });
+  assert.deepEqual(part.rows.map((r) => [r.id, r.code.cards.map((c) => c.taskNo), Boolean(r.code.need)]), [["prior/1", ["7-1"], false], ["prior/2", [], true], ["prior/3", ["7-4"], false], ["prior/4", ["7-5"], false]]);
+  assert.equal(part.rows[1].code.title, "지역업체 발주·지역기업 육성", "편람 글이 없으면 짧은 이름");
+  assert.equal(part.rows[2].code.title, "2025 평가내용 2", "수정 항목도 편람 글이 없으면 2025 제목");
+  assert.deepEqual(part.rows[2].human.upTo, ["지역공부방"], "2025 전년 대비 평가내용 2의 글 → '26 행 3");
+  assert.match(part.rows[1].code.need!, /^【확인: 담당 카드 없음 — '26 신설 「지역업체 발주·지역기업 육성」 실적 자료 필요\(후보 7-3\)】$/);
+  assert.ok(warnings.some((w) => w === "전년 대비: 평가내용2 — 대응 카드 없음(올해 칸을 채울 과제별 초안이 없음)"));
+  assert.equal(unitPartsNeeds({ unit: "MG-7", indicator: "", year: 2026, cover: null, findings: null, prior: part, outcome: null, source: { cards: {}, drafts: {} } }), 1);
+  // 사람이 ’26 칸을 채우면 【확인】이 빠지고, 다시 채우기에서도 남긴 글이 있으면 빠진 채
+  const edited = applyUnitPartEdits(part, [{ path: "rows.1.ai.now", value: ["지역업체 발주 비중 상승"] }]);
+  assert.ok(edited.ok && edited.part.part === "prior" && !edited.part.rows[1].code.need);
+  const merged = mergeUnitPart(edited.ok ? edited.part : null, buildPriorPart({ unit: "MG-7", cards, report2025: rpt })).part;
+  assert.ok(merged.part === "prior" && !merged.rows[1].code.need && merged.rows[1].ai.now[0] === "지역업체 발주 비중 상승");
+  // 단위가 없으면(예전 호출) 2025 골격 그대로
+  assert.deepEqual(buildPriorPart({ cards, report2025: rpt }).part.rows.map((r) => r.id), ["prior/1", "prior/2", "prior/3"]);
 });

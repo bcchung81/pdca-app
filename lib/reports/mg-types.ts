@@ -9,7 +9,7 @@ import type { OutlineFrame } from "./framework-pick.ts";
 export interface MgPart {
   /** 절 열쇠 `평가내용.대주제.표지`(표지가 없으면 0) — mgPartKey */
   key: string;
-  /** 평가내용 번호(2025 보고서 연번 — 설계 결정 2026-10-09) */
+  /** 평가내용 번호('26 편람(11.13 수정) 지표 안 번호 — 2026-11-19 사용자 결정 D1, 2025 보고서 조각은 lib/reports/mg-items.ts to26으로 옮겨 읽음. 그 전 구성안·초안은 2025 연번 — MG-7만 다름, mg-renumber.ts) */
   evalNo: number;
   evalTitle: string;
   themeNo: number;
@@ -43,7 +43,25 @@ export interface MgOutlineMeta {
   outcomes?: MgOutcome[];
   /** 값 충돌(구성안이 근거에서 찾은 같은 항목의 다른 값 — mg-outline.ts cleanMgComposition이 근거 수치로 거른 것, 2026-10-30). 집필이 초안 spec.mg.conflicts로 옮김. 없으면 충돌 없음 */
   conflicts?: MgConflict[];
+  /** 편람 항목 대응(B1 — AI 답 coverage를 mg-outline.ts cleanCoverage가 정리, 2026-11-19). 없으면(이 필드 전 구성안·항목표 없는 요청) 대응 점검 안 함 */
+  coverage?: MgCoverage[];
 }
+
+/** 편람 항목 대응 한 줄(B1): 항목 단위는 필수, 착안사항(point)은 「자료 필요」일 때만(사용자 결정 D9) */
+export interface MgCoverage {
+  /** '26 평가내용 번호(편람 항목표 — mg-items.ts) */
+  item: number;
+  /** 착안사항 번호(1부터 — 항목표 points 순서). 없으면 항목 전체 */
+  point?: number;
+  /** 씀(절이 있음) · 자료 필요(실적이 없어 절을 세우지 않음 — need 재료) · 다른 카드(그 항목은 다른 카드가 맡음) */
+  state: MgCoverageState;
+  /** 씀이면 그 절 열쇠 */
+  part?: string;
+  why: string;
+}
+
+export const MG_COVERAGE_STATES = ["씀", "자료 필요", "다른 카드"] as const;
+export type MgCoverageState = (typeof MG_COVERAGE_STATES)[number];
 
 /**
  * 값 충돌 한 건(2026-10-30): 카드 원장(구판)과 첨부(신판)처럼 근거끼리 같은 항목 값이 다를 때 쓰지 않을 값과 쓸 값. 모두 근거 원문 구절 그대로(앱이 근거 수치로 확인)

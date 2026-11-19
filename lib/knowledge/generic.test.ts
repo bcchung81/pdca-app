@@ -88,7 +88,9 @@ test("글이 거의 없으면(스캔 문서) error로 멈추고, 빈 입력도 �
 
 // 실제 kordoc 산출물(이 컴퓨터의 resources/knowledge/_parsed — git 밖) 6개 이상으로 같은 성질을 확인한다: 제목 있는 문서(관리계획·실사·전년 보고서)와 없는 문서(AX·점검표·Pool)
 const PARSED = resolve(import.meta.dirname, "../../resources/knowledge/_parsed");
-const real = existsSync(PARSED) ? readdirSync(PARSED).filter((f) => f.endsWith(".chunks.json")) : [];
+// 외부 컨설팅 의견(consult26-mg.xlsx)은 시트 3개가 한 표씩이라 범용 조각기로 나누면 시트 이름·짧은 집계 표 구간뿐이어서 크기 규칙의 표본이 못 됨 — 전용 파서(parsers/consult-mg.ts)만 씀
+const NOT_SAMPLES = new Set(["consult26-mg.chunks.json"]);
+const real = existsSync(PARSED) ? readdirSync(PARSED).filter((f) => f.endsWith(".chunks.json") && !NOT_SAMPLES.has(f)) : [];
 test("실제 kordoc 산출물: 글 손실 없음·키 중복 없음·크기 규칙·결정적(원본이 없으면 건너뜀)", { skip: real.length === 0 && "kordoc 산출물(resources/knowledge/_parsed)이 없음" }, () => {
   for (const f of real) {
     const blocks = loadKordocChunks(JSON.parse(readFileSync(resolve(PARSED, f), "utf8")));

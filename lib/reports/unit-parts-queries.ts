@@ -41,7 +41,7 @@ const CHUNK_COLS = "chunk_key, title, text, unit_type, meta";
 /**
  * 한 지표(MG-N)·연도의 재료: 그 지표 활성 카드(원장 data·data_rev) · 그 카드들의 그 연도 과제별 초안(spec이 있는 것) ·
  * 2025 그 지표 보고서 조각 전부(rpt25-mg-NN — 세부평가내용별 골격 + 카드 밖 장의 전년 대비·성과분석 표) · '25 평가위원 지적(plan-2607 eval25/MG-N) ·
- * '26 편람 지표(plan-2607 handbook26/MG-N) · 목차·쪽 배정(report_outline) · 작성일(오늘 — ’26 계량 실적은 카드 원장 정량 성과 칸에서 읽음, 2026-11-02).
+ * '26 편람 지표(plan-2607 handbook26/MG-N · 편람 수정본 hb26r-2611 조각 포함 — buildCoverPart가 옛 자리에 합침) · 목차·쪽 배정(report_outline) · 작성일(오늘 — ’26 계량 실적은 카드 원장 정량 성과 칸에서 읽음, 2026-11-02).
  * uids = 카드 id → uid(화면이 카드·과제별 초안으로 잇는 주소)
  */
 export async function loadUnitMaterials(supabase: SupabaseClient, unit: string, year: number): Promise<{ materials: MgUnitMaterials; uids: Record<string, string> }> {
@@ -50,7 +50,7 @@ export async function loadUnitMaterials(supabase: SupabaseClient, unit: string, 
     supabase.from("report_outline").select("card_id, section, subsection, included, sort").eq("year", year).eq("eval_unit_id", unit),
     supabase.from("knowledge_chunks").select(CHUNK_COLS).like("doc_id", "rpt25-mg-%").eq("business", unit).order("seq"),
     supabase.from("knowledge_chunks").select(CHUNK_COLS).eq("unit_type", "evaluator_comment").like("chunk_key", `plan-2607/eval25/${unit}/%`).order("seq"),
-    supabase.from("knowledge_chunks").select(CHUNK_COLS).like("chunk_key", `plan-2607/handbook26/${unit}/%`).order("seq"),
+    supabase.from("knowledge_chunks").select(CHUNK_COLS).like("chunk_key", `%/handbook26/${unit}/%`).order("seq"),
   ]);
   const cardRows = (cards.data ?? []) as UnitCardDbRow[];
   const ids = cardRows.map((c) => String(c.id));

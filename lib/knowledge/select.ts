@@ -136,5 +136,6 @@ export function applySelection(b: KnowledgeBundle, sel: CardSelection, roles: Ma
     layers,
     list: { relevant: keep(b.list.relevant), taskRow: b.list.taskRow, peers: keep(b.list.peers), prior: keep(b.list.prior), similar: keep(b.list.similar) },
     select: { picked, unpicked, all, relevant: b.list.relevant, digest: sel.digest },
+    ...(b.outlineOnly ? { outlineOnly: b.outlineOnly } : {}),
   };
 }

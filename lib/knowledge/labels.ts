@@ -13,6 +13,7 @@ export const UNIT_LABEL: Record<string, string> = {
   peer_case: "유관기관 사례(붙임2)",
   plan_section: "관리계획 서술",
   corrective_action: "지적 시정조치 계획",
+  consult_comment: "외부 컨설팅 의견",
   core_item: "핵심공통항목(경영관리)",
   report_section: "2025 보고서 소항목",
   report_chapter: "2025 보고서 장(경영관리)",

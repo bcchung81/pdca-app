@@ -4,7 +4,7 @@
 // 지표 한 파일로 과제별 초안과 이어 붙이는 일(R5d)은 unit-report-md.ts — 여기서는 장마다 줄(unitPartsLines)만 내놓음.
 
 import { mdCaption, mdTable, mdText } from "./section-md.ts";
-import { type UnitPartsMg, kpiRate, unitPartsLabels } from "./unit-parts-mg.ts";
+import { type UnitPartsMg, kpiRate, priorNow, unitPartsLabels } from "./unit-parts-mg.ts";
 
 /** 칸 안 불릿: 「∙ 가 / ∙ 나」(비어 있으면 빈 칸) */
 const cellBullets = (items: string[]) => items.map((x) => `∙ ${mdText(x)}`).join(" / ");
@@ -38,7 +38,7 @@ export function unitPartsLines(p: UnitPartsMg, opts: { remarks?: Record<string, 
   }
   if (p.prior) {
     out.prior.push("", `□ ${mdText(L.prior.title)}`);
-    for (const r of p.prior.rows) out.prior.push(...mdTable([[L.prior.evalLabel(r.code.evalNo), r.code.title]]), ...mdTable([L.prior.cols, [cellBullets(r.human.upTo), cellBullets(r.ai.now), cellBullets(r.ai.effect)]]));
+    for (const r of p.prior.rows) out.prior.push(...mdTable([[L.prior.evalLabel(r.code.evalNo), r.code.title]]), ...mdTable([L.prior.cols, [cellBullets(r.human.upTo), cellBullets(priorNow(r)), cellBullets(r.ai.effect)]]));
   }
   if (p.outcome) {
     const O = L.outcome;

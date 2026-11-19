@@ -6,7 +6,7 @@ import { requireAtLeast } from "../../../../lib/auth/dal.ts";
 import { currentPeriod } from "../../../../lib/cards/view.ts";
 import { withReturn } from "../../../../lib/nav/return-to.ts";
 import { PAGE_BUDGET, budgetState, halfPageTasks } from "../../../../lib/reports/outline.ts";
-import { type MgEvalPages, type MgPageRef, buildMgOutline, evalNoOf, halfPage, mgBudgetState, mgCardPages } from "../../../../lib/reports/mg-page-plan.ts";
+import { type MgEvalPages, type MgPageRef, buildMgOutline, evalNoOf, halfPage, mgBudgetState, mgCardPages, orphanNote } from "../../../../lib/reports/mg-page-plan.ts";
 import { loadMgPageRefs } from "../../../../lib/reports/mg-queries.ts";
 import { MG_VOLUME, mgVolumeLabel } from "../../../../lib/reports/mg-volume.ts";
 import { compareUnitId } from "../../../../lib/cards/view.ts";
@@ -176,7 +176,7 @@ export default async function OutlinePage() {
                       {orphan.map((e) => (
                         <tr key={e.no} className="h-9 opacity-70">
                           <th colSpan={3} scope="row" className="min-w-0 truncate border-b border-line px-3 text-left text-xs font-semibold text-muted-2" title={`평가내용 ${e.no}. ${e.title} — 대응하는 카드가 없음(카드 ↔ 평가내용 대응은 구성안에서 고름)`}>
-                            평가내용 {e.no}. {e.title} — 대응 카드 없음
+                            평가내용 {e.no}. {e.title} — {orphanNote(e) || "대응 카드 없음"}
                           </th>
                           <td className="border-b border-line px-3 font-mono text-xs text-muted-2" title={`본문 예산 중 이 평가내용 몫(2025 ${halfPage(e.pages2025 ?? e.pages)}쪽)`}>예산 {halfPage(e.pages)}쪽</td>
                         </tr>

@@ -30,8 +30,8 @@ test("metric_2025가 없는 분할 조각·요청 자료는 질문 머리 괄호
   assert.equal(commonKpiOwner(c("att3-2604/s1/Q/ev/11-1", { context_prefix: "2025 주요사업 실사 질문·요청 답변자료('26.4.2) · 증빙 11-1 · 질문 11: (ICT기금재정 효율화 성과) ICT기금 분담금 조성 정책목표" })), "BZ-3");
 });
 
-test("판별 못 하면 null(빼지 않음): 소속이 바뀐 지표·여러 사업에 걸친 글·편람·글 없음", () => {
-  assert.equal(commonKpiOwner(c("att3-2604/s2/Q20", { text: "질문: (근로자 무사고 달성 노력) 무사고 달성 방법" })), null, "근로자 무사고 달성 노력은 주요사업2→1로 옮겨진 지표라 일부러 뺌");
+test("판별 못 하면 null(빼지 않음): 여러 사업에 걸친 글·편람·글 없음", () => {
+  assert.equal(commonKpiOwner(c("att3-2604/s2/Q20", { text: "질문: (근로자 무사고 달성 노력) 무사고 달성 방법" })), "BZ-2", "근로자 무사고 달성 노력은 11.13 수정본에서 주요사업2 그대로(7월판 개선(안)의 주요사업1 이동은 다르게 확정됨)");
   assert.equal(commonKpiOwner(c("att3-2604/s2/Q21", { text: "질문: (전파품질 및 ICT기금 지표) 비교" })), null, "두 사업 지표가 섞이면 모름");
   assert.equal(commonKpiOwner(c("plan-2607/handbook26/BZ-4/c1", { text: "공통지표 편람 설명" })), null);
   assert.equal(commonKpiOwner(c("up-1/g0001")), null);

@@ -77,7 +77,8 @@ async function writeMgDraftWork(p: Prepared & { mg: MgDraftContext }, r: ReportJ
         ...files.map((x): ReportSource => ({ kind: x.kind, id: x.id, name: x.name })),
         // 고른 주요사업 초안 — 하나당 한 줄(그때 지문·갱신 시각, 붙임은 따로 적지 않음 — lib/reports/mg-biz.ts)
         ...(p.biz?.sources ?? []),
-        ...p.mg.prior.filter((s) => evals.has(s.evalNo)).map((s): ReportSource => ({ kind: "prior", id: s.key, name: `2025 보고서 ${mgPartLabel(s)}` })),
+        // 출처 이름은 2025 보고서 번호(evalNo2025 — 평가내용 번호는 '26 편람 번호로 옮겨 읽음, 2026-11-19)
+        ...p.mg.prior.filter((s) => evals.has(s.evalNo)).map((s): ReportSource => ({ kind: "prior", id: s.key, name: `2025 보고서 ${mgPartLabel({ ...s, evalNo: s.evalNo2025 ?? s.evalNo })}` })),
         ...lens.map((x): ReportSource => ({ kind: "lens", id: x.key, name: `${LENS_LABEL[x.group]} · ${x.title}` })),
       ],
       priorKeys: [],

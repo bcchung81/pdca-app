@@ -6,8 +6,8 @@
 
 import { REPORT_METHOD_USAGE } from "./usage.ts";
 
-/** 조각의 성격. 문자열 유니온(열거형 아님) */
-export type ChunkRole = "rule" | "critique" | "survey" | "prior" | "case" | "method" | "evidence" | "other";
+/** 조각의 성격. 문자열 유니온(열거형 아님). advice = 외부 컨설팅 의견처럼 카드 보완 관점일 뿐 사실·숫자 근거가 아닌 조각 — 요약·선별하지 않고 원문 그대로(method·evidence·other와 같음) */
+export type ChunkRole = "rule" | "critique" | "survey" | "prior" | "case" | "method" | "advice" | "evidence" | "other";
 
 /** 규칙 문서가 대신하는 기준류 */
 export const DIGEST_ROLES: readonly ChunkRole[] = ["rule"];
@@ -22,6 +22,7 @@ export const ROLE_LABEL: Record<ChunkRole, string> = {
   prior: "전년 보고서",
   case: "유관기관 사례",
   method: "작성 방법론",
+  advice: "외부 의견",
   evidence: "실적 근거",
   other: "기타",
 };
@@ -48,6 +49,8 @@ const ROLE_OF_UNIT: Record<string, ChunkRole> = {
   report_chapter: "prior",
   peer_case: "case",
   core_item: "evidence",
+  // 외부 컨설팅 의견(2026-11-19 A3) — 근거가 아닌 쪽. 사례류로 고르지 않고 원문 그대로 둠
+  consult_comment: "advice",
 };
 
 /** 조각의 성격. 모르는 unit_type과 usage 없는 generic_section은 other */

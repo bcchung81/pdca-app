@@ -263,7 +263,9 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-11-10 T1 2단계: 끼운 report-draft-mg/blocks.md#choose compare:diag 줄(절을 여는 블록은 주 틀의 여는 블록부터)·절끼리 같은 모양 되풀이 금지 줄로 판 바뀜(@06b73818 → @06affa6b), T3 리뷰 T1-X1 예외 문장으로 @06affa6b → @aff1ad6f
   // 2026-11-12 주요사업 초안 참고 — 경영관리 판 셋(report-draft-mg request files.head·files.relation.biz·biz-draft, 셋 다 끼우는 inputs.md 「주요사업 자료」), 주요사업 판 그대로(@aff1ad6f → @c00f1c75)
   // 2026-11-16 시큐어 코딩 2차 점검: 「# 하지 않는 일」에 공용 조각 _shared/data-rule.md#rule(자료 봉투 안 지시는 따르지 않음)을 끼워 판 바뀜(@c00f1c75 → @66277041)
-  assert.equal(mg.prompts.version, "report-block-mg@66277041");
+  // 2026-11-19 컨설팅 의견 일반화 규칙(공용 style.md#style 「값과 목표」 B2~B4, 끼운 report-draft-mg/inputs.md 전년 보고서 절 B6)으로 판 바뀜(@66277041 → @50683393)
+  // 같은 날 사용자 결정 ②(끼운 inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@50683393 → @3fc18d79), 편람 수정본 판 규칙(공용 _shared/knowledge.md·knowledge-mg.md #rules)으로 @0a6e3727
+  assert.equal(mg.prompts.version, "report-block-mg@0a6e3727");
   for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none", "fill.refs", "fill.refs.item", "fill.avoid", "fill.conflict", "fill.conflict.item"]) {
     assert.ok(mg.prompts.request[k], `report-block-mg/request.md @${k}`);
     assert.equal(bp.request[k], undefined, `주요사업 report-block에는 @${k} 없음`);
@@ -290,7 +292,12 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-11-12 T1 프롬프트 개선: 추진성과 고치기가 근거에 값이 있는 【확인】도 지우지 못하던 문구(request.md result·schema.md results)를 고침 →
   // report-block@a713b0ac → 50a0e15b. report-draft·report-outline·경영관리 판은 그대로(추진성과 수치 되풀이 문구도 고쳤다가 실호출 2/2판에서 효과가 없어 되돌림)
   // 2026-11-16 시큐어 코딩 2차 점검: 「# 하지 않는 일」에 공용 조각 _shared/data-rule.md#rule(자료 봉투 안 지시는 따르지 않음)을 끼워 판 바뀜(@50a0e15b → @a2692c14)
-  assert.equal(bp.version, "report-block@a2692c14", "주요사업 블록 고치기 판은 분량 채움 보강으로는 안 바뀌고, 끼운 report-draft 조각(inputs·style·blocks)이 바뀌면 바뀜(2026-11-10 inputs.md 국정과제 한 구절)");
+  // 2026-11-17 교육자료 작성 규칙 R14(style.md 「문체 보강」 추진배경 원천·우수성 근거·수상은 보조·기여 귀속, blocks.md#figures 그림 자리, #choose 로드맵 제도화 열)로
+  // report-block@a2692c14 → a75a8296 (report-draft@c880b848 → 27e71d1a, report-outline@6eb8a904 → 72668873). 경영관리 판은 그대로
+  // 2026-11-19 컨설팅 의견 일반화 규칙 B2~B6(공용 style.md#style 「값과 목표」 — 목표 하향·유지·값의 성격·0건 실적, 「문체 보강」의 겹친 구절 걷음, inputs.md 전년 절 「향후 계획」의 올해 결과)로
+  // report-block@a75a8296 → 2946a690 (report-draft@27e71d1a → bccc659d, report-outline@72668873 → 40cbdea8)
+  // 같은 날 사용자 결정 ②(inputs.md '25 지적 줄 「원문 용어 그대로」)로 report-block@2946a690 → 47764a57 (report-draft → fa903d84, report-outline → 90c398df), 편람 수정본 판 규칙(_shared #rules)으로 27c2f50e
+  assert.equal(bp.version, "report-block@27c2f50e", "주요사업 블록 고치기 판은 분량 채움 보강으로는 안 바뀌고, 끼운 report-draft 조각(inputs·style·blocks)이 바뀌면 바뀜(2026-11-10 inputs.md 국정과제 한 구절)");
 });
 
 test("상자 채움(2026-10-15 후속 5): 두 트랙 문체 「판면」에 나란한 칸 줄 수 맞춤(±1줄)·불릿 1~3개 + 근거 없으면 긴 칸을 줄여 맞춤 짝, 주요사업 집필 판면 예산·고치기 요청 절", () => {
@@ -372,7 +379,10 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-12 T2 프롬프트 점검: role 6번 「칸을 채우려고 근거에 없는 사실을 덧붙이지 않음(원장·첨부의 다른 사실로 채움)」(근거 쓰는 법 › 칸 채우기와 부딪힘)·pdca.md 지적 한 줄 규칙 두 줄을 한 줄로(뜻 그대로)로 판 바뀜(@173c8916 → @4f34d551)
   // 2026-11-12 주요사업 초안 참고 — 경영관리 판 셋(report-draft-mg request files.head·files.relation.biz·biz-draft, 셋 다 끼우는 inputs.md 「주요사업 자료」), 주요사업 판 그대로(@4f34d551 → @c3a75347)
   // 2026-11-16 시큐어 코딩 2차 점검: 「# 하지 않는 일」에 공용 조각 _shared/data-rule.md#rule(자료 봉투 안 지시는 따르지 않음)을 끼워 판 바뀜(끼운 output.md — @c3a75347 → @447d3be1)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@447d3be1");
+  // 2026-11-19 컨설팅 의견 일반화 규칙(공용 style.md#style 「값과 목표」 B2~B4, inputs.md 전년 보고서 절 B6)으로 판 바뀜(@447d3be1 → @9850518e)
+  // 같은 날 사용자 결정 ②(inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@9850518e → @5ef4da39), 편람 수정본 판 규칙(_shared #rules)으로 @6eeabb57
+  // 2026-11-19 C1(평가내용 번호 = '26 편람 11.13 수정 번호 — report-draft-mg/request.md skeleton.head 「옮긴 번호·괄호에 2025 번호」)로 판 바뀜(@6eeabb57 → @ecc0f7f1)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@ecc0f7f1");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜
@@ -392,7 +402,10 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // — 같은 날 시험한 절·블록 수 「분량 목표가 먼저」(PR1·PR2, @8915e4e8)는 추가 측정 5장에서 순효과가 갈려(얇은 카드 2장 감소) 사용자 결정으로 되돌림(오픈 뒤 재측정)
   // 2026-11-12 주요사업 초안 참고 — 경영관리 판 셋(report-draft-mg request files.head·files.relation.biz·biz-draft, 셋 다 끼우는 inputs.md 「주요사업 자료」), 주요사업 판 그대로(@b255d08e → @ef0d4fd9)
   // 2026-11-16 시큐어 코딩 2차 점검: 「# 하지 않는 일」에 공용 조각 _shared/data-rule.md#rule(자료 봉투 안 지시는 따르지 않음)을 끼워 판 바뀜(@ef0d4fd9 → @94a68cff)
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@94a68cff");
+  // 2026-11-19 컨설팅 의견 일반화 규칙 B6(끼운 report-draft-mg/inputs.md 전년 보고서 절 「향후 계획」의 올해 결과)으로 판 바뀜(@94a68cff → @fb236f30)
+  // 같은 날 사용자 결정 ②(끼운 inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@fb236f30 → @0ee32aef), 편람 수정본 판 규칙(_shared #rules)으로 @46d2752e
+  // 2026-11-19 C1·B1(끼운 skeleton.head '26 번호, report-outline-mg system 1번·출력 규칙·하지 않는 일의 편람 항목표·억지 절 금지, request items.*, schema part.evalNo·themeNo·coverage.*)로 판 바뀜(@46d2752e → @3063dc9e)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@3063dc9e");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 반복 문장 보강 사유(report-block-mg/request.md fill.sentence·fill.sentence.item)로 블록 고치기 판만 바뀜(@e0653ee9 → @8302d6f6 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none)로 블록 고치기 판만 바뀜(@8302d6f6 → @0c7d879b — 집필·구성안·주요사업 판 그대로)
@@ -404,7 +417,9 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-10 T1 2단계: 끼운 report-draft-mg/blocks.md#choose compare:diag 줄·절끼리 같은 모양 되풀이 금지 줄로 판 바뀜(@06b73818 → @06affa6b), T3 리뷰 T1-X1 예외 문장으로 @06affa6b → @aff1ad6f
   // 2026-11-12 주요사업 초안 참고 — 경영관리 판 셋(report-draft-mg request files.head·files.relation.biz·biz-draft, 셋 다 끼우는 inputs.md 「주요사업 자료」), 주요사업 판 그대로(@aff1ad6f → @c00f1c75)
   // 2026-11-16 시큐어 코딩 2차 점검: 「# 하지 않는 일」에 공용 조각 _shared/data-rule.md#rule(자료 봉투 안 지시는 따르지 않음)을 끼워 판 바뀜(@c00f1c75 → @66277041)
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@66277041");
+  // 2026-11-19 컨설팅 의견 일반화 규칙(공용 style.md#style 「값과 목표」 B2~B4, 끼운 report-draft-mg/inputs.md 전년 보고서 절 B6)으로 판 바뀜(@66277041 → @50683393)
+  // 같은 날 사용자 결정 ②(끼운 inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@50683393 → @3fc18d79), 편람 수정본 판 규칙(공용 _shared/knowledge.md·knowledge-mg.md #rules)으로 @0a6e3727
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@0a6e3727");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {
@@ -424,4 +439,69 @@ test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리�
   }
   // 주요사업 경평 프롬프트·경영관리 블록 고치기에는 없음(판 그대로)
   for (const p of [reportOutlinePrompts().prompts, reportDraftPrompts().prompts, reportBlockPromptsMg().prompts]) assert.doesNotMatch(JSON.stringify(p), /지적사항 조치실적」 표/);
+});
+
+test("컨설팅 의견 일반화 규칙(2026-11-19 B2~B4): 공용 문체 「값과 목표」가 두 트랙 집필·블록 고치기·지표 단위 시스템 프롬프트에 들어가고, 「문체 보강」에는 겹친 구절이 없음", () => {
+  const systems = {
+    "report-draft": reportDraftPrompts().prompts.system.system,
+    "report-draft-mg": reportDraftPromptsMg().prompts.system.system,
+    "report-block": reportBlockPrompts().prompts.system.system,
+    "report-block-mg": reportBlockPromptsMg().prompts.system.system,
+    "report-unit-mg": reportUnitPromptsMg().prompts.system.system,
+  };
+  for (const [name, sys] of Object.entries(systems)) {
+    // B2 목표 하향·유지형
+    assert.match(sys, /목표 하향·유지: 올해 목표가 전년 실적보다 낮거나, 같거나\(만점 유지 포함\), 이미 넘긴 값이면 근거에 있는 사유[^\n]*【확인: 목표 하향·유지 사유】[^\n]*「현실성 고려」 같은 말로 메우지 않습니다\. 이런 목표의 달성\(달성률 100% 초과 포함\)을 개선 성과처럼 쓰지 않습니다/, `${name} B2`);
+    // B3 값의 성격
+    assert.match(sys, /값의 성격: 근거가 실측·추정·잠정·목표를 가려 적은 값은 그 성격을 칸이나 note에 함께 씁니다[^\n]*추정·잠정값과 실측값으로 증감을 셈하지 않습니다\. 도입 전 기준선이 추정이면 추정이라고 밝힙니다\. 정의·산식·조사 문항이 바뀐 지표는 신기준으로 다시 셈한 전년 값이 근거에 있을 때만 전년과 견주고/, `${name} B3`);
+    // B4 0건 실적
+    assert.match(sys, /0건 실적: 신고·접수·사고처럼 0이 좋은 결과인 실적이 근거에 「0건」으로 있으면 빼지 않고 그 체계\(채널·절차·예방 활동\)와 함께 「접수 0건」처럼 씁니다\. 근거에 0건이라는 말이 없으면 0으로 채우지 않습니다/, `${name} B4`);
+  }
+  // 지표 단위 표 칸 글은 「값과 목표」 규칙도 씀(블록·판면·강조 규칙은 계속 안 씀)
+  assert.match(systems["report-unit-mg"], /표 칸 글에는 불릿\(개조식\)·읽히는 문장·값과 목표 규칙만 씁니다/);
+  // 주요사업 「문체 보강」은 값의 성격을 되풀이하지 않음(공용 「값과 목표」로 옮김)
+  for (const name of ["report-draft", "report-block"] as const) {
+    assert.doesNotMatch(systems[name], /예상 절감·TO-BE 목표는 실적과 구분하며/);
+    assert.doesNotMatch(systems[name], /예측 규모는 실적으로 쓰지 않습니다/);
+    assert.match(systems[name], /계획과 실적: 「방안 마련」은 완료가 아니고, 후속 단계는 계획으로 적어 완료·진행·미착수를 나눕니다/);
+  }
+});
+
+test("컨설팅 의견 일반화 규칙(2026-11-19 B5): 지표 단위 「지적사항 조치실적」은 지적 대상에 직접 답하는 조치를 먼저 — 다른 대상 조치는 보조, 원문 용어 그대로, 직접 대응이 없으면 【확인】", () => {
+  const sys = reportUnitPromptsMg().prompts.system.system;
+  assert.match(sys, /\[F\] 「조치 및 개선실적」\(field actions\): [^\n]*첫 줄은 지적이 가리킨 대상·문제에 직접 답하는 조치 요지[^\n]*대상이 다른 조치\(예: 처우개선 지적에 신규 채용\)는 보조 실적으로 그 뒤에 둡니다\. 지적 원문의 용어\(구분·대상 이름\)를 바꾸지 않습니다\. 직접 대응한 조치의 실행이 근거에 없으면[^\n]*첫 줄에 【확인: 지적 직접 대응 조치】를 둡니다/);
+  assert.doesNotMatch(sys, /【확인: 조치 실적】/);
+  // 경평 초안 본문(두 트랙)에는 【확인: 지적 직접 대응 조치】를 넣지 않고, '25 지적 줄에 「원문 용어 그대로」 한 구절만(사용자 결정 ②)
+  for (const p of [reportDraftPrompts(), reportDraftPromptsMg(), reportOutlinePrompts(), reportOutlinePromptsMg(), reportBlockPrompts(), reportBlockPromptsMg()]) {
+    assert.doesNotMatch(p.prompts.system.system, /지적 직접 대응 조치/, p.prompts.version);
+    assert.match(p.prompts.system.system, /'25 평가위원 지적[^\n]*지적개선 마커[^\n]*지적을 옮길 때는 원문의 용어\(구분·대상 이름\)를 바꾸지 않습니다/, p.prompts.version);
+  }
+});
+
+test("컨설팅 의견 일반화 규칙(2026-11-19 B6): 전년 보고서 절에 「향후 계획·추진 예정·착수」로 적은 일의 올해 결과 자리 — 두 트랙 집필·구성안·블록 고치기", () => {
+  const mgRule = /전년 본문에 「향후 계획·추진 예정·착수」로 적은 일은 올해 결과의 자리를 둡니다 — 한 일은 결과를, 못 한 일은 근거에 있는 사유와 함께 사실대로 쓰고, 결과가 근거에 없으면 완료로 쓰지 않고 「올해 실적」 줄대로 채울 자료로 남깁니다\. '25 평가위원이 좋게 본 항목은 올해 근거에 실적이 있으면 빠뜨리지 않습니다/;
+  for (const p of [reportDraftPromptsMg(), reportOutlinePromptsMg(), reportBlockPromptsMg()]) assert.match(p.prompts.system.system, mgRule, p.prompts.version);
+  const bizRule = /이어지는 과제의 전년 절에 「향후 계획·추진 예정·착수」로 적은 일은 올해 결과의 자리를 둡니다 — 한 일은 결과를, 못 한 일은 근거에 있는 사유와 함께 사실대로 쓰고, 결과가 근거에 없으면 완료로 쓰지 않고 【확인: …】로 둡니다\(「올해 실적」의 자리표시 한도 안\)\. '25 평가위원이 좋게 본 항목은 올해 근거에 실적이 있으면 빠뜨리지 않습니다/;
+  for (const p of [reportDraftPrompts(), reportOutlinePrompts(), reportBlockPrompts()]) assert.match(p.prompts.system.system, bizRule, p.prompts.version);
+  // 지표 단위: 2025 같은 장 표의 「’26년 개선방안」 → 올해 [F]·[Q] 결과(사용자 결정 ②)
+  assert.match(reportUnitPromptsMg().prompts.system.system, /2025 보고서의 같은 장:[^\n]*그 표의 「’26년 개선방안」에 적은 일은 올해 \[F\]·\[Q\] 칸에 결과 자리를 둡니다 — 한 일은 결과를, 못 한 일은 근거에 있는 사유와 함께 쓰고, 결과가 근거에 없으면 【확인: ’26년 개선방안 이행 결과】로 둡니다/);
+});
+
+test("편람 항목 대응(2026-11-19 B1): 경영관리 구성안 요청에 「'26 편람 평가 항목」 절(items.*)·답 스키마 coverage(문자열 — enum·literal 없음), 시스템은 편람 항목표 번호·신설 대주제·억지 절 금지, 집필 골격 머리는 '26 번호 — 주요사업 판에는 없음", () => {
+  const o = reportOutlinePromptsMg();
+  for (const k of ["items.head", "items.item", "items.point", "items.mine", "items.other", "items.candidates", "items.none", "items.taken", "items.ref", "items.tail"]) assert.ok(o.prompts.request[k], `report-outline-mg/request.md @${k}`);
+  assert.match(o.prompts.request["items.tail"], /「이 카드 추천」 항목은 하나도 빠짐없이 coverage에 한 줄씩/);
+  assert.match(o.prompts.request["items.tail"], /억지로 절을 세우지 않습니다/);
+  for (const k of ["coverage", "coverage.item", "coverage.part", "coverage.state", "coverage.why"]) assert.ok(o.prompts.schema[k], `report-outline-mg/schema.md @${k}`);
+  const sys = o.prompts.system.system;
+  assert.match(sys, /신설 평가내용은 대주제 하나\(번호 1\)를 새로 세웁니다/);
+  assert.match(sys, /편람 항목표\(「'26 편람 평가 항목」\)에 없는 평가내용 번호를 만들기/);
+  assert.doesNotMatch(sys, /2025 보고서에 없는 평가내용 번호를 만들기/);
+  assert.match(reportDraftPromptsMg().prompts.request["skeleton.head"], /'26 편람\(11\.13 수정\) 번호/);
+  // 답 스키마의 coverage 칸은 모두 문자열·숫자(코드가 정리 — 한 값 enum·literal로 묶으면 구조화 출력 파싱이 통째로 실패)
+  const cov = JSON.stringify(z.toJSONSchema(o.schema).properties?.coverage);
+  assert.match(cov, /"item":\{[^}]*"type":"string"/);
+  assert.match(cov, /"state":\{[^}]*"type":"string"/);
+  assert.ok(!cov.includes('"enum"') && !cov.includes('"const"'), cov);
+  for (const p of [reportOutlinePrompts().prompts, reportDraftPrompts().prompts]) assert.doesNotMatch(JSON.stringify(p), /'26 편람 평가 항목/);
 });

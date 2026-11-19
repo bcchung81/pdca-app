@@ -33,10 +33,11 @@ test("추천 평가내용: 분석 §5 첫 대응(9-3 → 3·4) 중 전년 골격
   assert.deepEqual(defaultEvals("1-1", []), []);
 });
 
-test("추천 평가내용: 2026-11-05 새 판 카드(261103판) 대응 — 7장 과제분리·번호 이동, 3-4 신규, 14는 평가내용별, 12·13은 키 없음", () => {
+test("추천 평가내용: 2026-11-05 새 판 카드(261103판) 대응 — 7장 과제분리·번호 이동, 3-4 신규, 14는 평가내용별, 12·13은 키 없음 (2026-11-19 '26 편람 번호)", () => {
   const evals = (unit: number[]) => unit.map((n) => sec(n, 1, "가", "절"));
-  const mg7 = evals([1, 2, 3]);
-  assert.deepEqual(["7-1", "7-2", "7-3", "7-4", "7-5"].map((t) => defaultEvals(t, mg7)), [[1], [1], [1], [2], [3]], "상생·공정계약·소상공인 → 1, 지역공부방 → 2, 시설·장비 → 3");
+  // 2026-11-19 D1 안 2: 상생 번호가 '26 편람 번호(옛 2 → 3, 옛 3 → 4, ② 지역업체 신설 — 담당 미정)
+  const mg7 = evals([1, 3, 4]);
+  assert.deepEqual(["7-1", "7-2", "7-3", "7-4", "7-5"].map((t) => defaultEvals(t, mg7)), [[1], [1], [1], [3], [4]], "상생·공정계약·소상공인 → 1, 지역공부방 → 3, 시설·장비 → 4");
   assert.deepEqual(defaultEvals("3-4", evals([1, 2, 3, 4])), [4], "여성 임원 → 여성 대표성");
   const mg14 = evals([1, 2, 3, 4]);
   assert.deepEqual([defaultEvals("14-1", mg14), defaultEvals("14-2", mg14)], [[1], [3]], "국정과제 이행관리 → 1, 청년인턴 → 3");
@@ -748,4 +749,139 @@ test("cleanMgComposition: 연결하지 않은 같은 보고서 자료를 출처�
   const old = cleanMgComposition(o, hayKey, known, { indicator: "지표", prior: PRIOR });
   assert.equal(old.composition.materials.find((m) => m.id === "m2")?.kind, "figure");
   assert.equal(old.composition.mg?.conflicts?.length, 2);
+});
+
+// ── '26 편람 번호·편람 항목 대응(2026-11-19 C1·B1 — 설계 .team/H3-design.md §2·§3·§5)
+import { type MgItem, mgItems } from "./mg-items.ts";
+import { cleanCoverage, coverageNeeds, mgItemIssues, mgItemsPrompt } from "./mg-outline.ts";
+
+const OLD7 = { chunk_key: "plan-2607/handbook26/MG-7/k2", text: "세부평가내용: ① 상생 노력\n* 상생 착안\n② 옛 기부\n③ 시설 개방" };
+const REV7 = { chunk_key: "hb26r-2611/handbook26/MG-7/k2", text: "세부평가내용: ① 상생 노력\n* 상생 착안\n② 지역업체 발주\n* 발주 비중\n* 협력사 육성\n③ 기부·봉사, 지역인재 양성\n* 지역공부방\n④ 시설 개방\n* 주차장", meta: { revision: "2026.11.13" } };
+const mg7Row = (evalNo: number, themeNo: number, mark: string, title: string) => ({ chunk_key: `rpt25-mg-07/${evalNo}/${themeNo}/${mark || "b"}`, text: "본문", meta: { chapter: mark ? "detail" : "detail_theme", eval_no: evalNo, eval_title: `2025 평가내용 ${evalNo} 제목`, theme_no: themeNo, theme_title: `대주제 ${evalNo}-${themeNo}`, mark, title } });
+const MG7_PRIOR = [mg7Row(1, 1, "", ""), mg7Row(2, 4, "가", "인재 성장"), mg7Row(2, 4, "나", "지역산업 성장 지원"), mg7Row(3, 1, "가", "시설 안내")].map((r) => toMgPriorSection(r, "MG-7")!);
+const MG7_ITEMS: MgItem[] = mgItems("MG-7", [OLD7, REV7], { prior: MG7_PRIOR, siblings: [{ taskNo: "7-4", parts: [{ evalNo: 3 }] }] }).items;
+
+test("2025 조각 '26 번호로(D1 안 2): 지표를 주면 상생 평가내용 2 → 3·3 → 4(evalNo2025에 2025 번호), 안 주면 예전 그대로", () => {
+  assert.deepEqual(MG7_PRIOR.map((s) => [s.key.split("/").slice(1).join("."), s.evalNo, s.evalNo2025]), [["1.1.b", 1, 1], ["2.4.가", 3, 2], ["2.4.나", 3, 2], ["3.1.가", 4, 3]]);
+  assert.equal(toMgPriorSection(mg7Row(2, 4, "가", "x"))!.evalNo, 2);
+  assert.equal("evalNo2025" in toMgPriorSection(mg7Row(2, 4, "가", "x"))!, false);
+  assert.deepEqual(defaultEvals("7-4", MG7_PRIOR, MG7_ITEMS), [3]);
+  assert.deepEqual(defaultEvals("7-3", MG7_PRIOR, MG7_ITEMS), [1], "후보(②)는 추천 기본값에 안 넣음");
+});
+
+test("골격 줄(항목표): 평가내용 줄은 '26 번호·제목·[신설·수정]·(2025 평가내용 N), 2025에 없는 신설은 「대주제 하나를 새로」·2025 참고 절(옮긴 번호)", () => {
+  const lines = skeletonLines(MG7_PRIOR, MG7_ITEMS);
+  assert.deepEqual(lines, [
+    "평가내용 1. 2025 평가내용 1 제목",
+    "  대주제 1. 대주제 1-1 — 절 없이 대주제 본문",
+    "평가내용 2. 지역업체 발주 [신설(11.13 수정)]",
+    "  (2025 보고서에 없음 — 신설 평가내용: 대주제 하나를 새로(번호 1) · 2025 참고: 평가내용 3 · 대주제 4 · 나. 지역산업 성장 지원 — 짜임 참고일 뿐 근거 아님)",
+    "평가내용 3. 기부·봉사, 지역인재 양성 [수정] (2025 평가내용 2)",
+    "  대주제 4. 대주제 2-4",
+    "    가. 인재 성장",
+    "    나. 지역산업 성장 지원",
+    "평가내용 4. 2025 평가내용 3 제목 (2025 평가내용 3)",
+    "  대주제 1. 대주제 3-1",
+    "    가. 시설 안내",
+  ]);
+  assert.deepEqual(skeletonLines(MG7_PRIOR), skeletonLines(MG7_PRIOR, []), "항목표가 없으면 예전 그대로");
+});
+
+const covOut = (coverage: MgOutlineOutput["coverage"], parts: MgOutlineOutput["parts"] = [{ evalNo: 3, themeNo: 4, themeTitle: "", mark: "가", title: "지역공부방 절", story: "배경·내용·성과형", why: "" }]): MgOutlineOutput => ({
+  ...out(),
+  parts,
+  blocks: parts.map((_, i) => ({ part: i + 1, kind: "stats" as const, variant: "", label: "추진성과", purpose: "결과", cells: 2, materials: ["m1"], figures: [], alts: [] })),
+  coverage,
+});
+const ask26 = (o: MgOutlineOutput) => cleanMgComposition(o, sourceKey("원문 구절 하나 둘 셋"), new Set(), { indicator: "상생·협력 및 지역발전", prior: MG7_PRIOR, items: MG7_ITEMS });
+
+test("구성안 정리(항목표): 평가내용 제목은 항목표(수정 = 편람 문구), 신설 번호는 경고 없음·항목표 밖 번호는 「편람 항목표에 없는 번호」", () => {
+  const r = ask26(covOut([], [{ evalNo: 3, themeNo: 4, themeTitle: "", mark: "가", title: "a", story: "", why: "" }, { evalNo: 2, themeNo: 1, themeTitle: "지역업체와 함께", mark: "", title: "", story: "", why: "" }, { evalNo: 9, themeNo: 1, themeTitle: "x", mark: "가", title: "b", story: "", why: "" }]));
+  assert.deepEqual(r.composition.mg?.parts.map((p) => [p.key, p.evalTitle]), [["2.1.0", "지역업체 발주"], ["3.4.가", "기부·봉사, 지역인재 양성"], ["9.1.가", ""]]);
+  const w = r.warnings.filter((x) => x.startsWith("평가내용:"));
+  assert.equal(w.length, 1);
+  assert.match(w[0], /9번은 편람 항목표에 없는 번호입니다\('26 편람: 1·2·3·4\)/);
+  assert.deepEqual(r.composition.mg?.coverage, [], "항목표가 있으면 빈 대응도 남김(점검 대상)");
+  assert.equal(cleanMgComposition(covOut(undefined), "", new Set(), { indicator: "x", prior: PRIOR }).composition.mg?.coverage, undefined, "항목표 없으면 대응 칸 없음");
+});
+
+test("대응 정리(cleanCoverage): 모르는 항목·상태는 버림 · 상태 글 맞춤 · 「씀」의 절이 빠지면 같은 평가내용 절 → 없으면 「자료 필요」 · 착안사항 번호는 「자료 필요」일 때만 · 같은 줄은 앞의 것", () => {
+  const parts = [{ key: "3.4.가", evalNo: 3, themeNo: 4, mark: "가" }] as never;
+  const keyAt = ["3.4.가", null, "9.9.가"];
+  const r = cleanCoverage(
+    [
+      { item: "E9", part: 1, state: "씀", why: "항목표에 없음" },
+      { item: "E3", part: 1, state: "모름", why: "상태 모름" },
+      { item: "E3", part: 1, state: "씀 ", why: "공부방" },
+      { item: "E4", part: 3, state: "씀", why: "절이 빠짐 → 같은 평가내용 절도 없음" },
+      { item: "E2.2", part: 0, state: "자료필요", why: "협력사 육성 자료" },
+      { item: "E1.1", part: 0, state: "씀", why: "착안사항 번호는 버림" },
+      { item: "평가내용 3", part: 2, state: "다른 카드", why: "앞 줄이 먼저" },
+      { item: "E2", part: 0, state: "다른카드가 맡음", why: "7-3" },
+    ],
+    MG7_ITEMS,
+    keyAt,
+    parts,
+  );
+  assert.deepEqual(
+    r.map((x) => [x.item, x.point ?? 0, x.state, x.part ?? ""]),
+    [
+      [1, 1, "자료 필요", ""], // 「씀」인데 그 평가내용 절이 없음 → 자료 필요(그러면 착안사항 번호도 남김)
+      [2, 0, "다른 카드", ""],
+      [2, 2, "자료 필요", ""],
+      [3, 0, "씀", "3.4.가"],
+      [4, 0, "자료 필요", ""],
+    ],
+  );
+  assert.deepEqual(cleanCoverage("아님", MG7_ITEMS, [], []), []);
+});
+
+test("자료 필요 need 재료(coverageNeeds): 그 항목을 가리키는 need가 없을 때만 다음 m 번호로 더함(착안사항 번호가 있으면 그 착안사항), 정리 경고 한 줄 · 블록에는 안 넣음", () => {
+  const cov = [{ item: 2, point: 2, state: "자료 필요" as const, why: "" }, { item: 4, state: "자료 필요" as const, why: "" }];
+  const mats = [{ id: "m1", kind: "fact" as const, text: "사실", when: "", source: "", quote: "", found: true }, { id: "m7", kind: "need" as const, text: "'26 편람 평가내용 4(시설·장비 개방) 이용실적", when: "", source: "", quote: "", found: false }];
+  const added = coverageNeeds(cov, MG7_ITEMS, mats);
+  assert.deepEqual(added.map((m) => [m.id, m.kind]), [["m8", "need"]], "평가내용 4는 가리키는 need(m7)가 있어 안 더함");
+  assert.match(added[0].text, /^.26 편람 평가내용 2\(지역업체 발주.지역기업 육성\) 올해 실적 자료 — 착안사항: 협력사 육성$/, "글은 cleanLine 정리(따옴표·가운뎃점 표기)");
+  const r = ask26(covOut([{ item: "E2", part: 0, state: "자료 필요", why: "실적 없음" }]));
+  const need = r.composition.materials.filter((m) => m.kind === "need" && m.source === "편람 항목표");
+  assert.equal(need.length, 1);
+  assert.match(need[0].text, /평가내용 2\(지역업체 발주.지역기업 육성\) 올해 실적 자료 — 착안사항: 발주 비중/);
+  assert.ok(!r.composition.blocks.some((b) => b.materials.includes(need[0].id)));
+  assert.ok(r.warnings.some((w) => /^평가내용: 「자료 필요」로 둔 편람 항목 2에 필요한 자료\(need 재료\)가 없어 앱이 1건 더했습니다/.test(w)));
+});
+
+test("편람 항목 점검(mgItemIssues): ① 추천 항목인데 절도 대응도 없음 ② 신설 항목 절 재료가 모두 자료 필요·계획(억지 절) ③ 추천 카드가 따로 있는 항목에 절 + 그 카드 구성안도 절(나눔 확인) — 항목표가 없으면 없음", () => {
+  const base = ask26(covOut([], [{ evalNo: 2, themeNo: 1, themeTitle: "지역업체", mark: "", title: "", story: "", why: "" }, { evalNo: 3, themeNo: 4, themeTitle: "", mark: "가", title: "a", story: "", why: "" }])).composition;
+  const c = { ...base, materials: base.materials.map((m) => ({ ...m, kind: "need" as const })) };
+  const w = mgItemIssues(c, MG7_ITEMS, { evals: [1, 3], taskNo: "7-3", siblings: [{ taskNo: "7-4", parts: [{ key: "3.4.나", evalNo: 3, themeNo: 4, mark: "나", title: "t", label: "l", story: "", signature: "" }] }] });
+  assert.equal(w.length, 3);
+  assert.match(w[0], /^평가내용: 편람 항목 1\(중소기업·소상공인 상생·공정\)은 이 카드 추천 항목인데 절도 대응도 없습니다/);
+  assert.match(w[1], /^평가내용: 신설 편람 항목 2\(지역업체 발주·지역기업 육성\)의 절 재료가 모두 자료 필요·계획입니다\(억지 절\)/);
+  assert.match(w[2], /^평가내용: 편람 항목 3\(기부·봉사·지역인재 양성\)은 7-4 카드 추천 항목이고 그 카드 구성안도 절을 두었습니다\(나눔 확인\)/);
+  assert.deepEqual(mgItemIssues(c, MG7_ITEMS, { evals: [3], taskNo: "7-4", siblings: [] }).filter((x) => /나눔|추천 항목인데/.test(x)), [], "자기 추천 항목·형제 없음");
+  assert.deepEqual(mgItemIssues(c, [], { evals: [1], taskNo: "7-3" }), []);
+});
+
+test("구성안 요청 「'26 편람 평가 항목」: 항목 id·제목·표지·담당(이 카드 추천·추천 카드·후보)·다른 카드 절 수·2025 참고 절·착안사항 id, 항목표가 없으면 빈 글", () => {
+  const p = reportOutlinePromptsMg().prompts;
+  const text = mgItemsPrompt(p, MG7_ITEMS, { evals: [3], taskNo: "7-4" });
+  const lines = text.split("\n");
+  assert.match(lines[0], /^「'26 편람 평가 항목\(11\.13 수정 반영\)」 — .*평가내용 4개/);
+  assert.ok(lines.includes("- [E2] 평가내용 2. 지역업체 발주 [신설(11.13 수정)] · 담당 미정(후보 7-3) · 2025 참고 절: 평가내용 3 · 대주제 4 · 나. 지역산업 성장 지원(짜임 참고일 뿐 근거 아님)"), text);
+  assert.ok(lines.includes("- [E3] 평가내용 3. 기부·봉사, 지역인재 양성 [수정] · 이 카드 추천"), text);
+  assert.ok(lines.includes("- [E1] 평가내용 1. 2025 평가내용 1 제목 · 추천 카드 7-1·7-2·7-3"), text);
+  assert.ok(lines.includes("    - E2.2 협력사 육성"), text);
+  assert.ok(text.includes("억지로 절을 세우지 않습니다") && text.includes("하나도 빠짐없이 coverage에 한 줄씩"), "꼬리 규칙(items.tail)");
+  assert.ok(mgItemsPrompt(p, MG7_ITEMS, { evals: [1], taskNo: "7-3" }).includes(" · 다른 카드 구성안 절: 7-4 절 1"));
+  assert.equal(mgItemsPrompt(p, [], { evals: [], taskNo: "" }), "");
+});
+
+test("집필·구성안 공용 자료 블록: 항목표가 있으면 골격 머리 「'26 편람(11.13 수정) 번호」 아래 '26 골격 줄", async () => {
+  const { mgMaterialsPrompt } = await import("./mg-draft.ts");
+  const p = reportDraftPromptsMg().prompts;
+  const ctx = { unit: "MG-7", indicator: "상생·협력 및 지역발전", taskNo: "7-4", markers: [], prior: MG7_PRIOR, items: MG7_ITEMS, evals: [3] };
+  const text = mgMaterialsPrompt(p, { title: "지역공부방" }, ctx, 2026, [3]);
+  assert.match(text, /「전년도\(2025\) 보고서 구성」 — 이 지표의 평가내용 → 대주제 → 절\('26 편람\(11\.13 수정\) 번호/);
+  assert.match(text, /평가내용 3\. 기부·봉사, 지역인재 양성 \[수정\] \(2025 평가내용 2\)/);
+  assert.match(text, /이 카드의 추천 평가내용[^\n]*: 평가내용 3/);
 });

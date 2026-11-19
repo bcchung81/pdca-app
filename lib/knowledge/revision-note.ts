@@ -1,18 +1,47 @@
 // 판(版)·원문·용도 표지(순수). 조각 글은 고치지 않고 요청 때 위치(where) 꼬리표로 붙입니다 — DB 변경 없음.
-// 근거: `plan-2607.pdf`(관리계획 7월판)를 최종본으로 한다는 사용자 결정(2026-10-07). 7월판 Ⅱ 참고2 「주요사업 계량지표 수정(안)」(재경부 업무연락 7.13 「필수개선 지표」 — KCA 6개 중 3개)이
-// '26 편람('26.1.29 최초)과 다르게 정한 곳은 개선(안)이 유효하고, '25 자료에 나오는 지표 중 '26 편람에서 이름이 바뀌었거나 교체·폐지된 것은 그렇게 알려 줍니다(지표 사전 METRICS_2025의 relation).
+// 판 기준(사용자 결정 2026-11-19 D1·D2): 11.13 수정본(`hb26r-2611`, 「2026년도 경영평가편람 수정 신구대비표」) > 관리계획 7월판 개선(안)(`plan-2607` Ⅱ 참고2) > '26 편람 최초('26.1.29).
+// 수정본은 바뀐 칸만 새 조각으로 올리고(parsers/handbook-rev.ts — meta.supersedes·revision) 옛 편람 조각은 원문 그대로 두어, 바뀐 옛 조각에 「11.13 수정본 기준」 표지를 붙입니다.
+// 7월판 개선(안)을 적은 관리계획 조각은 「수정본에서 다르게 확정됨」 표지와 함께만 보입니다(2026-10-07 「7월판이 최종본」 결정은 수정본과 다른 곳에서 효력 없음).
+// '25 자료에 나오는 지표 중 '26 편람에서 이름이 바뀌었거나 교체·폐지된 것은 그렇게 알리고, 수정본에서 나뉜 지표는 그 사실을 덧붙입니다(지표 사전 METRICS_2025의 relation·revision2611).
 
-import { REPORT_METHOD_USAGE } from "./usage.ts";
+import { METRICS_2025 } from "./dictionaries.ts";
+import { CONSULT_UNIT_TYPE, REPORT_METHOD_USAGE } from "./usage.ts";
 
-/** 7월판 개선(안)으로 바뀐 '26 편람(최초) 조각 → 개선(안)에서의 모습. 값은 plan-2607.pdf 28쪽(참고2) 표 그대로 */
-export const HANDBOOK_REVISIONS_2607: Record<string, string> = {
-  "plan-2607/handbook26/BZ-1": "7월판 개선(안) 기준: 배점 23점 — 근로자 무사고 달성 노력(3점)이 주요사업2에서 옮겨 와 지표 4개(전파품질 8·근로자 무사고 3·공공용 주파수 3·성과관리 9)",
-  "plan-2607/handbook26/BZ-2": "7월판 개선(안) 기준: 배점 15점 — 인명구조 및 재난 관리 강화 성과는 복합지표(4점:4점)가 개별지표 2개(검사 성과 3점·개선 처리 노력 5점)로, 근로자 무사고 달성 노력(3점)은 주요사업1로 이동",
-  "plan-2607/handbook26/BZ-2/m1": "7월판 개선(안) 기준: 복합지표(1개)를 개별지표 2개(인명안전 무선국 검사 성과 3점·개선 처리 노력 5점)로 나누고 가중치 4점:4점 → 3점:5점",
-  "plan-2607/handbook26/BZ-2/m2": "7월판 개선(안) 기준: 이 지표는 주요사업1로 이동·재배치(3점)",
-  "plan-2607/handbook26/BZ-3": "7월판 개선(안) 기준: 배점 16점은 그대로, 기금 재정 효율화 성과가 지표 3개(차입금리 대비 기금 운용수익 성과 1점·기금 분담금 재원 조성 성과 3점·기금 운용평가 결과 1점 신설)로 바뀜",
-  "plan-2607/handbook26/BZ-3/m1": "7월판 개선(안) 기준: 지표 신설(기금 운용평가 결과 1점)과 가중치 조정(2점:3점 → 1점:3점:1점)",
+/** 수정본 조각 key(편람 조각과 같은 꼴) */
+const REV = "hb26r-2611/handbook26";
+
+/** 11.13 수정본으로 바뀐 '26 편람(최초) 조각 → 수정본에서의 모습. 값은 hb26r-2611.pdf(신구대비표) 「수정」 쪽 그대로 */
+export const HANDBOOK_REVISIONS: Record<string, string> = {
+  "plan-2607/handbook26/BZ-2": `11.13 수정본 기준: 배점 18점 그대로, 지표 5개 — 인명구조 및 재난 관리 강화 성과(8점)가 (1) 인명안전 무선국 검사 성과 4점·(2) 사전 처리 노력 2점(신설)·(3) 현장 개선 노력 2점(신설)으로 나뉘고, (4) 근로자 무사고 달성 노력 3점(주요사업2 그대로)·(5) 성과관리의 적정성 7점(바뀐 부분은 ${REV}/BZ-2 조각)`,
+  "plan-2607/handbook26/BZ-2/m1": `11.13 수정본 기준: 이 복합지표(4점:4점)는 개별지표 3개 — 인명안전 무선국 검사 성과 4점·사전 처리 노력 2점·현장 개선 노력 2점으로 나뉨(바뀐 부분은 ${REV}/BZ-2/m1·m2·m3 조각)`,
+  "plan-2607/handbook26/BZ-2/m2": `11.13 수정본 기준: 주요사업2 그대로, 번호만 (2) → (4)(가중치 3점 그대로) — 7월판 개선(안)의 주요사업1 이동은 수정본에서 다르게 확정됨(바뀐 부분은 ${REV}/BZ-2 조각)`,
+  "plan-2607/handbook26/BZ-3": `11.13 수정본 기준: 배점 16점 그대로, 지표 4개 — 기금 재정 효율화 성과(5점)가 (1) 기금 분담금 재원 조성 성과 3점·(2) 기금운용평가 결과 2점(신설)으로 나뉘고(공공자금관리기금 차입금리 대비 기금 운용수익 성과는 없어짐), (3) 국내 방송콘텐츠 OTT 방영 성과 4점·(4) 성과관리의 적정성 7점(바뀐 부분은 ${REV}/BZ-3 조각)`,
+  "plan-2607/handbook26/BZ-3/m1": `11.13 수정본 기준: 지표 2개 — 기금 분담금 재원 조성 성과 3점·기금운용평가 결과 2점(신설)으로 나뉘고, 공공자금관리기금 차입금리 대비 기금 운용수익 성과는 없어짐(바뀐 부분은 ${REV}/BZ-3/m1·m2 조각)`,
+  "plan-2607/handbook26/MG-3/k1": `11.13 수정본 기준: 계량 ②의 「용역근로자 보호지침 준수」가 「공공부문 도급 노동자 보호지침 준수」로 바뀜(바뀐 부분은 ${REV}/MG-3/k1 조각)`,
+  "plan-2607/handbook26/MG-3/k2": `11.13 수정본 기준: ①이 「청년 등의 신규채용을 포함한 일자리 창출」로 바뀌고 유관기업·대학 협력 등을 통한 취업 지원이 더해짐, 공정채용 착안사항은 ①에서 빠져 ⑥(신설)으로 옮김 — ③~⑤는 이 조각 그대로(바뀐 부분은 ${REV}/MG-3/k2 조각)`,
+  "plan-2607/handbook26/MG-4/k1": `11.13 수정본 기준: 0점 부여 사유가 「재해 발생 과정에서 안전법령을 위반한 경우」에서 「재해 발생에 기관의 포괄적 관리 책임이 있는 경우」로 바뀌고 ** 각주가 삭제됨(바뀐 부분은 ${REV}/MG-4/k1 조각)`,
+  "plan-2607/handbook26/MG-4/k2": `11.13 수정본 기준: 시설관리 노동자 휴게시설 개선 권고안('26.7.)의 이행 여부 반영이 더해지고, 0점 부여 사유가 「재해 발생에 기관의 포괄적 관리 책임이 있는 경우」로 바뀌며 ** 각주가 삭제됨(바뀐 부분은 ${REV}/MG-4/k2 조각)`,
+  "plan-2607/handbook26/MG-4/k3": `11.13 수정본 기준: 0점 부여 사유가 「재해 발생에 기관의 포괄적 관리 책임이 있는 경우」로 바뀌고 ** 각주가 삭제됨(바뀐 부분은 ${REV}/MG-4/k3 조각)`,
+  "plan-2607/handbook26/MG-6/k1": `11.13 수정본 기준: ⑥ 청년 창업 지원(창업공간·장비 개방, 기술이전·판로 지원 등) 신설 — ②~⑤는 이 조각 그대로(바뀐 부분은 ${REV}/MG-6/k1 조각)`,
+  "plan-2607/handbook26/MG-7/k2": `11.13 수정본 기준: 배점 각주(준정부기관은 총 배점 중 0.75점을 ②③항으로 평가) 신설, ② 지역업체 발주·구매·지역기업 육성 신설, ③은 기부·봉사·지역인재 양성으로 재편(옛 ②), ④ 시설·장비 개방(옛 ③), ②③항은 소재지·사업 지역 범위 등 여건을 고려해 평가(바뀐 부분은 ${REV}/MG-7/k2 조각)`,
+  "plan-2607/handbook26/MG-14/k1": `11.13 수정본 기준: 청년인턴 프로그램에 유관기업·대학 협력 등을 통한 취업지원 프로그램 운영이 더해지고 「공공기관 기능개혁 추진방안 이행」 신설(바뀐 부분은 ${REV}/MG-14/k1 조각)`,
 };
+
+/** 7월판 개선(안)·편람 최초 구성을 적은 관리계획 서술 조각 — 수정본에서 다르게 확정된 곳 */
+export const PLAN_REVISION_NOTES: Record<string, string> = {
+  "plan-2607/narr/II/ref2/s1": `7월판 개선(안) — 11.13 수정본에서 다르게 확정됨(필수개선 지표 지정 사실만 이 조각 그대로), ${REV}/BZ-2·BZ-3 조각 참고`,
+  "plan-2607/narr/II/ref2/s2": `7월판 개선(안) — 11.13 수정본에서 다르게 확정됨: 주요사업1 20점 그대로·주요사업2 18점·근로자 무사고 달성 노력은 주요사업2 그대로·인명안전 무선국 지표 3개(4점:2점:2점)·기금 지표 2개(3점:2점, 차입금리 대비 운용수익 없어짐), ${REV}/BZ-2·BZ-3 조각 참고`,
+  "plan-2607/narr/II/2/s1": `이 조각의 주요사업 계량지표 수정 일정(지표 분리·주요사업1 이동·지표 신설)은 7월판 개선(안) — 11.13 수정본에서 다르게 확정됨, ${REV}/BZ-2·BZ-3 조각 참고`,
+  "plan-2607/narr/II/ref1/s1": `편람 최초('26.1) 총괄표 — 주요사업2·3 계량지표 구성은 11.13 수정본에서 바뀜, ${REV}/BZ-2·BZ-3 조각 참고`,
+};
+
+/** 수정본 조각(meta.revision) — 바뀐 칸만 적힌 조각이라 나머지는 옛 편람 조각이 유효함을 알림 */
+function revisedChunkNote(meta: Record<string, unknown> | null | undefined): string | null {
+  if (typeof meta?.revision !== "string") return null;
+  const of = Array.isArray(meta.supersedes) ? meta.supersedes.filter((x): x is string => typeof x === "string") : [];
+  const added = meta.new_metric === true ? "수정본에서 새로 생긴 지표 · " : "";
+  return `${added}'26 편람 11.13 수정본(신구대비표 「수정」 쪽) — 이 판이 유효. 바뀐 칸만 옮겨 「⋮」로 줄인 항목과 여기 없는 항목은 ${of.join("·") || "'26 편람"} 조각('26 편람 최초) 그대로`;
+}
 
 /**
  * 원문 자체의 오기·표기 차이·옮겨 적지 못한 곳(2026-10-07 데이터 결함 점검). 조각 글은 원문 그대로 두므로 인용 대조는 그대로이고,
@@ -40,13 +69,16 @@ interface NoteInput {
 
 /** 판·'25 지표 이름 변화 표지(「※」 없는 글) */
 function versionNote(c: NoteInput): string | null {
-  const fixed = HANDBOOK_REVISIONS_2607[c.chunk_key];
+  const fixed = HANDBOOK_REVISIONS[c.chunk_key] ?? PLAN_REVISION_NOTES[c.chunk_key] ?? revisedChunkNote(c.meta);
   if (fixed) return fixed;
   // '25 자료(실사·지적 등)만: '26 편람 조각은 이미 '26 이름이라 대상이 아님
   if (c.unit_type === "handbook_indicator" || c.chunk_key.includes("/handbook26/")) return null;
   const rel = c.meta?.metric_relation;
   const name2026 = typeof c.meta?.metric_2026 === "string" ? c.meta.metric_2026 : null;
-  return typeof rel === "string" ? (RELATION_NOTE[rel]?.(name2026) ?? null) : null;
+  const note = typeof rel === "string" ? (RELATION_NOTE[rel]?.(name2026) ?? null) : null;
+  // 수정본에서 나뉜 지표는 그 사실을 덧붙임(이름 변경만 알리면 지표가 하나로 남은 것처럼 읽힘)
+  const split = METRICS_2025.find((m) => m.name2025 === c.meta?.metric_2025)?.revision2611;
+  return note && split ? `${note} — ${split}` : note;
 }
 
 /** 원문이 같은 글을 두 번 적은 조각(적재 때 meta.duplicate_of에 앞 조각 key를 기록) */
@@ -67,9 +99,15 @@ function planNote(c: NoteInput): string | null {
   return c.unit_type === "corrective_action" ? PLAN_NOTE : null;
 }
 
+/** 외부 컨설팅 의견(unit_type consult_comment, 2026-11-19 A3) — 카드 보완 관점이지 사실·숫자 근거가 아님. 같은 지표 다른 카드 의견도 함께 보이므로 머리의 과제번호로 가림 */
+export const CONSULT_NOTE = "외부 컨설팅 의견 — 카드 보완 관점이며 사실·숫자의 근거가 아님(의견 속 수치는 컨설턴트가 본 카드 값이므로 근거로 인용하지 않음, 머리의 과제번호가 이 카드일 때만 이 카드에 대한 의견)";
+function consultNote(c: NoteInput): string | null {
+  return c.unit_type === CONSULT_UNIT_TYPE ? CONSULT_NOTE : null;
+}
+
 /** where 꼬리표(「※ …」, 여럿이면 「 · 」로 이음) — 붙일 것이 없으면 null */
 export function revisionNote(c: NoteInput): string | null {
-  const notes = [methodNote(c), planNote(c), SOURCE_ERRATA[c.chunk_key], duplicateNote(c), versionNote(c)].filter(Boolean);
+  const notes = [methodNote(c), planNote(c), consultNote(c), SOURCE_ERRATA[c.chunk_key], duplicateNote(c), versionNote(c)].filter(Boolean);
   return notes.length ? notes.map((n) => `※ ${n}`).join(" · ") : null;
 }
 

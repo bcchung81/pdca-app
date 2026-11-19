@@ -9,6 +9,7 @@ import {
   type ContactRow,
   type MgUnitMaterials,
   type OutcomePart,
+  type PriorRow,
   type UnitPart,
   buildCoverPart,
   buildFindingsPart,
@@ -151,6 +152,19 @@ function mergeRows<R extends AnyRow>(saved: R[] | null, fresh: R[], kind: keyof 
   return out;
 }
 
+/**
+ * 담당 카드 없는 평가내용 행의 【확인】 자리표시(code.need — unit-parts-mg.ts noCardNeed, 2026-11-19)는 ’26 칸에 글이 생기면 뺌(사람·AI가 채웠으면 「채울 것」이 아님 —
+ * 「채울 것 모아 보기」가 부분 글 전체의 【확인】을 셈). 다시 채우기에서도 남긴 ’26 칸 글이 있으면 같음
+ */
+function settleNeeds<R extends PriorRow>(rows: R[]): R[] {
+  return rows.map((r) => {
+    if (!r.code?.need || !(r.ai?.now ?? []).length) return r;
+    const code = { ...r.code };
+    delete code.need;
+    return { ...r, code };
+  });
+}
+
 /** 성과분석 경고 갈아 끼우기: 계량 표 경고(outcomeWarnings — 사람이 고른 행·극성에 따라 다름)만 지금 부분으로 다시 셈, 나머지 경고는 그대로 */
 export function refreshOutcomeWarnings(warnings: string[], before: OutcomePart, after: OutcomePart): string[] {
   const stale = new Set(outcomeWarnings(before));
@@ -173,7 +187,7 @@ export function mergeUnitPart(saved: UnitPart | null, fresh: { part: UnitPart; w
   } else if (f.part === "findings") {
     part = { ...f, rows: mergeRows(s?.part === "findings" ? s.rows : null, f.rows, "findings", warn) };
   } else if (f.part === "prior") {
-    part = { ...f, rows: mergeRows(s?.part === "prior" ? s.rows : null, f.rows, "prior", warn) };
+    part = { ...f, rows: settleNeeds(mergeRows(s?.part === "prior" ? s.rows : null, f.rows, "prior", warn)) };
   } else {
     const o = s?.part === "outcome" ? s : null;
     const merged: OutcomePart = {
@@ -261,5 +275,6 @@ export function applyUnitPartEdits(part: UnitPart, edits: UnitPartEdit[]): UnitP
     parent[last] = value;
     changed += 1;
   }
+  if (next.part === "prior" && Array.isArray(next.rows)) next.rows = settleNeeds(next.rows as PriorRow[]);
   return { ok: true, part: next as UnitPart, changed };
 }

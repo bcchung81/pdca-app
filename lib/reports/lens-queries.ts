@@ -8,7 +8,7 @@ import { buildSearchQuery } from "../knowledge/search-query.ts";
 import { selectPurposes } from "../knowledge/select.ts";
 import { trackSpecOfUnit } from "../tracks/index.ts";
 import { loadScopeKeys } from "../prep/scope-queries.ts";
-import { CRITIQUE_TYPES, LENS_CRITERIA_KEYS, type LensRef, type LensRow, MG_LENS_CRITERIA_KEYS, SURVEY_TYPES, lensTopic, pickLens } from "./lens.ts";
+import { CRITIQUE_TYPES, LENS_CRITERIA_KEYS, type LensRef, type LensRow, MG_LENS_CRITERIA_KEYS, SURVEY_TYPES, handbookOrder, lensTopic, pickLens } from "./lens.ts";
 
 const COLS = "chunk_key, title, unit_type, text, context_prefix, meta";
 
@@ -58,7 +58,7 @@ export async function loadLens(supabase: SupabaseClient, card: { id: string; eva
 }
 
 /**
- * 경영관리 카드의 평가 근거(설계 §4.3): 평가 기준 = 그 지표 '26 편람 조각(handbook26/MG-N/k*) + '25 경영관리 총평 + 보고서 작성 착안사항 ·
+ * 경영관리 카드의 평가 근거(설계 §4.3): 평가 기준 = 그 지표 '26 편람 조각(handbook26/MG-N/k* — 편람 수정본 hb26r-2611 조각은 옛 조각 바로 앞, handbookOrder) + '25 경영관리 총평 + 보고서 작성 착안사항 ·
  * 지적 = 이 카드에 연결된 것 → 그 지표 '25 평가보고서 평가위원 의견(eval25/MG-N) → 중간보고서 지적(mid25-mg/MG-N) → 검색 · 실사 = 연결 → 검색.
  * 붙임2 경영관리판이 없어 유관기관 사례는 넣지 않음
  */
@@ -66,7 +66,7 @@ async function loadLensMg(supabase: SupabaseClient, card: { id: string; evalUnit
   const unit = card.evalUnitId;
   const q = buildSearchQuery(lensTopic(card.data as Record<string, unknown>), "any");
   const [handbook, common, linkedKeys, evaluator, mid, found, selected] = await Promise.all([
-    supabase.from("knowledge_chunks").select(COLS).like("chunk_key", `plan-2607/handbook26/${unit}/%`).order("seq"),
+    supabase.from("knowledge_chunks").select(COLS).like("chunk_key", `%/handbook26/${unit}/%`).order("seq"),
     supabase.from("knowledge_chunks").select(COLS).in("chunk_key", [...MG_LENS_CRITERIA_KEYS]),
     loadScopeKeys(supabase, card.id, [...CRITIQUE_TYPES, ...SURVEY_TYPES]),
     supabase.from("knowledge_chunks").select(COLS).eq("unit_type", "evaluator_comment").like("chunk_key", `plan-2607/eval25/${unit}/%`).order("seq"),
@@ -78,7 +78,7 @@ async function loadLensMg(supabase: SupabaseClient, card: { id: string; evalUnit
   const extra = [...new Set([...linkedKeys, ...foundKeys])];
   const rows: LensRow[] = extra.length ? (((await supabase.from("knowledge_chunks").select(COLS).in("chunk_key", extra)).data ?? []) as LensRow[]) : [];
   const byKey = (keys: string[]) => keys.flatMap((k) => rows.filter((r) => r.chunk_key === k).slice(0, 1));
-  const hb = (handbook.data ?? []) as LensRow[];
+  const hb = handbookOrder((handbook.data ?? []) as LensRow[]);
   return pickLens({
     criteria: [...hb, ...((common.data ?? []) as LensRow[])],
     criteriaOrder: [...hb.map((r) => r.chunk_key), ...MG_LENS_CRITERIA_KEYS],

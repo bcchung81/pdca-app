@@ -17,6 +17,7 @@ import { ledgerFigure, needsIn, yearActuals } from "./actuals.ts";
 import { realFindingLines } from "./findings.ts";
 import { mgFindingParts } from "./mg-draft.ts";
 import { evalsFor } from "./mg-outline.ts";
+import { isNewItem, mgItems, to26 } from "./mg-items.ts";
 import { evalNoOf } from "./mg-page-plan.ts";
 import { kpiKeyedRows } from "./model.ts";
 import type { ReportSectionSpec } from "./section.ts";
@@ -77,7 +78,7 @@ export interface CoverComponent {
   weightBasis: string;
   definition: string;
   criteria: string[];
-  /** 판 표지(7월판 개선(안)이 다를 때 — revision-note.ts). 없으면 빈 글 */
+  /** 판 표지(편람 수정본으로 바뀐 곳 — revision-note.ts, 수정본을 합쳤으면 COVER_REVISED_NOTE). 없으면 빈 글 */
   note: string;
 }
 
@@ -140,7 +141,10 @@ export interface CardRef {
 
 export interface PriorRow {
   id: string;
-  code: { evalNo: number; title: string; cards: CardRef[] };
+  /**
+   * evalNo = '26 편람 번호(2026-11-19 — 2025 골격은 to26으로 옮김), need = 담당 카드가 없는 평가내용의 【확인: …】 자리표시(’26 칸에 보이고 「채울 것 모아 보기」가 셈 — 담당 카드가 있으면 없음)
+   */
+  code: { evalNo: number; title: string; cards: CardRef[]; need?: string };
   /** ’25까지 = 2025 같은 표의 「’25」 칸 글(출발값 — 사람이 줄이거나 ’24까지 연혁을 더함, AI가 지난해 글을 다시 쓰지 않게. 두 칸을 합치면 전년 대비 표가 2025 쪽을 넘어 2026-10-16 사용자 결정으로 한 칸) */
   human: { upTo: string[] };
   ai: { now: string[]; effect: string[] };
@@ -254,7 +258,7 @@ export interface MgUnitMaterials {
   report2025: UnitChunk[];
   /** 그 지표 '25 평가위원 의견 조각(plan-2607 evaluator_comment) */
   evaluator: UnitChunk[];
-  /** 그 지표 '26 편람 지표 조각(plan-2607 handbook_indicator) */
+  /** 그 지표 '26 편람 지표 조각(plan-2607 handbook_indicator — 편람 수정본 hb26r-2611 조각이 같이 오면 옛 조각 자리에 합침, buildCoverPart) */
   handbook: UnitChunk[];
   /** 목차·쪽 배정(report_outline)의 그 지표 행. 없으면 MG_CARD_EVALS 대응 */
   outline?: Array<{ card_id: string; section: string; subsection: string | null; included?: boolean | null; /** 목차 순서(R5c AI 요청의 과제별 초안 순서) */ sort?: number | null }>;
@@ -408,40 +412,72 @@ function handbookField(text: string, head: string): string {
 /** 줄바꿈으로 끊긴 한 문장을 이음(가운뎃점 뒤·여는 괄호 앞은 붙임) */
 const joinWrapped = (lines: string[]) => lines.reduce((acc, l) => (!acc ? l : /[·･]$/.test(acc) || /^\(/.test(l) ? `${acc}${l}` : `${acc} ${l}`), "");
 
-/** 세부평가내용 → 항목 본문(①·② … 머리 문장만 — 「-」·「*」·「※」로 시작하는 덧붙임 줄은 2025 표지처럼 뺌) */
-export function handbookCriteria(text: string): string[] {
-  const out: string[][] = [];
+/** 동그라미 숫자 → 번호(①~⑳·➀~➉) */
+const circledNo = (ch: string) => {
+  const c = ch.codePointAt(0) ?? 0;
+  return c >= 0x2460 && c <= 0x2473 ? c - 0x245f : c - 0x277f;
+};
+
+/** 세부평가내용 → 번호·항목 본문(①·② … 머리 문장만 — 「-」·「*」·「※」로 시작하는 덧붙임 줄은 2025 표지처럼 뺌) */
+function numberedCriteria(text: string): Array<{ no: number; text: string }> {
+  const out: Array<{ no: number; lines: string[] }> = [];
   let main = false;
   for (const raw of handbookField(text, "세부평가내용").split("\n")) {
     const l = raw.trim();
     if (!l) continue;
     const m = /^([①-⑳➀-➉])\s*(.*)$/.exec(l);
     if (m) {
-      out.push([m[2]]);
+      out.push({ no: circledNo(m[1]), lines: [m[2]] });
       main = true;
-    } else if (/^[-*※]/.test(l)) main = false;
-    else if (main && out.length) out[out.length - 1].push(l);
+    } else if (/^[-*※⋮]/.test(l)) main = false; // 「⋮」 = 편람 수정본이 줄인 항목(덧붙임이 아님)
+    else if (main && out.length) out[out.length - 1].lines.push(l);
   }
-  return out.map((x) => oneLine(joinWrapped(x))).filter(Boolean);
+  return out.map((x) => ({ no: x.no, text: oneLine(joinWrapped(x.lines)) })).filter((x) => x.text);
 }
+
+/** 세부평가내용 → 항목 본문 */
+export function handbookCriteria(text: string): string[] {
+  return numberedCriteria(text).map((x) => x.text);
+}
+
+/**
+ * 편람 수정본(신구대비표 — 바뀐 칸만 적고 「⋮」로 줄임) 항목을 옛 편람 항목에 번호로 덮어씀: 같은 번호는 수정본, 수정본에 없는 번호는 옛 그대로, 새 번호는 더함(번호 순)
+ */
+export function revisedCriteria(oldText: string, revisedText: string): string[] {
+  const byNo = new Map(numberedCriteria(oldText).map((x) => [x.no, x.text]));
+  for (const x of numberedCriteria(revisedText)) byNo.set(x.no, x.text);
+  return [...byNo.entries()].sort(([a], [b]) => a - b).map(([, t]) => t);
+}
+
+/** 편람 수정본 조각(meta.revision)이 대신하는 옛 편람 조각 key */
+const supersedesOf = (c: UnitChunk): string[] => (typeof c.meta?.revision === "string" && Array.isArray(c.meta.supersedes) ? c.meta.supersedes.filter((x: unknown): x is string => typeof x === "string") : []);
+/** 수정본을 합친 구성요소의 판 표지(표지 칸에 그대로 보임 — 조각 key는 적지 않음) */
+export const COVER_REVISED_NOTE = "'26 편람 11.13 수정본 반영(바뀐 칸은 수정본, 나머지는 '26 편람 그대로)";
 
 export function buildCoverPart(m: Pick<MgUnitMaterials, "unit" | "handbook">): { part: CoverPart; warnings: string[] } {
   const indicator = MGMT_INDICATORS.find((x) => x.id === m.unit)?.name ?? m.unit;
   const components: CoverComponent[] = [];
-  for (const c of m.handbook.filter((x) => (x.unit_type ?? "handbook_indicator") === "handbook_indicator")) {
+  const handbook = m.handbook.filter((x) => (x.unit_type ?? "handbook_indicator") === "handbook_indicator");
+  const keys = new Set(handbook.map((c) => c.chunk_key));
+  // 편람 수정본 조각은 따로 구성요소가 되지 않고 대신하는 옛 조각 자리에 합침(구성요소가 두 번 생기거나 옛 배점으로 남지 않게). 옛 조각이 없으면 혼자 구성요소
+  const revisionOf = new Map(handbook.flatMap((c) => supersedesOf(c).map((k) => [k, c] as const)));
+  for (const c of handbook) {
+    if (supersedesOf(c).some((k) => keys.has(k))) continue;
     const kind = /·\s*(계량|비계량|가점)/.exec(c.title ?? "")?.[1];
     if (kind !== "비계량" && kind !== "가점") continue;
-    const w = Number(c.meta?.weight_quasi_gov);
+    const rev = revisionOf.get(c.chunk_key);
+    const src = rev ?? c;
+    const w = Number(src.meta?.weight_quasi_gov);
     components.push({
       chunkKey: c.chunk_key,
       label: oneLine(String(c.title ?? "").split("·").slice(2).join("·")),
       kind,
       method: COVER_METHOD,
       weight: Number.isFinite(w) && w > 0 ? w : null,
-      weightBasis: String(c.meta?.weight_basis ?? ""),
-      definition: oneLine(joinWrapped(handbookField(c.text, "지표정의").replace(/^•\s*/, "").split("\n").map((l) => l.trim()))),
-      criteria: handbookCriteria(c.text),
-      note: revisionNote({ chunk_key: c.chunk_key, unit_type: c.unit_type ?? "handbook_indicator", meta: c.meta }) ?? "",
+      weightBasis: String(src.meta?.weight_basis ?? ""),
+      definition: oneLine(joinWrapped(handbookField(src.text, "지표정의").replace(/^•\s*/, "").split("\n").map((l) => l.trim()))),
+      criteria: rev ? revisedCriteria(c.text, rev.text) : handbookCriteria(c.text),
+      note: rev ? COVER_REVISED_NOTE : (revisionNote({ chunk_key: c.chunk_key, unit_type: c.unit_type ?? "handbook_indicator", meta: c.meta }) ?? ""),
     });
   }
   return {
@@ -553,7 +589,31 @@ export function findingRemark(start: number, partKeys: string[], pageInUnit: (pa
 // ---------------------------------------------------------------------------
 // 전년 대비 주요 추진실적
 
-/** 2025 골격의 평가내용(세부평가내용별 장 — detail·detail_theme 조각의 eval_no·eval_title) 번호 순 */
+/**
+ * 지표 단위 부분의 평가내용 행(2026-11-19 — 항목표 기준): unit을 주면 편람 항목표('26 번호 — mg-items.ts mgItems, 2025에 없는 신설 항목 포함·제목은 같음이면 2025 제목,
+ * 수정·신설이면 편람 문구(handbook 조각 — 없으면 짧은 이름))와 후보 카드·신설 여부. 항목표에 없는 지표나 unit이 없으면 2025 골격(skeletonEvals — unit이 있으면 '26 번호로 옮김)
+ */
+export function unitEvals(m: Pick<MgUnitMaterials, "report2025"> & Partial<Pick<MgUnitMaterials, "unit" | "handbook">>): Array<{ no: number; title: string; isNew: boolean; candidates: string[] }> {
+  const skel = skeletonEvals(m.report2025);
+  if (!m.unit) return skel.map((e) => ({ ...e, isNew: false, candidates: [] }));
+  const unit = m.unit;
+  const prior = skel.map((e) => ({ evalNo: to26(unit, e.no), evalNo2025: e.no, evalTitle: e.title, themeNo: 0, mark: "", title: "" }));
+  const items = mgItems(unit, (m.handbook ?? []).map((c) => ({ chunk_key: c.chunk_key, text: c.text, meta: c.meta })), { prior }).items;
+  if (!items.length) return skel.map((e) => ({ no: to26(unit, e.no), title: e.title, isNew: false, candidates: [] }));
+  // 2025 골격에 있는 평가내용 + 2025에 없는 신설 항목(2025 평가내용이 모두 있는 실제 조각에서는 항목표 전부 — 골격이 덜 온 재료에서는 온 것만)
+  const had = new Set(skel.map((e) => e.no));
+  return items.filter((it) => it.from2025 === null || had.has(it.from2025)).map((it) => ({ no: it.no, title: it.title, isNew: isNewItem(it), candidates: it.candidates }));
+}
+
+/** 담당 카드 없는 평가내용 행의 【확인】 자리표시(지표 단위 부분 ’26 칸 — actuals.ts needsIn이 셈) */
+export function noCardNeed(e: { title: string; isNew: boolean; candidates: string[] }): string {
+  return `【확인: 담당 카드 없음 — ${e.isNew ? "'26 신설 " : ""}「${evalShort(e.title)}」 실적 자료 필요${e.candidates.length ? `(후보 ${e.candidates.join("·")})` : ""}】`;
+}
+
+/** ’26 칸 글(화면·한글 공용): 쓴 글이 없고 담당 카드가 없는 평가내용이면 【확인】 자리표시(code.need — 2026-11-19 「자료 필요」) */
+export const priorNow = (r: PriorRow): string[] => (r.ai.now.length ? r.ai.now : r.code.need ? [r.code.need] : []);
+
+/** 2025 골격의 평가내용(세부평가내용별 장 — detail·detail_theme 조각의 eval_no·eval_title) 번호 순(2025 번호) */
 export function skeletonEvals(report2025: UnitChunk[]): Array<{ no: number; title: string }> {
   const by = new Map<number, string>();
   for (const c of report2025) {
@@ -578,18 +638,22 @@ export function cardEvals(card: { id: string; taskNo: string }, evalNos: number[
   return n ? [n] : [];
 }
 
-export function buildPriorPart(m: Pick<MgUnitMaterials, "cards" | "report2025" | "outline">): { part: PriorPart; warnings: string[] } {
-  const evals = skeletonEvals(m.report2025);
+export function buildPriorPart(m: Pick<MgUnitMaterials, "cards" | "report2025" | "outline"> & Partial<Pick<MgUnitMaterials, "unit" | "handbook">>): { part: PriorPart; warnings: string[] } {
+  const evals = unitEvals(m);
   const nos = evals.map((e) => e.no);
   const cards = activeCards(m.cards).map((c) => ({ id: c.id, taskNo: c.taskNo, evals: cardEvals(c, nos, m.outline) }));
+  // 2025 「전년 대비」 표 글은 2025 번호로 적혀 있어 '26 번호로 옮겨 짝지음(상생만 다름 — mg-items.ts to26)
   const priorText = new Map<number, string>();
-  for (const c of m.report2025) if (c.meta?.chapter === "prior" && Number(c.meta?.eval_no) > 0) priorText.set(Number(c.meta.eval_no), c.text);
-  const rows: PriorRow[] = evals.map((e) => ({
-    id: `prior/${e.no}`,
-    code: { evalNo: e.no, title: e.title, cards: cards.filter((c) => c.evals.includes(e.no)).map((c) => ({ id: c.id, taskNo: c.taskNo })) },
-    human: { upTo: priorText.has(e.no) ? prior2025UpTo(priorText.get(e.no)!) : [] },
-    ai: { now: [], effect: [] },
-  }));
+  for (const c of m.report2025) if (c.meta?.chapter === "prior" && Number(c.meta?.eval_no) > 0) priorText.set(m.unit ? to26(m.unit, Number(c.meta.eval_no)) : Number(c.meta.eval_no), c.text);
+  const rows: PriorRow[] = evals.map((e) => {
+    const held = cards.filter((c) => c.evals.includes(e.no)).map((c) => ({ id: c.id, taskNo: c.taskNo }));
+    return {
+      id: `prior/${e.no}`,
+      code: { evalNo: e.no, title: e.title, cards: held, ...(m.unit && !held.length ? { need: noCardNeed(e) } : {}) },
+      human: { upTo: priorText.has(e.no) ? prior2025UpTo(priorText.get(e.no)!) : [] },
+      ai: { now: [], effect: [] },
+    };
+  });
   const warnings = [
     ...(evals.length ? [] : ["전년 대비: 2025 보고서 골격(세부평가내용별 장)이 없어 평가내용 행을 만들지 못함"]),
     ...rows.filter((r) => !r.code.cards.length).map((r) => `전년 대비: 평가내용${r.code.evalNo} — 대응 카드 없음(올해 칸을 채울 과제별 초안이 없음)`),
@@ -610,7 +674,7 @@ function ledgerActuals(c: UnitCard, today: string): Array<{ actual: string; ledg
   });
 }
 
-export function buildOutcomePart(m: Pick<MgUnitMaterials, "cards" | "report2025" | "today">): { part: OutcomePart; warnings: string[] } {
+export function buildOutcomePart(m: Pick<MgUnitMaterials, "cards" | "report2025" | "today"> & Partial<Pick<MgUnitMaterials, "unit" | "handbook">>): { part: OutcomePart; warnings: string[] } {
   const table2025 = m.report2025.find((c) => c.meta?.chapter === "outcome" && c.meta?.mark === "가");
   const rows2025 = table2025 ? kpi2025Rows(table2025.text) : [];
   const by2025 = new Map(rows2025.map((r) => [kpiNameKey(r.name), r]));
@@ -627,7 +691,7 @@ export function buildOutcomePart(m: Pick<MgUnitMaterials, "cards" | "report2025"
       };
     });
   });
-  const evals = skeletonEvals(m.report2025);
+  const evals = unitEvals(m);
   const qual: QualRow[] = evals.map((e) => ({ id: `qual/${e.no}`, code: { evalNo: e.no, title: e.title }, human: { label: evalShort(e.title) }, ai: { result: [], analysis: [] } }));
   const plan: PlanRow[] = evals.map((e) => ({ id: `plan/${e.no}`, code: { evalNo: e.no, title: e.title }, human: { label: evalShort(e.title) }, ai: { self: [], plan: [] } }));
   const part: OutcomePart = { part: "outcome", kpi, qual, plan };
@@ -719,7 +783,7 @@ export function buildUnitPartsMg(m: MgUnitMaterials): { parts: UnitPartsMg; warn
 export function unitPartsNeeds(p: UnitPartsMg): number {
   const texts = [
     ...(p.findings?.rows.flatMap((r) => r.ai.actions) ?? []),
-    ...(p.prior?.rows.flatMap((r) => [...r.human.upTo, ...r.ai.now, ...r.ai.effect]) ?? []),
+    ...(p.prior?.rows.flatMap((r) => [...r.human.upTo, ...priorNow(r), ...r.ai.effect]) ?? []),
     ...(p.outcome?.kpi.filter((k) => k.human.checked).flatMap((k) => [kpiRate(k).text, ...k.ai.analysis]) ?? []),
     ...(p.outcome?.qual.flatMap((r) => [...r.ai.result, ...r.ai.analysis]) ?? []),
     ...(p.outcome?.plan.flatMap((r) => [...r.ai.self, ...r.ai.plan]) ?? []),

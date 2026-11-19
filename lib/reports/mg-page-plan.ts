@@ -5,6 +5,7 @@
 // 목차 1단 = 평가내용(카드의 첫 평가내용), 2단 = 둘 이상 걸칠 때만 「평가내용 1·3에 걸침」. 저장은 주요사업과 같은 report_outline.
 
 import { evalsFor } from "./mg-outline.ts";
+import type { MgItem } from "./mg-items.ts";
 import type { OutlineRow } from "./outline.ts";
 
 /** 2025 보고서 조각 하나의 쪽 정보(knowledge_chunks — meta.chapter·eval_no·eval_title·printed_pages, pdf_page_start·end) */
@@ -24,6 +25,10 @@ export interface MgEvalPages {
   title: string;
   pages: number;
   pages2025?: number;
+  /** 편람 항목표에서 더한 2025에 없는 평가내용(withMgItems — 0쪽, 담당 카드 몫 안에서 씀). 없으면 2025 평가내용 */
+  added?: true;
+  /** 담당 미정 항목의 후보 카드(mg-items.ts MG_ITEM_CANDIDATES — 목차 「카드 없는 평가내용」 줄). 없으면 후보 없음 */
+  candidates?: string[];
 }
 
 /**
@@ -104,6 +109,27 @@ export function withMgVolume(ref: MgPageRef, volume: number | undefined): MgPage
     rest--;
   }
   return { ...ref, body: budget, volume, body2025: ref.body, evals: ref.evals.map((e, i) => ({ ...e, pages: halves[i] / 2, pages2025: e.pages })) };
+}
+
+/**
+ * 쪽 기준에 편람 항목표('26 번호 — mg-items.ts, 2026-11-19 사용자 결정 D3)를 얹음: 평가내용 제목은 항목표 제목(같음 = 2025 제목, 수정·신설 = 편람 문구)으로,
+ * 2025에 없는 항목은 0쪽으로 더함(작성분량 불변 — 담당 카드가 있으면 그 카드 몫 안에서 쓰고, 없으면 목차 「카드 없는 평가내용」에 「자료 필요」). 항목표에 없는 2025 평가내용은 그대로 둠.
+ * 담당 미정 항목의 후보 카드도 붙임. 항목표가 없으면 그대로
+ */
+export function withMgItems(ref: MgPageRef, items: readonly MgItem[]): MgPageRef {
+  if (!items.length) return ref;
+  const evals: MgEvalPages[] = ref.evals.map((e) => {
+    const it = items.find((x) => x.no === e.no);
+    return it ? { ...e, title: it.title, ...(it.candidates.length ? { candidates: [...it.candidates] } : {}) } : e;
+  });
+  for (const it of items) if (!evals.some((e) => e.no === it.no)) evals.push({ no: it.no, title: it.title, pages: 0, added: true, ...(it.candidates.length ? { candidates: [...it.candidates] } : {}) });
+  return { ...ref, evals: evals.sort((a, b) => a.no - b.no) };
+}
+
+/** 목차 「카드 없는 평가내용」 줄의 꼬리: 2025에 없는 항목·담당 미정이면 「자료 필요 — 담당 카드 없음(후보 …)」, 아니면 빈 글 */
+export function orphanNote(e: MgEvalPages): string {
+  if (!e.added && !e.candidates?.length) return "";
+  return `자료 필요 — 담당 카드 없음${e.candidates?.length ? `(후보 ${e.candidates.join("·")})` : ""}`;
 }
 
 /** 0.5쪽 단위로 반올림(표시용) */

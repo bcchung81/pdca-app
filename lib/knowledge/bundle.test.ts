@@ -233,7 +233,7 @@ test("공통지표(BZ-4) 조각은 지표가 속한 사업의 ③에만, 다른 
   assert.match(t1[0], /plan\/eval25\/BZ-4\/total\/fit\/p01/);
 });
 
-test("근거 조각의 위치(where)에 판 표지가 붙음: '25 지표가 '26 편람에서 폐지·명칭 변경·교체면 알리고, 편람(최초) 조각은 개선(안) 모습을 알림", () => {
+test("근거 조각의 위치(where)에 판 표지가 붙음: '25 지표가 '26 편람에서 폐지·명칭 변경·교체면 알리고, 편람(최초) 조각은 11.13 수정본 모습을 알림", () => {
   const all = [
     c({ chunk_key: "att3/qa/BZ-2/old", doc_id: "att3-2604", unit_type: "qa_pair", business: "BZ-2", context_prefix: "2025 실사 · 질문", meta: { metric_relation: "폐지", metric_2026: null } }),
     c({ chunk_key: "plan-2607/handbook26/BZ-2", unit_type: "handbook_indicator", business: "BZ-2", context_prefix: "'26 편람 · 주요사업2" }),
@@ -241,6 +241,6 @@ test("근거 조각의 위치(where)에 판 표지가 붙음: '25 지표가 '26 
   ];
   const where = (key: string) => bundleRefs(buildBundle(all, { evalUnitId: "BZ-2", data: { title: "", executionTask: "" } })).find((r) => r.key === key)?.where;
   assert.equal(where("att3/qa/BZ-2/old"), "2025 실사 · 질문 · ※ '25 지표 — '26 편람에서 폐지");
-  assert.match(where("plan-2607/handbook26/BZ-2")!, /^'26 편람 · 주요사업2 · ※ 7월판 개선\(안\) 기준: 배점 15점/);
+  assert.match(where("plan-2607/handbook26/BZ-2")!, /^'26 편람 · 주요사업2 · ※ 11\.13 수정본 기준: 배점 18점 그대로/);
   assert.equal(where("att3/qa/BZ-2/same"), "2025 실사 · 유지 지표", "유지 지표는 표지 없음");
 });

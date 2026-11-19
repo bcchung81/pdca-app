@@ -95,3 +95,15 @@ test("공통지표(BZ-4) 조각의 소속 사업 검산: 질의응답·지적·�
   const exempt = find([...minimalChunks(), kpi("att3-2604/s1/Q01", "qa_pair", "BZ-2"), chunk({ chunk_key: "plan-2607/eval25/BZ-4/total/fit/p01", doc_id: "plan-2607", unit_type: "evaluator_comment", business: "BZ-4" }), chunk({ chunk_key: "plan-2607/handbook26/BZ-4", doc_id: "plan-2607", unit_type: "handbook_indicator", business: "BZ-4" })])!;
   assert.equal(exempt.ok, true, "총평(total)·편람은 소속 사업이 없어도 됨");
 });
+
+test("외부 컨설팅 의견 조각 검산: 경영관리 지표(MG-N)면 통과, 트랙·지표가 다르거나 비면 실패, 조각이 없으면 항목 없음", () => {
+  const name = "[scope] 외부 컨설팅 의견 조각은 경영관리 지표(MG-1~14) 단위";
+  const ok = chunk({ chunk_key: "consult26-mg/r2/1-1", doc_id: "consult26-mg", unit_type: "consult_comment", track: "경영관리", business: "MG-1" });
+  assert.equal(ruleScopeChecks([ok]).find((c) => c.name === name)?.ok, true);
+  for (const bad of [{ business: null }, { track: "주요사업" as const }, { business: "BZ-1" as const }]) {
+    const res = ruleScopeChecks([ok, chunk({ chunk_key: "consult26-mg/r2/x", doc_id: "consult26-mg", unit_type: "consult_comment", track: "경영관리", business: "MG-2", ...bad })]).find((c) => c.name === name)!;
+    assert.equal(res.ok, false);
+    assert.deepEqual(res.actual, ["consult26-mg/r2/x"]);
+  }
+  assert.equal(ruleScopeChecks([]).find((c) => c.name === name), undefined);
+});

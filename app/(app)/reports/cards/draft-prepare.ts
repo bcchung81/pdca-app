@@ -28,7 +28,7 @@ import type { JobKind } from "../../../../lib/ai/jobs.ts";
 import { isMgmtCard } from "../../../../lib/cards/mgmt-card.ts";
 import { type MgDraftContext, mgCardAsOf, mgMarkers } from "../../../../lib/reports/mg-draft.ts";
 import { type MgSibling, defaultEvals, mgSiblingOf } from "../../../../lib/reports/mg-outline.ts";
-import { loadMgCardPages, loadMgNumberEvidence, loadMgPrior } from "../../../../lib/reports/mg-queries.ts";
+import { loadMgCardPages, loadMgItems, loadMgNumberEvidence, loadMgPrior } from "../../../../lib/reports/mg-queries.ts";
 import { BIZ_TEXT_MAX, type BizRefText, loadBizRefTexts } from "../../../../lib/reports/mg-biz-queries.ts";
 import { type BizMaterials, bizMaterials, bizMissing } from "../../../../lib/reports/mg-biz.ts";
 import { readDraftSpec } from "../../../../lib/reports/draft-recount.ts";
@@ -263,13 +263,16 @@ async function prepareMgDraft(x: Pick<Prepared, "me" | "supabase" | "card" | "ye
     loadBizRefsChunked(supabase, card.id, x.year, bizIds),
   ]);
   const taskNo = String(data.taskNo ?? "");
+  // 편람 항목표('26 편람 11.13 수정 — 평가내용 번호·제목·착안사항·담당, 2026-11-19 B1): 같음 항목 제목은 2025 골격, 다른 카드가 둔 절 수는 형제 구성안
+  const items = await loadMgItems(supabase, card.eval_unit_id, prior, mgSiblings);
   const mg: MgDraftContext = {
     unit: card.eval_unit_id,
     indicator: MGMT_INDICATORS.find((i) => i.id === card.eval_unit_id)?.name ?? card.eval_unit_id,
     taskNo,
     markers: mgMarkers(card.data),
     prior,
-    evals: defaultEvals(taskNo, prior),
+    ...(items.length ? { items } : {}),
+    evals: defaultEvals(taskNo, prior, items),
     pages,
     cardAsOf: mgCardAsOf(card),
   };

@@ -3,7 +3,7 @@
 // 장 제목·열 이름·연도는 unit-parts-mg.ts unitPartsLabels 한 곳. 클래스는 보고서 CSS(REPORT_CSS — 띠 k-biz·대주제 k-task·절 k-sub·표 k-t·자리표시 k-need)를 쓰고
 // 새 모양만 UNIT_PARTS_CSS(section-css.ts)에. 달성률·비고 쪽은 그릴 때 계산한 값(kpiRate·findingRemark)을 씀. 비어 있는 AI 칸은 점선 빈 칸으로.
 
-import { type CoverPart, type FindingsPart, type OutcomePart, type PriorPart, type UnitPartsMg, kpiRate, unitPartsLabels } from "./unit-parts-mg.ts";
+import { type CoverPart, type FindingsPart, type OutcomePart, type PriorPart, type UnitPartsMg, kpiRate, priorNow, unitPartsLabels } from "./unit-parts-mg.ts";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -55,7 +55,7 @@ function priorHtml(p: PriorPart, labels: ReturnType<typeof unitPartsLabels>): st
   const L = labels.prior;
   const evals = p.rows.map(
     (r) =>
-      `<p class="k-biz"><span class="k-biz__no">${esc(L.evalLabel(r.code.evalNo))}</span><span>${esc(r.code.title)}</span></p><table class="k-t k-up">${cols([34, 33, 33])}${head(L.cols)}<tbody><tr><td>${bullets(r.human.upTo)}</td><td>${bullets(r.ai.now)}</td><td>${bullets(r.ai.effect)}</td></tr></tbody></table>`,
+      `<p class="k-biz"><span class="k-biz__no">${esc(L.evalLabel(r.code.evalNo))}</span><span>${esc(r.code.title)}</span></p><table class="k-t k-up">${cols([34, 33, 33])}${head(L.cols)}<tbody><tr><td>${bullets(r.human.upTo)}</td><td>${bullets(priorNow(r))}</td><td>${bullets(r.ai.effect)}</td></tr></tbody></table>`,
   );
   return `<h3 class="k-up-ch">${esc(L.title)}</h3>${evals.join("")}`;
 }

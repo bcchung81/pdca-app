@@ -26,6 +26,7 @@ import { GROUND_WEAK, bigramSet, groundScores } from "./ground.ts";
 import { LENS_GROUPS, type LensRef } from "./lens.ts";
 import { MG_LIMITS, type MgPriorSection, mgCloseRule, mgClosePrompt, mgPartLabel, partOrder, skeletonLines, unclosedPartKeys } from "./mg-outline.ts";
 import type { MgDraftMeta, MgPart } from "./mg-types.ts";
+import type { MgItem } from "./mg-items.ts";
 import { PDCA_REQUEST_SECTIONS, mgPdcaPrompt, mgPdcaSkeleton } from "./mg-pdca.ts";
 import { conflictWarnings, titleDoneWarning } from "./mg-consistency.ts";
 import { proseIssues } from "./prose.ts";
@@ -46,8 +47,10 @@ export interface MgDraftContext {
   taskNo: string;
   /** 앱이 붙일 마커(지적개선·신규) */
   markers: Marker[];
-  /** 그 지표의 2025 보고서 골격(절·절 없는 대주제 본문 — 글 포함) */
+  /** 그 지표의 2025 보고서 골격(절·절 없는 대주제 본문 — 글 포함, 평가내용 번호는 '26 편람 번호로 옮긴 것 — mg-queries.ts loadMgPrior) */
   prior: MgPriorSection[];
+  /** 그 지표의 편람 항목표('26 편람 11.13 수정 — mg-items.ts mgItems, 2026-11-19). 없으면(이 필드 전 맥락·시험) 골격은 2025 골격만 */
+  items?: MgItem[];
   /** 이 카드의 추천 평가내용(분석 §5 첫 대응 — mg-outline.ts defaultEvals) */
   evals: number[];
   /** 분량 목표 = 목차·쪽 배정의 이 카드 쪽수(저장된 배정, 없으면 목차 화면의 기본 배정 — mg-queries.ts loadMgCardPages). 못 정하면 없음(분량 절·경고 없음) */
@@ -215,7 +218,7 @@ export function mgMaterialsPrompt(p: PromptSet, card: Json, ctx: MgDraftContext,
   const pdca = dataText(mgPdcaPrompt(p, mgPdcaSkeleton(card)));
   if (pdca) lines.push("", pdca);
   lines.push("", r("skeleton.head", { priorYear: year - 1 }));
-  const sk = skeletonLines(ctx.prior);
+  const sk = skeletonLines(ctx.prior, ctx.items);
   if (sk.length) lines.push(...sk.map((line) => r("skeleton.line", { line })));
   else lines.push(r("skeleton.none"));
   lines.push(r("skeleton.defaults", { evals: ctx.evals.length ? ctx.evals.map((n) => `평가내용 ${n}`).join("·") : "—" }));

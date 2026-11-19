@@ -29,7 +29,7 @@ import { type SplitSibling, splitSiblingIssues } from "../../../../lib/reports/s
 import type { MgDraftContext } from "../../../../lib/reports/mg-draft.ts";
 import { addMgDataBlocks } from "../../../../lib/reports/mg-data-blocks.ts";
 import { mgPdcaSkeleton } from "../../../../lib/reports/mg-pdca.ts";
-import { type MgOutlineOutput, type MgPartRedo, applyMgCompositionEdit, cleanMgComposition, isMgMainStory, mgCompositionIssues, mgHintOptions, mgOutlineOutSchema, mgOverlapIssues, mgPartLabel, mgPartRedo, replaceMgPart } from "../../../../lib/reports/mg-outline.ts";
+import { type MgOutlineOutput, type MgPartRedo, applyMgCompositionEdit, cleanMgComposition, isMgMainStory, mgCompositionIssues, mgItemIssues, mgHintOptions, mgOutlineOutSchema, mgOverlapIssues, mgPartLabel, mgPartRedo, replaceMgPart } from "../../../../lib/reports/mg-outline.ts";
 import { type AiReq, DRAFT_LOCKED_MSG, type DraftSources, type Prepared, type ReportDraftState, beginJob, launchReportJob, loadInspectionBasis, loadMgSiblings, loadSplitSiblings, logAiError, mgAiFiles, prepareDraft, refresh } from "./draft-prepare.ts";
 import { writeDraft } from "./draft-write.ts";
 import { type DraftPick, type PlanRevise, mergeSources, readPick } from "../../../../lib/reports/draft-sources.ts";
@@ -153,7 +153,8 @@ async function runReportOutlineMgWork(p: Prepared & { mg: MgDraftContext }, ai: 
     await ai.finish({ status: "ok", model: modelOf(oc), usage: oc.usage, timings: { call: Date.now() - t0 } });
     const { hayKey, known: numbers } = evidenceOf(card.data, known, quoteOnly);
     // 요청에 준 절 성과 재료를 구성안에 남김(구성안 점검 「성과 배정」 — mg-outline.ts mgOutcomeIssues)
-    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity), files: aiFiles });
+    // 편람 항목표('26 번호 — 항목표 제목·번호 경고·coverage 정리·「자료 필요」 need 자동 추가, 2026-11-19 B1)
+    const cleaned = cleanMgComposition(oc.output, hayKey, numbers, { indicator: p.mg.indicator, prior: p.mg.prior, outcomes: ledgerOutcomeItems(card.data, cleanLine, Infinity), files: aiFiles, items: p.mg.items });
     // 수치 묶음 재료를 맡은 절에 데이터 블록이 없으면 하나 넣음(S2 — lib/reports/mg-data-blocks.ts, 연기 시험과 같음)
     const data = addMgDataBlocks(cleaned.composition, p.mg.pages);
     const composition: Composition = {
@@ -163,7 +164,7 @@ async function runReportOutlineMgWork(p: Prepared & { mg: MgDraftContext }, ai: 
       head: "all",
       sources: sourcesOf(p),
     };
-    const saved = await saveOutlineRow(supabase, card.id, year, composition, [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, p.mgSiblings), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))], modelLabel(oc), p.base);
+    const saved = await saveOutlineRow(supabase, card.id, year, composition, [...cleaned.warnings, ...data.notes, ...mgOverlapIssues(composition, p.mgSiblings), ...mgItemIssues(composition, p.mg.items ?? [], { evals: p.mg.evals, taskNo: p.mg.taskNo, siblings: p.mgSiblings }), ...mgCompositionIssues(composition, mgPdcaSkeleton(card.data))], modelLabel(oc), p.base);
     if (!saved.ok) {
       if (!saved.conflict) console.error("runReportOutlineMg save", saved.message);
       return { ok: false, message: saved.conflict ? saved.message : "구성안을 저장하지 못했습니다(권한을 확인해 주세요)." };

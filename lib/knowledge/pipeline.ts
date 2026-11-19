@@ -6,7 +6,9 @@ import { findingTargets, linkCardFindings, mapMidToFinal, mapTasksToCards, toCar
 import { parseAtt3 } from "./parsers/att3.ts";
 import { parseAx } from "./parsers/ax.ts";
 import { parseCoreItems } from "./parsers/core-items.ts";
+import { parseConsultMg } from "./parsers/consult-mg.ts";
 import { parseCorrective } from "./parsers/corrective.ts";
+import { parseHandbookRev } from "./parsers/handbook-rev.ts";
 import { parseCeoIndicators, parseGoals, parsePool } from "./parsers/indicators.ts";
 import { parseMidreportBiz } from "./parsers/midreport-biz.ts";
 import { parseMidreportMg } from "./parsers/midreport-mg.ts";
@@ -23,6 +25,7 @@ export const PARSER_VERSION = "knowledge-ingest/0.1.0";
 
 const PARSERS: Record<string, (blocks: SourceBlock[]) => ParseResult> = {
   "plan-2607": parsePlan,
+  "hb26r-2611": (blocks) => parseHandbookRev(blocks),
   "att3-2604": parseAtt3,
   "mid25-biz": (blocks) => parseMidreportBiz(blocks),
   "pool25-biz": parsePool,
@@ -33,6 +36,7 @@ const PARSERS: Record<string, (blocks: SourceBlock[]) => ParseResult> = {
   "corr25-2610": (blocks) => parseCorrective(blocks),
   "mid25-mg": (blocks) => parseMidreportMg(blocks),
   "core25-mg": (blocks) => parseCoreItems(blocks),
+  "consult26-mg": (blocks) => parseConsultMg(blocks),
   ...QA_MG_PARSERS,
   ...RPT_MG_PARSERS,
 };

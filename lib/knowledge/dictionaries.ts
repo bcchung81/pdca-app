@@ -79,6 +79,8 @@ export interface MetricEntry {
   relation: MetricRelation;
   aliases: string[];
   note?: string;
+  /** 11.13 수정본(hb26r-2611)에서 '26 지표가 나뉜 사실 — '25 자료의 판 표지에 덧붙임(revision-note.ts) */
+  revision2611?: string;
 }
 
 export const METRICS_2025: MetricEntry[] = [
@@ -91,6 +93,7 @@ export const METRICS_2025: MetricEntry[] = [
     name2026: "인명구조 및 재난 관리 강화 성과",
     relation: "명칭 변경",
     aliases: [],
+    revision2611: "11.13 수정본에서 인명안전 무선국 검사 성과·사전 처리 노력·현장 개선 노력 3개 지표로 나뉨",
   },
   {
     name2025: "생활환경 전자파 안심 사회 구현 성과",
@@ -108,6 +111,7 @@ export const METRICS_2025: MetricEntry[] = [
     name2026: "기금 재정 효율화 성과",
     relation: "명칭 변경",
     aliases: ["ICT기금재정 효율화 성과"],
+    revision2611: "11.13 수정본에서 기금 분담금 재원 조성 성과·기금운용평가 결과 2개 지표로 나뉨(차입금리 대비 운용수익은 없어짐)",
   },
   {
     name2025: "국내 방송콘텐츠 공동제작 및 투자 활성화",
@@ -120,8 +124,8 @@ export const METRICS_2025: MetricEntry[] = [
 ];
 
 /** '26 편람에 새로 생긴 계량지표('25 대응 없음) */
-export const NEW_METRICS_2026: Array<{ name: string; business: BusinessId; /** 관리계획 7월판 개선(안)(최종본)의 소속 — 편람(최초)과 다르면 */ business2026?: BusinessId; note: string }> = [
-  { name: "근로자 무사고 달성 노력", business: "BZ-2", business2026: "BZ-1", note: "'26 신설. '25 생활환경 전자파 지표 자리. 편람(최초)은 주요사업2, 7월판 개선(안)은 주요사업1로 이동" },
+export const NEW_METRICS_2026: Array<{ name: string; business: BusinessId; note: string }> = [
+  { name: "근로자 무사고 달성 노력", business: "BZ-2", note: "'26 신설. '25 생활환경 전자파 지표 자리. 주요사업2 — 11.13 수정본에서도 주요사업2 그대로((4)번, 7월판 개선(안)의 주요사업1 이동은 수정본에서 다르게 확정됨)" },
 ];
 
 export function resolveMetric2025(textOrTag: string): MetricEntry | null {

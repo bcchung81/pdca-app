@@ -4,6 +4,7 @@
 
 import { LENS_CRITERIA_KEYS } from "../reports/lens.ts";
 import type { BusinessId, Check, KnowledgeChunk } from "./types.ts";
+import { CONSULT_UNIT_TYPE } from "./usage.ts";
 
 /** 주요사업 3개(공통지표 BZ-4는 검산 대상 아님 — 규칙 범위상 사업 구분이 없음) */
 const BUSINESSES: BusinessId[] = ["BZ-1", "BZ-2", "BZ-3"];
@@ -92,6 +93,19 @@ export function ruleScopeChecks(chunks: KnowledgeChunk[]): Check[] {
       ok: missing.length === 0,
       expected: "모두 있음(없으면 지표 사전 METRICS_2025에 새 지표를 더할 것)",
       actual: missing.length ? missing : "모두 있음",
+    });
+  }
+
+  // 5) 외부 컨설팅 의견(consult_comment)은 경영관리 지표(MG-1~14) ③에만 들어가야 함 — 트랙·지표가 비면 다른 트랙 요청이나 모든 과제(①)에 들어감(2026-11-19 A3)
+  const consult = chunks.filter((c) => c.unit_type === CONSULT_UNIT_TYPE);
+  if (consult.length) {
+    const bad = consult.filter((c) => c.track !== "경영관리" || !/^MG-(?:[1-9]|1[0-4])$/.test(String(c.business ?? "")) || c.meta?.search_only === true).map((c) => c.chunk_key);
+    checks.push({
+      name: "[scope] 외부 컨설팅 의견 조각은 경영관리 지표(MG-1~14) 단위",
+      level: "error",
+      ok: bad.length === 0,
+      expected: "모두 track 경영관리·business MG-N",
+      actual: bad.length ? bad : `모두(${consult.length})`,
     });
   }
 

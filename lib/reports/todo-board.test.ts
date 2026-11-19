@@ -108,3 +108,14 @@ test("buildTodoBoard: 카드가 없으면 빈 모음", () => {
 test("stringsOf: 중첩 객체·배열의 글만 모음", () => {
   assert.deepEqual(stringsOf({ a: ["x", 1, { b: "y" }], c: null, d: "z" }), ["x", "y", "z"]);
 });
+
+test("buildTodoBoard(2026-11-19): 지표 단위 전년 대비의 담당 카드 없는 평가내용 행 【확인】(code.need — 「자료 필요」)을 카드 밖 줄이 코드 변경 없이 셈", async () => {
+  const { buildPriorPart } = await import("./unit-parts-mg.ts");
+  const rpt = [1, 2, 3].map((n) => ({ chunk_key: `rpt25-mg-07/d${n}`, text: "", meta: { chapter: "detail", eval_no: n, eval_title: `2025 평가내용 ${n}` } }));
+  const card = (taskNo: string) => ({ id: `경영관리7/${taskNo}`, taskNo, title: taskNo, status: "active", data: {} });
+  const prior = buildPriorPart({ unit: "MG-7", cards: [card("7-1"), card("7-4"), card("7-5")], report2025: rpt }).part;
+  const b = buildTodoBoard(input([], { units: [{ id: "MG-7", name: "상생·협력 및 지역발전", cardGroup: null }], parts: [{ unitId: "MG-7", part: "prior", spec: prior }] }));
+  assert.equal(b.rows.length, 1);
+  assert.equal(b.rows[0].needs, 1, "상생 ② 지역업체(담당 미정) 한 줄");
+  assert.match(b.rows[0].samples[0], /^전년 대비 담당 카드 없음 — '26 신설 「지역업체/, "견본은 앞부분만(SAMPLE_CHARS)");
+});

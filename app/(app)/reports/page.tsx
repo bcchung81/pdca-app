@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LeadTeamSelect, PrepareButton } from "../../../components/reports/report-controls";
 import { REPORT_STATUS_TONE } from "../../../components/ui/status-tone.ts";
+import { CrossChecksPanel } from "../../../components/reports/cross-checks";
 import { TodoBoardPanel } from "../../../components/reports/todo-board";
 import { Empty, NoAccess, PageHeader, Panel, Screen, StatPanel, T, Tag } from "../../../components/ui/kit";
 import { requireAtLeast } from "../../../lib/auth/dal.ts";
@@ -9,10 +10,13 @@ import { currentPeriod } from "../../../lib/cards/view.ts";
 import { fmtDate, isoDay } from "../../../lib/format.ts";
 import { withReturn } from "../../../lib/nav/return-to.ts";
 import { kpiGaps, yearActuals } from "../../../lib/reports/actuals.ts";
+import { crossCardDuplicates } from "../../../lib/reports/cross-card.ts";
+import { orphanFindings } from "../../../lib/reports/finding-orphans.ts";
 import { REPORT_STATUS_LABEL, type ReportStatus } from "../../../lib/reports/model.ts";
 import { listReports, loadSubmitCards, materialCounts, openCommentCounts, submitKey } from "../../../lib/reports/queries.ts";
 import { submitReadiness } from "../../../lib/reports/submission.ts";
 import { buildTodoBoard } from "../../../lib/reports/todo-board.ts";
+import { originalFindings, type UnitChunk } from "../../../lib/reports/unit-parts-mg.ts";
 import { loadUnitPartSpecs } from "../../../lib/reports/unit-parts-queries.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
@@ -34,14 +38,16 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const status = STATUSES.includes(one(sp.status) as ReportStatus) ? (one(sp.status) as ReportStatus) : null;
   const year = Number(currentPeriod().slice(0, 4));
   const supabase = await createClient();
-  const [allReports, { data: units }, { data: cards }, { data: teams }, submitCards, unitParts] = await Promise.all([
+  const [allReports, { data: units }, { data: cards }, { data: teams }, submitCards, unitParts, evaluator25] = await Promise.all([
     listReports(supabase, year),
     supabase.from("eval_units").select("id, name, card_group, lead_team_id").eq("track", track).order("sort").order("id"),
-    supabase.from("cards").select("id, eval_unit_id, team_id, data, unit:eval_units!inner(track)").eq("status", "active").eq("unit.track", track),
+    supabase.from("cards").select("id, uid, eval_unit_id, team_id, task_no, data, unit:eval_units!inner(track)").eq("status", "active").eq("unit.track", track),
     supabase.from("teams").select("id, name").order("name"),
     loadSubmitCards(supabase, year, { track }),
     // 카드 밖 부분은 경영관리 지표에만 있음(주요사업은 부분 키 허용 목록이 비어 있어 빈 목록)
     mg ? loadUnitPartSpecs(supabase, year) : Promise.resolve([]),
+    // 소관 카드 없는 '25 지적(경영관리) — 그 트랙 지표들의 평가위원 지적 원문을 한 번에
+    mg ? supabase.from("knowledge_chunks").select("chunk_key, title, text, unit_type, meta").eq("unit_type", "evaluator_comment").like("chunk_key", "plan-2607/eval25/MG-%").order("seq") : Promise.resolve({ data: [] }),
   ]);
   const unitIds = new Set((units ?? []).map((u) => u.id as string));
   const reports = allReports.filter((r) => unitIds.has(r.evalUnitId));
@@ -67,6 +73,17 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
     reports: reports.map((r) => ({ id: r.id, unitId: r.evalUnitId, teamId: r.teamId })),
     parts: unitParts,
   });
+  // 카드 간 점검(참고) — 이미 읽은 카드로 계산, 지적 원문만 더 읽음
+  const taskCards = (cards ?? []).map((c) => ({ id: c.id as string, unitId: c.eval_unit_id as string, taskNo: String(c.task_no ?? ""), status: "active", data: c.data }));
+  const duplicates = crossCardDuplicates(taskCards.map((c) => ({ id: c.id, taskNo: c.taskNo, status: c.status, data: c.data })));
+  const eval25ByUnit = new Map<string, UnitChunk[]>();
+  for (const ch of (evaluator25.data ?? []) as UnitChunk[]) {
+    const u = /^plan-2607\/eval25\/(MG-\d+)\//.exec(ch.chunk_key)?.[1];
+    if (u) eval25ByUnit.set(u, [...(eval25ByUnit.get(u) ?? []), ch]);
+  }
+  const orphans = [...eval25ByUnit].flatMap(([u, chunks]) => orphanFindings(u, originalFindings(chunks), taskCards.filter((c) => c.unitId === u)));
+  const uidOf = new Map((cards ?? []).map((c) => [c.id as string, c.uid as string]));
+  const unitNameOf = new Map((units ?? []).map((u) => [u.id as string, u.name as string]));
   // 검토 화면으로 가는 링크가 돌아올 이 목록 주소(상태 필터 포함)
   const selfHref = status ? `/reports?status=${status}` : "/reports";
 
@@ -102,6 +119,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
           />
 
           <TodoBoardPanel board={todo} title="채울 것 모아 보기" mg={mg} staff from={selfHref} />
+
+          <CrossChecksPanel mg={mg} duplicates={duplicates} orphans={orphans} unitName={(u) => unitNameOf.get(u) ?? u} cardHref={(id) => (uidOf.get(id) ? `/cards/${uidOf.get(id)}` : null)} from={selfHref} />
 
           {visibleUnits.length === 0 ? (
             <Panel>

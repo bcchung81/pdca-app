@@ -14,6 +14,7 @@ import { MGMT_INDICATORS } from "../tracks/mgmt-units.ts";
 import { type BundleChunk, DOC_ORDER, type LayerId, layerOf } from "./bundle.ts";
 import { chunkRole } from "./chunk-role.ts";
 import { BUSINESSES } from "./dictionaries.ts";
+import { revisionNote, whereWithNote } from "./revision-note.ts";
 import { flattenHtmlTables } from "./rich-text.ts";
 
 /** 프롬프트 파일(resources/prompts/rules-digest)에 있어야 하는 절 */
@@ -104,7 +105,11 @@ export const sourceChars = (chunks: BundleChunk[]) => chunks.reduce((n, c) => n 
 /** 조각 봉투: 모델이 key·종류·제목·위치를 보게 함 */
 export function digestBlock(chunks: BundleChunk[]): string {
   return chunks
-    .map((c) => `<source key="${escapeXml(c.chunk_key)}" unit="${escapeXml(c.unit_type)}" title="${escapeXml(c.title)}"${c.context_prefix ? ` where="${escapeXml(c.context_prefix)}"` : ""}>\n${escapeXml(flattenHtmlTables(c.text ?? ""))}\n</source>`)
+    .map((c) => {
+      // 위치 글 = 머리말 + 판·원문 표지(요청 때 묶음과 같은 whereWithNote — 요약이 판 표지를 알고 쓰게)
+      const where = whereWithNote(c);
+      return `<source key="${escapeXml(c.chunk_key)}" unit="${escapeXml(c.unit_type)}" title="${escapeXml(c.title)}"${where ? ` where="${escapeXml(where)}"` : ""}>\n${escapeXml(flattenHtmlTables(c.text ?? ""))}\n</source>`;
+    })
     .join("\n");
 }
 
@@ -265,7 +270,17 @@ export interface DigestInput {
   chars: number;
 }
 
-export const chunkHash = (c: BundleChunk) => createHash("sha256").update(JSON.stringify([c.unit_type, c.title, c.context_prefix ?? "", c.text ?? ""])).digest("hex").slice(0, 16);
+/**
+ * 조각 해시. 판·원문 표지(revision-note.ts)가 붙는 조각은 표지까지 넣음 — 표지가 바뀌면(예: 2026-11-19 편람 수정본으로 7월판 개선(안)이 「다르게 확정됨」) 그 조각을 요약한
+ * 규칙 문서가 낡음으로 잡혀 통째로 넣기로 돌아가고, 다시 만들 때까지 옛 판 값을 유효한 기준처럼 담은 요약이 요청에 들어가지 않게. 표지 없는 조각의 해시는 예전과 같음
+ */
+export const chunkHash = (c: BundleChunk) => {
+  const note = revisionNote(c);
+  return createHash("sha256")
+    .update(JSON.stringify([c.unit_type, c.title, c.context_prefix ?? "", c.text ?? "", ...(note ? [note] : [])]))
+    .digest("hex")
+    .slice(0, 16);
+};
 
 export const digestInputs = (chunks: BundleChunk[]): DigestInput[] => chunks.map((c) => ({ key: c.chunk_key, hash: chunkHash(c), chars: c.text?.length ?? 0 }));
 

@@ -3,6 +3,7 @@
 // 조회는 lens-queries.ts(서버), 요청 문구는 resources/prompts/report-draft/request.md의 lens.* 절.
 
 import { cardFindings, isNoFindingLine } from "./findings.ts";
+import { whereWithNote } from "../knowledge/revision-note.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 /** 근거 묶음: 평가 기준 · '25 평가위원 지적 · '25 실사 질의응답 · 유관기관 우수 사례(붙임2 B+·B0) */
@@ -79,7 +80,31 @@ export interface LensInput {
   peers: LensRow[];
 }
 
-const toRef = (group: LensGroup, r: LensRow): LensRef => ({ group, key: r.chunk_key, title: r.title, where: String(r.context_prefix ?? ""), text: String(r.text ?? "").slice(0, LENS_PER_CHUNK) });
+// 위치 글 = 머리말 + 판·원문 표지(공통 지식 묶음 chunkRef와 같은 whereWithNote — 편람 수정본·옛 편람 조각이 어느 판인지 함께 보임)
+const toRef = (group: LensGroup, r: LensRow): LensRef => ({ group, key: r.chunk_key, title: r.title, where: whereWithNote(r) ?? "", text: String(r.text ?? "").slice(0, LENS_PER_CHUNK) });
+
+/** 편람 수정본 조각(meta.revision)이 대신하는 옛 편람 조각 key들 */
+const supersedesOf = (r: LensRow): string[] => (typeof r.meta?.revision === "string" && Array.isArray(r.meta.supersedes) ? r.meta.supersedes.filter((x): x is string => typeof x === "string") : []);
+
+/**
+ * 지표 편람 조각 순서: 옛 편람 조각(seq 순)마다 그 자리를 바꾼 수정본 조각을 바로 앞에 둠(수정본 > 편람 최초 — revision-note.ts). 옛 조각이 없는 수정본 조각은 끝에.
+ * rows = 옛 편람 조각과 수정본 조각(문서 무관, 조회 순서 무관)
+ */
+export function handbookOrder(rows: LensRow[]): LensRow[] {
+  const revised = rows.filter((r) => supersedesOf(r).length);
+  const old = rows.filter((r) => !supersedesOf(r).length);
+  const used = new Set<string>();
+  const out: LensRow[] = [];
+  for (const o of old) {
+    for (const r of revised) {
+      if (used.has(r.chunk_key) || !supersedesOf(r).includes(o.chunk_key)) continue;
+      used.add(r.chunk_key);
+      out.push(r);
+    }
+    out.push(o);
+  }
+  return [...out, ...revised.filter((r) => !used.has(r.chunk_key))];
+}
 
 /** 묶음별로 앞(중요도 순)부터 조각 수·글자 상한 안에서 고름. 같은 조각은 한 번만 */
 export function pickLens(input: LensInput): LensRef[] {
@@ -87,16 +112,20 @@ export function pickLens(input: LensInput): LensRef[] {
   const seen = new Set<string>();
   const take = (group: LensGroup, rows: LensRow[]) => {
     const { items, chars } = LENS_LIMITS[group];
+    // 편람 수정본 조각은 대신하는 옛 조각과 한 자리로 셈(조각 수 상한) — 수정본이 들어와도 다른 평가 기준이 밀려나지 않게
+    const keys = new Set(rows.map((r) => r.chunk_key));
+    const pairs = (r: LensRow) => supersedesOf(r).some((k) => keys.has(k));
     let n = 0;
     let total = 0;
     for (const r of rows) {
       if (seen.has(r.chunk_key)) continue;
       const ref = toRef(group, r);
       if (!ref.text.trim()) continue;
-      if (n >= items || total + ref.text.length > chars) break;
+      const slot = pairs(r) ? 0 : 1;
+      if (n + slot > items || total + ref.text.length > chars) break;
       out.push(ref);
       seen.add(r.chunk_key);
-      n += 1;
+      n += slot;
       total += ref.text.length;
     }
   };

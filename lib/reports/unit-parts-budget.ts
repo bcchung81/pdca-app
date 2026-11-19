@@ -14,6 +14,7 @@
 import type { MgOutside } from "./business-layout.ts";
 import { OUTSIDE_FILL_MAX, stackOutside } from "./business-layout.ts";
 import { PAGE_MM } from "./fit.ts";
+import { from26 } from "./mg-items.ts";
 import { unitPartsOutside } from "./unit-parts-layout.ts";
 import { type UnitChunk, type UnitPart, type UnitPartsMg, cellBullets, table2025Rows } from "./unit-parts-mg.ts";
 import type { LooseJson } from "../loose-json.ts";
@@ -186,8 +187,8 @@ const splitPath = (p: string): [string, number, string] => {
   return [coll, Number(i), field];
 };
 
-/** 칸마다 출발값(쪽 맞춤 전) */
-function bases(parts: Partial<Record<string, UnitPart>>, cells: BudgetCell[], c25: Cols2025): Map<string, { base: number; from2025: boolean }> {
+/** 칸마다 출발값(쪽 맞춤 전) — unit = 평가내용 행의 '26 번호를 2025 번호로 되돌리는 지표(mg-items.ts from26) */
+function bases(parts: Partial<Record<string, UnitPart>>, cells: BudgetCell[], c25: Cols2025, unit: string): Map<string, { base: number; from2025: boolean }> {
   const out = new Map<string, { base: number; from2025: boolean }>();
   const f = parts.findings?.part === "findings" ? parts.findings : null;
   const pr = parts.prior?.part === "prior" ? parts.prior : null;
@@ -209,7 +210,8 @@ function bases(parts: Partial<Record<string, UnitPart>>, cells: BudgetCell[], c2
     let b: { base: number; from2025: boolean } | undefined;
     if (coll === "rows" && field === "actions") b = actions[i];
     else if (coll === "rows" && pr && (field === "now" || field === "effect")) {
-      const hit = c25.prior.get(pr.rows[i]?.code.evalNo ?? -1);
+      // 2025 「전년 대비」 칸은 2025 번호로 적혀 있어 '26 번호를 2025 번호로 되돌려 짝(상생만 다름 — 신설 행은 2025 칸이 없어 기본값, 2026-11-19)
+      const hit = c25.prior.get(from26(unit, pr.rows[i]?.code.evalNo ?? -1) ?? -1);
       const at = field === "now" ? 0 : 1;
       const med = field === "now" ? nowMed : effMed;
       const def = field === "now" ? UNIT_BUDGET_DEFAULT.now : UNIT_BUDGET_DEFAULT.effect;
@@ -279,7 +281,7 @@ const SCALE_STEP = 0.05;
  */
 export function unitAiBudgets(parts: Partial<Record<string, UnitPart>>, report2025: UnitChunk[], cells: BudgetCell[], year: number, unit: string): UnitAiBudgets {
   const c25 = cols2025(report2025);
-  const base = bases(parts, cells, c25);
+  const base = bases(parts, cells, c25, unit);
   const isFront = (c: BudgetCell) => c.path.startsWith("rows.");
   const scale = { front: 1, back: 1 };
   const charsOf = (c: BudgetCell) => budgetOf(base.get(key(c))!.base, isFront(c) ? scale.front : scale.back);
