@@ -225,7 +225,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 - 클라이언트 컴포넌트는 `upload.ts`(kordoc)가 아니라 순수 `upload-scope.ts`·`limits.ts`만 import. 조각 캐시(`chunk-cache.ts`)는 저장·삭제 때 비우고 올리기 크기 보호는 `fresh: true`. 공통 조각과 카드 전용 자료 표는 합치지 않음(D4 — 금기 4 누출 통로)
 - 파일 번호와 지침 번호가 다름(Pool=붙임4·중장기=붙임3·기관장=붙임2·AX=붙임6) — 조각 제목·적응문은 이름으로 적음. 관리계획 발췌는 따로 적재하지 않음. 새 판의 문서가 오면 기대값을 먼저 원문으로 확인
 - 문서 판이 다르면 최신본이 유효: 편람 11.13 수정본(`hb26r-2611`, 바뀐 칸만 새 조각·`meta.supersedes`) > 관리계획 7월판 개선(안) > '26 편람 최초(`_shared/knowledge.md#rules`·`revision-note.ts`). 조각 글은 원문 그대로 두고 결함은 요청 때 처리(`flattenHtmlTables`, `SOURCE_ERRATA`, `meta.duplicate_of`) — 원문을 고쳐 적거나 단정하지 않음
-- 지적사항 시정조치 계획(`corr25-2610`)은 **약속이지 이행 실적이 아니라서** `PLAN_NOTE` 표지를 붙이고 숫자·사실 근거로 안 씀. 외부 컨설팅 의견(`consult_comment`)도 근거 아님 — 작성지원·경영관리 구성안(`outlineBundle`)에만, 담당자 실명 열은 적재 안 함. 붙임2는 관리자가 화면에서 올림(기관명·사업명·등급은 코드가 채우고 AI는 지어내지 않음). 올린 일반 문서(`up-…`)를 지우면 조각과 대응표 행(확정 포함)이 연쇄 삭제
+- 지적사항 시정조치 계획(`corr25-2610`)은 **약속이지 이행 실적이 아니라서** `PLAN_NOTE` 표지를 붙이고 숫자·사실 근거로 안 씀. 외부 컨설팅 의견(`consult_comment`)도 근거 아님 — 그 카드(`meta.card_ids`) 요청에만 카드별 덩이(`bundle.consult`, 공유 층·캐시 밖)로, DB도 카드 단위 읽기(`private.can_read_consult`), 부서 담당자 공통 지식 화면엔 안 보임, 실명 열은 적재 안 함. 붙임2는 관리자가 화면에서 올림(기관명·사업명·등급은 코드가 채우고 AI는 지어내지 않음). 올린 일반 문서(`up-…`)를 지우면 조각과 대응표 행(확정 포함)이 연쇄 삭제
 - **경영관리 지식**: 조각은 `track = 경영관리`·`business = MG-N`, 이름 → 지표는 `resolveMgmtUnit`(`dictionaries-mg.ts`) — **모르는 이름은 추측하지 않고 멈춤**. 5.22판 체크리스트(`checklist-2605`)는 적재 안 함. 전년 보고서 `rpt25-mg-NN`·실사 답변 `qa25-mg-NN`은 전용 파서(`parsers/report25-mg.ts`·`qa-mg.ts`)로 문서 하나씩 적재(`--doc <문서 id>`)
 
 상세: `docs/design/knowledge.md`

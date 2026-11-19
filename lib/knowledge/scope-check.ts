@@ -96,15 +96,21 @@ export function ruleScopeChecks(chunks: KnowledgeChunk[]): Check[] {
     });
   }
 
-  // 5) 외부 컨설팅 의견(consult_comment)은 경영관리 지표(MG-1~14) ③에만 들어가야 함 — 트랙·지표가 비면 다른 트랙 요청이나 모든 과제(①)에 들어감(2026-11-19 A3)
+  // 5) 외부 컨설팅 의견(consult_comment)은 경영관리 지표(MG-1~14) 단위이고 가리키는 지금 카드(meta.card_ids)가 있어야 함(2026-11-19 A3·2026-11-20) —
+  //    묶음(bundle.ts buildBundle consult)과 DB 읽기 정책(private.can_read_consult)이 card_ids로만 카드를 찾으므로, 비거나 다른 지표 카드를 가리키면 그 의견은 어느 카드에도 안 가거나 엉뚱한 카드로 감
   const consult = chunks.filter((c) => c.unit_type === CONSULT_UNIT_TYPE);
   if (consult.length) {
-    const bad = consult.filter((c) => c.track !== "경영관리" || !/^MG-(?:[1-9]|1[0-4])$/.test(String(c.business ?? "")) || c.meta?.search_only === true).map((c) => c.chunk_key);
+    const cardsOk = (c: KnowledgeChunk) => {
+      const n = /^MG-(\d+)$/.exec(String(c.business ?? ""))?.[1];
+      const ids = c.meta?.card_ids;
+      return Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === "string" && new RegExp(`^경영관리${n}/${n}-\\d+$`).test(id));
+    };
+    const bad = consult.filter((c) => c.track !== "경영관리" || !/^MG-(?:[1-9]|1[0-4])$/.test(String(c.business ?? "")) || c.meta?.search_only === true || !cardsOk(c)).map((c) => c.chunk_key);
     checks.push({
-      name: "[scope] 외부 컨설팅 의견 조각은 경영관리 지표(MG-1~14) 단위",
+      name: "[scope] 외부 컨설팅 의견 조각은 경영관리 지표(MG-1~14) 단위이고 그 지표의 지금 카드(meta.card_ids)를 가리킴",
       level: "error",
       ok: bad.length === 0,
-      expected: "모두 track 경영관리·business MG-N",
+      expected: "모두 track 경영관리·business MG-N·card_ids 경영관리N/N-M 1개 이상",
       actual: bad.length ? bad : `모두(${consult.length})`,
     });
   }

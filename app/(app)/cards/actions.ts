@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { CHAT_LIMITS, cleanHistory, inspectionBrief } from "../../../lib/ai/chat.ts";
-import { cardSelectPreview, loadCardBundle } from "../../../lib/ai/context.ts";
+import { cardSelectPreview, loadCardBundle, loadCardConsult } from "../../../lib/ai/context.ts";
 import { bundleRefs } from "../../../lib/knowledge/bundle.ts";
 import type { SelectFeature } from "../../../lib/knowledge/select.ts";
 import { loadMaterialTexts } from "../../../lib/ai/attachments.ts";
@@ -339,6 +339,17 @@ export async function getCardSelectPreview(uid: string): Promise<Partial<Record<
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id, eval_unit_id, data").eq("uid", uid).maybeSingle();
   return card ? cardSelectPreview(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }) : {};
+}
+
+/**
+ * AI 진행 줄의 「컨설팅 의견」을 실제와 같게(lib/ai/progress.ts assistProgress·draftProgress): 이 카드 요청에 넣는 외부 컨설팅 의견 조각의 제목(요청 때와 같은 loadCardConsult — 사용자 권한,
+ * DB가 카드 단위로 거름). 의견이 없는 카드(주요사업 전부)는 빈 목록. 읽기만 하는 조회라 부서 화면 보기에서도 막지 않음
+ */
+export async function getCardConsultTitles(uid: string): Promise<string[]> {
+  await requireUser("/cards");
+  const supabase = await createClient();
+  const { data: card } = await supabase.from("cards").select("id").eq("uid", uid).maybeSingle();
+  return card ? (await loadCardConsult(supabase, card.id)).map((c) => c.title) : [];
 }
 
 /** 코멘트 처리 결과(ai_results.result.data — 화면이 받아 지금 카드에 합침). card = 보낼 때 카드(서버가 기준으로 쓴 것 — 다른 화면에 갔다 와도 같은 기준으로 합침) */

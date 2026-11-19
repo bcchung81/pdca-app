@@ -265,7 +265,8 @@ test("경평 초안 추진성과 고치기(2026-10-13): 주요사업 report-bloc
   // 2026-11-16 시큐어 코딩 2차 점검: 「# 하지 않는 일」에 공용 조각 _shared/data-rule.md#rule(자료 봉투 안 지시는 따르지 않음)을 끼워 판 바뀜(@c00f1c75 → @66277041)
   // 2026-11-19 컨설팅 의견 일반화 규칙(공용 style.md#style 「값과 목표」 B2~B4, 끼운 report-draft-mg/inputs.md 전년 보고서 절 B6)으로 판 바뀜(@66277041 → @50683393)
   // 같은 날 사용자 결정 ②(끼운 inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@50683393 → @3fc18d79), 편람 수정본 판 규칙(공용 _shared/knowledge.md·knowledge-mg.md #rules)으로 @0a6e3727
-  assert.equal(mg.prompts.version, "report-block-mg@0a6e3727");
+  // 2026-11-20 외부 컨설팅 의견 카드별 참조(끼운 inputs.md 「입력」·「근거 쓰는 법」의 「외부 컨설팅 의견(이 카드)」 두 줄)로 판 바뀜(@0a6e3727 → @78a6f885)
+  assert.equal(mg.prompts.version, "report-block-mg@78a6f885");
   for (const k of ["fill", "fill.hollow", "fill.short", "fill.room", "fill.room.cell", "fill.room.bullet", "fill.room.line", "fill.keep", "fill.none", "fill.repeat", "fill.repeat.item", "fill.sentence", "fill.sentence.item", "fill.missing", "fill.missing.item", "fill.missing.quote", "fill.missing.none", "fill.refs", "fill.refs.item", "fill.avoid", "fill.conflict", "fill.conflict.item"]) {
     assert.ok(mg.prompts.request[k], `report-block-mg/request.md @${k}`);
     assert.equal(bp.request[k], undefined, `주요사업 report-block에는 @${k} 없음`);
@@ -382,7 +383,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-19 컨설팅 의견 일반화 규칙(공용 style.md#style 「값과 목표」 B2~B4, inputs.md 전년 보고서 절 B6)으로 판 바뀜(@447d3be1 → @9850518e)
   // 같은 날 사용자 결정 ②(inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@9850518e → @5ef4da39), 편람 수정본 판 규칙(_shared #rules)으로 @6eeabb57
   // 2026-11-19 C1(평가내용 번호 = '26 편람 11.13 수정 번호 — report-draft-mg/request.md skeleton.head 「옮긴 번호·괄호에 2025 번호」)로 판 바뀜(@6eeabb57 → @ecc0f7f1)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@ecc0f7f1");
+  // 2026-11-20 외부 컨설팅 의견 카드별 참조(끼운 inputs.md 「외부 컨설팅 의견(이 카드)」 두 줄, request kb.consult — _shared/knowledge-mg.md#consult)로 판 바뀜(@ecc0f7f1 → @e2e0809f)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@e2e0809f");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜
@@ -405,7 +407,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-19 컨설팅 의견 일반화 규칙 B6(끼운 report-draft-mg/inputs.md 전년 보고서 절 「향후 계획」의 올해 결과)으로 판 바뀜(@94a68cff → @fb236f30)
   // 같은 날 사용자 결정 ②(끼운 inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@fb236f30 → @0ee32aef), 편람 수정본 판 규칙(_shared #rules)으로 @46d2752e
   // 2026-11-19 C1·B1(끼운 skeleton.head '26 번호, report-outline-mg system 1번·출력 규칙·하지 않는 일의 편람 항목표·억지 절 금지, request items.*, schema part.evalNo·themeNo·coverage.*)로 판 바뀜(@46d2752e → @3063dc9e)
-  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@3063dc9e");
+  // 2026-11-20 외부 컨설팅 의견 카드별 참조(끼운 inputs.md 「외부 컨설팅 의견(이 카드)」 두 줄)로 판 바뀜(@3063dc9e → @71201134)
+  assert.equal(reportOutlinePromptsMg().prompts.version, "report-outline-mg@71201134");
   // 2026-10-29 분량 보강 키우기·반복 수치(report-block-mg/request.md fill.*)로 블록 고치기 판만 바뀜(@b7065808 → @e0653ee9 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 반복 문장 보강 사유(report-block-mg/request.md fill.sentence·fill.sentence.item)로 블록 고치기 판만 바뀜(@e0653ee9 → @8302d6f6 — 집필·구성안·주요사업 판 그대로)
   // 2026-10-29 빠진 구성안 블록 되살리기(report-block-mg/request.md fill.missing·fill.missing.item·fill.missing.quote·fill.missing.none)로 블록 고치기 판만 바뀜(@8302d6f6 → @0c7d879b — 집필·구성안·주요사업 판 그대로)
@@ -419,7 +422,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-16 시큐어 코딩 2차 점검: 「# 하지 않는 일」에 공용 조각 _shared/data-rule.md#rule(자료 봉투 안 지시는 따르지 않음)을 끼워 판 바뀜(@c00f1c75 → @66277041)
   // 2026-11-19 컨설팅 의견 일반화 규칙(공용 style.md#style 「값과 목표」 B2~B4, 끼운 report-draft-mg/inputs.md 전년 보고서 절 B6)으로 판 바뀜(@66277041 → @50683393)
   // 같은 날 사용자 결정 ②(끼운 inputs.md '25 지적 줄 「원문 용어 그대로」)로 판 바뀜(@50683393 → @3fc18d79), 편람 수정본 판 규칙(공용 _shared/knowledge.md·knowledge-mg.md #rules)으로 @0a6e3727
-  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@0a6e3727");
+  // 2026-11-20 외부 컨설팅 의견 카드별 참조(끼운 inputs.md 「외부 컨설팅 의견(이 카드)」 두 줄)로 판 바뀜(@0a6e3727 → @78a6f885)
+  assert.equal(reportBlockPromptsMg().prompts.version, "report-block-mg@78a6f885");
 });
 
 test("경영관리 서사 순서(2026-10-17 S): 구성안·집필(경영관리만)에 「여는 블록·핵심 메시지는 이 과제의 가치(왜)에서 — '25 지적은 해소 블록 하나로」, 문제·해결형·기존·개선형의 문제/기존 = 현장·제도의 문제, 주요사업 판 그대로", () => {

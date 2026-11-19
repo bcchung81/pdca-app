@@ -9,7 +9,7 @@ import { z } from "zod";
 import { dataEnvelope, dataText } from "../ai/envelope.ts";
 import { cardOutline } from "../ai/writer.ts";
 import { inspectionCardText } from "../ai/inspect.ts";
-import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
+import { KB_MG_SECTIONS, KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { NEEDS_MAX, type YearActuals, stripNeeds, yearIssues } from "./actuals.ts";
 import { BLOCK_OUT_FIELDS, type Block, FIGURE_LABEL, blockOutSchema, blockTexts, cleanBlocks, isGridTable } from "./blocks.ts";
@@ -193,7 +193,7 @@ export const MG_DRAFT_OUT_FIELDS = ["parts", "part.key", "part.title", "part.blo
 export const MG_DRAFT_SCHEMA_FIELDS = [...MG_DRAFT_OUT_FIELDS, ...BLOCK_OUT_FIELDS.map((k) => `block.${k}`)];
 
 /** 경영관리 집필 프롬프트 파일(resources/prompts/report-draft-mg)에 있어야 하는 절 */
-export const MG_DRAFT_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...MG_REQUEST_SECTIONS, ...KB_SECTIONS], schema: MG_DRAFT_SCHEMA_FIELDS };
+export const MG_DRAFT_PROMPT_SPEC: PromptSpec = { system: ["system"], request: [...MG_REQUEST_SECTIONS, ...KB_SECTIONS, ...KB_MG_SECTIONS], schema: MG_DRAFT_SCHEMA_FIELDS };
 
 export function mgDraftOutSchema(desc?: Descriptions) {
   const d = <T extends z.ZodType>(s: T, key: (typeof MG_DRAFT_OUT_FIELDS)[number]) => described(s, desc, key);

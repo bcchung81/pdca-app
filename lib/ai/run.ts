@@ -9,7 +9,7 @@ import { AttachmentError } from "./material-text.ts";
 import { BudgetError, checkBudget } from "./budget.ts";
 import type { MaterialDoc } from "./material-text.ts";
 import { userBlocks } from "./user-blocks.ts";
-import { type BundleChunk, type KnowledgeBundle, listText, outlineBundle, relevantRefs, sharedTexts } from "../knowledge/bundle.ts";
+import { type BundleChunk, type KnowledgeBundle, listText, relevantRefs, sharedTexts } from "../knowledge/bundle.ts";
 import type { EditTarget } from "../cards/patch.ts";
 import { CliFailedError, CliUnavailableError, runClaudeCli } from "./cli.ts";
 import { isDegenerateChat, isDegenerateWriter, retryIfDegenerate } from "./degenerate.ts";
@@ -618,8 +618,7 @@ export async function callReportOutlineMg(input: MgReportInput & { memo?: string
       .join("\n\n");
   // 요청이 주요사업의 약 두 배(지표 공통 지식 ③에 전년 보고서·실사 답변이 다 들어감 — 8-1 실측 약 17.7만 자)라 CLI 제한을 집필과 같게
   // CLI 제한 15분 — 2026-11-12 측정: 참고 없음 구성안 출력 약 6만 토큰으로 10분 근처, 주요사업 2건 참고 시 10분 초과 2회·900초 제한으로 총 633.8초 성공 — 로컬 CLI만, Vercel은 api(환경변수 CLAUDE_CLI_TIMEOUT_MS가 앞섬)
-  // 공통 지식은 구성안 몫까지 펼친 묶음(경영관리 외부 컨설팅 의견 — 그 지표 ③ 끝, outlineBundle, 2026-11-19 A3). 숫자 근거(relevantRefs(input.kb))는 report 묶음 그대로
-  const r = await reportStructured("report_outline", outlineSystem(prompts), schema, input.files ?? [], ask, input.kb && outlineBundle(input.kb), { kbp: draft, timeoutMs: 900_000 });
+  const r = await reportStructured("report_outline", outlineSystem(prompts), schema, input.files ?? [], ask, input.kb, { kbp: draft, timeoutMs: 900_000 });
   return { ...r, promptVersion: prompts.version };
 }
 

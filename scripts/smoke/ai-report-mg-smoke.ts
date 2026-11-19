@@ -41,7 +41,7 @@ import { aiProvider, callReportBlock, callReportDraftMg, callReportOutlineMg, mg
 import { fixDeadlineMs } from "../../lib/ai/fix-policy.ts";
 import { type FillPlan, type FillTarget, type MgFillInput, type MgFillReasons, mgAdherenceWarning, mgFillPatch, mgFillReasons, missingBlocks, runMgFill } from "../../lib/reports/mg-fill.ts";
 import { isoDay } from "../../lib/format.ts";
-import { sharedTexts, listText, outlineBundle, relevantRefs } from "../../lib/knowledge/bundle.ts";
+import { sharedTexts, listText, relevantRefs } from "../../lib/knowledge/bundle.ts";
 import { mgStoryHintsFor } from "../../lib/reports/story-hints-mg.ts";
 import { reportBlockPromptsMg, reportDraftPromptsMg, reportOutlinePromptsMg } from "../../lib/prompts/sets.ts";
 import { yearActuals } from "../../lib/reports/actuals.ts";
@@ -211,8 +211,7 @@ const storyHints = mgStoryHintsFor(outline, { card: card.data, ctx, files: witho
 // 갈래 축 사전(서버 callReportOutlineMg와 같은 절 — 전체 구성안만, 2026-10-13)
 const splitHead = splitHeadPrompt(outline, "mg");
 const extra = [mgItemsAsk(outline, ctx), mgDiagramPrompt(outline, hints), mgSiblingsPrompt(outline, siblings), outlineInspectionPrompt(outline, inspection), storyHints, volumeClose, splitHead].filter(Boolean).join("\n\n");
-// 구성안 요청의 공통 지식 = 구성안 몫까지 펼친 묶음(서버 callReportOutlineMg와 같음 — outlineBundle, 2026-11-19)
-const shared = sharedTexts(draft, outlineBundle(kb)).join("\n").length;
+const shared = sharedTexts(draft, kb).join("\n").length;
 // 선별 방식을 요청했는데 이 카드가 선별되지 못하면 통째로 넣기로 감(비교가 무의미 — meta에 남김)
 const fellBack = Boolean(selectDir) && !kb.select;
 if (selectDir) console.log(fellBack ? `경고: 선별 방식(--select-dir ${selectDir})인데 이 카드는 선별되지 못해 통째로 넣기로 감(fellBack — KNOWLEDGE_SELECT에 report가 없거나 선별 결과·규칙 문서 없음)` : `공통 지식: 선별 방식 — 고른 조각 ${kb.select!.picked.length}개 · 제목만 ${kb.select!.unpicked.length}개`);

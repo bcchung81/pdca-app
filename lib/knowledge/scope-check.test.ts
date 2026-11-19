@@ -96,12 +96,14 @@ test("공통지표(BZ-4) 조각의 소속 사업 검산: 질의응답·지적·�
   assert.equal(exempt.ok, true, "총평(total)·편람은 소속 사업이 없어도 됨");
 });
 
-test("외부 컨설팅 의견 조각 검산: 경영관리 지표(MG-N)면 통과, 트랙·지표가 다르거나 비면 실패, 조각이 없으면 항목 없음", () => {
-  const name = "[scope] 외부 컨설팅 의견 조각은 경영관리 지표(MG-1~14) 단위";
-  const ok = chunk({ chunk_key: "consult26-mg/r2/1-1", doc_id: "consult26-mg", unit_type: "consult_comment", track: "경영관리", business: "MG-1" });
-  assert.equal(ruleScopeChecks([ok]).find((c) => c.name === name)?.ok, true);
-  for (const bad of [{ business: null }, { track: "주요사업" as const }, { business: "BZ-1" as const }]) {
-    const res = ruleScopeChecks([ok, chunk({ chunk_key: "consult26-mg/r2/x", doc_id: "consult26-mg", unit_type: "consult_comment", track: "경영관리", business: "MG-2", ...bad })]).find((c) => c.name === name)!;
+test("외부 컨설팅 의견 조각 검산: 경영관리 지표(MG-N)이고 그 지표 카드(card_ids)를 가리키면 통과, 트랙·지표가 다르거나 비거나 카드 목록이 비거나 다른 지표 카드면 실패, 조각이 없으면 항목 없음", () => {
+  const name = "[scope] 외부 컨설팅 의견 조각은 경영관리 지표(MG-1~14) 단위이고 그 지표의 지금 카드(meta.card_ids)를 가리킴";
+  const ok = chunk({ chunk_key: "consult26-mg/r2/1-1", doc_id: "consult26-mg", unit_type: "consult_comment", track: "경영관리", business: "MG-1", meta: { card_ids: ["경영관리1/1-1"] } });
+  const split = chunk({ chunk_key: "consult26-mg/r1/7-1", doc_id: "consult26-mg", unit_type: "consult_comment", track: "경영관리", business: "MG-7", meta: { card_ids: ["경영관리7/7-1", "경영관리7/7-2"] } });
+  assert.equal(ruleScopeChecks([ok, split]).find((c) => c.name === name)?.ok, true);
+  const two = { card_ids: ["경영관리2/2-1"] };
+  for (const bad of [{ business: null }, { track: "주요사업" as const }, { business: "BZ-1" as const }, { meta: {} }, { meta: { card_ids: [] } }, { meta: { card_ids: ["경영관리1/1-1"] } }, { meta: { card_ids: ["경영관리2/2-1", null] } }, { meta: { card_id: "경영관리2/2-1" } }]) {
+    const res = ruleScopeChecks([ok, chunk({ chunk_key: "consult26-mg/r2/x", doc_id: "consult26-mg", unit_type: "consult_comment", track: "경영관리", business: "MG-2", meta: two, ...bad })]).find((c) => c.name === name)!;
     assert.equal(res.ok, false);
     assert.deepEqual(res.actual, ["consult26-mg/r2/x"]);
   }

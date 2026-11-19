@@ -4,9 +4,11 @@
 // 표 열: (빈 A) · 부서 · 팀 · 과제번호(「전략기획 1-1」) · 추진과제명 · 과제관리카드 보완사항(의견을 「▶」로 나눔) · 이행여부 · 그 뒤 담당자 실명 두 열.
 // **담당자 실명 열은 읽지 않음** — 머리 「이행여부」 열까지만 쓰고 그 오른쪽 칸은 어디에도 옮기지 않음(개인정보).
 // 글은 F열 원문 그대로 두고 「▶」 줄 나눔만 정리(의견 1개 = 인용 단위 1개). 의견은 카드 보완 관점이지 사실·숫자 근거가 아님 — 요청 때 표지(revision-note.ts CONSULT_NOTE),
-// 묶음은 작성지원·질문·코멘트(card)와 경평 구성안(outline)에만(bundle.ts layerOf), 숫자·인용 대조(relevantRefs·bundleRefs)에서는 뺌.
+// 묶음은 그 카드의 작성지원·질문·코멘트·경평 구성안·집필·블록 고치기에만(bundle.ts buildBundle의 카드별 덩이 consult — 공유 층에는 안 넣음), 숫자·인용 대조(relevantRefs·bundleRefs)에서는 뺌.
 // 1차(9월)는 11-05 과제 재편(261103판 47장) 전 번호라 과제명으로 지금 카드(2차 시트 = 지금 카드)와 맞추고, 맞출 카드가 없거나 둘 이상이면 추측하지 않고
-// 사람이 확정한 표(CONSULT_R1_CONFIRMED)만 따르며, 그것도 없으면 「9월 카드 기준」으로 남김.
+// 사람이 확정한 표(CONSULT_R1_CONFIRMED — 한 카드, CONSULT_R1_SPLIT — 나뉜 카드 전부)만 따르며, 그것도 없으면 「9월 카드 기준」으로 남김.
+// 조각이 가리키는 지금 카드는 늘 목록(meta.card_ids — 대개 1개, 나뉜 과제는 여럿, 못 맞추면 빈 목록): 묶음(bundle.ts buildBundle)은 그 카드 요청에만 넣고,
+// DB 읽기 정책(20261120090000 private.can_read_consult)은 성과관리팀 이상 또는 그 카드를 읽을 수 있는 사람만 읽게 함(2026-11-20 사용자 결정 — 카드별로만 참조·노출).
 
 import { finalizeChunks, makeChunk } from "../chunk.ts";
 import { cellText, compactKey, normalizeText } from "../normalize.ts";
@@ -30,12 +32,20 @@ const CURRENT_ROUND = 2;
 export const SEPT_BASIS = "9월 카드 기준";
 /** 확정 표로 맞췄을 때 meta.card_basis */
 export const CONFIRMED_BASIS = "사용자 확정(과제명 바뀜)";
+/** 나뉜 과제 표로 맞췄을 때 meta.card_basis */
+export const SPLIT_BASIS = "사용자 확정(9월 과제가 지금 카드 여럿으로 나뉨)";
 
 /**
  * 과제명으로 못 맞춘 1차 과제 중 사람이 지금 카드로 확정한 것(1차 번호 → 지금 번호) — 2026-11-19 사용자 결정: 2차 의견이 같은 번호 카드에서 9월 의견을 이어 말해
  * 이름만 다듬어진 같은 카드로 봄. 7-1(상생·공정 과제가 지금 7-1·7-2로 나뉨)은 하나로 정할 수 없어 9월 카드 기준으로 남김
  */
 export const CONSULT_R1_CONFIRMED: Record<string, string> = { "8-1": "8-1", "8-2": "8-2", "13-1": "13-1", "13-2": "13-2", "13-3": "13-3" };
+
+/**
+ * 과제명으로 못 맞춘 1차 과제 중 지금 카드 여럿으로 나뉜 것(1차 번호 → 지금 번호들) — 그 의견을 나뉜 카드 모두의 의견으로 봄(2026-11-20 사용자 결정:
+ * 9월 7-1 「상생·협력 및 공정한 경제질서 확립」 → 지금 7-1 상생 기반·7-2 공정 거래)
+ */
+export const CONSULT_R1_SPLIT: Record<string, string[]> = { "7-1": ["7-1", "7-2"] };
 
 /** 검산 기대값 — 원본 파일(시트 3개 중 2개)을 직접 세어 확인한 값. 새 판이 오면 원문으로 먼저 확인할 것 */
 export const CONSULT_MG_EXPECTED = {
@@ -47,8 +57,10 @@ export const CONSULT_MG_EXPECTED = {
   renumbered: { "7-2": "7-3", "7-3": "7-4", "7-4": "7-5" } as Record<string, string>,
   /** 1차 과제 중 과제명으로 못 맞춰 확정 표(CONSULT_R1_CONFIRMED)로 맞춘 것 */
   confirmed: ["8-1", "8-2", "13-1", "13-2", "13-3"],
+  /** 1차 과제 중 나뉜 과제 표(CONSULT_R1_SPLIT)로 지금 카드 여럿에 맞춘 것 */
+  split: ["7-1"],
   /** 1차 과제 중 과제명으로도 확정 표로도 못 맞춘 것(9월 카드 기준으로 남김) */
-  unmatched: ["7-1"],
+  unmatched: [] as string[],
 };
 
 /** 머리 행 낱말(열 순서) — 이행여부까지만. 그 오른쪽(담당자 실명 열)은 보지 않음 */
@@ -141,7 +153,7 @@ export function readConsultSheets(blocks: SourceBlock[]): ConsultRow[] {
   return rows;
 }
 
-export type CardMatch = { no: string; how: "same" | "contains" | "confirmed" } | { no: null; why: "없음" | "둘 이상"; candidates: string[] };
+export type CardMatch = { no: string; how: "same" | "contains" } | { no: null; why: "없음" | "둘 이상"; candidates: string[] };
 
 /**
  * 1차 과제(9월 카드)를 지금 카드(2차 시트 행)와 과제명으로 맞춤 — 같은 지표 안에서 ① 이름이 같으면(글자·숫자만 견줌) 그것, ② 아니면 한 이름이 다른 이름을 품는 것이 하나뿐일 때만.
@@ -161,7 +173,7 @@ export function matchCurrentCard(old: { indicator: number; name: string }, curre
   return { no: null, why: contains.length ? "둘 이상" : "없음", candidates: contains.map((c) => c.no) };
 }
 
-export function parseConsultMg(blocks: SourceBlock[], docId = CONSULT_MG_DOC_ID, confirmedTable: Record<string, string> = CONSULT_R1_CONFIRMED): ParseResult {
+export function parseConsultMg(blocks: SourceBlock[], docId = CONSULT_MG_DOC_ID, confirmedTable: Record<string, string> = CONSULT_R1_CONFIRMED, splitTable: Record<string, string[]> = CONSULT_R1_SPLIT): ParseResult {
   const rows = readConsultSheets(blocks);
   const current = rows.filter((r) => r.round === CURRENT_ROUND);
   const chunks: KnowledgeChunk[] = [];
@@ -171,26 +183,46 @@ export function parseConsultMg(blocks: SourceBlock[], docId = CONSULT_MG_DOC_ID,
   const renumbered: Record<string, string> = {};
   const unmatched: Array<{ no: string; name: string; why: string; candidates: string[] }> = [];
   const confirmed: string[] = [];
+  const split: string[] = [];
   const confirmBad: string[] = [];
   for (const r of rows) {
     const mg = MGMT_INDICATORS.find((x) => x.no === r.indicator);
     if (!mg || compactKey(mg.name) !== compactKey(r.indicatorName)) badIndicator.push(`${r.round}차 ${r.indicatorName} ${r.no}`);
     const period = CONSULT_ROUNDS.find((x) => x.round === r.round)!.period;
-    // 지금 카드 번호: 2차는 시트 번호 그대로, 1차는 과제명으로 맞춘 번호 → 못 맞추면 확정 표 → 그래도 없으면 null(9월 카드 기준)
-    let match = r.round === CURRENT_ROUND ? ({ no: r.no, how: "same" } as CardMatch) : matchCurrentCard(r, current);
-    if (r.round !== CURRENT_ROUND && match.no === null && Object.hasOwn(confirmedTable, r.no)) {
-      const to = confirmedTable[r.no];
-      if (current.some((c) => c.no === to && c.indicator === r.indicator)) {
-        match = { no: to, how: "confirmed" };
-        confirmed.push(r.no);
-      } else confirmBad.push(`${r.no} → ${to}`);
+    // 지금 카드 번호(목록): 2차는 시트 번호 그대로, 1차는 과제명으로 맞춘 번호 → 못 맞추면 확정 표(한 카드) → 나뉜 과제 표(카드 여럿) → 그래도 없으면 빈 목록(9월 카드 기준)
+    const match = r.round === CURRENT_ROUND ? ({ no: r.no, how: "same" } as CardMatch) : matchCurrentCard(r, current);
+    let nos: string[] = match.no === null ? [] : [match.no];
+    let basis: string | null = match.no !== null && match.no !== r.no ? "과제명으로 맞춤" : null;
+    const inSheet = (to: string) => current.some((c) => c.no === to && c.indicator === r.indicator);
+    if (r.round !== CURRENT_ROUND && match.no === null) {
+      if (Object.hasOwn(confirmedTable, r.no)) {
+        const to = confirmedTable[r.no];
+        if (inSheet(to)) {
+          nos = [to];
+          basis = CONFIRMED_BASIS;
+          confirmed.push(r.no);
+        } else confirmBad.push(`${r.no} → ${to}`);
+      } else if (Object.hasOwn(splitTable, r.no)) {
+        const to = splitTable[r.no];
+        if (to.length > 1 && to.every(inSheet)) {
+          nos = [...to];
+          basis = SPLIT_BASIS;
+          split.push(r.no);
+        } else confirmBad.push(`${r.no} → ${to.join("·")}`);
+      }
+      if (!nos.length) {
+        unmatched.push({ no: r.no, name: r.name, why: match.why, candidates: match.candidates });
+        basis = SEPT_BASIS;
+      }
     }
-    if (r.round !== CURRENT_ROUND) {
-      if (match.no === null) unmatched.push({ no: r.no, name: r.name, why: match.why, candidates: match.candidates });
-      else if (match.no !== r.no && match.how !== "confirmed") renumbered[r.no] = match.no;
-    }
-    const noLabel =
-      match.no === null ? `${r.no}(${SEPT_BASIS} 번호 — 지금 카드와 못 맞춤)` : match.no !== r.no ? `${match.no}(9월 카드 ${r.no})` : r.no;
+    if (r.round !== CURRENT_ROUND && match.no !== null && match.no !== r.no) renumbered[r.no] = match.no;
+    const noLabel = !nos.length
+      ? `${r.no}(${SEPT_BASIS} 번호 — 지금 카드와 못 맞춤)`
+      : nos.length > 1
+        ? `${nos.join("·")}(9월 카드 ${r.no} — 지금 카드 ${nos.length}개로 나뉨)`
+        : nos[0] !== r.no
+          ? `${nos[0]}(9월 카드 ${r.no})`
+          : r.no;
     const head = `${r.indicatorName} ${noLabel} ${r.name}`;
     const blocks = [...(r.lead ? [r.lead] : []), ...r.opinions];
     if (r.lead) leads.push(`${r.round}차 ${r.no}`);
@@ -214,11 +246,12 @@ export function parseConsultMg(blocks: SourceBlock[], docId = CONSULT_MG_DOC_ID,
         meta: {
           round: r.round,
           period,
-          task_no: match.no,
+          // 지금 카드 번호·카드 id는 늘 목록(대개 1개, 나뉜 과제는 여럿, 못 맞추면 빈 목록) — 묶음 거름·DB 읽기 정책이 card_ids를 봄
+          task_nos: nos,
           task_no_sheet: r.no,
           task_name: r.name,
-          card_id: match.no === null ? null : `${mg?.group ?? `경영관리${r.indicator}`}/${match.no}`,
-          ...(match.no === null ? { card_basis: SEPT_BASIS } : match.how === "confirmed" ? { card_basis: CONFIRMED_BASIS } : match.no !== r.no ? { card_basis: "과제명으로 맞춤" } : {}),
+          card_ids: nos.map((no) => `${mg?.group ?? `경영관리${r.indicator}`}/${no}`),
+          ...(basis ? { card_basis: basis } : {}),
           ...(match.no !== null && match.how === "contains" ? { name_match: "contains" } : {}),
           opinions: r.opinions.length,
           dept: r.dept,
@@ -242,14 +275,18 @@ export function parseConsultMg(blocks: SourceBlock[], docId = CONSULT_MG_DOC_ID,
     { name: "외부 컨설팅 「▶」 앞 글 없음", level: "warn", ok: leads.length === 0, expected: 0, actual: leads.length ? leads : 0, note: "있으면 그 글은 의견 앞 블록으로 둠" },
     { name: "외부 컨설팅 2차 과제번호가 겹치지 않음", level: "error", ok: new Set(current.map((r) => r.no)).size === current.length, expected: current.length, actual: new Set(current.map((r) => r.no)).size },
     {
-      name: "외부 컨설팅 1차 과제 → 지금 카드 대응(과제명 + 확정 표)",
+      name: "외부 컨설팅 1차 과제 → 지금 카드 대응(과제명 + 확정 표 + 나뉜 과제 표)",
       level: "error",
-      ok: JSON.stringify(renumbered) === JSON.stringify(E.renumbered) && JSON.stringify(confirmed) === JSON.stringify(E.confirmed) && JSON.stringify(unmatched.map((u) => u.no)) === JSON.stringify(E.unmatched),
-      expected: { renumbered: E.renumbered, confirmed: E.confirmed, unmatched: E.unmatched },
-      actual: { renumbered, confirmed, unmatched },
-      note: "못 맞춘 과제는 meta.card_basis = 9월 카드 기준 — 새 판이면 원문으로 확인 뒤 기대값을 고침",
+      ok:
+        JSON.stringify(renumbered) === JSON.stringify(E.renumbered) &&
+        JSON.stringify(confirmed) === JSON.stringify(E.confirmed) &&
+        JSON.stringify(split) === JSON.stringify(E.split) &&
+        JSON.stringify(unmatched.map((u) => u.no)) === JSON.stringify(E.unmatched),
+      expected: { renumbered: E.renumbered, confirmed: E.confirmed, split: E.split, unmatched: E.unmatched },
+      actual: { renumbered, confirmed, split, unmatched },
+      note: "못 맞춘 과제는 meta.card_basis = 9월 카드 기준·card_ids 빈 목록(어느 카드 요청에도 안 들어감) — 새 판이면 원문으로 확인 뒤 기대값을 고침",
     },
-    { name: "외부 컨설팅 1차 확정 표의 대상 카드가 2차 시트(같은 지표)에 있음", level: "error", ok: confirmBad.length === 0, expected: "모두 있음", actual: confirmBad.length ? confirmBad : "모두 있음" },
+    { name: "외부 컨설팅 1차 확정 표·나뉜 과제 표의 대상 카드가 2차 시트(같은 지표)에 있음", level: "error", ok: confirmBad.length === 0, expected: "모두 있음", actual: confirmBad.length ? confirmBad : "모두 있음" },
   ];
-  return { chunks: finalizeChunks(chunks), checks, extras: { renumbered, confirmed, unmatched } };
+  return { chunks: finalizeChunks(chunks), checks, extras: { renumbered, confirmed, split, unmatched } };
 }

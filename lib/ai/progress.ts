@@ -66,11 +66,20 @@ const KNOWLEDGE_SCOPE_DETAIL = "규칙 범위 전부 — 기관 공통(관리계
 const selectedScopeDetail = (picked: number) =>
   `선별 방식 — 공통 규칙 문서(트랙 공통·이 사업의 조항·기준을 정리한 글) + 이 과제에 고른 자료 ${picked}건(지적·실사·2025 보고서 절·사례 원문, 과제 연결 포함) + 나머지 지적·실사·보고서 절·사례는 제목 목록 · 그 밖의 범위(실적 근거 등)는 원문 그대로`;
 
-/** selected = 이 요청에 선별 방식이 실제로 적용될 때 고른 원문 수(서버 getCardSelectPreview — 없으면 통째로 넣기) */
-export function assistProgress(mode: WriterMode | "chat", o: { files: string[]; history?: number; selected?: number }): ProgressSpec {
+/**
+ * 이 카드에 대한 외부 컨설팅 의견(서버 getCardConsultTitles — 그 카드 요청에 실제로 넣는 조각의 제목, lib/ai/context.ts loadCardConsult와 같은 조회). 없으면 줄 없음.
+ * 경영관리 카드에만 있음(2026-11-20 — 이 카드 것만, 공통 지식 화면에는 부서 담당자에게 안 보임)
+ */
+function consultSources(titles: string[] | undefined): ProgressSource[] {
+  return titles?.length ? [{ label: `컨설팅 의견 ${titles.length}건`, detail: `${titles.join(" · ")} — 외부 컨설팅이 이 카드에 남긴 보완 의견(이 카드 것만). 빈 곳을 짚는 점검 관점으로만 씀(사실·숫자 근거 아님)` }] : [];
+}
+
+/** selected = 이 요청에 선별 방식이 실제로 적용될 때 고른 원문 수(서버 getCardSelectPreview — 없으면 통째로 넣기), consult = 이 카드 외부 컨설팅 의견 제목(consultSources) */
+export function assistProgress(mode: WriterMode | "chat", o: { files: string[]; history?: number; selected?: number; consult?: string[] }): ProgressSpec {
   const sources: ProgressSource[] = [{ label: "카드", detail: "편집기에 지금 보이는 카드(부서 담당자는 이달 작성본)" }];
   if (o.files.length) sources.push({ label: `첨부 ${o.files.length}건`, detail: o.files.join(" · ") });
   sources.push({ label: "공통 지식", detail: o.selected === undefined ? KNOWLEDGE_SCOPE_DETAIL : selectedScopeDetail(o.selected) });
+  sources.push(...consultSources(o.consult));
   if (mode === "followup") sources.push({ label: "최종 점검표", detail: "부서에 보낸·확인한 점검 중 점검월이 가장 늦은 1건의 미흡 항목(없으면 AI 없이 안내)" });
   if (mode === "chat") {
     const turns = Math.min(o.history ?? 0, CHAT_LIMITS.turns / 2);
@@ -176,6 +185,8 @@ export function draftProgress(
     added?: string[];
     /** 담당자 요청 글이 있음(plan·revise) */
     request?: boolean;
+    /** 이 카드 외부 컨설팅 의견 제목(consultSources — 경영관리) */
+    consult?: string[];
   },
 ): ProgressSpec {
   const sources: ProgressSource[] = [
@@ -198,6 +209,7 @@ export function draftProgress(
   if (o.mg && (kind === "plan" || kind === "revise"))
     sources.push({ label: "분량 보강", detail: `초안을 쓴 뒤 먼저 저장하고, 분량이 배정의 ${Math.round(MG_FILL.low * 100)}%보다 적거나 나란한 칸이 비거나 초안에 안 쓴 원장 성과·같은 수치 되풀이(반복 수치)가 있으면 보강할 수 있는 블록을 모두 하나씩 다시 쓰고, 아직 배정의 ${Math.round(MG_FILL.low * 100)}%에 못 미치면 한 번 더(최대 ${MG_FILL.rounds}회·${Math.round(MG_FILL.maxSec / 60)}분 안 — 블록 고치기와 같은 근거·검증, 받지 못한 블록은 1차 글 그대로)` });
   sources.push(reportKnowledge(o.selected, " — 평가 근거·전년 절은 그중 이 과제에 맞게 고른 것"));
+  sources.push(...consultSources(o.consult));
   return { title: DRAFT_TITLE[kind], expect: draftExpect(kind, o.mg, Boolean(o.mg && o.biz?.length)), sources };
 }
 

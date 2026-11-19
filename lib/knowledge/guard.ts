@@ -10,13 +10,16 @@ export { SHARED_CHARS_LIMIT };
 /** 크기를 보는 주요사업 평가단위(트랙별 목록은 `TrackSpec.sharedUnits`) */
 export const SHARED_UNITS = BIZ_TRACK.sharedUnits;
 
-/** 이 사업 요청 앞에 붙는 공유 층(①②③) 글자 수 — 과제원장 AI·경평 초안·경평 구성안 중 가장 큰 쪽(경평 초안에는 작성 방법론 자료, 구성안에는 그에 더해 외부 컨설팅 의견이 들어감) */
+/**
+ * 이 사업 요청 앞에 붙는 공유 층(①②③) 글자 수 — 과제원장 AI·경평 초안 중 큰 쪽(경평 초안에는 작성 방법론 자료가 들어감).
+ * 외부 컨설팅 의견은 공유 층이 아니라 카드별 덩이(bundle.ts consult)라 여기에 안 셈 — 카드 한 장 의견은 몇 천 자이고 요청 전체는 요청 때 INPUT_BUDGET이 지킴
+ */
 export function sharedChars(chunks: BundleChunk[], unit: string): number {
   const size = (purpose: BundlePurpose) => {
     const layers = LAYER_ORDER.map((id) => ({ id, refs: chunks.filter((c) => layerOf(c, unit, purpose) === id).map(chunkRef) }));
     return Object.values(layerBlocks(layers)).reduce((n, text) => n + text.length, 0);
   };
-  return Math.max(size("card"), size("report"), size("outline"));
+  return Math.max(size("card"), size("report"));
 }
 
 export interface SharedSizeRow {

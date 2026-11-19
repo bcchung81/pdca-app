@@ -233,3 +233,6 @@ A 보완({{count}}줄) — 올해 점검 결과로 바꾼 것:
 
 <!-- @kb.select.unpicked -->
 {{> _shared/knowledge-mg.md#select.unpicked}}
+
+<!-- @kb.consult -->
+{{> _shared/knowledge-mg.md#consult}}

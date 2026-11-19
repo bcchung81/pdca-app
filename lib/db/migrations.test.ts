@@ -957,7 +957,8 @@ test("공통 지식: 팀 있는 사용자·성과관리팀·관리자가 읽고(
   );
   await as("admin", () => db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('x', 'x', 'x')"));
   if (seed.knowledgeAvailable) {
-    assert.equal(await as("license", () => count("select 1 from public.knowledge_chunks")), rows.chunks.length);
+    // 외부 컨설팅 의견은 카드 단위(20261120090000) — 시험 DB에는 경영관리 카드가 없어 부서 담당자에게는 0건
+    assert.equal(await as("license", () => count("select 1 from public.knowledge_chunks")), rows.chunks.filter((c) => c.unit_type !== "consult_comment").length);
     const visibleLinks = await as("inspector", () => count("select 1 from public.card_knowledge_scope"));
     assert.ok(visibleLinks < rows.scope.length, "대응표는 볼 수 있는 카드 것만");
   }
@@ -2430,7 +2431,7 @@ test("공통 자료 읽기 범위(20261110100000 — 보안 점검 T4 H1): 외�
       assert.equal(await as(u, () => count(docs)), 1, u);
       assert.equal(await as(u, () => count(files)), 1, u);
     }
-    if (seed.knowledgeAvailable) assert.equal(await as("license", () => count("select 1 from public.knowledge_chunks")), rows.chunks.length, "팀 있는 담당자는 조각 전부");
+    if (seed.knowledgeAvailable) assert.equal(await as("license", () => count("select 1 from public.knowledge_chunks")), rows.chunks.filter((c) => c.unit_type !== "consult_comment").length, "팀 있는 담당자는 조각 전부(카드 단위인 외부 컨설팅 의견 말고 — 시험 DB에 경영관리 카드 없음)");
     // 사용 중지 직후 남은 접근 토큰으로도 못 읽음(평가단위·팀 이름 포함)
     await db.query("update public.profiles set active = false where id = $1", [users.inspector]);
     for (const q of [docs, files, "select 1 from public.eval_units", "select 1 from public.teams"]) assert.equal(await as("inspector", () => count(q)), 0, q);
@@ -2439,6 +2440,51 @@ test("공통 자료 읽기 범위(20261110100000 — 보안 점검 T4 H1): 외�
     await db.query("delete from storage.objects where bucket_id = 'knowledge' and name = 't4-doc/t4.pdf'");
     await db.query("delete from public.knowledge_documents where doc_id = 't4-doc'");
     await db.query("delete from auth.users where id = any($1)", [[fresh.outsider, fresh.noTeam]]); // 프로필은 연쇄 삭제
+  }
+});
+
+test("외부 컨설팅 의견 조각(20261120090000): 부서 담당자는 지정된 카드의 의견만(나뉜 과제는 그 카드 중 하나라도), 다른 카드·카드 없는 의견은 직접 조회·검색으로도 못 읽고, 성과관리팀·관리자는 전부 — 다른 유형은 그대로", { skip: NO_SEED_CARDS }, async () => {
+  const insp = await teamId("검사기획팀");
+  const lic = await teamId("자격기획팀");
+  const pick = async (team: number) => (await db.query<{ id: string }>("select id from public.cards where team_id = $1 and status = 'active' order by id limit 1", [team])).rows[0].id;
+  const own = await pick(insp);
+  const other = await pick(lic);
+  await db.query("insert into public.card_assignees (card_id, user_id) values ($1, $2), ($3, $4) on conflict do nothing", [own, users.inspector, other, users.license]);
+  // 시험 조각(합성 — 기관 원문 아님): 이 카드 · 다른 카드 · 나뉜 과제(두 카드) · 카드 없음 · card_ids 칸 없음, 그리고 같은 문서의 다른 유형 하나
+  const ids = { own: [own], other: [other], split: [other, own], none: [], bad: null } as Record<string, string[] | null>;
+  await db.query("insert into public.knowledge_documents (doc_id, title, file_name) values ('consult-t', '시험 컨설팅', 'consult-t.xlsx')");
+  let seq = 0;
+  for (const [k, v] of Object.entries(ids)) {
+    await db.query(
+      "insert into public.knowledge_chunks (chunk_key, doc_id, seq, unit_type, track, title, context_prefix, blocks, text, search_text, meta) values ($1, 'consult-t', $2, 'consult_comment', '경영관리', $1, '', '[]'::jsonb, '시험 의견', '시험 의견', $3::jsonb)",
+      [`consult-t/${k}`, seq++, JSON.stringify(v === null ? { round: 2 } : { round: 2, card_ids: v })],
+    );
+  }
+  await db.query("insert into public.knowledge_chunks (chunk_key, doc_id, seq, unit_type, track, title, context_prefix, blocks, text, search_text, meta) values ('consult-t/plain', 'consult-t', 99, 'qa_pair', '경영관리', 'p', '', '[]'::jsonb, '시험 의견', '시험 의견', '{\"card_ids\": []}'::jsonb)");
+  const seen = (u: keyof typeof users) => as(u, async () => (await db.query<{ k: string }>("select chunk_key as k from public.knowledge_chunks where doc_id = 'consult-t' order by chunk_key")).rows.map((r) => r.k.replace("consult-t/", "")));
+  try {
+    assert.deepEqual(await seen("inspector"), ["own", "plain", "split"], "부서 담당자: 자기 카드·나뉜 과제 의견 + 다른 유형");
+    assert.deepEqual(await seen("license"), ["other", "plain", "split"]);
+    for (const u of ["pmo", "admin"] as const) assert.deepEqual(await seen(u), ["bad", "none", "other", "own", "plain", "split"], u);
+    // 앱이 쓰는 조회 모양(카드 id로 meta 포함 — lib/ai/context.ts loadCardConsult)으로 다른 카드를 직접 물어도 0건
+    const byCard = "select 1 from public.knowledge_chunks where unit_type = 'consult_comment' and meta @> jsonb_build_object('card_ids', jsonb_build_array($1::text))";
+    assert.equal(await as("inspector", () => count(byCard, [other])), 1, "나뉜 과제 조각만(own도 가리킴)");
+    assert.equal(await as("inspector", () => count(`${byCard} and chunk_key = 'consult-t/other'`, [other])), 0);
+    assert.equal(await as("pmo", () => count(byCard, [other])), 2);
+    // 검색(search_knowledge)은 security invoker라 이 정책을 그대로 따름 — PGroonga 파일은 PGlite에서 건너뛰므로 선언을 확인하고, 같은 꼴의 invoker 함수로 결과를 봄
+    assert.match(readFileSync(join(MIGRATIONS, "20260925090400_search.sql"), "utf8"), /function public\.search_knowledge[\s\S]*?security invoker/);
+    await db.exec(`create function public.zz_consult_search(q text) returns setof text language sql stable security invoker set search_path = public as $$ select chunk_key from public.knowledge_chunks where search_text like '%' || q || '%' order by chunk_key $$;
+      grant execute on function public.zz_consult_search(text) to authenticated;`);
+    const found = (u: keyof typeof users) => as(u, async () => (await db.query<{ k: string }>("select k from public.zz_consult_search('시험 의견') as k")).rows.map((r) => r.k.replace("consult-t/", "")));
+    assert.deepEqual(await found("inspector"), ["own", "plain", "split"]);
+    assert.equal((await found("pmo")).length, 6);
+    // 담당 지정을 풀면 그 카드 의견도 안 보임(접근 범위 = 담당자 지정 — 20261001100000)
+    await db.query("delete from public.card_assignees where card_id = $1 and user_id = $2", [own, users.inspector]);
+    assert.deepEqual(await seen("inspector"), ["plain"]);
+  } finally {
+    await db.exec("drop function if exists public.zz_consult_search(text)");
+    await db.query("insert into public.card_assignees (card_id, user_id) values ($1, $2) on conflict do nothing", [own, users.inspector]);
+    await db.query("delete from public.knowledge_documents where doc_id = 'consult-t'"); // 조각은 연쇄 삭제
   }
 });
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { finishCardMaterialUpload, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
+import { getCardConsultTitles } from "../../app/(app)/cards/actions";
 import { getReportSelectPreview, runReportSectionDraft } from "../../app/(app)/reports/cards/actions";
 import { runReportOutline } from "../../app/(app)/reports/cards/outline-actions";
 import { type DraftRunKind, draftExpect, draftProgress, rangeText, remoteDraftProgress } from "../../lib/ai/progress.ts";
@@ -237,20 +238,23 @@ export function DraftCompose(props: {
   const [sentRequest, setSentRequest] = useState(false);
   // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(서버가 요청 때와 같은 묶음으로 셈, null이면 통째로 넣기). 요청을 보낼 수 없으면 안 물음
   const [selected, setSelected] = useState<number | null>(null);
+  // 진행 줄의 「컨설팅 의견」: 이 카드 요청에 넣는 외부 컨설팅 의견 제목(경영관리 카드에만)
+  const [consult, setConsult] = useState<string[]>([]);
   useEffect(() => {
     if (!props.canWrite) return;
     void getReportSelectPreview(props.uid).then(setSelected);
-  }, [props.uid, props.canWrite]);
+    if (props.mg) void getCardConsultTitles(props.uid).then(setConsult);
+  }, [props.uid, props.canWrite, props.mg]);
   const picked = selected ?? undefined;
   const spec =
     running &&
     draftProgress(
       running.kind,
       running.kind === "outline" || running.kind === "draft"
-        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, biz: bizNo(sel.biz.map((b) => b.id)), selected: picked, frame: running.own && running.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
+        ? { files: [...sel.card, ...sel.report].map((f) => f.fileName), prior: priorNames(sel.priorKeys), lens: props.lensCount, inspection: props.inspection, mg: props.mg, biz: bizNo(sel.biz.map((b) => b.id)), selected: picked, consult, frame: running.own && running.kind === "outline" && frame ? { ...(frame.pattern ? { pattern: patternOf(frame.pattern)?.name ?? frame.pattern } : {}), ...(frame.example ? { example: frame.example.title } : {}) } : undefined }
         : running.kind === "plan" || running.kind === "revise"
-          ? { files: planFiles, added: addedFiles, request: running.own && sentRequest, prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked }
-          : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, biz: bizNo(src?.biz ?? []), selected: picked, frame: running.own ? undefined : (props.outlineRun.frame ?? undefined) },
+          ? { files: planFiles, added: addedFiles, request: running.own && sentRequest, prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, selected: picked, consult }
+          : { files: [...namesOf(props.cardFiles, src?.card ?? []), ...namesOf(props.reportFiles ?? [], src?.report ?? [])], prior: priorNames(src ? src.prior : props.prior.auto), lens: props.lensCount, inspection: props.inspection, mg: props.mg, biz: bizNo(src?.biz ?? []), selected: picked, consult, frame: running.own ? undefined : (props.outlineRun.frame ?? undefined) },
     );
 
   // 스크롤(과제원장 AI 작성지원과 같음): 요청을 보내면 맨 아래(말풍선 + 진행 줄), 끝나 새 차례가 오면 마지막 답의 첫머리, 창을 열면 마지막 답의 첫머리.

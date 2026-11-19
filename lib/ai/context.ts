@@ -5,6 +5,7 @@ import { BUNDLE_COLS, type BundleChunk, type BundlePurpose, type KnowledgeBundle
 import { cachedChunks, storeChunks } from "../knowledge/chunk-cache.ts";
 import { MGMT_COMMON_NARRATIVE_KEYS } from "../knowledge/common-narrative.ts";
 import { digestChunks, digestTarget } from "../knowledge/rules-digest.ts";
+import { CONSULT_UNIT_TYPE } from "../knowledge/usage.ts";
 import { whereWithNote } from "../knowledge/revision-note.ts";
 import { type CardSelection, SELECT_FEATURES, SELECT_MIN_KEYS, type SelectFeature, applySelection, digestCovers, digestFresh, digestScopeFresh, rolesOf, selectOn, selectTrackOn } from "../knowledge/select.ts";
 import { type BizLedgerCard, bizTaskId } from "../inspections/biz-links.ts";
@@ -25,7 +26,9 @@ const PER_CHUNK = 2_500;
  * 이 트랙 요청의 공통 지식 조각 전부(트랙을 안 정하면 주요사업). "all"은 모든 트랙 — 올릴 때 크기 보호처럼 트랙별로 따로 재야 하는 곳이 씀(AI 요청에는 안 씀:
  * 요청에 붙는 조각은 평가단위의 트랙으로 걸러짐, layerOf). 캐시 5분(lib/knowledge/chunk-cache.ts — 공통 지식은 구성원(성과관리팀·관리자, 팀이 지정된 활성 사용자 — DB private.is_member())만 읽고
  * 구성원은 모두 같은 것을 읽음. 이 함수를 부르는 곳은 카드를 읽을 수 있는 AI·경평 경로·관리자 화면·서비스 키 스크립트뿐이라 구성원이고, 빈 결과는 캐시에 안 들어감),
- * opts.fresh는 캐시를 건너뜀: 올리기 크기 보호는 다른 서버 인스턴스가 방금 올린 문서까지 재야 함(개선 계획 P2-2)
+ * opts.fresh는 캐시를 건너뜀: 올리기 크기 보호는 다른 서버 인스턴스가 방금 올린 문서까지 재야 함(개선 계획 P2-2).
+ * 외부 컨설팅 의견(consult_comment)은 읽지 않음 — DB가 카드 단위로 읽게 해(20261120090000) 사람마다 결과가 달라 공유 캐시에 두면 안 되고, 공유 층에도 안 들어감.
+ * 카드 요청은 loadCardConsult로 그 카드 것만 따로 읽음
  */
 export async function loadBundleChunks(supabase: SupabaseClient, track: TrackSpec | "all" = DEFAULT_TRACK, opts: { fresh?: boolean } = {}): Promise<BundleChunk[]> {
   const key: TrackId | "all" = track === "all" ? "all" : track.id;
@@ -33,7 +36,7 @@ export async function loadBundleChunks(supabase: SupabaseClient, track: TrackSpe
   if (hit) return hit;
   const rows: BundleChunk[] = [];
   for (let from = 0; ; from += 1000) {
-    const base = supabase.from("knowledge_chunks").select(BUNDLE_COLS);
+    const base = supabase.from("knowledge_chunks").select(BUNDLE_COLS).neq("unit_type", CONSULT_UNIT_TYPE);
     const { data, error } = await (track === "all" ? base : base.in("track", [...track.knowledgeTracks])).order("chunk_key").range(from, from + 999);
     if (error) throw new Error(`공통 지식을 읽지 못했습니다(${error.message})`);
     rows.push(...((data ?? []) as BundleChunk[]));
@@ -41,6 +44,16 @@ export async function loadBundleChunks(supabase: SupabaseClient, track: TrackSpe
   }
   storeChunks(key, rows);
   return rows;
+}
+
+/**
+ * 이 카드에 대한 외부 컨설팅 의견 조각(meta.card_ids에 이 카드 id) — 부르는 쪽 권한으로 매번 읽고 캐시하지 않음(로그인 사용자면 RLS가 성과관리팀 이상 또는 이 카드를
+ * 읽을 수 있는 사람만 돌려줌 — private.can_read_consult). 묶음은 buildBundle이 card_ids로 한 번 더 거름. 의견은 경영관리 카드에만 있음(주요사업 카드는 0행)
+ */
+export async function loadCardConsult(supabase: SupabaseClient, cardId: string): Promise<BundleChunk[]> {
+  const { data, error } = await supabase.from("knowledge_chunks").select(BUNDLE_COLS).eq("unit_type", CONSULT_UNIT_TYPE).contains("meta", { card_ids: [cardId] }).order("chunk_key");
+  if (error) throw new Error(`외부 컨설팅 의견을 읽지 못했습니다(${error.message})`);
+  return (data ?? []) as BundleChunk[];
 }
 
 /**
@@ -54,12 +67,14 @@ export async function loadCardBundle(
   purpose: BundlePurpose = "card",
   feature?: SelectFeature,
 ): Promise<KnowledgeBundle> {
-  const [chunks, linked, { data: task }] = await Promise.all([
+  const [chunks, consult, linked, { data: task }] = await Promise.all([
     loadBundleChunks(supabase, trackSpecOfUnit(card.evalUnitId)),
+    loadCardConsult(supabase, card.id),
     loadScopeKeys(supabase, card.id),
     supabase.from("task_map").select("plan_task_key").eq("card_id", card.id).maybeSingle(),
   ]);
-  const b = buildBundle(chunks, card, linked, task?.plan_task_key ?? null, purpose);
+  // 이 카드에 대한 외부 컨설팅 의견은 공유 조각(캐시)과 따로 읽어 더함 — buildBundle이 카드별 덩이(consult)로 둠
+  const b = buildBundle([...chunks, ...consult], card, linked, task?.plan_task_key ?? null, purpose);
   const sel = await loadCardSelection(supabase, card, purpose, { chunks }, feature);
   return sel ? applySelection(b, sel, rolesOf(chunks)) : b;
 }

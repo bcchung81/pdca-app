@@ -82,3 +82,6 @@
 
 <!-- @kb.select.unpicked -->
 {{> _shared/knowledge-mg.md#select.unpicked}}
+
+<!-- @kb.consult -->
+{{> _shared/knowledge-mg.md#consult}}

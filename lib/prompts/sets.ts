@@ -15,18 +15,22 @@ import { MG_DRAFT_PROMPT_SPEC, mgDraftOutSchema } from "../reports/mg-draft.ts";
 import { MG_OUTLINE_PROMPT_SPEC, mgOutlineOutSchema } from "../reports/mg-outline.ts";
 import { UNIT_AI_PROMPT_SPEC, unitAiOutSchema } from "../reports/unit-parts-ai.ts";
 import { RULES_DIGEST_PROMPT_SPEC, rulesDigestSchema } from "../knowledge/rules-digest.ts";
+import { KB_MG_SECTIONS } from "../knowledge/kb-sections.ts";
 import { cachedPrompt, readPromptSet } from "./load.ts";
 import type { PromptSet, PromptSpec } from "./template.ts";
+
+/** 경영관리 과제원장 AI 폴더 = 주요사업 폴더와 같은 절 + 이 카드에 대한 외부 컨설팅 의견 머리(kb.consult — 경영관리 카드에만 있음, 2026-11-20) */
+const withMgKb = (spec: PromptSpec): PromptSpec => ({ ...spec, request: [...spec.request, ...KB_MG_SECTIONS] });
 
 /** 기능 폴더 이름 → 필요한 절(테스트·README 표와 같은 목록) */
 export const PROMPT_FEATURES: Record<string, PromptSpec> = {
   "card-assist": ASSIST_PROMPT_SPEC,
   "card-chat": CHAT_PROMPT_SPEC,
   "card-comment": COMMENT_PROMPT_SPEC,
-  // 경영관리 트랙(지침 08) — 주요사업 폴더와 같은 절 구성, 글만 경영관리용(주요사업 프롬프트·판은 안 건드림)
-  "card-assist-mg": ASSIST_PROMPT_SPEC,
-  "card-chat-mg": CHAT_PROMPT_SPEC,
-  "card-comment-mg": COMMENT_PROMPT_SPEC,
+  // 경영관리 트랙(지침 08) — 주요사업 폴더와 같은 절 구성(+ kb.consult), 글만 경영관리용(주요사업 프롬프트·판은 안 건드림)
+  "card-assist-mg": withMgKb(ASSIST_PROMPT_SPEC),
+  "card-chat-mg": withMgKb(CHAT_PROMPT_SPEC),
+  "card-comment-mg": withMgKb(COMMENT_PROMPT_SPEC),
   inspection: INSPECT_PROMPT_SPEC,
   "inspection-mg": INSPECT_MG_PROMPT_SPEC,
   "report-draft": REPORT_PROMPT_SPEC,

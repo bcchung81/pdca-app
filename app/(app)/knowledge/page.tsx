@@ -15,6 +15,7 @@ import { UNIT_LABEL } from "../../../lib/knowledge/labels.ts";
 import { filterMine, linkedChunkKeys, type ScopeLink } from "../../../lib/knowledge/my-scope.ts";
 import { snippetText } from "../../../lib/knowledge/rich-text.ts";
 import { buildSearchQuery } from "../../../lib/knowledge/search-query.ts";
+import { CONSULT_UNIT_TYPE } from "../../../lib/knowledge/usage.ts";
 import { withReturn } from "../../../lib/nav/return-to.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 
@@ -59,19 +60,22 @@ interface LinkedCard {
 /**
  * 유형·지표 집계용 조각 목록 — 한 번에 1,000행까지만 돌아오므로(PostgREST 기본 한도) 모자랄 때까지 이어서 읽음.
  * 화면을 열 때마다 전 조각(약 5천 행)을 훑지 않게 공통 지식 조각 캐시(5분, 올리기·지우기 때 비움 — lib/knowledge/chunk-cache.ts)에 둠(개선 계획 P2-7).
- * 구성원(isKnowledgeMember)일 때만 부름 — 캐시는 서버 인스턴스의 모든 요청이 함께 써서, 비구성원의 RLS 빈 결과가 들어가면 남의 집계까지 비었음(2026-11-10 T3 리뷰 T4-R1)
+ * 구성원(isKnowledgeMember)일 때만 부름 — 캐시는 서버 인스턴스의 모든 요청이 함께 써서, 비구성원의 RLS 빈 결과가 들어가면 남의 집계까지 비었음(2026-11-10 T3 리뷰 T4-R1).
+ * 외부 컨설팅 의견은 DB가 카드 단위로 읽게 해(20261120090000) 부서 담당자마다 결과가 달라지므로, 부서 담당자 쪽 집계는 그 유형을 빼고 읽어 따로 캐시함(성과관리팀 이상은 전부 — 모두 같음)
  */
-async function facetRows(supabase: Awaited<ReturnType<typeof createClient>>): Promise<FacetRow[]> {
-  const hit = cachedChunks<FacetRow>("facets");
+async function facetRows(supabase: Awaited<ReturnType<typeof createClient>>, staff: boolean): Promise<FacetRow[]> {
+  const key = staff ? "facets" : "facets-member";
+  const hit = cachedChunks<FacetRow>(key);
   if (hit) return hit;
   const rows: FacetRow[] = [];
   for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from("knowledge_chunks").select("chunk_key, seq, doc_id, unit_type, business").order("chunk_key").range(from, from + 999);
+    const base = supabase.from("knowledge_chunks").select("chunk_key, seq, doc_id, unit_type, business");
+    const { data, error } = await (staff ? base : base.neq("unit_type", CONSULT_UNIT_TYPE)).order("chunk_key").range(from, from + 999);
     if (error) return rows; // 실패한 집계는 캐시에 두지 않음
     rows.push(...(data ?? []));
     if ((data?.length ?? 0) < 1000) break;
   }
-  storeChunks("facets", rows);
+  storeChunks(key, rows);
   return rows;
 }
 
@@ -98,7 +102,9 @@ async function myScopeKeys(supabase: Awaited<ReturnType<typeof createClient>>): 
 
 /**
  * 공통 지식(성과관리팀·관리자와 팀이 지정된 부서 담당자 — DB private.is_member(), 부서 담당자는 읽기 전용, 성과관리팀 연결 링크만 다름): 적재한 경영평가 문서 조각을 검색·열람 — AI 작성지원·점검이 쓰는 근거와 같은 자료.
- * 팀이 없는 부서 담당자는 RLS가 0행을 돌려주므로 조회·캐시 없이 안내만(빈 화면 대신 이유를 알림)
+ * 팀이 없는 부서 담당자는 RLS가 0행을 돌려주므로 조회·캐시 없이 안내만(빈 화면 대신 이유를 알림).
+ * 외부 컨설팅 의견(consult_comment)은 부서 담당자에게 목록·검색·조각 보기 어디에도 안 보임 — 자기 카드 의견도 그 카드 화면(AI 작성지원·경평 초안)에서만(2026-11-20 사용자 결정).
+ * DB도 다른 카드 의견은 안 돌려줌(20261120090000), 여기서는 자기 카드 의견까지 뺌. 성과관리팀 이상은 전부 봄
  */
 export default async function KnowledgePage({ searchParams }: PageProps<"/knowledge">) {
   const me = await requireUser("/knowledge");
@@ -123,11 +129,13 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
   const showAll = one(sp.all) === "1";
   const mine = !staff && !showAll;
 
-  const [{ data: docs }, facets, myKeys] = await Promise.all([
-    supabase.from("knowledge_documents").select("doc_id, title, edition, published, chunk_count, status").order("published", { ascending: false }),
-    facetRows(supabase),
+  const [{ data: allDocs }, facets, myKeys] = await Promise.all([
+    supabase.from("knowledge_documents").select("doc_id, title, edition, published, chunk_count, status, unit_counts").order("published", { ascending: false }),
+    facetRows(supabase, staff),
     staff ? Promise.resolve(new Set<string>()) : myScopeKeys(supabase),
   ]);
+  // 문서 선택지: 부서 담당자에게는 외부 컨설팅 의견 문서를 안 보임(조각 유형 건수 unit_counts로 앎)
+  const docs = staff ? allDocs : (allDocs ?? []).filter((d) => !(d.unit_counts as Record<string, number> | null)?.[CONSULT_UNIT_TYPE]);
   const myCount = filterMine(facets, myKeys, {}).length;
   const inScope = (f: FacetRow) => (!doc || f.doc_id === doc) && (!biz || f.business === biz) && (!mine || myKeys.has(f.chunk_key));
   const typeCounts = new Map<string, number>();
@@ -144,7 +152,10 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
       loose = Boolean(data?.length);
     }
     const keys = ((data as Array<{ chunk_key: string }> | null) ?? []).map((r) => r.chunk_key);
-    const rows = keys.length ? ((await supabase.from("knowledge_chunks").select(COLS).in("chunk_key", keys)).data ?? []) : [];
+    // 부서 담당자에게는 외부 컨설팅 의견을 뺌(자기 카드 의견도 — 카드 화면에서만)
+    let byKey = supabase.from("knowledge_chunks").select(COLS).in("chunk_key", keys);
+    if (!staff) byKey = byKey.neq("unit_type", CONSULT_UNIT_TYPE);
+    const rows = keys.length ? ((await byKey).data ?? []) : [];
     results = keys.map((k) => rows.find((r) => r.chunk_key === k)).filter((r) => r && (!mine || myKeys.has(r.chunk_key))) as ChunkListRow[];
     total = results.length;
   } else if (mine) {
@@ -156,6 +167,7 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
     results = keys.map((k) => rows.find((r) => r.chunk_key === k)).filter(Boolean) as ChunkListRow[];
   } else {
     let query = supabase.from("knowledge_chunks").select(COLS, { count: "exact" });
+    if (!staff) query = query.neq("unit_type", CONSULT_UNIT_TYPE);
     if (doc) query = query.eq("doc_id", doc);
     if (type) query = query.eq("unit_type", type);
     if (biz) query = query.eq("business", biz);
@@ -163,9 +175,11 @@ export default async function KnowledgePage({ searchParams }: PageProps<"/knowle
     results = data ?? [];
     total = count ?? 0;
   }
+  let peekQuery = supabase.from("knowledge_chunks").select(`${COLS}, dept_resp, dept_coop, eval_item, measure, q_type, meta`).eq("chunk_key", chunkKey);
+  if (!staff) peekQuery = peekQuery.neq("unit_type", CONSULT_UNIT_TYPE);
   const [{ data: peek }, { data: linked }] = chunkKey
     ? await Promise.all([
-        supabase.from("knowledge_chunks").select(`${COLS}, dept_resp, dept_coop, eval_item, measure, q_type, meta`).eq("chunk_key", chunkKey).maybeSingle(),
+        peekQuery.maybeSingle(),
         supabase.from("card_knowledge_scope").select("status, score, card:cards!inner(uid, task_no, title)").eq("chunk_key", chunkKey).eq("card.status", "active").neq("status", "rejected"),
       ])
     : [{ data: null }, { data: null }];

@@ -9,7 +9,7 @@ import { CONSULT_NOTE, whereWithNote } from "../revision-note.ts";
 import type { SourceBlock } from "../source.ts";
 import { loadKordocChunks } from "../source.ts";
 import { parseHtmlTables } from "../table.ts";
-import { CONFIRMED_BASIS, CONSULT_MG_EXPECTED, CONSULT_R1_CONFIRMED, SEPT_BASIS, matchCurrentCard, parseConsultMg, readConsultSheets } from "./consult-mg.ts";
+import { CONFIRMED_BASIS, CONSULT_MG_EXPECTED, CONSULT_R1_CONFIRMED, CONSULT_R1_SPLIT, SEPT_BASIS, SPLIT_BASIS, matchCurrentCard, parseConsultMg, readConsultSheets } from "./consult-mg.ts";
 
 const block = (text: string, page = 1): SourceBlock => ({ id: "c", type: "text", text, page, breadcrumb: [] });
 /** 담당자 칸에 넣는 가상 이름 — 조각 어디에도 나오면 안 됨 */
@@ -71,7 +71,7 @@ test("1차 과제 대응: 같은 이름 → 그 번호, 한 이름이 다른 이
   assert.equal(matchCurrentCard({ indicator: 1, name: "가상 소상공인 지원" }, cur).no, null, "다른 지표 카드와는 맞추지 않음");
 });
 
-test("조각: 카드 1장 × 차수 1개, 경영관리 지표 단위, 머리에 차수·과제번호(지금 번호, 바뀌었으면 9월 번호도)·과제명, 의견 1개 = 인용 단위 1개", () => {
+test("조각: 카드 1장 × 차수 1개, 경영관리 지표 단위, 머리에 차수·과제번호(지금 번호, 바뀌었으면 9월 번호도)·과제명, 의견 1개 = 인용 단위 1개, 지금 카드는 늘 목록(card_ids)", () => {
   const { chunks } = parseConsultMg(SAMPLE);
   assert.equal(chunks.length, 11);
   const by = (k: string) => chunks.find((c) => c.chunk_key === `consult26-mg/${k}`)!;
@@ -81,47 +81,54 @@ test("조각: 카드 1장 × 차수 1개, 경영관리 지표 단위, 머리에 
   assert.equal(now.business, "MG-1");
   assert.equal(now.context_prefix, "외부 컨설팅 2차('26.11.11~12) · 전략기획 1-1 가상 전략 과제");
   assert.deepEqual(now.blocks, ["▶ (완료 실적) 이사회 의결 3건", "▶ (지표) 산식 정리"]);
-  assert.deepEqual(now.meta, { round: 2, period: "'26.11.11~12", task_no: "1-1", task_no_sheet: "1-1", task_name: "가상 전략 과제", card_id: "경영관리1/1-1", opinions: 2, dept: ["가본부"], team: ["가팀"], page_basis: "xlsx-sheet" });
+  assert.deepEqual(now.meta, { round: 2, period: "'26.11.11~12", task_nos: ["1-1"], task_no_sheet: "1-1", task_name: "가상 전략 과제", card_ids: ["경영관리1/1-1"], opinions: 2, dept: ["가본부"], team: ["가팀"], page_basis: "xlsx-sheet" });
   const moved = by("r1/7-2");
   assert.equal(moved.context_prefix, "외부 컨설팅 1차('26.9.7~8) · 상생·협력 및 지역발전 7-3(9월 카드 7-2) 가상 소상공인 지원");
-  assert.equal(moved.meta.card_id, "경영관리7/7-3");
+  assert.deepEqual(moved.meta.card_ids, ["경영관리7/7-3"]);
   assert.equal(by("r1/7-3").meta.name_match, "contains");
   assert.equal(by("r1/7-3").meta.status_cell, "1");
-  const lost = by("r1/7-1");
-  assert.equal(lost.meta.card_id, null);
-  assert.equal(lost.meta.card_basis, SEPT_BASIS);
-  assert.match(lost.context_prefix, /7-1\(9월 카드 기준 번호 — 지금 카드와 못 맞춤\)/);
-  assert.equal(by("r1/8-1").meta.task_no, "8-1", "기본 확정 표(8-1 → 8-1)로 맞춤");
+  // 9월 7-1은 지금 7-1·7-2로 나뉨 — 두 카드 모두의 의견(기본 나뉜 과제 표, 2026-11-20)
+  const split = by("r1/7-1");
+  assert.deepEqual(split.meta.card_ids, ["경영관리7/7-1", "경영관리7/7-2"]);
+  assert.deepEqual(split.meta.task_nos, ["7-1", "7-2"]);
+  assert.equal(split.meta.card_basis, SPLIT_BASIS);
+  assert.equal(split.context_prefix, "외부 컨설팅 1차('26.9.7~8) · 상생·협력 및 지역발전 7-1·7-2(9월 카드 7-1 — 지금 카드 2개로 나뉨) 가상 상생 및 공정 과제");
+  assert.deepEqual(by("r1/8-1").meta.task_nos, ["8-1"], "기본 확정 표(8-1 → 8-1)로 맞춤");
   for (const p of PEOPLE) assert.ok(!JSON.stringify(chunks).includes(p), "담당자 이름이 조각에 없음");
 });
 
-test("확정 표: 과제명으로 못 맞춘 1차 과제만 표대로 지금 카드에 맞추고(이름으로 맞춘 것은 표보다 앞), 표에 없으면 9월 카드 기준, 대상 카드가 없으면 검산 실패", () => {
+test("확정 표·나뉜 과제 표: 과제명으로 못 맞춘 1차 과제만 표대로 지금 카드(들)에 맞추고(이름으로 맞춘 것은 표보다 앞), 표에 없으면 9월 카드 기준·빈 목록, 대상 카드가 없으면 검산 실패", () => {
   assert.deepEqual(CONSULT_R1_CONFIRMED, { "8-1": "8-1", "8-2": "8-2", "13-1": "13-1", "13-2": "13-2", "13-3": "13-3" }, "사용자 확정(2026-11-19) — 7-1은 없음");
+  assert.deepEqual(CONSULT_R1_SPLIT, { "7-1": ["7-1", "7-2"] }, "사용자 확정(2026-11-20) — 9월 7-1은 지금 7-1·7-2 둘 다");
   const on = parseConsultMg(SAMPLE, "consult26-mg", { "8-1": "8-1", "7-2": "7-1" });
   const by = (k: string) => on.chunks.find((c) => c.chunk_key === `consult26-mg/${k}`)!;
-  assert.equal(by("r1/8-1").meta.card_id, "경영관리8/8-1");
+  assert.deepEqual(by("r1/8-1").meta.card_ids, ["경영관리8/8-1"]);
   assert.equal(by("r1/8-1").meta.card_basis, CONFIRMED_BASIS);
   assert.equal(by("r1/8-1").context_prefix, "외부 컨설팅 1차('26.9.7~8) · 재무예산관리 8-1 가상 재무 안정 유지");
-  assert.equal(by("r1/7-2").meta.task_no, "7-3", "이름으로 맞춘 것은 표를 안 봄");
-  assert.equal(by("r1/7-1").meta.card_basis, SEPT_BASIS);
-  assert.deepEqual(on.extras, { renumbered: { "7-2": "7-3", "7-3": "7-4" }, confirmed: ["8-1"], unmatched: [{ no: "7-1", name: "가상 상생 및 공정 과제", why: "없음", candidates: [] }] });
-  const off = parseConsultMg(SAMPLE, "consult26-mg", {});
-  assert.equal(off.chunks.find((c) => c.chunk_key === "consult26-mg/r1/8-1")!.meta.card_basis, SEPT_BASIS);
+  assert.deepEqual(by("r1/7-2").meta.task_nos, ["7-3"], "이름으로 맞춘 것은 표를 안 봄");
+  assert.equal(by("r1/7-1").meta.card_basis, SPLIT_BASIS);
+  assert.deepEqual(on.extras, { renumbered: { "7-2": "7-3", "7-3": "7-4" }, confirmed: ["8-1"], split: ["7-1"], unmatched: [] });
+  // 두 표가 모두 비면 못 맞춘 과제는 9월 카드 기준·빈 목록(어느 카드 요청에도 안 들어감 — 범위 검산이 막음)
+  const off = parseConsultMg(SAMPLE, "consult26-mg", {}, {});
+  const offBy = (k: string) => off.chunks.find((c) => c.chunk_key === `consult26-mg/${k}`)!;
+  assert.equal(offBy("r1/8-1").meta.card_basis, SEPT_BASIS);
+  assert.deepEqual(offBy("r1/7-1").meta.card_ids, []);
+  assert.match(offBy("r1/7-1").context_prefix, /7-1\(9월 카드 기준 번호 — 지금 카드와 못 맞춤\)/);
+  assert.deepEqual((off.extras?.unmatched as Array<{ no: string }>).map((u) => u.no), ["7-1", "8-1"]);
+  const name = "외부 컨설팅 1차 확정 표·나뉜 과제 표의 대상 카드가 2차 시트(같은 지표)에 있음";
   const bad = parseConsultMg(SAMPLE, "consult26-mg", { "8-1": "8-9" });
-  assert.equal(bad.checks.find((c) => c.name === "외부 컨설팅 1차 확정 표의 대상 카드가 2차 시트(같은 지표)에 있음")!.ok, false);
-  assert.equal(bad.chunks.find((c) => c.chunk_key === "consult26-mg/r1/8-1")!.meta.card_id, null);
+  assert.equal(bad.checks.find((c) => c.name === name)!.ok, false);
+  assert.deepEqual(bad.chunks.find((c) => c.chunk_key === "consult26-mg/r1/8-1")!.meta.card_ids, []);
+  const badSplit = parseConsultMg(SAMPLE, "consult26-mg", CONSULT_R1_CONFIRMED, { "7-1": ["7-1", "7-9"] });
+  assert.equal(badSplit.checks.find((c) => c.name === name)!.ok, false, "나뉜 카드 하나라도 없으면 실패");
+  assert.deepEqual(badSplit.chunks.find((c) => c.chunk_key === "consult26-mg/r1/7-1")!.meta.card_ids, []);
 });
 
-test("요청 때 위치 글에 「근거 아님」 표지가 붙고, 층은 과제원장 AI·구성안의 그 지표 ③ — 경평 집필(report)·다른 지표·주요사업에는 없음", () => {
+test("요청 때 위치 글에 「근거 아님」 표지가 붙고, 공유 층(①②③)에는 어느 목적·지표에도 안 들어감 — 그 카드의 덩이로만(bundle.ts consult, consult-paths.test.ts)", () => {
   const c = parseConsultMg(SAMPLE).chunks[0];
   assert.equal(whereWithNote(c), `외부 컨설팅 1차('26.9.7~8) · 전략기획 1-1 가상 전략 과제 · ※ ${CONSULT_NOTE}`);
   assert.match(CONSULT_NOTE, /사실·숫자의 근거가 아님/);
-  assert.equal(layerOf(c, "MG-1", "card"), "business");
-  assert.equal(layerOf(c, "MG-1", "outline"), "business");
-  assert.equal(layerOf(c, "MG-1", "report"), null);
-  assert.equal(layerOf(c, "MG-2", "card"), null);
-  for (const p of ["card", "report", "outline"] as const) assert.equal(layerOf(c, "BZ-1", p), null, p);
-  assert.equal(layerOf({ ...c, meta: { ...c.meta, search_only: true } }, "MG-1", "card"), null, "검색 전용이 우선");
+  for (const unit of ["MG-1", "MG-2", "BZ-1"]) for (const p of ["card", "report"] as const) assert.equal(layerOf(c, unit, p), null, `${unit} ${p}`);
 });
 
 test("검산: 기대값과 다르면 실패로 남음(가상 자료는 카드·의견 수가 실제와 달라 실패)", () => {
@@ -150,6 +157,10 @@ test("실제 파일: 검산 전부 통과(카드 44·47, 의견 108·266, 1차 �
   assert.equal(chunks.filter((c) => c.meta.round === 1).length, CONSULT_MG_EXPECTED.cards[1]);
   assert.equal(chunks.filter((c) => c.meta.round === 2).length, CONSULT_MG_EXPECTED.cards[2]);
   assert.ok(chunks.every((c) => c.track === "경영관리" && /^MG-(?:[1-9]|1[0-4])$/.test(String(c.business))));
+  // 모든 조각이 지금 카드를 1개 이상 가리키고(9월 7-1만 7-1·7-2 둘), 카드 id는 그 지표 묶음
+  const cardIds = (c: (typeof chunks)[number]) => c.meta.card_ids as string[];
+  assert.ok(chunks.every((c) => Array.isArray(cardIds(c)) && cardIds(c).length > 0 && cardIds(c).every((id) => id.startsWith(`경영관리${String(c.business).slice(3)}/`))));
+  assert.deepEqual(chunks.filter((c) => cardIds(c).length > 1).map((c) => [c.chunk_key, cardIds(c)]), [["consult26-mg/r1/7-1", ["경영관리7/7-1", "경영관리7/7-2"]]]);
   // 담당자 칸(관리자·작성자 머리 아래) 글은 비교에만 쓰고 시험·출력 어디에도 적지 않음
   const people = new Set<string>();
   for (const b of blocks)

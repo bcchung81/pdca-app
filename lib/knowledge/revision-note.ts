@@ -99,8 +99,8 @@ function planNote(c: NoteInput): string | null {
   return c.unit_type === "corrective_action" ? PLAN_NOTE : null;
 }
 
-/** 외부 컨설팅 의견(unit_type consult_comment, 2026-11-19 A3) — 카드 보완 관점이지 사실·숫자 근거가 아님. 같은 지표 다른 카드 의견도 함께 보이므로 머리의 과제번호로 가림 */
-export const CONSULT_NOTE = "외부 컨설팅 의견 — 카드 보완 관점이며 사실·숫자의 근거가 아님(의견 속 수치는 컨설턴트가 본 카드 값이므로 근거로 인용하지 않음, 머리의 과제번호가 이 카드일 때만 이 카드에 대한 의견)";
+/** 외부 컨설팅 의견(unit_type consult_comment, 2026-11-19 A3) — 카드 보완 관점이지 사실·숫자 근거가 아님. 2026-11-20부터 그 카드 요청에만 들어감(bundle.ts consult) */
+export const CONSULT_NOTE = "외부 컨설팅 의견(이 카드) — 카드 보완 관점이며 사실·숫자의 근거가 아님(의견 속 수치는 컨설턴트가 본 카드 값이므로 근거로 인용하지 않음)";
 function consultNote(c: NoteInput): string | null {
   return c.unit_type === CONSULT_UNIT_TYPE ? CONSULT_NOTE : null;
 }

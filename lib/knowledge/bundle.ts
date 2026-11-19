@@ -2,6 +2,7 @@
 // 검색 상위 N건 대신 규칙 범위 전부를 넣습니다: 기관 공통 + 공통지표(BZ-4)·사업 미지정 + 이 사업 공통 + 과제 고유(관리계획 과제 목록의 이 과제 행).
 // 과제 대응표(card_knowledge_scope)·닮은 정도는 거르는 데 쓰지 않고 카드별 목록표(「이 과제 해당」·「닮은 순」)로만 알립니다.
 // 공유 층(①②는 모든 과제, ③은 같은 사업)은 카드와 상관없는 고정 순서라 같은 사업 카드끼리 앞부분이 바이트까지 같아 캐시를 나눠 씁니다.
+// 외부 컨설팅 의견(consult_comment)은 카드마다 다르므로 공유 층에 넣지 않고 그 카드의 덩이(consult — 요청 글의 목록표 뒤, listText)로만 넣습니다(2026-11-20 사용자 결정).
 
 import { type KnowledgeRef, knowledgeBlock } from "../ai/writer.ts";
 import { type PromptSet, fillFrom } from "../prompts/template.ts";
@@ -47,18 +48,14 @@ const PEER_GRADES = new Set(["B+", "B0"]);
 /** 층 안 순서(문서) — 여기 없는 문서는 뒤에 doc_id 순. 층 안에서는 문서 → 적재 순서(seq)로 고정 */
 export const DOC_ORDER = ["plan-2607", "hb26r-2611", "goal30-2605", "ceo24-2605", "ax26-2605", "peer25-biz", "att3-2604", "mid25-biz", "pool25-biz", "rpt25-biz"];
 
-/**
- * 묶음을 어느 요청에 붙이는지 — card = 과제원장 AI(작성지원·질문·코멘트)·과제 매칭·크기 보호의 기본, report = 경평 초안(구성안·집필·블록 고치기),
- * outline = 경평 구성안만(report 범위 + 외부 컨설팅 의견 — 2026-11-19 A3). 구성안과 집필은 같은 준비(report 묶음)를 쓰므로 report 묶음에 구성안에만 더할 조각(outlineOnly)을 따로 실어 두고
- * 구성안 호출이 outlineBundle로 펼침(buildBundle(…, "outline")과 같음)
- */
-export type BundlePurpose = "card" | "report" | "outline";
+/** 묶음을 어느 요청에 붙이는지 — card = 과제원장 AI(작성지원·질문·코멘트)·과제 매칭·크기 보호의 기본, report = 경평 초안(구성안·집필·블록 고치기) */
+export type BundlePurpose = "card" | "report";
 /** 조각이 어느 공유 층인지(범위 밖이면 null). 과제 목록 행은 과제 고유라 층에 넣지 않음 */
 export function layerOf(c: BundleChunk, unit: string, purpose: BundlePurpose = "card"): LayerId | null {
   if (c.unit_type === RULES_DIGEST_UNIT) return null; // 공통 규칙 문서는 통째로 넣기의 층에 섞지 않음 — 선별 방식(lib/knowledge/select.ts)만 따로 씀
   if (c.meta?.search_only === true) return null; // 화면 검색에만 나오는 일반 문서(5단계 「검색 전용」) — AI 근거·매칭·닮은 순에 안 넣음
   if (c.meta?.usage === REPORT_METHOD_USAGE) return purpose === "card" ? null : "institution"; // 경평 초안 작성 방법론 — 경평 초안(구성안 포함)에서만, 사업과 상관없이 모든 과제에 같은 글
-  if (c.unit_type === CONSULT_UNIT_TYPE && purpose === "report") return null; // 외부 컨설팅 의견 — 과제원장 AI·경평 구성안에만(아래 규칙대로 그 지표 ③), 경평 집필·블록 고치기에는 안 넣음
+  if (c.unit_type === CONSULT_UNIT_TYPE) return null; // 외부 컨설팅 의견 — 공유 층이 아니라 그 카드의 덩이로만(buildBundle consult, 2026-11-20)
   if (!trackSpecOfUnit(unit).knowledgeTracks.includes(c.track) || c.unit_type === "task_list_row") return null; // 이 평가단위 트랙의 조각만(주요사업 과제에는 경영관리 트랙이 범위 밖)
   if (c.unit_type === "peer_case" && (c.meta?.kca || !PEER_GRADES.has(String(c.meta?.grade ?? "")))) return null;
   if (c.business === COMMON_KPI_UNIT) {
@@ -126,57 +123,45 @@ export interface KnowledgeBundle {
   list: BundleList;
   /** 선별 방식일 때만 — 없으면 통째로 넣기(모든 함수 출력이 예전과 같음) */
   select?: BundleSelect;
-  /** report 묶음에만, 구성안에만 더 들어갈 조각이 있을 때만(경영관리 외부 컨설팅 의견) — 층마다 그 층 끝에 붙임(outlineBundle). 집필·블록 고치기는 이 칸을 읽지 않음 */
-  outlineOnly?: KnowledgeLayer[];
+  /**
+   * 이 카드에 대한 외부 컨설팅 의견(조각 meta.card_ids에 이 카드 id가 있는 것만 — 같은 지표 다른 카드 의견은 안 넣음, 2026-11-20 사용자 결정). 있을 때만 칸이 생김(없으면 예전 묶음과 같은 모양).
+   * 공유 층이 아니라 요청 글의 목록표 뒤에 카드별 덩이로 붙음(listText) — 공유 층의 캐시·크기 보호는 그대로. 숫자·인용 대조(relevantRefs·bundleRefs)에는 안 들어감(근거 아님)
+   */
+  consult?: KnowledgeRef[];
 }
 
-/** 숫자·인용 근거가 아닌 조각(외부 컨설팅 의견) — 카드에 연결돼 있어도 대조 근거에서 뺌 */
-const notEvidence = (r: KnowledgeRef) => r.unitType === CONSULT_UNIT_TYPE;
-
-/** 묶음 중 이 과제에 연결된 조각(목록표 「이 과제 해당」 — 자동·확정) — 경평 초안 숫자 근거(lib/reports/section.ts draftEvidence). 선별 방식이면 선별 전 원문·연결 기준. 외부 컨설팅 의견은 연결돼 있어도 뺌 */
+/** 묶음 중 이 과제에 연결된 조각(목록표 「이 과제 해당」 — 자동·확정) — 경평 초안 숫자 근거(lib/reports/section.ts draftEvidence). 선별 방식이면 선별 전 원문·연결 기준 */
 export function relevantRefs(b: KnowledgeBundle): KnowledgeRef[] {
   if (b.select) {
     const rel = new Set(b.select.relevant);
-    return b.select.all.filter((r) => rel.has(r.key) && !notEvidence(r));
+    return b.select.all.filter((r) => rel.has(r.key));
   }
   const rel = new Set(b.list.relevant);
-  return b.layers.flatMap((l) => l.refs).filter((r) => rel.has(r.key) && !notEvidence(r));
+  return b.layers.flatMap((l) => l.refs).filter((r) => rel.has(r.key));
 }
 
-/** 구성안 요청용 묶음: report 묶음의 outlineOnly를 층 끝에 붙임(없으면 그대로). buildBundle(…, "outline")과 같은 결과 */
-export function outlineBundle(b: KnowledgeBundle): KnowledgeBundle {
-  if (!b.outlineOnly) return b;
-  const { outlineOnly, ...rest } = b;
-  const extra = (id: LayerId) => outlineOnly.find((l) => l.id === id)?.refs ?? [];
-  return { ...rest, layers: rest.layers.map((l) => ({ id: l.id, refs: [...l.refs, ...extra(l.id)] })) };
+/** 외부 컨설팅 의견 조각이 가리키는 지금 카드 id(meta.card_ids — parsers/consult-mg.ts, 대개 1개·나뉜 과제는 여럿). DB 읽기 정책(private.can_read_consult)과 같은 칸 */
+export function consultCardIds(c: Pick<BundleChunk, "meta">): string[] {
+  const ids = c.meta?.card_ids;
+  return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
 }
 
 /**
  * 규칙 범위 묶음 만들기. chunks = 적재된 조각 전부(순서 무관), linked = 이 카드에 연결된 조각 키, taskRowKey = task_map.plan_task_key.
- * 공유 층은 unit(주요사업)과 조각만으로 정해져 카드가 달라도 같음
+ * 공유 층은 unit(주요사업)과 조각만으로 정해져 카드가 달라도 같음. card.id가 있으면 그 카드에 대한 외부 컨설팅 의견만 consult로(목적과 상관없이 — 작성지원·질문·코멘트·경평 구성안·집필·블록 고치기)
  */
-export function buildBundle(chunks: BundleChunk[], card: { evalUnitId: string; knowledgeUnit?: string; data: LooseJson }, linked: string[] = [], taskRowKey: string | null = null, purpose: BundlePurpose = "card"): KnowledgeBundle {
+export function buildBundle(chunks: BundleChunk[], card: { id?: string; evalUnitId: string; knowledgeUnit?: string; data: LooseJson }, linked: string[] = [], taskRowKey: string | null = null, purpose: BundlePurpose = "card"): KnowledgeBundle {
   // ③ 이 평가단위 공통을 읽는 단위 — 주요사업은 카드의 평가단위(사업) 그대로, 경영관리는 카드 묶음(MG-G…)이 아니라 카드가 속한 지표(MG-n)를 호출하는 쪽이 knowledgeUnit으로 넘김
   const unit = card.knowledgeUnit ?? card.evalUnitId;
-  // 구성안(outline) = 경평 초안(report) 범위 + 구성안에만 더 들어가는 조각(층 끝에 붙임). report 묶음은 그 조각을 outlineOnly에 따로 실어 둠
-  const base: BundlePurpose = purpose === "outline" ? "report" : purpose;
   const byLayer = new Map<LayerId, BundleChunk[]>(LAYER_ORDER.map((id) => [id, []]));
-  const extra = new Map<LayerId, BundleChunk[]>(LAYER_ORDER.map((id) => [id, []]));
   for (const c of chunks) {
-    const id = layerOf(c, unit, base);
+    const id = layerOf(c, unit, purpose);
     if (id) byLayer.get(id)!.push(c);
-    else if (base === "report") {
-      const more = layerOf(c, unit, "outline");
-      if (more) extra.get(more)!.push(c);
-    }
   }
   const sorted = (xs: BundleChunk[]) =>
     xs.sort((a, b) => docRank(a.doc_id) - docRank(b.doc_id) || a.doc_id.localeCompare(b.doc_id) || a.seq - b.seq || a.chunk_key.localeCompare(b.chunk_key)).map(chunkRef);
-  const outlineOnly = LAYER_ORDER.map((id) => ({ id, refs: sorted(extra.get(id)!) })).filter((l) => l.refs.length);
-  const layers = LAYER_ORDER.map((id) => ({
-    id,
-    refs: [...sorted(byLayer.get(id)!), ...(purpose === "outline" ? (outlineOnly.find((l) => l.id === id)?.refs ?? []) : [])],
-  }));
+  const layers = LAYER_ORDER.map((id) => ({ id, refs: sorted(byLayer.get(id)!) }));
+  const consult = card.id ? sorted(chunks.filter((c) => c.unit_type === CONSULT_UNIT_TYPE && consultCardIds(c).includes(card.id!))) : [];
   const inLayers = new Set(layers.flatMap((l) => l.refs.map((r) => r.key)));
   const all = layers.flatMap((l) => l.refs);
   const row = taskRowKey ? chunks.find((c) => c.chunk_key === taskRowKey && c.unit_type === "task_list_row") : undefined;
@@ -197,13 +182,13 @@ export function buildBundle(chunks: BundleChunk[], card: { evalUnitId: string; k
       prior: similar("report_section"),
       similar: rankSimilar(card.data, scoped.map((r) => ({ key: r.key, head: r.title, text: r.text }))).slice(0, SIMILAR_MAX).map((x) => x.key),
     },
-    ...(purpose === "report" && outlineOnly.length ? { outlineOnly } : {}),
+    ...(consult.length ? { consult } : {}),
   };
 }
 
-/** 인용 대조에 쓰는 근거 전부(공유 층 + 과제 목록 행). 선별 방식이면 선별 전 층의 원문 전부(인용은 원문으로 대조). 외부 컨설팅 의견은 요청에 들어가도 인용 근거가 아니라 뺌 */
+/** 인용 대조에 쓰는 근거 전부(공유 층 + 과제 목록 행). 선별 방식이면 선별 전 층의 원문 전부(인용은 원문으로 대조). 외부 컨설팅 의견(consult)은 요청에 들어가도 인용 근거가 아니라 안 넣음 */
 export function bundleRefs(b: KnowledgeBundle): KnowledgeRef[] {
-  return [...(b.select ? b.select.all : b.layers.flatMap((l) => l.refs)), ...(b.list.taskRow ? [b.list.taskRow] : [])].filter((r) => !notEvidence(r));
+  return [...(b.select ? b.select.all : b.layers.flatMap((l) => l.refs)), ...(b.list.taskRow ? [b.list.taskRow] : [])];
 }
 
 // ---------------------------------------------------------------------------
@@ -241,12 +226,16 @@ export function layerBlocks(layers: KnowledgeLayer[]): Record<LayerId, string> {
   };
 }
 
-/** 요청 글에 넣는 이 과제 기준 목록(이 과제 해당·닮은 순·과제 목록 행). 선별 방식이면 목록 머리가 선별 방식 설명이고 끝에 고르지 않은 조각 제목 목록 */
+/**
+ * 요청 글에 넣는 이 과제 기준 목록(이 과제 해당·닮은 순·과제 목록 행). 선별 방식이면 목록 머리가 선별 방식 설명이고 끝에 고르지 않은 조각 제목 목록.
+ * 이 카드에 대한 외부 컨설팅 의견이 있으면 맨 끝에 원문(kb.consult 절 — 경영관리 프롬프트에만 있음, 의견은 경영관리 카드에만 있음)
+ */
 export function listText(p: PromptSet, b: KnowledgeBundle): string {
   const ids = (xs: string[]) => (xs.length ? xs.join(", ") : fillFrom(p, "request", "kb.none"));
   const out = [fillFrom(p, "request", b.select ? "kb.select.list" : "kb.list", { relevant: ids(b.list.relevant), peers: ids(b.list.peers), prior: ids(b.list.prior), similar: ids(b.list.similar), similarMax: SIMILAR_MAX })];
   if (b.list.taskRow) out.push(fillFrom(p, "request", "kb.taskRow"), knowledgeBlock([b.list.taskRow]));
   if (b.select?.unpicked.length) out.push(fillFrom(p, "request", "kb.select.unpicked", { count: b.select.unpicked.length }), unpickedLines(b.select.unpicked));
+  if (b.consult?.length) out.push(fillFrom(p, "request", "kb.consult", { count: b.consult.length }), knowledgeBlock(b.consult));
   return out.join("\n");
 }
 

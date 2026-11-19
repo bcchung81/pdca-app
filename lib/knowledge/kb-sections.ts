@@ -17,3 +17,6 @@ export const KB_SECTIONS = [
   "kb.select.list",
   "kb.select.unpicked",
 ] as const;
+
+/** 경영관리 프롬프트에만 있는 절 — 이 카드에 대한 외부 컨설팅 의견 머리(bundle.ts listText, 2026-11-20). 의견은 경영관리 카드에만 있어 주요사업 프롬프트·판은 그대로 */
+export const KB_MG_SECTIONS = ["kb.consult"] as const;

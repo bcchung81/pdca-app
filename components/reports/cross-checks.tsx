@@ -63,7 +63,7 @@ export function CrossChecksPanel({ mg, duplicates, orphans, unitName, cardHref, 
                 <li key={`${o.unit}|${o.finding.chunkKey}|${o.finding.no}`} className="min-w-0 px-5 py-3 text-sm">
                   <div className="mb-1 flex min-w-0 items-center gap-2 text-xs text-muted-2">
                     <span className="truncate font-semibold text-ink">{unitName(o.unit)}</span>
-                    {o.finding.label && <span className="truncate">{o.finding.label}</span>}
+                    {o.finding.label && o.finding.label !== unitName(o.unit) && <span className="truncate">{o.finding.label}</span>}
                     <span>지적 {o.finding.no}</span>
                   </div>
                   <p className="m-0 min-w-0 break-keep text-ink">{o.finding.text}</p>
