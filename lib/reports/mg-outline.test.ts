@@ -766,7 +766,7 @@ test("2025 조각 '26 번호로(D1 안 2): 지표를 주면 상생 평가내용 
   assert.equal(toMgPriorSection(mg7Row(2, 4, "가", "x"))!.evalNo, 2);
   assert.equal("evalNo2025" in toMgPriorSection(mg7Row(2, 4, "가", "x"))!, false);
   assert.deepEqual(defaultEvals("7-4", MG7_PRIOR, MG7_ITEMS), [3]);
-  assert.deepEqual(defaultEvals("7-3", MG7_PRIOR, MG7_ITEMS), [1], "후보(②)는 추천 기본값에 안 넣음");
+  assert.deepEqual(defaultEvals("7-3", MG7_PRIOR, MG7_ITEMS), [1, 2], "신설 ② 담당(2026-11-20)도 추천 기본값에");
 });
 
 test("골격 줄(항목표): 평가내용 줄은 '26 번호·제목·[신설·수정]·(2025 평가내용 N), 2025에 없는 신설은 「대주제 하나를 새로」·2025 참고 절(옮긴 번호)", () => {
@@ -867,7 +867,10 @@ test("구성안 요청 「'26 편람 평가 항목」: 항목 id·제목·표지
   const text = mgItemsPrompt(p, MG7_ITEMS, { evals: [3], taskNo: "7-4" });
   const lines = text.split("\n");
   assert.match(lines[0], /^「'26 편람 평가 항목\(11\.13 수정 반영\)」 — .*평가내용 4개/);
-  assert.ok(lines.includes("- [E2] 평가내용 2. 지역업체 발주 [신설(11.13 수정)] · 담당 미정(후보 7-3) · 2025 참고 절: 평가내용 3 · 대주제 4 · 나. 지역산업 성장 지원(짜임 참고일 뿐 근거 아님)"), text);
+  assert.ok(lines.includes("- [E2] 평가내용 2. 지역업체 발주 [신설(11.13 수정)] · 추천 카드 7-1·7-3 · 2025 참고 절: 평가내용 3 · 대주제 4 · 나. 지역산업 성장 지원(짜임 참고일 뿐 근거 아님)"), text);
+  // 담당 미정 항목(후보만)의 표지 — 지금 항목표에는 없어 손으로 만든 항목으로 확인
+  const orphan = MG7_ITEMS.map((x) => (x.no === 2 ? { ...x, cards: [], candidates: ["7-3"] } : x));
+  assert.ok(mgItemsPrompt(p, orphan, { evals: [3], taskNo: "7-4" }).split("\n").includes("- [E2] 평가내용 2. 지역업체 발주 [신설(11.13 수정)] · 담당 미정(후보 7-3) · 2025 참고 절: 평가내용 3 · 대주제 4 · 나. 지역산업 성장 지원(짜임 참고일 뿐 근거 아님)"));
   assert.ok(lines.includes("- [E3] 평가내용 3. 기부·봉사, 지역인재 양성 [수정] · 이 카드 추천"), text);
   assert.ok(lines.includes("- [E1] 평가내용 1. 2025 평가내용 1 제목 · 추천 카드 7-1·7-2·7-3"), text);
   assert.ok(lines.includes("    - E2.2 협력사 육성"), text);

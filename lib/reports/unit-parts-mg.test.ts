@@ -419,13 +419,14 @@ test("평가내용 행(2026-11-19 '26 편람 번호): 상생은 행 1~4(옛 2 �
     ...[1, 2, 3].map((n) => ({ chunk_key: `rpt25-mg-07/d${n}`, text: "", meta: { chapter: "detail", eval_no: n, eval_title: `2025 평가내용 ${n}` } })),
     { chunk_key: "rpt25-mg-07/p2", text: "구분 | ’24까지 | ’25\n\n∙ 옛 | ∙ 지역공부방 | 〃", meta: { chapter: "prior", eval_no: 2 } },
   ];
-  const cards = ["7-1", "7-4", "7-5"].map((t) => card(t));
+  // ② 담당(7-1·7-3, 2026-11-20)이 없는 카드 묶음 — 담당 카드 없는 행
+  const cards = ["7-2", "7-4", "7-5"].map((t) => card(t));
   const { part, warnings } = buildPriorPart({ unit: "MG-7", cards, report2025: rpt });
-  assert.deepEqual(part.rows.map((r) => [r.id, r.code.cards.map((c) => c.taskNo), Boolean(r.code.need)]), [["prior/1", ["7-1"], false], ["prior/2", [], true], ["prior/3", ["7-4"], false], ["prior/4", ["7-5"], false]]);
+  assert.deepEqual(part.rows.map((r) => [r.id, r.code.cards.map((c) => c.taskNo), Boolean(r.code.need)]), [["prior/1", ["7-2"], false], ["prior/2", [], true], ["prior/3", ["7-4"], false], ["prior/4", ["7-5"], false]]);
   assert.equal(part.rows[1].code.title, "지역업체 발주·지역기업 육성", "편람 글이 없으면 짧은 이름");
   assert.equal(part.rows[2].code.title, "2025 평가내용 2", "수정 항목도 편람 글이 없으면 2025 제목");
   assert.deepEqual(part.rows[2].human.upTo, ["지역공부방"], "2025 전년 대비 평가내용 2의 글 → '26 행 3");
-  assert.match(part.rows[1].code.need!, /^【확인: 담당 카드 없음 — '26 신설 「지역업체 발주·지역기업 육성」 실적 자료 필요\(후보 7-3\)】$/);
+  assert.match(part.rows[1].code.need!, /^【확인: 담당 카드 없음 — '26 신설 「지역업체 발주·지역기업 육성」 실적 자료 필요】$/, "후보 표가 비어 있으면 후보 없이");
   assert.ok(warnings.some((w) => w === "전년 대비: 평가내용2 — 대응 카드 없음(올해 칸을 채울 과제별 초안이 없음)"));
   assert.equal(unitPartsNeeds({ unit: "MG-7", indicator: "", year: 2026, cover: null, findings: null, prior: part, outcome: null, source: { cards: {}, drafts: {} } }), 1);
   // 사람이 ’26 칸을 채우면 【확인】이 빠지고, 다시 채우기에서도 남긴 글이 있으면 빠진 채

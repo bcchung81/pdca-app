@@ -35,6 +35,29 @@ export const PLAN_REVISION_NOTES: Record<string, string> = {
   "plan-2607/narr/II/ref1/s1": `편람 최초('26.1) 총괄표 — 주요사업2·3 계량지표 구성은 11.13 수정본에서 바뀜, ${REV}/BZ-2·BZ-3 조각 참고`,
 };
 
+/** 체크리스트 조각 key 접두(sd 하나가 /g1·/g2…로 나뉨)·전체 key — 체크리스트는 '26 편람 최초 번호·문구라 수정본과 다른 항목에 알림(경영관리만 — 주요사업 체크리스트는 표지 없음) */
+const CK_BASE = "plan-2607/checklist/";
+const CK_HEAD = "11.13 수정본 기준: 이 자가진단 항목('26 편람 최초 번호·문구로 적힘)은";
+export const CHECKLIST_REVISIONS: Record<string, string> = {
+  [`${CK_BASE}MG-3/s1/sd1/g1`]: `${CK_HEAD} 수정본의 세부평가내용 ①이 「청년 등의 신규채용을 포함한 일자리 창출」로 바뀌고 유관기업·대학 협력 등을 통한 취업 지원이 더해짐(바뀐 부분은 ${REV}/MG-3/k2 조각)`,
+  [`${CK_BASE}MG-3/s1/sd1/g2`]: `${CK_HEAD} 수정본에서 ①이 아니라 ⑥ 공정채용(신설)의 착안사항으로 옮겨짐(바뀐 부분은 ${REV}/MG-3/k2 조각)`,
+  [`${CK_BASE}MG-3/s1/sd1/g3`]: `${CK_HEAD} 수정본에서 ①이 아니라 ⑥ 공정채용(신설)의 착안사항(고졸자·무기계약직·별도직군·여성 차별해소·처우개선)으로 옮겨짐(바뀐 부분은 ${REV}/MG-3/k2 조각)`,
+  [`${CK_BASE}MG-4/s2/sd2/g2`]: `${CK_HEAD} 수정본 재난관리(MG-4 k3)의 0점 부여 사유가 「안전법령 위반」이 아니라 「재해 발생에 기관의 포괄적 관리 책임이 있는 경우」로 바뀌었고 ** 각주가 삭제됨(바뀐 부분은 ${REV}/MG-4/k3 조각)`,
+  [`${CK_BASE}MG-7/s5/sd2/`]: `${CK_HEAD} 수정본의 세부평가내용 ③ 「기부·봉사활동 등 지역사회 참여, 지역인재 양성」(최초 편람 ②)에 해당 — 수정본 ②는 신설 「지역업체 발주·구매, 지역기업 육성·투자」로 체크리스트에 없음(바뀐 부분은 ${REV}/MG-7/k2 조각)`,
+  [`${CK_BASE}MG-7/s5/sd2/g3`]: `${CK_HEAD} 수정본 ③(최초 편람 ②)에 해당하되, 지역생산품 우선 구매 부분은 수정본 ② 「지역업체 발주·구매, 지역기업 육성·투자」(신설)에 걸침 — ②의 지역업체 발주 비중·지역기업 육성·투자는 이 체크리스트에 없음(바뀐 부분은 ${REV}/MG-7/k2 조각)`,
+  [`${CK_BASE}MG-7/s5/sd3/`]: `${CK_HEAD} 수정본의 세부평가내용 ④ 「시설·장비 개방」(최초 편람 ③)에 해당, 문구는 그대로이고 번호만 바뀜(바뀐 부분은 ${REV}/MG-7/k2 조각)`,
+  [`${CK_BASE}MG-14/s3/sd3/g1`]: `${CK_HEAD} 수정본의 혁신가점 ③ 청년 등 신규채용 확대 중 청년인턴 항목에 유관기업·대학 협력 등을 통한 취업지원 프로그램 운영이 더해짐(바뀐 부분은 ${REV}/MG-14/k1 조각)`,
+};
+
+/** 체크리스트 표지 — 전체 key가 앞서고, 없으면 `…/` 접두로 찾음(MG 체크리스트만 해당 — 주요사업 key는 접두가 맞지 않아 늘 null) */
+function checklistNote(key: string): string | null {
+  if (!key.startsWith(CK_BASE)) return null;
+  const hit = CHECKLIST_REVISIONS[key];
+  if (hit) return hit;
+  const at = Object.keys(CHECKLIST_REVISIONS).find((p) => p.endsWith("/") && key.startsWith(p));
+  return at ? CHECKLIST_REVISIONS[at] : null;
+}
+
 /** 수정본 조각(meta.revision) — 바뀐 칸만 적힌 조각이라 나머지는 옛 편람 조각이 유효함을 알림 */
 function revisedChunkNote(meta: Record<string, unknown> | null | undefined): string | null {
   if (typeof meta?.revision !== "string") return null;
@@ -69,7 +92,7 @@ interface NoteInput {
 
 /** 판·'25 지표 이름 변화 표지(「※」 없는 글) */
 function versionNote(c: NoteInput): string | null {
-  const fixed = HANDBOOK_REVISIONS[c.chunk_key] ?? PLAN_REVISION_NOTES[c.chunk_key] ?? revisedChunkNote(c.meta);
+  const fixed = HANDBOOK_REVISIONS[c.chunk_key] ?? PLAN_REVISION_NOTES[c.chunk_key] ?? checklistNote(c.chunk_key) ?? revisedChunkNote(c.meta);
   if (fixed) return fixed;
   // '25 자료(실사·지적 등)만: '26 편람 조각은 이미 '26 이름이라 대상이 아님
   if (c.unit_type === "handbook_indicator" || c.chunk_key.includes("/handbook26/")) return null;

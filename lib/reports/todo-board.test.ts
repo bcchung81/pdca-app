@@ -113,7 +113,8 @@ test("buildTodoBoard(2026-11-19): 지표 단위 전년 대비의 담당 카드 �
   const { buildPriorPart } = await import("./unit-parts-mg.ts");
   const rpt = [1, 2, 3].map((n) => ({ chunk_key: `rpt25-mg-07/d${n}`, text: "", meta: { chapter: "detail", eval_no: n, eval_title: `2025 평가내용 ${n}` } }));
   const card = (taskNo: string) => ({ id: `경영관리7/${taskNo}`, taskNo, title: taskNo, status: "active", data: {} });
-  const prior = buildPriorPart({ unit: "MG-7", cards: [card("7-1"), card("7-4"), card("7-5")], report2025: rpt }).part;
+  // ② 담당(7-1·7-3, 2026-11-20)이 없는 카드 묶음 — 담당 카드 없는 행
+  const prior = buildPriorPart({ unit: "MG-7", cards: [card("7-2"), card("7-4"), card("7-5")], report2025: rpt }).part;
   const b = buildTodoBoard(input([], { units: [{ id: "MG-7", name: "상생·협력 및 지역발전", cardGroup: null }], parts: [{ unitId: "MG-7", part: "prior", spec: prior }] }));
   assert.equal(b.rows.length, 1);
   assert.equal(b.rows[0].needs, 1, "상생 ② 지역업체(담당 미정) 한 줄");

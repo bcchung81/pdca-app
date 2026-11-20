@@ -47,16 +47,16 @@ test("신설·뺀 항목: 일자리 ⑤(최초)·⑥(11.13) · 창업 ⑤(최초
   assert.deepEqual([mgItemTag("같음"), mgItemTag("수정"), mgItemTag("신설26"), mgItemTag("신설2611")], ["", "수정", "신설('26 편람)", "신설(11.13 수정)"]);
 });
 
-test("카드 추천 표('26 번호): 3-1 → 1·3·5·6(D10) · 4-3 → 2 재난(D8) · 6-1 → 1·6 · 7-4 → 3 · 7-5 → 4, 담당 미정 항목은 추천에 없고 후보로만(D4~D6)", () => {
+test("카드 추천 표('26 번호): 3-1 → 1·3·5·6(D10) · 4-3 → 2 재난(D8) · 6-1 → 1·6 · 7-4 → 3 · 7-5 → 4 · 신설 담당(2026-11-20) 7-1·7-3 → +2 · 14-1 → +5 · 4-1 → +2 재난, 연기금만 담당·후보 없음(D6)", () => {
   assert.deepEqual(MG_CARD_EVALS["3-1"], [1, 3, 5, 6]);
   assert.deepEqual(MG_CARD_EVALS["4-3"], [2]);
   assert.deepEqual(MG_CARD_EVALS["6-1"], [1, 6]);
   assert.deepEqual([MG_CARD_EVALS["7-4"], MG_CARD_EVALS["7-5"]], [[3], [4]]);
+  assert.deepEqual([MG_CARD_EVALS["7-1"], MG_CARD_EVALS["7-3"], MG_CARD_EVALS["14-1"], MG_CARD_EVALS["4-1"]], [[1, 2], [1, 2], [1, 5], [1, 2]]);
   const held = (unit: string, no: number) => Object.entries(MG_CARD_EVALS).some(([t, nos]) => t.startsWith(`${unit.slice(3)}-`) && nos.includes(no));
-  assert.ok(!held("MG-7", 2) && !held("MG-14", 5) && !held("MG-6", 5), "상생 ②·기능개혁·연기금은 담당 미정");
-  assert.deepEqual(MG_ITEM_CANDIDATES["MG-7"][2], ["7-3"]);
-  assert.deepEqual(MG_ITEM_CANDIDATES["MG-14"][5], ["14-1", "1-1"]);
-  assert.equal(MG_ITEM_CANDIDATES["MG-6"]?.[5], undefined, "연기금은 후보도 없음(「자료 필요」)");
+  assert.ok(held("MG-7", 2) && held("MG-14", 5), "상생 ②·기능개혁은 담당이 정해짐(2026-11-20)");
+  assert.ok(!held("MG-6", 5), "연기금은 담당 미정");
+  assert.deepEqual(MG_ITEM_CANDIDATES, {}, "담당이 정해진 항목은 후보에서 뺌 — 연기금은 후보도 없음(「자료 필요」)");
 });
 
 // 짧은 픽스처 글(원문 아님 — 편람 조각 「세부평가내용:」 칸의 모양만)
@@ -92,7 +92,7 @@ test("항목표 만들기: 수정본이 같은 번호를 덮고(상생 ②③④
     [4, "같음", "2025 시설 제목", 3],
   ]);
   assert.deepEqual(items[1].points, ["발주 비중", "협력사 육성"]);
-  assert.deepEqual([items[1].cards, items[1].candidates, items[2].cards, items[3].cards], [[], ["7-3"], ["7-4"], ["7-5"]]);
+  assert.deepEqual([items[1].cards, items[1].candidates, items[2].cards, items[3].cards], [["7-1", "7-3"], [], ["7-4"], ["7-5"]]);
   assert.deepEqual(items[0].cards, ["7-1", "7-2", "7-3"]);
   assert.deepEqual(items[1].ref25, { key: "3.4.나", label: "평가내용 3 · 대주제 4 · 나. 지역산업 성장 지원" }, "2025 참고 절(2.4.나)은 '26 번호로 옮겨 보임");
   assert.deepEqual(items[0].taken, [{ taskNo: "7-3", parts: 2 }]);
@@ -105,7 +105,7 @@ test("항목표 만들기: 수정본이 같은 번호를 덮고(상생 ②③④
   const mg14 = mgItems("MG-14", [MG14]).items;
   assert.deepEqual(mg14.map((x) => x.title), ["정부정책 수행", "신속투자 집행 노력", "청년 채용", "국민체감", "기능개혁 이행"]);
   assert.deepEqual(mg14[2].points, ["신규채용 목표", "청년인턴"]);
-  assert.deepEqual(mg14[4].candidates, ["14-1", "1-1"]);
+  assert.deepEqual([mg14[4].cards, mg14[4].candidates], [["14-1"], []], "기능개혁 ⑤는 14-1 담당(2026-11-20)");
 });
 
 test("항목표 만들기: 편람 글이 없으면 수정·신설은 짧은 이름 + 경고, 같음은 2025 제목(없으면 짧은 이름) · 항목표에 없는 지표는 빈 목록", () => {

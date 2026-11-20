@@ -65,8 +65,8 @@ test("buildMgOutline: 평가내용 쪽을 대응 카드 수로 나눠 더하고 
 
 test("buildMgOutline: 대응 카드가 없는 평가내용은 orphan(참고), 혁신가점처럼 대응표에 없는 카드는 그 지표 평가내용 모두, 카드마다 최소 0.5쪽", () => {
   const ref = mgPageRef(chunks);
-  const four = buildMgOutline("MG-4", ref, [{ id: "a", taskNo: "4-1" }, { id: "b", taskNo: "4-2" }]);
-  assert.deepEqual(four.orphan.map((e) => e.no), [2, 3], "4-1·4-2는 평가내용 1뿐 — 2·3은 카드 없음");
+  const four = buildMgOutline("MG-4", ref, [{ id: "a", taskNo: "4-2" }, { id: "b", taskNo: "4-2" }]);
+  assert.deepEqual(four.orphan.map((e) => e.no), [2, 3], "평가내용 1만 맡는 카드 둘(4-2) — 2·3은 카드 없음");
   assert.deepEqual(four.rows.map((r) => r.pages), [1, 0.5], "1.5쪽을 둘이 나눔(0.75씩 → 1 + 0.5, 합 1.5)");
   assert.equal(mgBudgetState(1.5, ref, four.orphan), "ok", "카드가 맡은 본문(5 − 3.5 = 1.5쪽)과 비교");
   const bonus = buildMgOutline("MG-13", ref, [{ id: "x", taskNo: "13-1" }]);
@@ -160,33 +160,35 @@ test("실제 2025 조각: 지표별 2025 본문(인쇄 쪽) = 본문 예산(작�
 import { mgItems, to26 } from "./mg-items.ts";
 import { orphanNote, withMgItems } from "./mg-page-plan.ts";
 
-test("withMgItems: 2025 쪽 기준(번호는 '26으로 옮긴 것)에 2025에 없는 항목을 0쪽으로 더하고 제목은 항목표 — 작성분량 불변, 담당 카드 없는 신설은 「카드 없는 평가내용」에 「자료 필요(후보)」", () => {
+test("withMgItems: 2025 쪽 기준(번호는 '26으로 옮긴 것)에 2025에 없는 항목을 0쪽으로 더하고 제목은 항목표 — 작성분량 불변, 신설 ②는 담당 7-1·7-3 몫 안에서(2026-11-20), 담당 카드 없는 신설은 「카드 없는 평가내용」에 「자료 필요(후보)」", () => {
   // 상생 2025: 평가내용 1(4쪽)·2(3쪽)·3(2쪽) → '26 1·3·4
   const ref = mgPageRef([ch("detail", to26("MG-7", 1), 1, 4, "2025 상생"), ch("detail", to26("MG-7", 2), 5, 7, "2025 기부"), ch("detail", to26("MG-7", 3), 8, 9, "2025 시설")]);
   const items = mgItems("MG-7", [], { prior: [{ evalNo: 1, evalTitle: "2025 상생", themeNo: 1, mark: "", title: "" }, { evalNo: 4, evalNo2025: 3, evalTitle: "2025 시설", themeNo: 1, mark: "", title: "" }] }).items;
   const r = withMgItems(ref, items);
   assert.deepEqual(r.evals.map((e) => [e.no, e.title, e.pages, e.added ?? false, e.candidates ?? []]), [
     [1, "2025 상생", 4, false, []],
-    [2, "지역업체 발주·지역기업 육성", 0, true, ["7-3"]],
+    [2, "지역업체 발주·지역기업 육성", 0, true, []],
     [3, "기부·봉사·지역인재 양성", 3, false, []],
     [4, "2025 시설", 2, false, []],
   ]);
   assert.equal(r.body, ref.body, "쪽 합(작성분량)은 그대로");
   const plan = buildMgOutline("MG-7", r, ["7-1", "7-2", "7-3", "7-4", "7-5"].map((t) => ({ id: t, taskNo: t })));
-  assert.deepEqual(plan.orphan.map((e) => [e.no, orphanNote(e)]), [[2, "자료 필요 — 담당 카드 없음(후보 7-3)"]]);
+  assert.deepEqual(plan.orphan, [], "② 담당 7-1·7-3");
+  assert.deepEqual(plan.rows.filter((x) => ["7-1", "7-3"].includes(x.card_id)).map((x) => x.subsection), ["평가내용 1·2에 걸침", "평가내용 1·2에 걸침"]);
+  assert.equal(orphanNote({ no: 2, title: "지역업체", pages: 0, added: true, candidates: ["7-3"] }), "자료 필요 — 담당 카드 없음(후보 7-3)", "담당 없는 신설(후보만)");
   assert.deepEqual(plan.rows.filter((x) => ["7-4", "7-5"].includes(x.card_id)).map((x) => [x.card_id, x.section, x.pages]), [["7-4", "평가내용 3. 기부·봉사·지역인재 양성", 3], ["7-5", "평가내용 4. 2025 시설", 2]], "목차 1단은 '26 번호·제목");
-  assert.equal(mgCardPages(r, plan.orphan), 9, "0쪽 항목은 카드 몫에서 빼지 않음");
+  assert.equal(mgCardPages(r, [r.evals[1]]), 9, "0쪽 항목은 카드 없는 평가내용이어도 카드 몫에서 빼지 않음");
   assert.equal(orphanNote({ no: 2, title: "옛 평가내용", pages: 5 }), "", "2025에 있던 평가내용(담당 카드 없음)은 예전 글");
   assert.equal(withMgItems(ref, []), ref);
 });
 
-test("withMgItems: 일자리 3-1 → 1·3·5·6(D10) — 신설 ⑤⑥은 0쪽으로 3-1 몫 안에서(카드 없는 평가내용 아님), 안전·재난 4-3 → 2 재난(D8 — 재난 빈칸 해소)", () => {
+test("withMgItems: 일자리 3-1 → 1·3·5·6(D10) — 신설 ⑤⑥은 0쪽으로 3-1 몫 안에서(카드 없는 평가내용 아님), 안전·재난 4-3 → 2 재난(D8 — 재난 빈칸 해소)·4-1 → 1·2(2026-11-20 — 재난 몫을 4-3과 나눔)", () => {
   const mg3 = withMgItems(mgPageRef([1, 2, 3, 4].map((n) => ch("detail", n, n * 2 - 1, n * 2, `2025 ${n}`))), mgItems("MG-3", []).items);
   const p3 = buildMgOutline("MG-3", mg3, ["3-1", "3-2", "3-3", "3-4"].map((t) => ({ id: t, taskNo: t })));
   assert.deepEqual(p3.orphan, []);
   assert.deepEqual(p3.rows.find((x) => x.card_id === "3-1")?.subsection, "평가내용 1·3·5·6에 걸침");
   const mg4 = withMgItems(mgPageRef([ch("detail", 1, 1, 5, "산업재해"), ch("detail", 2, 6, 11, "재난")]), mgItems("MG-4", []).items);
   const p4 = buildMgOutline("MG-4", mg4, ["4-1", "4-2", "4-3"].map((t) => ({ id: t, taskNo: t })));
-  assert.deepEqual(p4.orphan, [], "재난 평가내용 2를 4-3이 맡음");
-  assert.deepEqual(p4.rows.map((x) => [x.card_id, x.pages]), [["4-1", 2.5], ["4-2", 2.5], ["4-3", 6]]);
+  assert.deepEqual(p4.orphan, [], "재난 평가내용 2를 4-1·4-3이 맡음");
+  assert.deepEqual(p4.rows.map((x) => [x.card_id, x.pages, x.subsection]), [["4-1", 5.5, "평가내용 1·2에 걸침"], ["4-2", 2.5, null], ["4-3", 3, null]], "재난 6쪽을 4-1·4-3이 3쪽씩");
 });

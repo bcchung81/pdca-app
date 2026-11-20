@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 import { readSeedInput } from "../db/seed-files.ts";
 import { HAS_SEED_CARDS } from "../testing/originals.ts";
 import { NEW_METRICS_2026 } from "./dictionaries.ts";
-import { HANDBOOK_REVISIONS, METHOD_NOTE, PLAN_REVISION_NOTES, SOURCE_ERRATA, revisionNote, whereWithNote } from "./revision-note.ts";
+import { CHECKLIST_REVISIONS, HANDBOOK_REVISIONS, METHOD_NOTE, PLAN_REVISION_NOTES, SOURCE_ERRATA, revisionNote, whereWithNote } from "./revision-note.ts";
 
 test("편람(최초) 조각 중 11.13 수정본으로 바뀐 것에 수정본 모습을 알림 — 7월판 개선(안) 값은 유효한 값으로 남지 않음", () => {
   const n = (key: string) => revisionNote({ chunk_key: key, unit_type: "handbook_indicator" });
@@ -63,6 +64,28 @@ test("'25 자료의 지표가 '26 편람에서 명칭 변경·교체·폐지면 
   assert.equal(n({ metric_relation: "명칭 변경", metric_2026: "기금 재정 효율화 성과" }, "handbook_indicator", "plan-2607/handbook26/BZ-3/m9"), null, "편람 조각은 이미 '26 이름");
 });
 
+test("경영관리 자가진단 체크리스트 조각: 수정본과 번호·문구가 다른 항목에만 「11.13 수정본 기준」 표지, 주요사업 체크리스트는 표지 없음", () => {
+  const n = (key: string) => revisionNote({ chunk_key: `plan-2607/checklist/${key}`, unit_type: "checklist_group" });
+  const want: Array<[string, RegExp]> = [
+    ["MG-3/s1/sd1/g1", /^※ 11\.13 수정본 기준: .*최초 번호·문구.*①이 「청년 등의 신규채용을 포함한 일자리 창출」.*유관기업·대학 협력.*hb26r-2611\/handbook26\/MG-3\/k2 조각\)$/],
+    ["MG-3/s1/sd1/g2", /⑥ 공정채용\(신설\)/],
+    ["MG-3/s1/sd1/g3", /⑥ 공정채용\(신설\)/],
+    ["MG-4/s2/sd2/g2", /안전법령 위반.*포괄적 관리 책임.*MG-4\/k3 조각\)$/],
+    ["MG-7/s5/sd2/g1", /세부평가내용 ③.*최초 편람 ②.*수정본 ②는 신설.*MG-7\/k2 조각\)$/],
+    ["MG-7/s5/sd2/g2", /세부평가내용 ③/],
+    ["MG-7/s5/sd2/g3", /수정본 ③.*지역생산품 우선 구매.*수정본 ② /],
+    ["MG-7/s5/sd3/g1", /④ 「시설·장비 개방」\(최초 편람 ③\).*번호만 바뀜/],
+    ["MG-7/s5/sd3/g2", /④ 「시설·장비 개방」/],
+    ["MG-14/s3/sd3/g1", /청년인턴.*유관기업·대학 협력.*MG-14\/k1 조각\)$/],
+  ];
+  for (const [k, re] of want) assert.match(n(k)!, re, k);
+  // 안 바뀐 MG 체크리스트·같은 지표의 다른 묶음·issues는 표지 없음
+  for (const k of ["MG-7/s5/sd1/g1", "MG-7/s5/sd1/g3", "MG-7/s5/issues", "MG-3/s1/sd2/g1", "MG-3/s1/sd3/g1", "MG-3/s1/issues", "MG-4/s2/sd2/g1", "MG-4/s2/sd2/g3", "MG-4/s2/sd1/g1", "MG-6/s4/sd1/g1", "MG-6/s4/sd5/g1", "MG-14/s3/sd3/g2", "MG-14/s3/sd3/g3", "MG-14/s3/sd4/g1", "MG-1/s1/sd1/g1"]) assert.equal(n(k), null, k);
+  // 주요사업 체크리스트는 표지 없음(표지는 규칙 문서 해시에 들어가므로 한 글자도 바뀌면 안 됨)
+  for (const k of ["BZ-1/s1/sd1/g1", "BZ-2/s2/sd2/g2", "BZ/s1/sd1/g1"]) assert.equal(n(k), null, k);
+  assert.ok(Object.keys(CHECKLIST_REVISIONS).every((k) => k.startsWith("plan-2607/checklist/MG-")));
+});
+
 test("위치 글 = 조각 머리말 + 판 표지, 둘 다 없으면 없음", () => {
   assert.equal(whereWithNote({ chunk_key: "k", context_prefix: "문서 · 위치", meta: { metric_relation: "폐지" }, unit_type: "qa_pair" }), "문서 · 위치 · ※ '25 지표 — '26 편람에서 폐지");
   assert.equal(whereWithNote({ chunk_key: "k", context_prefix: "문서 · 위치" }), "문서 · 위치");
@@ -114,4 +137,14 @@ test("실제 적재 조각(이 컴퓨터에 있을 때): 판·원문 표지를 �
   }
   const revised = (seed as unknown as { chunks: Array<{ chunk_key: string; meta: Record<string, unknown> }> }).chunks.filter((c) => c.chunk_key.startsWith("hb26r-2611/"));
   for (const c of revised) for (const k of c.meta.supersedes as string[]) assert.ok(keys.has(k) && Object.hasOwn(HANDBOOK_REVISIONS, k), `${c.chunk_key}가 대신하는 ${k}에 표지가 없음`);
+});
+
+const planFile = resolve(import.meta.dirname, "../../resources/knowledge/_chunks/plan-2607.jsonl");
+test("실제 적재 조각(이 컴퓨터에 있을 때): 체크리스트 표 key가 실제 조각에 걸리고, 주요사업 조각(checklist/BZ 포함)에는 체크리스트 표지가 하나도 걸리지 않음", { skip: !existsSync(planFile) && "resources/knowledge/_chunks/plan-2607.jsonl이 없음" }, () => {
+  const rows = readFileSync(planFile, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { chunk_key: string; unit_type: string; meta: Record<string, unknown> | null });
+  const keys = rows.map((r) => r.chunk_key);
+  for (const k of Object.keys(CHECKLIST_REVISIONS)) assert.ok(keys.some((x) => x === k || (k.endsWith("/") && x.startsWith(k))), `${k}에 걸리는 조각이 없음`);
+  const hit = rows.filter((r) => revisionNote(r)?.includes("이 자가진단 항목"));
+  assert.ok(hit.length >= 8);
+  assert.ok(hit.every((r) => r.chunk_key.startsWith("plan-2607/checklist/MG-")), "MG 체크리스트가 아닌 조각에 체크리스트 표지가 걸림");
 });
