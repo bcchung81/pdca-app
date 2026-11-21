@@ -32,7 +32,15 @@ export interface TrackSpec {
   reportBulletChars: number;
   /** 경평 초안 PDCA 대응표(단계 ↔ 카드 칸 — lib/reports/mg-pdca.ts). 카드 양식에 Plan·Check 칸이 없는 트랙만 둠 — 주요사업은 없음 */
   pdca?: PdcaSpec;
+  /**
+   * 공통 지식 선별 방식(lib/knowledge/select.ts)에서 기준류(편람·서술·체크리스트 등)를 넣는 법 — digest = 공통 규칙 문서(rules_digest)가 원문 대신, raw = 원문 그대로(규칙 문서 없이 사례류만 고름).
+   * 주요사업 digest(2026-10-26 규칙 문서 41~53%로 줄어듦), 경영관리 raw(같은 측정에서 규칙 문서가 원문과 크기가 거의 같았음 — 약 100%, 2026-11-21)
+   */
+  selectRules: SelectRules;
 }
+
+/** 선별 방식의 기준류 넣는 법(문자열 유니온 — 열거형 아님) */
+export type SelectRules = "digest" | "raw";
 
 /** PDCA 단계(구성안 블록 stage 값도 이 넷뿐) */
 export const PDCA_STAGES = ["P", "D", "C", "A"] as const;
@@ -79,6 +87,7 @@ export const BIZ_TRACK = {
   unitParts: [],
   // 2025 주요사업 보고서 평가내용2 과제 소항목 62개의 불릿 평균 중앙값 27.89자(소항목별 15.3~45.3자, scripts/eval/biz-bullet-baseline.ts 2026-10-29 측정)
   reportBulletChars: 28,
+  selectRules: "digest",
 } as const satisfies TrackSpec;
 
 /** 경영관리 평가지표 14개(지침 08 지표 번호 1~14, 12~14는 혁신가점) — 공통 지식(`knowledge_chunks.business`)의 단위 id */
@@ -95,6 +104,7 @@ export const MGMT_TRACK = {
   unitParts: ["cover", "findings", "prior", "outcome"],
   // 2025 경영관리 보고서 14건(지표마다)의 불릿 평균 중앙값 23.05자(지표별 19.2~30.2자, scripts/eval/mg-fill-baseline.ts 2026-10-29 측정)
   reportBulletChars: 23,
+  selectRules: "raw",
   // PDCA 대응표(2026-10-30) — 근거: 지침 08(경영관리 작성지원) 「경영관리 양식에는 Plan·Check 칸이 없다 … Plan → '지적 및 개선방안'·'전년도 환류'의 '26년 개선방안 /
   // Do → 추진내용 / Check(리스크) → 추진내용 하위 불릿 '- (리스크 대응) …'」, 지침 13(경영관리 종합점검) 「환류↔개선방안 인과 → 착안사항 Act」·총평 「경영관리도 P-D-C-A 관점에서
   // 보고서가 작성(특히, 환류)」, 관리계획 참고3 「P-D-C-A의 논리성·연계성 강화」(Plan: 계획 논리·성과지표·목표 / Check: 성과·산출근거).

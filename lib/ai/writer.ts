@@ -12,7 +12,7 @@ import { flattenHtmlTables } from "../knowledge/rich-text.ts";
 import { KB_SECTIONS } from "../knowledge/kb-sections.ts";
 import { type Descriptions, type PromptSet, type PromptSpec, described, fillFrom } from "../prompts/template.ts";
 import { FOLLOWUP_JUDGMENTS, type FollowupBasis, type VerifiedFollowup, followupBlock, verifyFollowup } from "./followup.ts";
-import { dataEnvelope, escapeXml, unescapeXml } from "./envelope.ts";
+import { dataEnvelope, dataText, escapeXml, unescapeXml } from "./envelope.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 type Json = LooseJson;
@@ -62,7 +62,7 @@ export function filesBlock(p: PromptSet, files: PromptFile[]): string[] {
 export const FILES_SECTIONS = ["files.head"] as const;
 export const ASSIST_PROMPT_SPEC: PromptSpec = {
   system: ["system"],
-  request: ["prompt", "note.given", "note.inPaste", "note.none", "task.improve", "task.discover", "task.reflect", "task.followup", "locked", "paste", "followup.head", "followup.row", "followup.recheck", ...FILES_SECTIONS, ...KB_SECTIONS],
+  request: ["prompt", "note.given", "note.inPaste", "note.none", "task.improve", "task.discover", "task.reflect", "task.followup", "locked", "paste", "inspection", "followup.head", "followup.row", "followup.recheck", ...FILES_SECTIONS, ...KB_SECTIONS],
   schema: ["headline", "summary", "citations", "citations.key", "citations.quote", "suggestions", "suggestions.target_path", "suggestions.period", "suggestions.proposed", "suggestions.reason", "suggestions.source_keys", "monthly_row", "need_input", "followup", "followup.id", "followup.judgment", "followup.card_quote", "followup.inspection_quote", "followup.remaining"],
 };
 
@@ -242,6 +242,8 @@ export interface WriterRequest {
   files: PromptFile[];
   /** 보완 점검: 최종 점검표에서 뽑은 미흡 행(서버가 채움 — followup 요청일 때만) */
   followup?: FollowupBasis | null;
+  /** 개선 제안·실적 발굴·실적 반영: 최근 점검표 요약(서버가 점검표가 있을 때만 채움 — lib/ai/writer-knowledge.ts). 없으면 요청 글이 예전과 같음 */
+  inspection?: string | null;
   /** 확정돼 이 작성본에서 고칠 수 없는 고정 영역(부서 담당자 — 서버가 채움). 있으면 그 칸은 제안하지 말라고 알림 */
   locked?: readonly string[] | null;
 }
@@ -252,6 +254,7 @@ export function userPrompt(p: PromptSet, card: Json, kb: string, req: WriterRequ
   const note = req.note.trim() ? r("note.given", { note: req.note.trim() }) : req.attachmentText ? r("note.inPaste") : r("note.none");
   const parts = [r("prompt", { label: WRITER_MODES[req.mode].label, task: r(`task.${req.mode}`), period: req.periodLabel, note, card: dataEnvelope("card", cardOutline(card)), refs: kb })];
   if (req.attachmentText) parts.push("", r("paste", { text: escapeXml(req.attachmentText.slice(0, ASSIST_TEXT_MAX.reflect)) }));
+  if (req.inspection) parts.push("", r("inspection", { text: dataText(req.inspection) }));
   if (req.mode === "followup" && req.followup) parts.push("", followupBlock(p, req.followup));
   if (req.locked?.length) parts.push("", r("locked", { label: fixedLabelOf(card), paths: req.locked.join("·") }));
   parts.push(...filesBlock(p, req.files));

@@ -386,7 +386,8 @@ test("수치 띠(2026-10-15 후속 6 → 2026-10-28): 주요사업 집필 요청
   // 2026-11-19 C1(평가내용 번호 = '26 편람 11.13 수정 번호 — report-draft-mg/request.md skeleton.head 「옮긴 번호·괄호에 2025 번호」)로 판 바뀜(@6eeabb57 → @ecc0f7f1)
   // 2026-11-20 외부 컨설팅 의견 카드별 참조(끼운 inputs.md 「외부 컨설팅 의견(이 카드)」 두 줄, request kb.consult — _shared/knowledge-mg.md#consult)로 판 바뀜(@ecc0f7f1 → @e2e0809f)
   // 2026-11-20 K1 체크리스트 판 표지(끼운 _shared/knowledge-mg.md #rules 「'26 자가진단 체크리스트는 '26 편람 최초 기준」 한 줄)로 판 바뀜(@e2e0809f → @1c4f0ab8)
-  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@1c4f0ab8");
+  // 2026-11-21 경영관리 과제원장 AI 선별(기준류 원문 그대로 — 끼운 _shared/knowledge-mg.md select.* 절 문구, 경평 초안 요청 글은 그대로)로 판 바뀜(@1c4f0ab8 → @1c843cdf)
+  assert.equal(reportDraftPromptsMg().prompts.version, "report-draft-mg@1c843cdf");
   // 2026-10-29 스타일 규칙 S2 데이터 블록(report-outline-mg system 5번 「절 제목을 받치는 블록만」 문장에 수치 묶음 → 데이터 블록 하나, request bundles.* 「수치 묶음 재료」)으로 outline만 바뀜
   // (@2329565b → @e5deeb90 — 집필·블록 고치기·주요사업 판 그대로)
   // 2026-10-29 S2 보강 — 수치 묶음 재료에 이 카드에 연결된 근거 조각의 표 묶음(report-outline-mg request bundles.head 문구·bundles.from.linked·bundles.cut, mg-bundles.ts linkedBundles)으로 outline만 바뀜

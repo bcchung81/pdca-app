@@ -173,8 +173,8 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 
 ### 자료 범위는 기능마다 고정
 
-- **카드 개선**(요청 종류 넷·리뷰어 코멘트): 현재 카드(부서는 작성본) + 그 카드의 카드 전용 자료 전부 + 공통 지식 규칙 범위 전부(① 기관 공통 ② 공통지표(BZ-4)·사업 미지정 ③ 이 사업 공통, `buildBundle`) + 과제 기준 목록표(알리는 용도, 거르지 않음)
-- **질문**: 위 + 최종 점검표(보낸·확인한 것 중 점검월이 가장 늦은 1건, 초안 제외) + 앞 요청·답. **보완 점검**: 카드 개선 + 최종 점검표의 미흡·기준 미확인·해당 없음 행
+- **카드 개선**(요청 종류 넷·리뷰어 코멘트): 현재 카드(부서는 작성본) + 그 카드의 카드 전용 자료 전부 + 공통 지식 규칙 범위(① 기관 공통 ② 공통지표(BZ-4)·사업 미지정 ③ 이 사업 공통, `buildBundle`) + 과제 기준 목록표(알리는 용도, 거르지 않음). 작성지원은 요청 종류 × 최근 점검표 유무로 갈래를 뺌(`lib/knowledge/mode-profile.ts writerScope` — 점검표가 대신하는 자료는 점검표를 줄 때만·보완 점검은 늘 뺌·개선 제안은 붙임2 늘·실적 반영은 트랙 표(주요사업 지표·전략만·선별 안 씀, 경영관리 + 실사·전년 보고서·선별 따름 — 점검표 없으면 + 자가진단 체크리스트), 서버·평가 실행기 공용 `lib/ai/writer-knowledge.ts`)
+- **질문**: 카드 개선(범위 전부) + 최종 점검표(보낸·확인한 것 중 점검월이 가장 늦은 1건, 초안 제외) + 앞 요청·답. **보완 점검**: 카드 개선 + 최종 점검표의 미흡·기준 미확인·해당 없음 행
 - **월간 점검**: **확정 카드(원장)** + 관리계획 발췌(지침 14 붙임1) + 붙임2 사례만. 경영관리는 그 지표 발췌·핵심공통항목 + 붙임4 자리에 원장 주요사업 카드 발췌. 카드 전용 자료·검색 결과는 주지 않음
 - **경평 초안**: 카드 + 카드 전용 자료 + 보고서 추가자료(같은 사업·부서·연도) + 공통 지식 규칙 범위 전부(+ 작성 방법론 — 사실 근거 아님) + 2025 같은 과제 절(`rpt25-biz`) + 평가 관점(`lib/reports/lens.ts`) + 올해 실적(원장·입력창 없음). **숫자 근거**는 사람이 고른 추가자료·실사 답변·연결된 2025 절뿐(`draftEvidence` linked — `relevantRefs(kb)`). **구성안만** 최종 점검표 미흡 행을 논점 참고로 받음(근거 아님). 경영관리는 + 사람이 고른 주요사업 초안·그 붙임(rpc `mg_biz_*`, 그 초안의 없는 숫자는 근거 아님)
 
@@ -219,7 +219,7 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 ### 공통 지식 적재
 
 `lib/knowledge/`는 입출력 없는 순수 로직(정규화·표 읽기·문서별 파서·카드 연결)이고 `scripts/knowledge/ingest.ts`는 파일 읽기·쓰기만 합니다. 전용 파서가 조각(`knowledge_chunks`)을 만들고 검산 기대값(`*_EXPECTED`)이 회귀를 막습니다. 적재 순서: `pnpm knowledge:parse` → `knowledge:ingest` → 운영 DB는 `pnpm db:seed --knowledge-only`.
-- **AI가 읽는 묶음**: 규칙 범위 전부를 세 층으로 요청 앞에 붙이고 조각 글은 자르지 않음. 과제 연결·대응표는 거르는 데 쓰지 않고 목록표로만 알림(`buildBundle`, `lib/ai/context.ts` `loadCardBundle`). **공통지표(BZ-4) 조각은 소속 사업을 알면 그 사업의 ③에만**(`common-kpi-owner.ts`, 적재 때 `meta.related_business`를 기록해야 하며 없으면 `scope-check.ts`가 적재를 멈춤 — 새 지표 이름은 `dictionaries.ts` `METRICS_2025`에 먼저), 모르면 ②. 모델이 읽는 글은 `sharedBlock`(`compact.ts`)으로 정리하되 조각 글(refs)과 인용 대조는 그대로
+- **AI가 읽는 묶음**: 규칙 범위 전부를 세 층으로 요청 앞에 붙이고 조각 글은 자르지 않음(②의 AI 가점 실사만 대응표 연결·AI활용 칸·MG-13 카드에 — `bonus-scope.ts`, `layerOf`는 그대로). 과제 연결·대응표는 거르는 데 쓰지 않고 목록표로만 알림(`buildBundle`, `lib/ai/context.ts` `loadCardBundle`). **공통지표(BZ-4) 조각은 소속 사업을 알면 그 사업의 ③에만**(`common-kpi-owner.ts`, 적재 때 `meta.related_business`를 기록해야 하며 없으면 `scope-check.ts`가 적재를 멈춤 — 새 지표 이름은 `dictionaries.ts` `METRICS_2025`에 먼저), 모르면 ②. 모델이 읽는 글은 `sharedBlock`(`compact.ts`)으로 정리하되 조각 글(refs)과 인용 대조는 그대로
 - 과제 대응표 `card_knowledge_scope`는 처리기(`prep_jobs`·`pnpm prep`·`/api/prep/run`, `PREP_AUTORUN=off`)가 light 모델로 채우는 **참고 표시**일 뿐 자료를 거르지 않음
 - **일반 문서 올리기**(관리자 화면 또는 `pnpm knowledge:add`): `generic.ts`(범용 조각기)·`upload.ts`·`save.ts`를 모두 공유. 사업마다 요청 앞 공통 지식이 `SHARED_CHARS_LIMIT` 40만 자를 넘으면 저장하지 않고 멈춤(`guard.ts`), 읽기·검산·크기 보호 중 하나라도 실패하면 DB에 아무것도 안 쓰고 파일도 지움. 검색 전용(`meta.search_only`)은 `layerOf`가 범위 밖으로 돌림. 작성 방법론(`meta.usage = report_method`)은 `layerOf(c, unit, purpose)`의 목적이 `report`일 때만 ①에 들어가고 「근거가 아님」 표지(`revision-note.ts`), 숫자·인용 대조에는 안 씀
 - 클라이언트 컴포넌트는 `upload.ts`(kordoc)가 아니라 순수 `upload-scope.ts`·`limits.ts`만 import. 조각 캐시(`chunk-cache.ts`)는 저장·삭제 때 비우고 올리기 크기 보호는 `fresh: true`. 공통 조각과 카드 전용 자료 표는 합치지 않음(D4 — 금기 4 누출 통로)

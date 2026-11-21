@@ -1,11 +1,13 @@
 // 공통 지식 선별 방식(실험, 기본 꺼짐 — 지식공급 하이브리드 선별 계획 §4.1·6단계). 순수 함수.
-// 통째로 넣기 묶음(buildBundle)을 받아 기준류(rule)는 공통 규칙 문서로, 사례류(critique·survey·prior·case)는 이 카드에 고른 원문 + 제목 목록으로 바꿉니다.
+// 통째로 넣기 묶음(buildBundle)을 받아 기준류(rule)는 공통 규칙 문서로(트랙 스펙 selectRules = digest — 주요사업. raw인 경영관리는 원문 그대로),
+// 사례류(critique·survey·prior·case)는 이 카드에 고른 원문 + 제목 목록으로 바꿉니다.
 // 작성 방법론·실적 근거·기타(method·evidence·other)는 원래 층에 원문 그대로 둡니다(요구사항 R1 「빠짐없이」의 안전장치 — chunk-role.ts).
 // 인용·숫자 대조는 선별 전 원문 전부(select.all)로 합니다(bundle.ts bundleRefs·relevantRefs).
 
-import { type BundleChunk, type BundlePurpose, type KnowledgeBundle, layerOf } from "./bundle.ts";
+import { type BundleChunk, type BundlePurpose, type KnowledgeBundle, type LayerId, layerOf } from "./bundle.ts";
 import { type ChunkRole, DIGEST_ROLES, SELECTABLE_ROLES, chunkRole } from "./chunk-role.ts";
 import { chunkHash } from "./rules-digest.ts";
+import { trackSpecOfUnit } from "../tracks/index.ts";
 
 /** 선별 방식을 켜는 환경변수 — 쉼표 목록, 용도(card·report) 또는 card 용도 안의 기능(writer·chat·comment). 비면 모두 통째로 넣기 */
 export const SELECT_ENV_KEY = "KNOWLEDGE_SELECT";
@@ -40,16 +42,52 @@ export function selectOn(env: string | undefined, purpose: BundlePurpose, featur
 }
 
 /**
- * 선별 방식을 켤 트랙(쉼표 목록, 예: 주요사업). 비면 모든 트랙(실험 하위 호환). DB 출처(lib/ai/context.ts dbSelection)에만 씀 —
- * 다른 트랙에 규칙 문서를 올려도 그 트랙이 저절로 선별 방식이 되지 않게(꽂은 실험 출처는 그대로)
+ * 선별 방식을 켤 트랙(쉼표 목록). 항목은 `<트랙>` 또는 `<트랙>:<값>|<값>…`(예: `주요사업,경영관리:card`). 비면 모든 트랙(실험 하위 호환).
+ * DB 출처(lib/ai/context.ts dbSelection)에만 씀 — 다른 트랙에 선별 행을 올려도 그 트랙이 저절로 선별 방식이 되지 않게(꽂은 실험 출처는 그대로)
  */
 export const SELECT_TRACKS_ENV_KEY = "KNOWLEDGE_SELECT_TRACKS";
 
-/** 이 트랙이 선별 방식 대상인지 — 목록이 비면 모든 트랙 */
-export function selectTrackOn(env: string | undefined, track: string): boolean {
-  const list = (env ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  return !list.length || list.includes(track);
+/** 트랙 항목에 적는 값 — 용도(card·report) 또는 card 용도 안의 기능. card = card 용도 기능 셋 전부 */
+export type SelectTrackValue = BundlePurpose | SelectFeature;
+const TRACK_VALUES: readonly SelectTrackValue[] = [...PURPOSES, ...SELECT_FEATURES];
+
+/**
+ * 트랙 설정 값 → 트랙마다 켤 것. 트랙만 적으면 null(KNOWLEDGE_SELECT가 켠 것 전부), 값을 적으면 그 값 집합(KNOWLEDGE_SELECT와 교집합).
+ * 값은 소문자·앞뒤 공백 무시, 모르는 값은 무시 — 적은 값이 모두 모르는 값이면 빈 집합(그 트랙은 아무것도 안 켬: 오타가 선별을 넓히지 않게). 같은 트랙을 두 번 적으면 합침(하나라도 트랙만이면 전부)
+ */
+export function selectTracks(env: string | undefined): Map<string, Set<SelectTrackValue> | null> {
+  const out = new Map<string, Set<SelectTrackValue> | null>();
+  for (const raw of (env ?? "").split(",")) {
+    const [name, ...rest] = raw.split(":");
+    const track = name.trim();
+    if (!track) continue;
+    if (!rest.length) {
+      out.set(track, null);
+      continue;
+    }
+    const values = pick(rest.join(":").replaceAll("|", ","), TRACK_VALUES);
+    const prev = out.get(track);
+    if (prev !== null) out.set(track, new Set([...(prev ?? []), ...values]));
+  }
+  return out;
 }
+
+/**
+ * 이 트랙의 이 요청(용도·card 용도의 기능)이 트랙 설정상 선별 대상인지 — 목록이 비면 모든 트랙, 목록에 없는 트랙은 아님, 트랙만 적었으면 맞음.
+ * 값을 적었으면 report는 report가, card 용도는 card 또는 그 기능이 있어야 함(기능을 모르면 card가 있어야 — selectOn과 같은 결)
+ */
+export function selectTrackOn(env: string | undefined, track: string, purpose: BundlePurpose, feature?: SelectFeature): boolean {
+  const tracks = selectTracks(env);
+  if (!tracks.size) return true;
+  if (!tracks.has(track)) return false;
+  const values = tracks.get(track);
+  if (!values) return true;
+  if (purpose === "report") return values.has("report");
+  return values.has("card") || (feature !== undefined && values.has(feature));
+}
+
+/** 이 평가단위 트랙이 기준류를 원문 그대로 두는지(TrackSpec.selectRules = raw — 경영관리: 규칙 문서 없이 사례류만 고름) */
+export const rawRules = (unit: string): boolean => trackSpecOfUnit(unit).selectRules === "raw";
 
 /** DB 선별 결과(card_knowledge_select)에서 대응표 rejected를 뺀 뒤 이보다 적으면 통째로 넣기 — 주요사업 59장 Jev 선별 실측 하위 10% 경계(1~4건만 고른 카드는 근거가 거의 사라짐) */
 export const SELECT_MIN_KEYS = 5;
@@ -87,7 +125,7 @@ export function digestScopeFresh(digests: BundleChunk[], scope: BundleChunk[]): 
   return scope.every((c) => recorded.has(c.chunk_key) && recorded.get(c.chunk_key) === chunkHash(c));
 }
 
-/** 한 카드의 선별 결과 — keys = 고른 사례류 조각 키(순서 = 순위), digest = 공통 규칙 문서 글(track = 트랙 공통 ①②, unit = 평가단위 ③) */
+/** 한 카드의 선별 결과 — keys = 고른 사례류 조각 키(순서 = 순위), digest = 공통 규칙 문서 글(track = 트랙 공통 ①②, unit = 평가단위 ③ — 기준류가 원문 그대로인 트랙(rawRules)은 빈 글) */
 export interface CardSelection {
   keys: string[];
   digest: { track: string; unit: string };
@@ -98,9 +136,10 @@ const isSelectable = (r: ChunkRole | undefined) => r !== undefined && SELECTABLE
 
 /**
  * 규칙 문서가 빠진 기준류를 대신할 수 있는지 — 이 평가단위 층에 기준류가 있는데 그 자리 규칙 문서가 비면 false(조용히 반쪽 선별하지 않고 통째로 넣기로 둠).
- * ①② 기준류는 트랙 공통 글, ③ 기준류는 평가단위 글이 있어야 함
+ * ①② 기준류는 트랙 공통 글, ③ 기준류는 평가단위 글이 있어야 함. 기준류를 원문 그대로 두는 트랙(rawRules — 경영관리)은 대신할 것이 없어 늘 true
  */
 export function digestCovers(chunks: BundleChunk[], unit: string, purpose: BundlePurpose, sel: CardSelection): boolean {
+  if (rawRules(unit)) return true;
   let shared = false;
   let own = false;
   for (const c of chunks) {
@@ -119,23 +158,26 @@ export function rolesOf(chunks: BundleChunk[]): Map<string, ChunkRole> {
 
 /**
  * 통째로 넣기 묶음 → 선별 방식 묶음. 층에서 기준류·사례류를 빼고(나머지는 그대로), 사례류는 (sel.keys ∪ 과제 연결)에 든 것만 원문으로 고름 —
- * 과제 연결(자동·확정)은 늘 넣음. 순서 = sel.keys 순서, 그 뒤 연결 중 남은 것. 목록표 키는 요청에 원문이 든 조각만 남김(모델이 못 받은 키를 가리키지 않게)
+ * 과제 연결(자동·확정)은 늘 넣음. 순서 = sel.keys 순서, 그 뒤 연결 중 남은 것. 목록표 키는 요청에 원문이 든 조각만 남김(모델이 못 받은 키를 가리키지 않게).
+ * 기준류를 원문 그대로 두는 트랙(rawRules(b.unit) — 경영관리)은 기준류를 층에 남기고 규칙 문서 글을 비움(규칙 문서 덩이가 안 생김).
+ * keepRaw = 규칙 문서를 쓰는 트랙에서도 원래 층에 원문으로 남길 기준류(조각·층 → 참) — 규칙 문서 글은 그대로 둠(겹침 허용). 안 넘기면 예전과 같음
  */
-export function applySelection(b: KnowledgeBundle, sel: CardSelection, roles: Map<string, ChunkRole>): KnowledgeBundle {
+export function applySelection(b: KnowledgeBundle, sel: CardSelection, roles: Map<string, ChunkRole>, keepRaw?: (ref: { unitType: string }, layer: LayerId) => boolean): KnowledgeBundle {
+  const raw = rawRules(b.unit);
   const all = b.layers.flatMap((l) => l.refs);
   const selectable = new Map(all.filter((r) => isSelectable(roles.get(r.key))).map((r) => [r.key, r]));
   const order = [...new Set([...sel.keys, ...b.list.relevant])].filter((k) => selectable.has(k));
   const picked = order.map((k) => selectable.get(k)!);
   const pickedKeys = new Set(order);
   const unpicked = [...selectable.values()].filter((r) => !pickedKeys.has(r.key)).map((r) => ({ key: r.key, title: r.title, unitType: r.unitType }));
-  const layers = b.layers.map((l) => ({ id: l.id, refs: l.refs.filter((r) => !isDigest(roles.get(r.key)) && !isSelectable(roles.get(r.key))) }));
+  const layers = b.layers.map((l) => ({ id: l.id, refs: l.refs.filter((r) => (raw || !isDigest(roles.get(r.key)) || keepRaw?.(r, l.id) === true) && !isSelectable(roles.get(r.key))) }));
   const inRequest = new Set([...layers.flatMap((l) => l.refs.map((r) => r.key)), ...order]);
   const keep = (xs: string[]) => xs.filter((k) => inRequest.has(k));
   return {
     unit: b.unit,
     layers,
     list: { relevant: keep(b.list.relevant), taskRow: b.list.taskRow, peers: keep(b.list.peers), prior: keep(b.list.prior), similar: keep(b.list.similar) },
-    select: { picked, unpicked, all, relevant: b.list.relevant, digest: sel.digest },
+    select: { picked, unpicked, all, relevant: b.list.relevant, digest: raw ? { track: "", unit: "" } : sel.digest },
     ...(b.consult ? { consult: b.consult } : {}),
   };
 }

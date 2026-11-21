@@ -45,12 +45,14 @@ test("늘 남길 조각이 없으면(주요사업) Jev 고른 결과·판정기 
   assert.equal(judgeLabel("jev-1.14.0", "strict", SELECT_THRESHOLD, ALWAYS_KEEP.주요사업), "jev-1.14.0:strict:p>=0.2");
 });
 
-test("경영관리는 ③ 이 지표 층의 전년 보고서만 늘 남김", () => {
+test("경영관리는 ③ 이 지표 층의 전년 보고서·지적(평가위원 의견·중간보고서 지적·시정조치 계획)을 늘 남김 — 실사 답변은 Jev에 맡김", () => {
   const mg = ALWAYS_KEEP.경영관리;
   assert.equal(keptBy(mg, "business", "prior"), true);
+  assert.equal(keptBy(mg, "business", "critique"), true);
   assert.equal(keptBy(mg, "business", "survey"), false);
-  assert.equal(keptBy(mg, "business", "critique"), false);
+  assert.equal(keptBy(mg, "business", "case"), false);
   assert.equal(keptBy(mg, "common", "prior"), false);
+  assert.equal(keptBy(mg, "common", "critique"), false, "② 가점 공통의 지적은 Jev에 맡김");
   assert.equal(keptBy(mg, null, "prior"), false);
-  assert.equal(judgeLabel("jev-1.14.0", "strict", SELECT_THRESHOLD, mg), "jev-1.14.0:strict:p>=0.2+keep:business/prior");
+  assert.equal(judgeLabel("jev-1.14.0", "strict", SELECT_THRESHOLD, mg), "jev-1.14.0:strict:p>=0.2+keep:business/prior|critique");
 });

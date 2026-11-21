@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { assistPrompts, assistPromptsMg, chatPrompts, commentPromptsMg, reportDraftPrompts, reportDraftPromptsMg } from "../prompts/sets.ts";
+import { assistPrompts, assistPromptsMg, chatPrompts, chatPromptsMg, commentPromptsMg, reportDraftPrompts, reportDraftPromptsMg } from "../prompts/sets.ts";
 import { type BundleChunk, type KnowledgeBundle, RULES_DIGEST_UNIT, buildBundle, bundleRefs, layerOf, listText, relevantRefs, sharedTexts } from "./bundle.ts";
 import { chunkRole } from "./chunk-role.ts";
 import { SYN_BIZ_CARD, SYN_BIZ_LINKED, SYN_CHUNKS, SYN_MG_CARD, SYN_MG_LINKED, SYN_PROMPTS } from "./fixtures/bundle-synthetic.ts";
 import { chunkHash } from "./rules-digest.ts";
-import { type CardSelection, applySelection, digestCovers, digestFresh, digestScopeFresh, rolesOf, selectFeatures, selectOn, selectPurposes, selectTrackOn } from "./select.ts";
+import { type CardSelection, SELECT_FEATURES, applySelection, digestCovers, digestFresh, digestScopeFresh, rawRules, rolesOf, selectFeatures, selectOn, selectPurposes, selectTrackOn, selectTracks } from "./select.ts";
 
 const BASELINE = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures/bundle-baseline.json"), "utf8")) as Record<string, unknown>;
 const cases = (chunks: BundleChunk[]): Record<string, KnowledgeBundle> => ({
@@ -79,10 +79,14 @@ test("applySelection: 층에서 기준류·사례류가 빠지고 method·eviden
   assert.equal(s.select!.picked[0].text, "도서 지역 통신품질 측정 35곳", "고른 조각은 원문 그대로");
 });
 
-test("applySelection: 경영관리 핵심공통항목(evidence)은 ③에 그대로", () => {
-  const s = applySelection(cases(SYN_CHUNKS)["mg-card"], sel([]), roles);
-  assert.deepEqual(keysOf(s), [["institution", []], ["common", []], ["business", ["mg/core/MG-3"]]]);
+test("applySelection(경영관리 — 기준류 원문 그대로, raw): 서술·편람(기준류)과 핵심공통항목은 층에 그대로, 사례류만 고르고 규칙 문서 글은 비움", () => {
+  assert.equal(rawRules("MG-3"), true);
+  assert.equal(rawRules("BZ-1"), false);
+  const s = applySelection(cases(SYN_CHUNKS)["mg-card"], sel([], { track: "꽂은 규칙 문서", unit: "꽂은 지표 규칙 문서" }), roles);
+  assert.deepEqual(keysOf(s), [["institution", ["mg/plan/inst"]], ["common", []], ["business", ["mg/handbook/MG-3", "mg/core/MG-3"]]]);
   assert.deepEqual(s.select!.picked.map((r) => r.key), ["mg/eval/MG-3/1"], "과제 연결만");
+  assert.deepEqual(s.select!.unpicked.map((x) => x.key), ["rpt25-mg-03/1"]);
+  assert.deepEqual(s.select!.digest, { track: "", unit: "" }, "출처가 규칙 문서 글을 줘도 경영관리는 안 씀");
 });
 
 test("applySelection: 목록표 키는 요청에 원문이 든 조각만, 인용·숫자 대조(bundleRefs·relevantRefs)는 선별 전 원문 전부", () => {
@@ -117,7 +121,7 @@ test("sharedTexts(선별): 세 덩이 — 앞 둘(규칙 문서 + 남은 원문)
 });
 
 test("sharedTexts(선별): 고른 조각이 없고 규칙 문서·남은 원문도 없으면 빈 덩이는 뺌", () => {
-  const s = applySelection(cases(SYN_CHUNKS)["mg-card"], { keys: [], digest: { track: "", unit: "" } }, roles);
+  const s = applySelection(cases(SYN_CHUNKS.filter((c) => chunkRole(c) !== "rule"))["mg-card"], { keys: [], digest: { track: "", unit: "" } }, roles);
   const t = sharedTexts(assistPromptsMg().prompts, { ...s, list: { ...s.list, relevant: [] }, select: { ...s.select!, picked: [] } });
   assert.equal(t.length, 1);
   assert.match(t[0], /^「근거 자료 ③ 경영관리 지표3 [^」]+ 지표 공통 — 원문 그대로」 1건/);
@@ -133,11 +137,30 @@ test("listText(선별): 목록 머리가 선별 방식 설명이고 끝에 고�
     assert.match(t, /\n- plan-2607\(3건\): plan-2607\/eval25\/BZ-1\/e1\/p01 · 제목 plan-2607\/eval25\/BZ-1\/e1\/p01 \| /);
     assert.match(t, /\n- rpt25-biz\(1건\): rpt25-biz\/BZ-1\/a · 2025 보고서 1-1 가\. 안테나 판독$/m);
   }
+  // 경영관리 합성 카드는 지표 13이 아니고 가점 실사 연결도 없어 가점 실사(②)가 묶음에서 빠짐(bonus-scope.ts, 2026-11-21) — 남은 사례류는 전년 보고서 장 하나
   const mg = applySelection(cases(SYN_CHUNKS)["mg-card"], sel([]), roles);
   for (const p of [commentPromptsMg().prompts, reportDraftPromptsMg().prompts]) {
-    assert.match(listText(p, mg), /「고르지 않은 조각」 2건[^\n]*\n- att3-2604\(1건\): att3-2604\/qa\/bonus\/1 · [^\n]*\n- rpt25-mg-03\(1건\): rpt25-mg-03\/1 · /, "가점 실사(②)도 사례류");
+    assert.match(listText(p, mg), /「고르지 않은 조각」 1건[^\n]*\n- rpt25-mg-03\(1건\): rpt25-mg-03\/1 · /);
     assert.equal(sharedTexts(p, mg).length, 3);
   }
+});
+
+test("sharedTexts(선별, 경영관리 raw): 규칙 문서 덩이 없이 [① 원문 그대로(기준류 포함), ③ 원문 그대로(편람 포함), 고른 원문] — 목록 머리는 「기준 자료는 원문 그대로」", () => {
+  for (const p of [assistPromptsMg().prompts, chatPromptsMg().prompts, commentPromptsMg().prompts]) {
+    const s = applySelection(cases(SYN_CHUNKS)["mg-card"], sel(["rpt25-mg-03/1"], { track: "꽂은 규칙 문서", unit: "꽂은 지표 규칙 문서" }), roles);
+    const t = sharedTexts(p, s);
+    assert.equal(t.length, 3, p.feature);
+    assert.ok(!t.some((x) => x.includes("공통 규칙 문서") || x.includes("꽂은")), "규칙 문서 덩이·글 없음");
+    assert.match(t[0], /^「근거 자료 ① 경영관리 공통 — 원문 그대로」 1건[^\n]*기준 자료[^\n]*\n[\s\S]*경영관리 공통 서술/);
+    assert.match(t[1], /^「근거 자료 ③ 경영관리 지표3 [^」]+ 지표 공통 — 원문 그대로」 2건[^\n]*\n[\s\S]*지표3 편람[\s\S]*지표3 핵심공통항목/);
+    assert.match(t[2], /^「이 과제에 고른 원문」 2건[^\n]*\n<source key="rpt25-mg-03\/1"/);
+    assert.match(listText(p, s), /^이 요청의 공통 지식은 선별 방식입니다: 기준 자료[^\n]*원문 그대로/);
+  }
+});
+
+test("digestCovers: 기준류를 원문 그대로 두는 경영관리(raw)는 규칙 문서가 없어도 true", () => {
+  assert.equal(digestCovers(SYN_CHUNKS, "MG-3", "card", sel([], { track: "", unit: "" })), true);
+  assert.equal(digestCovers(SYN_CHUNKS, "MG-3", "report", sel([], { track: "", unit: "" })), true);
 });
 
 test("digestCovers: 이 평가단위 층에 기준류가 있는데 그 자리 규칙 문서가 비면 false(반쪽 선별 안 함)", () => {
@@ -148,11 +171,55 @@ test("digestCovers: 이 평가단위 층에 기준류가 있는데 그 자리 �
   assert.equal(digestCovers(noOwnRules, "BZ-1", "card", sel([], { track: "있음", unit: "" })), true, "③에 기준류가 없으면 평가단위 규칙 문서는 없어도 됨");
 });
 
-test("selectTrackOn: 쉼표 목록(앞뒤 공백 무시)에 든 트랙만, 비면 모든 트랙", () => {
-  for (const env of [undefined, "", " , "]) assert.ok(selectTrackOn(env, "경영관리"), String(env));
-  assert.ok(selectTrackOn("주요사업", "주요사업"));
-  assert.ok(!selectTrackOn("주요사업", "경영관리"));
-  assert.ok(selectTrackOn(" 경영관리 ,주요사업", "주요사업"));
+test("selectTrackOn: 쉼표 목록(앞뒤 공백 무시)에 든 트랙만, 비면 모든 트랙 — 트랙만 적으면 용도·기능 전부", () => {
+  for (const env of [undefined, "", " , "]) {
+    assert.ok(selectTrackOn(env, "경영관리", "report"), String(env));
+    for (const f of SELECT_FEATURES) assert.ok(selectTrackOn(env, "경영관리", "card", f), `${String(env)} ${f}`);
+  }
+  assert.ok(selectTrackOn("주요사업", "주요사업", "report"));
+  assert.ok(selectTrackOn("주요사업", "주요사업", "card", "writer"));
+  assert.ok(selectTrackOn("주요사업", "주요사업", "card"));
+  assert.ok(!selectTrackOn("주요사업", "경영관리", "card", "chat"));
+  assert.ok(selectTrackOn(" 경영관리 ,주요사업", "주요사업", "report"));
+});
+
+test("selectTrackOn: <트랙>:<값>|<값> — KNOWLEDGE_SELECT와 교집합, card는 card 용도 기능 셋 전부, 모르는 값은 무시(다 모르면 아무것도 안 켬)", () => {
+  const env = "주요사업,경영관리:card";
+  assert.ok(selectTrackOn(env, "주요사업", "report"));
+  for (const f of SELECT_FEATURES) assert.ok(selectTrackOn(env, "경영관리", "card", f), f);
+  assert.ok(selectTrackOn(env, "경영관리", "card"), "기능을 모르면 card가 있어야(있음)");
+  assert.ok(!selectTrackOn(env, "경영관리", "report"), "경영관리 경평은 통째로 넣기");
+  const chat = " 경영관리 : Chat | report ";
+  assert.ok(selectTrackOn(chat, "경영관리", "card", "chat"));
+  assert.ok(selectTrackOn(chat, "경영관리", "report"));
+  assert.ok(!selectTrackOn(chat, "경영관리", "card", "writer"));
+  assert.ok(!selectTrackOn(chat, "경영관리", "card"), "기능을 모르면 card가 있어야(없음)");
+  assert.ok(!selectTrackOn(chat, "주요사업", "report"), "목록에 없는 트랙");
+  assert.ok(selectTrackOn("경영관리:card|foo", "경영관리", "card", "writer"), "모르는 값만 무시");
+  for (const bad of ["경영관리:foo", "경영관리:", "경영관리:on"]) {
+    assert.ok(!selectTrackOn(bad, "경영관리", "card", "chat"), bad);
+    assert.ok(!selectTrackOn(bad, "경영관리", "report"), bad);
+  }
+  assert.ok(selectTrackOn("경영관리:chat,경영관리", "경영관리", "report"), "같은 트랙을 두 번 — 트랙만 적은 것이 있으면 전부");
+  assert.ok(selectTrackOn("경영관리:chat,경영관리:report", "경영관리", "report"), "값은 합침");
+  assert.deepEqual([...selectTracks("주요사업, 경영관리:chat|card ,:report")].map(([t, v]) => [t, v && [...v].sort()]), [["주요사업", null], ["경영관리", ["card", "chat"]]], "트랙 이름이 빈 항목은 무시");
+});
+
+/** 이 트랙의 이 요청이 선별 방식 대상인지(설정만 — 출처·규칙 문서는 안 봄): KNOWLEDGE_SELECT 판정과 트랙 판정의 교집합 */
+const settingOn = (select: string, tracks: string) => (track: string, purpose: "card" | "report", feature?: "writer" | "chat" | "comment") =>
+  selectOn(select, purpose, feature) && selectTrackOn(tracks, track, purpose, feature);
+const REQUESTS = [["report", undefined], ["card", "writer"], ["card", "chat"], ["card", "comment"]] as const;
+
+test("운영 값 하위 호환: KNOWLEDGE_SELECT=report,chat + KNOWLEDGE_SELECT_TRACKS=주요사업 — 주요사업 경평·질문만 선별, 작성지원·코멘트와 경영관리 전부는 통째로 넣기(2026-11-07부터 운영과 같음)", () => {
+  const on = settingOn("report,chat", "주요사업");
+  assert.deepEqual(REQUESTS.map(([p, f]) => on("주요사업", p, f)), [true, false, true, false]);
+  assert.deepEqual(REQUESTS.map(([p, f]) => on("경영관리", p, f)), [false, false, false, false]);
+});
+
+test("목표 설정: KNOWLEDGE_SELECT=report,card + KNOWLEDGE_SELECT_TRACKS=주요사업,경영관리:card — 주요사업은 넷 다, 경영관리는 과제원장 AI만(경평은 통째로 넣기)", () => {
+  const on = settingOn("report,card", "주요사업,경영관리:card");
+  assert.deepEqual(REQUESTS.map(([p, f]) => on("주요사업", p, f)), [true, true, true, true]);
+  assert.deepEqual(REQUESTS.map(([p, f]) => on("경영관리", p, f)), [false, true, true, true]);
 });
 
 test("digestFresh: meta.sources의 key·해시(chunkHash)가 모두 지금 조각과 같아야 함 — 해시 다름·조각 사라짐·기록 없음은 낡음, 빈 목록은 그대로", () => {
@@ -181,4 +248,25 @@ test("digestScopeFresh: 규칙 문서 sources가 지금 입력 범위와 key 집
   assert.ok(digestScopeFresh([], scope), "규칙 문서가 없으면 판단 안 함");
   const [a, b] = [DIGESTS[0], DIGESTS[1]].map((d, i) => ({ ...d, meta: { sources: rec(scope.slice(i * 2, i * 2 + 2 - i)) } }));
   assert.ok(digestScopeFresh([a, b], scope), "조각이 여러 개면 sources 합집합");
+});
+
+test("applySelection keepRaw: 술어가 참인 기준류만 원래 층에 원문으로 남고(규칙 문서 글·고른 원문·제목 목록은 그대로), 거짓·안 넘김은 바이트까지 같음, 경영관리(raw)는 영향 없음", () => {
+  const base = cases(SYN_CHUNKS)["biz-card"];
+  const s0 = applySelection(base, sel(["rpt25-biz/BZ-1/b"]), roles);
+  const never = applySelection(base, sel(["rpt25-biz/BZ-1/b"]), roles, () => false);
+  assert.deepEqual(never, s0);
+  for (const p of [assistPrompts().prompts, chatPrompts().prompts]) {
+    assert.deepEqual(sharedTexts(p, never), sharedTexts(p, s0), p.feature);
+    assert.equal(listText(p, never), listText(p, s0), p.feature);
+  }
+  // ③의 편람·층 상관없이 Pool·중장기만 — ②(공통지표 편람)·서술은 규칙 문서로
+  const keep = (r: { unitType: string }, layer: string) => ["pool_indicator", "goal_indicator"].includes(r.unitType) || (r.unitType === "handbook_indicator" && layer === "business");
+  const s = applySelection(base, sel(["rpt25-biz/BZ-1/b"]), roles, keep);
+  assert.deepEqual(keysOf(s), [["institution", ["goal30-2605/1", "up-x/1"]], ["common", []], ["business", ["plan-2607/handbook26/BZ-1/k1", "pool25-biz/BZ-1/1"]]], "원래 층·순서 그대로");
+  assert.deepEqual(s.select, s0.select, "규칙 문서 글(겹침 허용)·고른 원문·제목 목록은 그대로");
+  const t = sharedTexts(assistPrompts().prompts, s);
+  assert.ok(t[0].includes("중장기 목표지표 하나") && t[1].includes("편람 지표 정의와 배점") && t[1].includes("성과지표 Pool 하나"));
+  assert.ok(!t.join("\n").includes("공통지표 편람") && !t.join("\n").includes("관리계획 서술 하나"));
+  const mg = cases(SYN_CHUNKS)["mg-card"];
+  assert.deepEqual(applySelection(mg, sel([]), roles, () => true), applySelection(mg, sel([]), roles), "raw는 이미 기준류를 원문으로 둠");
 });

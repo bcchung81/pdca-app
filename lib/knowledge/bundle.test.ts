@@ -3,9 +3,11 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 import { readSeedInput } from "../db/seed-files.ts";
 import { HAS_SEED_CARDS } from "../testing/originals.ts";
-import { assistPrompts, reportDraftPrompts } from "../prompts/sets.ts";
+import { assistPrompts, assistPromptsMg, reportDraftPrompts } from "../prompts/sets.ts";
 import { SCOPE_UNIT_TYPES } from "../prep/scope.ts";
 import { type BundleChunk, SIMILAR_MAX, buildBundle, bundleRefs, layerOf, listText, relevantRefs, sharedTexts } from "./bundle.ts";
+import { isBonusSurvey } from "./bonus-scope.ts";
+import { rolesOf, applySelection } from "./select.ts";
 
 const c = (over: Partial<BundleChunk> & { chunk_key: string }): BundleChunk => ({
   doc_id: "plan-2607",
@@ -37,7 +39,11 @@ const chunks: BundleChunk[] = [
   c({ chunk_key: "peer/kca", doc_id: "peer25-biz", unit_type: "peer_case", seq: 3, meta: { grade: "B+", kca: true } }),
   c({ chunk_key: "goal/1", doc_id: "goal30-2605", unit_type: "goal_indicator" }),
 ];
-const card = (title: string) => ({ evalUnitId: "BZ-1", data: { title, executionTask: "" } });
+/** AI활용 칸이 채워진 주요사업 카드 — AI 가점 실사가 묶음에 남음(bonus-scope.ts). 닮은 순(cardVector)은 이 칸을 안 읽음 */
+const AI_ON = { ai: { text: "AI 안테나 자동판독", checked: true } };
+const AI_NONE = { ai: { text: "해당사항 없음", checked: false } };
+const card = (title: string) => ({ evalUnitId: "BZ-1", data: { title, executionTask: "", strategy: AI_ON } });
+const plainCard = (title: string) => ({ evalUnitId: "BZ-1", data: { title, executionTask: "", strategy: AI_NONE } });
 
 test("층 규칙: 기관 공통(사업 없음)·공통지표/가점·이 사업만, 경영관리 트랙·다른 사업·B+/B0 밖 사례·KCA는 범위 밖, 과제 목록 행은 층에 안 넣음", () => {
   const at = (k: string) => layerOf(chunks.find((x) => x.chunk_key === k)!, "BZ-1");
@@ -128,15 +134,15 @@ test("트랙 분리: 경영관리 요청 묶음에는 주요사업 조각이(공
   const all = [...chunks, ...mgChunks, method];
   const mgCard = { evalUnitId: "MG-G1", knowledgeUnit: "MG-3", data: { title: "경영관리 과제", executionTask: "" } };
   for (const purpose of ["card", "report"] as const) {
-    const keys = bundleRefs(buildBundle(all, mgCard, [], null, purpose)).map((r) => r.key);
+    const keys = bundleRefs(buildBundle(all, mgCard, ["att3/qa/bonus/1"], null, purpose)).map((r) => r.key);
     assert.deepEqual(
       keys.filter((k) => !k.startsWith("mg/") && k !== "plan/mg" && k !== "att3/qa/bonus/1").sort(), // plan/mg = 기본 조각 목록의 경영관리 트랙 조각
       purpose === "report" ? ["gen/method"] : [],
       `${purpose}: 경영관리 요청에 주요사업 조각이 없음(방법론은 경평 초안 쪽 ①에만)`,
     );
-    assert.ok(keys.includes("att3/qa/bonus/1"), "가점은 경영관리 요청에도 들어감");
+    assert.ok(keys.includes("att3/qa/bonus/1"), "가점은 경영관리 요청에도 들어감(관련 카드 — 여기서는 대응표 연결)");
   }
-  const mg = buildBundle(all, mgCard);
+  const mg = buildBundle(all, mgCard, ["att3/qa/bonus/1"]);
   assert.deepEqual(mg.layers.map((l) => [l.id, l.refs.map((r) => r.key)]), [["institution", ["plan/mg", "mg/inst"]], ["common", ["att3/qa/bonus/1"]], ["business", ["mg/i3"]]], "③은 카드가 속한 지표(knowledgeUnit)의 조각만, 과제 목록 행은 층에 안 넣음");
   assert.equal(mg.unit, "MG-3");
   // knowledgeUnit을 안 주면 카드의 평가단위(MG-G1)로 읽어 지표 조각은 ③에 안 들어감(① ②만)
@@ -198,10 +204,13 @@ const seed = HAS_SEED_CARDS ? readSeedInput(resolve(import.meta.dirname, "../.."
 test("실제 적재 조각(이 컴퓨터에 있을 때): 사업마다 규칙 범위가 모두 들어감 — 사업 미지정 실사·관리계획 서술 포함, 경영관리 트랙 없음", { skip: !seed.knowledgeAvailable && "공통 지식 적재 결과(resources/knowledge/_chunks)가 없음" }, () => {
   const all = (seed as unknown as { chunks: BundleChunk[] }).chunks;
   for (const unit of ["BZ-1", "BZ-2", "BZ-3"]) {
-    const b = buildBundle(all, { evalUnitId: unit, data: { title: "" } });
+    const b = buildBundle(all, { evalUnitId: unit, data: { title: "", strategy: AI_ON } });
     const keys = new Set(bundleRefs(b).map((r) => r.key));
     const expected = all.filter((x) => layerOf(x, unit));
     assert.equal(keys.size, expected.length, unit);
+    // AI활용 칸이 빈 카드는 AI 가점 실사만 빠지고 나머지 규칙 범위는 그대로
+    const plain = bundleRefs(buildBundle(all, { evalUnitId: unit, data: { title: "", strategy: AI_NONE } })).map((r) => r.key);
+    assert.deepEqual(plain, bundleRefs(b).map((r) => r.key).filter((k) => !isBonusSurvey(all.find((x) => x.chunk_key === k)!)), `${unit} 무관 카드는 가점 실사만 빠짐`);
     const bonus = all.filter((x) => x.doc_id === "att3-2604" && x.business == null);
     assert.ok(bonus.length > 0 && bonus.every((x) => keys.has(x.chunk_key)), `${unit} 사업 미지정 실사`);
     const narrative = all.filter((x) => x.unit_type === "plan_section" && x.track === "주요사업");
@@ -243,4 +252,62 @@ test("근거 조각의 위치(where)에 판 표지가 붙음: '25 지표가 '26 
   assert.equal(where("att3/qa/BZ-2/old"), "2025 실사 · 질문 · ※ '25 지표 — '26 편람에서 폐지");
   assert.match(where("plan-2607/handbook26/BZ-2")!, /^'26 편람 · 주요사업2 · ※ 11\.13 수정본 기준: 배점 18점 그대로/);
   assert.equal(where("att3/qa/BZ-2/same"), "2025 실사 · 유지 지표", "유지 지표는 표지 없음");
+});
+
+test("AI 가점 실사는 관련 카드에만: 무관 카드는 ②에서 가점 실사만 빠지고(①③·목록표 나머지 그대로) 관련 카드는 예전 묶음 그대로 — 카드·경평 용도 둘 다", () => {
+  const bonusRule = c({ chunk_key: "bonus/rule", doc_id: "bonus-doc", unit_type: "plan_section", track: "가점", seq: 1 });
+  const all = [...chunks, bonusRule];
+  const keys = (b: ReturnType<typeof buildBundle>) => b.layers.map((l) => [l.id, l.refs.map((r) => r.key)]);
+  for (const purpose of ["card", "report"] as const) {
+    const related = buildBundle(all, card("안테나 판독"), ["att3/qa/BZ-1/1"], "plan/task/1-1", purpose);
+    const plain = buildBundle(all, plainCard("안테나 판독"), ["att3/qa/BZ-1/1"], "plan/task/1-1", purpose);
+    assert.deepEqual(keys(related)[1], ["common", ["att3/qa/BZ-4/1", "att3/qa/bonus/1", "bonus/rule"]], `${purpose} 관련 카드: ②에 가점 실사`);
+    assert.deepEqual(keys(plain), keys(related).map(([id, ks]) => [id, (ks as string[]).filter((k) => k !== "att3/qa/bonus/1")]), `${purpose} 무관 카드: 가점 실사만 빠짐(가점 트랙 기준류는 남음)`);
+    assert.ok(!bundleRefs(plain).some((r) => r.key === "att3/qa/bonus/1"), "인용 대조 근거에도 없음(요청에 안 든 조각)");
+    assert.ok(!plain.list.similar.includes("att3/qa/bonus/1") && related.list.similar.includes("att3/qa/bonus/1"), "닮은 순은 층에 남은 조각만");
+    assert.deepEqual(plain.list.relevant, related.list.relevant);
+    assert.deepEqual(plain.list.taskRow, related.list.taskRow);
+  }
+  // 관련 카드 묶음은 가점 거르기와 상관없이 같음: 연결만으로 관련(AI활용 칸 없음)인 카드와 층이 같음
+  const linked = buildBundle(all, plainCard("안테나 판독"), ["att3/qa/BZ-1/1", "att3/qa/bonus/1"]);
+  assert.deepEqual(keys(linked), keys(buildBundle(all, card("안테나 판독"), ["att3/qa/BZ-1/1"])), "대응표 연결(auto·confirmed)이 있으면 빼지 않음");
+  assert.deepEqual(linked.list.relevant, ["att3/qa/BZ-1/1", "att3/qa/bonus/1"]);
+  assert.deepEqual(relevantRefs(linked).map((r) => r.key), ["att3/qa/bonus/1", "att3/qa/BZ-1/1"], "연결된 가점 실사는 숫자 근거에도");
+  // 프롬프트 글: 관련·무관이 ② 건수만 다르고 ③ 덩이는 같음
+  const p = assistPrompts().prompts;
+  const [tr, tp] = [sharedTexts(p, buildBundle(chunks, card("안테나 판독"))), sharedTexts(p, buildBundle(chunks, plainCard("선박 탑승 예측")))];
+  assert.match(tr[0], /「근거 자료 ② 공통지표·사업 미지정」 2건/);
+  assert.match(tp[0], /「근거 자료 ② 공통지표·사업 미지정」 1건/);
+  assert.ok(!tp[0].includes("att3/qa/bonus/1"));
+  assert.equal(tr[1], tp[1], "③은 그대로");
+});
+
+test("AI 가점 실사(경영관리): 지표 13 카드는 넣고, 다른 지표 카드는 ② 덩이가 통째로 사라짐(빈 머리 없음) — 연결이 있으면 넣음", () => {
+  const mgChunks: BundleChunk[] = [
+    c({ chunk_key: "mg/inst", doc_id: "mg-doc", track: "경영관리", seq: 1 }),
+    c({ chunk_key: "mg/i3", doc_id: "mg-doc", track: "경영관리", business: "MG-3", seq: 2 }),
+    c({ chunk_key: "mg/i13", doc_id: "mg-doc", track: "경영관리", business: "MG-13", seq: 3 }),
+  ];
+  const all = [...chunks, ...mgChunks];
+  const at = (unit: string, linked: string[] = []) => buildBundle(all, { evalUnitId: unit, data: { title: "경영관리 과제" } }, linked);
+  const ids = (b: ReturnType<typeof buildBundle>) => b.layers.map((l) => [l.id, l.refs.map((r) => r.key)]);
+  assert.deepEqual(ids(at("MG-13")), [["institution", ["plan/mg", "mg/inst"]], ["common", ["att3/qa/bonus/1"]], ["business", ["mg/i13"]]]);
+  assert.deepEqual(ids(at("MG-3")), [["institution", ["plan/mg", "mg/inst"]], ["common", []], ["business", ["mg/i3"]]]);
+  assert.deepEqual(ids(at("MG-3", ["att3/qa/bonus/1"]))[1], ["common", ["att3/qa/bonus/1"]]);
+  const p = assistPromptsMg().prompts;
+  const t = sharedTexts(p, at("MG-3"));
+  assert.equal(t.length, 2);
+  assert.ok(!t[0].includes("「근거 자료 ②"), "② 머리가 없음");
+  assert.match(sharedTexts(p, at("MG-13"))[0], /「근거 자료 ② 가점 공통」 1건/);
+  assert.ok(!listText(p, at("MG-3")).includes("att3/qa/bonus/1"), "목록표도 층에 남은 조각만");
+});
+
+test("AI 가점 실사(선별 방식): 무관 카드는 선별 전 묶음에 없어 고른 원문·제목 목록·인용 대조 어디에도 없음, 관련 카드는 그대로 사례류", () => {
+  const roles = rolesOf(chunks);
+  const sel = { keys: ["att3/qa/bonus/1", "rpt/BZ-1/a"], digest: { track: "규칙 문서", unit: "규칙 문서" } };
+  const plain = applySelection(buildBundle(chunks, plainCard("안테나 판독")), sel, roles);
+  assert.deepEqual(plain.select!.picked.map((r) => r.key), ["rpt/BZ-1/a"], "선별 결과에 있어도 묶음에 없으면 안 고름");
+  assert.ok(!plain.select!.unpicked.some((x) => x.key === "att3/qa/bonus/1") && !bundleRefs(plain).some((r) => r.key === "att3/qa/bonus/1"));
+  const related = applySelection(buildBundle(chunks, card("안테나 판독")), sel, roles);
+  assert.deepEqual(related.select!.picked.map((r) => r.key), ["att3/qa/bonus/1", "rpt/BZ-1/a"]);
 });

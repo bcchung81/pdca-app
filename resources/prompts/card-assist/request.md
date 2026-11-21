@@ -1,6 +1,7 @@
 작성지원 요청 글입니다. 코드(lib/ai/writer.ts `userPrompt`)가 prompt 절을 채우고, 실적 반영이면 paste 절, 첨부가 있으면 files.head 절과 자료별 <source key="file:N"> 봉투(전체 글)를 이어 붙입니다(블록 사이 빈 줄).
 요청 종류별 할 일은 task.* 절 — 운영 지침(09)의 어느 절을 따르는지 적습니다. 반영 제안 8건 상한은 코드도 자릅니다(SUGGESTION_MAX).
 보완 점검이면 followup.* 절로 「점검표 보완 요구」 블록을 이어 붙입니다(lib/ai/followup.ts followupBlock).
+개선 제안·실적 발굴·실적 반영에 최근 점검표가 있으면 paste 절 자리 뒤에 inspection 절(lib/ai/writer-inspection.ts assistInspectionBrief)을 붙입니다 — 없으면 요청 글은 예전과 같습니다.
 
 <!-- @prompt -->
 요청 종류: {{label}}
@@ -67,6 +68,10 @@
 
 <!-- @paste -->
 「실적 자료·요청(사용자가 요청 칸에 붙여 넣은 글)」
+{{text}}
+
+<!-- @inspection -->
+「최근 점검표」 — 성과관리팀이 부서에 보낸·부서가 확인한 월간 점검 중 점검월이 가장 늦은 1건의 요약입니다. 판정·보완 요구·개선방향·★사례제안은 이 글 그대로 가져다 쓰고(인용은 「」로 원문 그대로) 바꾸거나 다시 판정하지 않습니다. 이 점검표가 대신하는 자료(관리계획 발췌·붙임2 사례·중간보고서 지적)는 이번 요청의 근거 자료에 넣지 않았습니다.
 {{text}}
 
 <!-- @followup.head -->

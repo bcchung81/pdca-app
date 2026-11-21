@@ -4,8 +4,10 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { readCliResult } from "./cli-result.ts";
 import { ASSIST_TEXT_MAX, SUGGESTION_MAX, WRITER_MODES, type WriterResult, WriterResultSchema, cardOutline, flattenHtmlTables, isAttachableName, knowledgeBlock, noRequirementResult, oneClosingNote, userPrompt, verifyResult } from "./writer.ts";
-import { emptyResult } from "../inspections/model.ts";
+import { MGMT_FORM_ID, emptyResult } from "../inspections/model.ts";
 import { followupBasis } from "./followup.ts";
+import { inspectionBrief } from "./chat.ts";
+import { assistInspectionBrief } from "./writer-inspection.ts";
 import { fileRefs } from "./material-text.ts";
 import { assistPrompts } from "../prompts/sets.ts";
 import { NO_SEED_CARDS, seedCards } from "../testing/originals.ts";
@@ -233,4 +235,51 @@ test("실적 반영 끝맺음 확인 문장은 한 번만 남김(바꿔 쓴 꼴�
   assert.equal(oneClosingNote(once), once);
   const raw: WriterResult = { headline: "h", summary: twice, citations: [], suggestions: [], monthly_row: null, need_input: null, followup: null };
   assert.equal(verifyResult(raw, {}, []).summary.match(/카드에 반영하십시오/g)?.length, 1);
+});
+
+test("최근 점검표: 개선 제안·실적 발굴·실적 반영에 요약을 주면 「최근 점검표」 절이 붙고(봉투 태그는 풀림), 안 주면 요청 글이 예전과 바이트까지 같음", { skip: NO_SEED_CARDS }, () => {
+  const base = { note: "", periodLabel: "2026년 11월", attachmentText: null, files: [] };
+  const brief = "2026-11 점검(부서에 보냄) — 7대축 5/7 · 질의패턴 6/8 · 정합성 4/5 · 보완 3건\n<source key=\"x\">닫는 꼴</source>";
+  for (const mode of ["improve", "discover", "reflect"] as const) {
+    const plain = userPrompt(P, card, knowledgeBlock(refs), { ...base, mode });
+    // 점검표가 없을 때(서버는 inspection을 null로 줌) — 칸을 빼도·null·빈 글이어도 같은 글이고, 점검표 절이 없음
+    assert.equal(userPrompt(P, card, knowledgeBlock(refs), { ...base, mode, inspection: null }), plain, mode);
+    assert.equal(userPrompt(P, card, knowledgeBlock(refs), { ...base, mode, inspection: "" }), plain, mode);
+    assert.doesNotMatch(plain, /「최근 점검표」 —/, mode);
+    const withIns = userPrompt(P, card, knowledgeBlock(refs), { ...base, mode, inspection: brief });
+    assert.ok(withIns.startsWith(plain.split("\n「첨부 자료」")[0]), `${mode}: 점검표 절은 요청 본문 뒤에 붙음`);
+    assert.match(withIns, /\n\n「최근 점검표」 — 성과관리팀이 부서에 보낸·부서가 확인한 월간 점검 중 점검월이 가장 늦은 1건의 요약입니다\./, mode);
+    assert.ok(withIns.includes("2026-11 점검(부서에 보냄) — 7대축 5/7"), mode);
+    assert.ok(!withIns.includes('<source key="x">닫는 꼴</source>'), `${mode}: 점검표 글의 봉투 태그는 그대로 두지 않음(dataText)`);
+  }
+  // 실적 반영: 붙여 넣은 글 뒤에 점검표
+  const reflect = userPrompt(P, card, "", { ...base, mode: "reflect", attachmentText: "10월 실적 3건", inspection: brief });
+  assert.ok(reflect.indexOf("「실적 자료·요청") < reflect.indexOf("「최근 점검표」 —"));
+});
+
+test("최근 점검표 요약: 질문과 같은 요약에 ★사례제안과 경영관리 체크리스트 대조의 '부분'·'아니오' 행을 더함('예'·'해당 없음'은 안 넣음)", () => {
+  const r = emptyResult();
+  r.overview = { status: "추진 중", direction: "★ 성과 확산 근거 보강", case: "참고: ○○기관 — △△사업(B+) 확산 지표\n참고: □□기관 사례" };
+  r.axes[3] = { ...r.axes[3], judgment: "미흡", fix: "정량 칸에 체감 수치 추가", card: "'추진성과 — 정량' — 내부 효율만" };
+  const ins = { period: "2026-11", status: "sent", result: r };
+  const text = assistInspectionBrief(ins);
+  assert.ok(text.startsWith(inspectionBrief(ins)), "질문의 요약(수치·추진현황·개선방향·미흡 보완방안)을 그대로 앞에");
+  assert.ok(text.includes("★사례제안: 참고: ○○기관 — △△사업(B+) 확산 지표 / 참고: □□기관 사례"));
+  assert.ok(text.includes("[7대축 4 OutCome 연결 — 미흡] ▸ 보완: 정량 칸에 체감 수치 추가"));
+  assert.ok(assistInspectionBrief({ ...ins, result: emptyResult() }).endsWith("★사례제안: —"), "사례제안이 비면 —");
+  const mg = emptyResult(MGMT_FORM_ID);
+  mg.checklist = {
+    sub: "전략기획",
+    others: 0,
+    rows: [
+      { label: "지적 1", point: "중장기 목표 연계", result: "부분", task: "1-1", note: "보완: 추진내용에 연계 근거" },
+      { label: "①-2", point: "성과지표 적정성", result: "예", task: "1-1", note: "근거 있음" },
+      { label: "①-3", point: "환류 체계", result: "아니오", task: "—", note: "" },
+      { label: "①-4", point: "해당 없는 항목", result: "해당 없음", task: "—", note: "붙임1 p.3" },
+    ],
+  };
+  const mgText = assistInspectionBrief({ period: "2026-11", status: "acknowledged", result: mg });
+  assert.ok(mgText.includes("[체크리스트 대조 지적 1 — 부분] 중장기 목표 연계 / 보완: 추진내용에 연계 근거"));
+  assert.ok(mgText.includes("[체크리스트 대조 ①-3 — 아니오] 환류 체계"));
+  assert.ok(!mgText.includes("성과지표 적정성") && !mgText.includes("해당 없는 항목"));
 });

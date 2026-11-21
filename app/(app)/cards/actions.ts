@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { CHAT_LIMITS, cleanHistory, inspectionBrief } from "../../../lib/ai/chat.ts";
 import { cardSelectPreview, loadCardBundle, loadCardConsult } from "../../../lib/ai/context.ts";
 import { bundleRefs } from "../../../lib/knowledge/bundle.ts";
-import type { SelectFeature } from "../../../lib/knowledge/select.ts";
+import { selectOn } from "../../../lib/knowledge/select.ts";
+import { writerBundleOpts, writerScope } from "../../../lib/knowledge/mode-profile.ts";
+import { latestInspection, loadWriterKnowledge } from "../../../lib/ai/writer-knowledge.ts";
 import { loadMaterialTexts } from "../../../lib/ai/attachments.ts";
 import { MATERIAL_COLS, type MaterialDoc, type MaterialRow, fileRefs } from "../../../lib/ai/material-text.ts";
 import { type VerifiedComment, readCommentInput, verifyComments } from "../../../lib/ai/comments.ts";
@@ -28,6 +30,7 @@ import { currentPeriod } from "../../../lib/cards/view.ts";
 import { signedImageUrls } from "../../../lib/cards/queries.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
 import { getTrack } from "../../../lib/tracks/current.ts";
+import { type TrackId, trackSpecOfUnit } from "../../../lib/tracks/index.ts";
 import { prepCardChanged } from "../../../lib/prep/triggers.ts";
 import { RETURN_NOTE_MAX } from "../../../lib/cards/limits.ts";
 
@@ -170,12 +173,13 @@ export async function runCardAssist(_prev: AssistState, formData: FormData): Pro
   if (!card) return { status: "error", message: "카드를 찾을 수 없습니다." };
   if (card.status !== "active") return { status: "error", message: RETIRED };
 
-  // 보완 점검(모드 C): 질문과 같은 규칙의 최종 점검표 1건(보낸·확인한 것 중 점검월이 가장 늦은 것 — 초안 제외, 부서 담당자는 RLS로 받은 것만)을 근거로.
-  // 점검표가 없거나 미흡이 0건이면 AI를 부르지 않고(호출 기록·첨부 읽기도 하지 않음) 안내/코드 결과를 돌려준다.
+  // 질문과 같은 규칙의 최종 점검표 1건(보낸·확인한 것 중 점검월이 가장 늦은 것 — 초안 제외, 부서 담당자는 RLS로 받은 것만): 모든 요청 종류의 자료 범위를 정하고(lib/knowledge/mode-profile.ts),
+  // 개선 제안·실적 발굴·실적 반영은 요청 글에 그 요약을, 보완 점검(모드 C)은 미흡 행을 근거로 씀.
+  // 보완 점검은 점검표가 없거나 미흡이 0건이면 AI를 부르지 않고(호출 기록·첨부 읽기도 하지 않음) 안내/코드 결과를 돌려준다.
+  const ins = await latestInspection(supabase, card.id);
   let followup: FollowupBasis | null = null;
   if (mode === "followup") {
-    const { data: ins } = await supabase.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
-    followup = followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
+    followup = followupBasis(ins);
     if (!followup) return { status: "error", message: NO_INSPECTION_MESSAGE };
     if (!followup.rows.length) return { status: "ok", mode, result: noRequirementResult(followup), model: "코드(AI 호출 없음)", sources: 0, skipped: [] };
   }
@@ -210,8 +214,9 @@ export async function runCardAssist(_prev: AssistState, formData: FormData): Pro
   } else if (me.role === "dept_user") {
     working = (await openVersion(supabase, card.id))?.data ?? card.data;
   }
-  // 공통 지식: 규칙 범위 전부(참고자료 설계 2단계 — 요청 종류와 상관없이 같은 묶음, 요청 종류별 쓰임은 프롬프트가 정함). KNOWLEDGE_SELECT에 card·writer가 있으면 선별 방식
-  const kb = await loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, "card", "writer");
+  // 공통 지식: 요청 종류 × 점검표 유무의 자료 범위(지침 09·08 자료 규칙 — lib/knowledge/mode-profile.ts) + 점검표 요약(개선 제안·실적 발굴·실적 반영, 있을 때만).
+  // KNOWLEDGE_SELECT에 card·writer가 있으면 범위를 줄인 뒤 선별 방식(실적 반영은 선별 안 씀) — 평가 실행기(scripts/eval/writer-run.ts)와 같은 함수
+  const { kb, inspection } = await loadWriterKnowledge(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, mode, ins);
   // 남용 방지·호출 기록: 같은 카드 대화 중복 막기 + 진행 중 호출도 세는 1분 5회·동시 실행 제한(lib/ai/request-log.ts — 다른 AI 기능과 합산)
   const job = await startAiJob({ userId: me.id, cardId: card.id, kind: "assist", mode });
   if (!job.ok) return { status: "error", message: job.message };
@@ -223,7 +228,7 @@ export async function runCardAssist(_prev: AssistState, formData: FormData): Pro
   launchAiJob(job, async () => {
     const t0 = Date.now();
     try {
-      const call = await callWriter({ card: working, kb, req: { ...req, followup }, files });
+      const call = await callWriter({ card: working, kb, req: { ...req, followup, inspection }, files });
       // 토큰은 검증 전에 기록(검증이 예외를 던져도 쓴 토큰이 남음)
       await ai.finish({ status: "ok", model: call.provider === "cli" ? `cli/${call.model}` : call.model, usage: call.usage, timings: { call: Date.now() - t0 } });
       // 인용 대조: 공통 지식 조각 + 첨부 전체 글(file:N)
@@ -331,14 +336,37 @@ export async function clearCardAiResults(uid: string): Promise<{ ok: boolean; me
 }
 
 /**
- * AI 작성지원 진행 줄의 「공통 지식」을 실제와 같게(lib/ai/progress.ts assistProgress): 이 카드에 선별 방식이 적용되는 기능(작성지원·질문·코멘트) → 고른 원문 수.
- * 키가 없는 기능은 통째로 넣기. 읽기만 하는 조회라 부서 화면 보기에서도 막지 않음
+ * 진행 줄 미리보기: selected = 선별 방식이 실제로 적용되는 요청 → 고른 원문 수(키가 없으면 통째로 넣기), inspection = 최종 점검표가 있음(작성지원 자료 범위·「최근 점검표」 줄),
+ * track = 카드 평가단위의 트랙(실적 반영 범위가 트랙마다 다름 — 서버는 늘 채움, 받기 전 화면 기본값은 비움)
  */
-export async function getCardSelectPreview(uid: string): Promise<Partial<Record<SelectFeature, number>>> {
+export interface AssistPreview {
+  selected: Partial<Record<WriterMode | "chat", number>>;
+  inspection: boolean;
+  track?: TrackId;
+}
+
+/**
+ * AI 작성지원 진행 줄의 「공통 지식」·「최종 점검표」를 실제와 같게(lib/ai/progress.ts assistProgress). 질문은 cardSelectPreview 그대로,
+ * 작성지원은 요청 종류마다 요청 때와 같은 범위로 셈(lib/ai/writer-knowledge.ts와 같은 점검표 읽기·writerScope — 선별 방식이 꺼져 있으면 묶음을 읽지 않음).
+ * 읽기만 하는 조회라 부서 화면 보기에서도 막지 않음
+ */
+export async function getCardSelectPreview(uid: string): Promise<AssistPreview> {
   await requireUser("/cards");
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id, eval_unit_id, data").eq("uid", uid).maybeSingle();
-  return card ? cardSelectPreview(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }) : {};
+  if (!card) return { selected: {}, inspection: false };
+  const c = { id: card.id, evalUnitId: card.eval_unit_id, data: card.data };
+  const track = trackSpecOfUnit(card.eval_unit_id);
+  const [base, ins] = await Promise.all([cardSelectPreview(supabase, c), latestInspection(supabase, card.id)]);
+  const selected: AssistPreview["selected"] = base.chat === undefined ? {} : { chat: base.chat };
+  if (selectOn(process.env.KNOWLEDGE_SELECT, "card", "writer")) {
+    const modes = (Object.keys(WRITER_MODES) as WriterMode[]).filter((m) => writerScope(m, ins !== null, track).select);
+    const picked = await Promise.all(modes.map((m) => loadCardBundle(supabase, c, "card", "writer", writerBundleOpts(writerScope(m, ins !== null, track))).then((kb) => kb.select?.picked.length)));
+    modes.forEach((m, i) => {
+      if (picked[i] !== undefined) selected[m] = picked[i];
+    });
+  }
+  return { selected, inspection: ins !== null, track: track.id };
 }
 
 /**

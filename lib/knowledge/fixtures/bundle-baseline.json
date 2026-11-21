@@ -324,22 +324,16 @@
   },
   "mg-card": {
     "sharedTexts": [
-      "[① 1건]\n<source key=\"mg/plan/inst\" title=\"제목 mg/plan/inst\">\n경영관리 공통 서술\n</source>\n\n[② 1건]\n<source key=\"att3-2604/qa/bonus/1\" title=\"제목 att3-2604/qa/bonus/1\">\n가점 질의\n</source>",
+      "[① 1건]\n<source key=\"mg/plan/inst\" title=\"제목 mg/plan/inst\">\n경영관리 공통 서술\n</source>",
       "[③ 경영관리 지표3 일자리 및 균등한 기회 4건]\n<source key=\"mg/handbook/MG-3\" title=\"제목 mg/handbook/MG-3\">\n지표3 편람\n</source>\n<source key=\"mg/eval/MG-3/1\" title=\"제목 mg/eval/MG-3/1\">\n지표3 평가위원 의견\n</source>\n<source key=\"mg/core/MG-3\" title=\"제목 mg/core/MG-3\">\n지표3 핵심공통항목 실적 표\n</source>\n<source key=\"rpt25-mg-03/1\" title=\"제목 rpt25-mg-03/1\">\n지표3 전년 보고서 장\n</source>"
     ],
-    "listText": "[목록] 해당: mg/eval/MG-3/1 / 사례: 없음 / 전년: 없음 / 닮은 30: att3-2604/qa/bonus/1, mg/eval/MG-3/1",
+    "listText": "[목록] 해당: mg/eval/MG-3/1 / 사례: 없음 / 전년: 없음 / 닮은 30: mg/eval/MG-3/1",
     "bundleRefs": [
       {
         "key": "mg/plan/inst",
         "title": "제목 mg/plan/inst",
         "unitType": "plan_section",
         "text": "경영관리 공통 서술"
-      },
-      {
-        "key": "att3-2604/qa/bonus/1",
-        "title": "제목 att3-2604/qa/bonus/1",
-        "unitType": "qa_pair",
-        "text": "가점 질의"
       },
       {
         "key": "mg/handbook/MG-3",

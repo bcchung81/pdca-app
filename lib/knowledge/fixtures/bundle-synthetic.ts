@@ -1,5 +1,6 @@
 // 공통 지식 묶음 시험용 합성 조각(기관 실명·원문 아님)과 합성 프롬프트 묶음.
 // bundle-baseline.json은 선별 방식(lib/knowledge/select.ts)을 더하기 전 코드로 만든 출력이고, select.test.ts가 「선별 없는 묶음은 바이트까지 그대로」를 이것으로 확인합니다.
+// mg-card만 AI 가점 실사 거르기(bonus-scope.ts — 지표 13이 아니고 연결도 없어 ②가 빠짐) 뒤 출력으로 갱신했습니다(2026-11-21).
 // 프롬프트 파일 문구가 바뀌어도 이 기대값이 흔들리지 않게 kb.* 절은 합성 글로 둡니다.
 
 import type { PromptSet } from "../../prompts/template.ts";
@@ -61,7 +62,8 @@ export const SYN_CHUNKS: BundleChunk[] = [
   c({ chunk_key: "mg/eval/MG-4/1", doc_id: "plan-2607", seq: 33, unit_type: "evaluator_comment", track: "경영관리", business: "MG-4", text: "지표4 평가위원 의견" }),
 ];
 
-export const SYN_BIZ_CARD = { evalUnitId: "BZ-1", data: { title: "AI 안테나 자동판독 확산", executionTask: "" } };
+// AI활용 칸이 채워진 카드라 AI 가점 실사(bonus/1)가 묶음에 남음(bonus-scope.ts) — 주요사업 고정본은 가점 거르기 전 출력 그대로. 닮은 순(cardVector)은 이 칸을 안 읽음
+export const SYN_BIZ_CARD = { evalUnitId: "BZ-1", data: { title: "AI 안테나 자동판독 확산", executionTask: "", strategy: { ai: { text: "AI 안테나 자동판독", checked: true } } } };
 export const SYN_BIZ_LINKED = ["att3-2604/qa/BZ-1/1", "plan-2607/eval25/BZ-1/e1/p02", "att3-2604/qa/BZ-2/1"];
 export const SYN_MG_CARD = { evalUnitId: "MG-G1", knowledgeUnit: "MG-3", data: { title: "경영관리 과제", executionTask: "" } };
 export const SYN_MG_LINKED = ["mg/eval/MG-3/1"];

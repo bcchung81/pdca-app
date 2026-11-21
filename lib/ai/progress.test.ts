@@ -15,12 +15,12 @@ test("경과 시간 m:ss, 보통 걸리는 시간 글, 넘겼는지", () => {
   assert.equal(overdue(121, ASSIST_EXPECT), true);
 });
 
-test("과제원장 진행 줄: 요청 종류와 상관없이 같은 규칙 범위(공통 지식), 질문만 점검표+앞 대화가 더함", () => {
+test("과제원장 진행 줄: 카드·첨부·공통 지식, 질문만 점검표+앞 대화가 더함(점검표가 없을 때 — 작성지원 범위는 아래 시험)", () => {
   const labels = (s: ReturnType<typeof assistProgress>) => s.sources.map((x) => x.label);
   const improve = assistProgress("improve", { files: [] });
   assert.equal(improve.title, "개선 제안 쓰는 중");
   assert.deepEqual(labels(improve), ["카드", "공통 지식"]);
-  assert.ok(improve.sources[1].detail.includes("규칙 범위 전부"));
+  assert.ok(improve.sources[1].detail.includes("규칙 범위"));
 
   const discover = assistProgress("discover", { files: ["실적.pdf", "통계.xlsx"] });
   assert.deepEqual(labels(discover), ["카드", "첨부 2건", "공통 지식"]);
@@ -39,9 +39,55 @@ test("과제원장 진행 줄: 선별 방식이 적용되는 요청만 「공통
   const sel = knowledge(assistProgress("chat", { files: [], history: 2, selected: 3 }));
   assert.ok(sel.includes("공통 규칙 문서") && sel.includes("고른 자료 3건") && sel.includes("제목 목록"));
   assert.ok(!sel.includes("규칙 범위 전부"), "선별이면 전부라고 적지 않음");
-  assert.equal(knowledge(assistProgress("chat", { files: [] })), knowledge(assistProgress("improve", { files: [] })), "적용 안 되면 예전 문구");
-  assert.ok(knowledge(assistProgress("improve", { files: [] })).startsWith("규칙 범위 전부"));
+  assert.equal(knowledge(assistProgress("chat", { files: [] })), knowledge(assistProgress("discover", { files: [] })), "적용 안 되고 뺀 갈래가 없으면(실적 발굴·점검표 없음) 예전 문구");
+  assert.ok(knowledge(assistProgress("chat", { files: [] })).startsWith("규칙 범위 전부"));
   assert.deepEqual(assistProgress("improve", { files: ["a.pdf"], selected: 0 }).sources.map((x) => x.label), ["카드", "첨부 1건", "공통 지식"], "라벨·순서는 그대로");
+});
+
+test("작성지원 진행 줄: 요청 종류 × 최종 점검표 유무의 자료 범위(lib/knowledge/mode-profile.ts writerScope와 같은 표) — 뺀 자료·최종 점검표 줄·컨설팅 의견", () => {
+  const knowledge = (s: ReturnType<typeof assistProgress>) => s.sources.find((x) => x.label === "공통 지식")!.detail;
+  const labels = (s: ReturnType<typeof assistProgress>) => s.sources.map((x) => x.label);
+  const consult = ["외부 컨설팅 1차 · 가"];
+  // 개선 제안: 점검표가 없어도 붙임2는 뺌, 점검표가 있으면 점검표가 대신하는 자료를 빼고 「최종 점검표」 줄
+  const improve = knowledge(assistProgress("improve", { files: [] }));
+  assert.ok(improve.startsWith("규칙 범위에서 이 요청 종류가 쓰지 않는 자료를 뺀 나머지") && improve.includes("뺀 자료: 붙임2 유관기관 사례"), improve);
+  const improveIns = assistProgress("improve", { files: [], inspection: true, consult });
+  assert.match(knowledge(improveIns), /뺀 자료: 점검표가 대신하는 자료\(관리계획 서술·자가진단 체크리스트·편람·'25 평가위원 의견·중간보고서 지적·붙임2 사례\) — 최종 점검표가 대신함/);
+  assert.deepEqual(labels(improveIns), ["카드", "공통 지식", "컨설팅 의견 1건", "최종 점검표"]);
+  assert.match(improveIns.sources.at(-1)!.detail, /점검월이 가장 늦은 1건의 요약\(총평·미흡 항목 보완방안·★사례제안\)/);
+  // 실적 발굴: 점검표가 없으면 예전 그대로(뺀 갈래 없음), 있으면 점검표가 대신하는 자료를 뺌
+  assert.ok(knowledge(assistProgress("discover", { files: [] })).startsWith("규칙 범위 전부"));
+  assert.ok(!labels(assistProgress("discover", { files: [] })).includes("최종 점검표"), "점검표가 없으면 줄 없음");
+  assert.ok(knowledge(assistProgress("discover", { files: [], inspection: true })).includes("최종 점검표가 대신함"));
+  assert.ok(labels(assistProgress("discover", { files: [], inspection: true })).includes("최종 점검표"));
+  // 실적 반영: 지표·전략 + 그 밖만, 선별 안 씀(고른 수가 와도), 컨설팅 의견 안 넣음
+  for (const inspection of [false, true]) {
+    const reflect = assistProgress("reflect", { files: [], inspection, selected: 4, consult });
+    assert.match(knowledge(reflect), /^요청 종류 범위 — 지표·전략\(성과지표 Pool·중장기 목표지표·기관장 성과지표·AX 검토 과제·과제 목록의 이 과제 행\) · 그 밖\([^)]*\)( · 자가진단 체크리스트\([^)]*\))?만 원문 그대로\(선별 방식 안 씀\)$/);
+    assert.ok(!labels(reflect).some((l) => l.startsWith("컨설팅 의견")), "실적 반영은 컨설팅 의견을 넣지 않음");
+    assert.equal(labels(reflect).includes("최종 점검표"), inspection);
+    assert.equal(knowledge(reflect).includes("자가진단 체크리스트(점검 대비 귀띔용"), !inspection, "실적 반영: 점검표가 없을 때만 자가진단 체크리스트를 적음");
+    for (const m of ["improve", "discover", "followup"] as const) assert.ok(!knowledge(assistProgress(m, { files: [], inspection, selected: 4 })).includes("점검 대비 귀띔용"), `${m}: 바뀌지 않음`);
+  }
+  // 보완 점검: 점검표가 대신하는 자료를 뺌(점검표는 늘 있음 — 미흡 항목 줄 그대로)
+  const followup = assistProgress("followup", { files: [] });
+  assert.ok(knowledge(followup).includes("최종 점검표가 대신함"));
+  assert.equal(followup.sources.filter((x) => x.label === "최종 점검표").length, 1);
+  assert.match(followup.sources.at(-1)!.detail, /미흡 항목/);
+  // 선별 방식이 적용되면 선별 문구 + 고르기 전에 뺀 자료(공통 규칙 문서는 그대로)
+  const sel = knowledge(assistProgress("improve", { files: [], inspection: true, selected: 6 }));
+  assert.ok(sel.includes("고른 자료 6건") && sel.includes("고르기 전에 뺀 자료: 점검표가 대신하는 자료") && sel.endsWith("(공통 규칙 문서는 그대로)"), sel);
+  // 질문은 점검표 유무와 상관없이 예전 그대로
+  assert.equal(knowledge(assistProgress("chat", { files: [], inspection: true })), knowledge(assistProgress("chat", { files: [] })));
+});
+
+test("공통 지식 범위 문구: AI 가점 실사는 관련 카드에만 든다고 적음(lib/knowledge/bonus-scope.ts — AI활용 칸·과제 연결·경영관리 지표 13) — 작성지원·질문·경평 초안이 같은 문구", () => {
+  const note = "공통지표·사업 미지정 실사(AI 가점 실사는 AI활용 칸·과제 연결·경영관리 지표 13 과제만)";
+  const knowledge = (s: { sources: Array<{ label: string; detail: string }> }) => s.sources.find((x) => x.label.startsWith("공통 지식"))!.detail;
+  assert.ok(knowledge(assistProgress("chat", { files: [] })).includes(note));
+  assert.ok(knowledge(assistProgress("discover", { files: [] })).includes(note));
+  assert.ok(knowledge(assistProgress("improve", { files: [] })).includes(note), "뺀 자료를 적는 문구도 규칙 범위 글을 그대로 씀");
+  assert.ok(knowledge(draftProgress("outline", { files: [], prior: [], lens: 0 })).includes(note));
 });
 
 test("경평 초안 진행 줄: 카드·올해 실적(늘) + 고른 첨부·전년 절·평가 근거, 요청마다 보통 걸리는 시간", () => {
@@ -153,4 +199,45 @@ test("경영관리 주요사업 초안 참고: 진행 줄 「넣은 자료」에
   const biz = draftProgress("plan", { files: [], prior: [], lens: 0, biz: ["3-나"] });
   assert.ok(!biz.sources.some((x) => x.label.startsWith("주요사업 초안")), "주요사업 카드는 안 그림");
   assert.deepEqual(biz.expect, draftExpect("plan"));
+});
+
+test("경영관리 진행 줄(2026-11-21 메인 결정): 실적 반영은 실사·지표·전략·전년 보고서·그 밖(선별 따름), 선별 문구는 규칙 문서 없이 기준 자료 원문(TrackSpec.selectRules raw) — 주요사업은 그대로", () => {
+  const knowledge = (s: ReturnType<typeof assistProgress>) => s.sources.find((x) => x.label === "공통 지식")!.detail;
+  const labels = (s: ReturnType<typeof assistProgress>) => s.sources.map((x) => x.label);
+  const mgReflect = assistProgress("reflect", { files: [], track: "경영관리", consult: ["외부 컨설팅 1차 · 가"] });
+  assert.match(knowledge(mgReflect), /^요청 종류 범위 — 실사\([^)]*\) · 지표·전략\([^)]*\) · 전년 보고서\([^)]*\) · 그 밖\([^)]*\)( · 자가진단 체크리스트\([^)]*\))?만 원문 그대로$/);
+  assert.ok(!labels(mgReflect).some((l) => l.startsWith("컨설팅 의견")));
+  assert.ok(knowledge(mgReflect).includes("자가진단 체크리스트(점검 대비 귀띔용"), "경영관리 실적 반영(점검표 없음): 체크리스트");
+  assert.ok(!knowledge(assistProgress("reflect", { files: [], track: "경영관리", inspection: true })).includes("자가진단 체크리스트"), "점검표가 있으면 안 적음");
+  const mgReflectSel = knowledge(assistProgress("reflect", { files: [], track: "경영관리", selected: 5 }));
+  assert.ok(mgReflectSel.startsWith("선별 방식 — 이 과제에 고른 자료 5건") && mgReflectSel.includes("요청 종류 범위 — 실사") && !mgReflectSel.includes("공통 규칙 문서") && !mgReflectSel.includes("기준 자료(편람"), mgReflectSel);
+  assert.match(knowledge(assistProgress("reflect", { files: [], track: "주요사업", selected: 5 })), /선별 방식 안 씀/, "주요사업 실적 반영은 그대로(고른 수가 와도)");
+  // 질문·개선 제안(점검표 없음): 기준 자료 원문 그대로 + 고른 자료 + 실사 제목 목록, 규칙 문서라고 적지 않음
+  const chat = knowledge(assistProgress("chat", { files: [], track: "경영관리", selected: 8 }));
+  assert.ok(chat.startsWith("선별 방식 — 기준 자료(편람·관리계획 서술·자가진단 체크리스트)는 원문 그대로 + 이 과제에 고른 자료 8건(이 지표의 지적·2025 보고서 장과 고른 실사 원문, 과제 연결 포함) + 나머지 실사는 제목 목록"), chat);
+  assert.ok(!chat.includes("공통 규칙 문서"));
+  const improve = knowledge(assistProgress("improve", { files: [], track: "경영관리", selected: 8 }));
+  assert.ok(improve.endsWith("(기준 자료는 원문 그대로)") && !improve.includes("공통 규칙 문서"), improve);
+  // 점검표가 있으면 기준 자료(점검표가 대신하는 자료)는 빠지므로 원문 그대로라고 적지 않음
+  const improveIns = knowledge(assistProgress("improve", { files: [], track: "경영관리", selected: 8, inspection: true }));
+  assert.ok(improveIns.startsWith("선별 방식 — 이 과제에 고른 자료 8건") && improveIns.includes("고르기 전에 뺀 자료: 점검표가 대신하는 자료") && !improveIns.includes("원문 그대로)") , improveIns);
+  // 주요사업·트랙 미지정은 예전 문구 그대로
+  assert.equal(knowledge(assistProgress("chat", { files: [], track: "주요사업", selected: 8 })), knowledge(assistProgress("chat", { files: [], selected: 8 })));
+  assert.ok(knowledge(assistProgress("chat", { files: [], selected: 8 })).startsWith("선별 방식 — 공통 규칙 문서"));
+});
+
+test("작성지원 진행 줄(주요사업 선별): 지표 기준은 원문 그대로라고 적음 — 점검표가 대신하면 편람은 빼고 적음, 질문·경평 초안·경영관리·선별 안 씀은 그대로", () => {
+  const knowledge = (s: ReturnType<typeof assistProgress>) => s.sources.find((x) => x.label === "공통 지식")!.detail;
+  const both = "선별 방식 — 공통 규칙 문서(트랙 공통·이 사업의 조항·기준을 정리한 글) + 지표 기준(Pool·중장기·기관장 지표·이 사업 편람 지표)은 원문 그대로 + 이 과제에 고른 자료 6건";
+  const noHandbook = "선별 방식 — 공통 규칙 문서(트랙 공통·이 사업의 조항·기준을 정리한 글) + 지표 기준(Pool·중장기·기관장 지표)은 원문 그대로 + 이 과제에 고른 자료 6건";
+  for (const mode of ["improve", "discover"] as const) {
+    assert.ok(knowledge(assistProgress(mode, { files: [], selected: 6 })).startsWith(both), mode);
+    const ins = knowledge(assistProgress(mode, { files: [], selected: 6, inspection: true }));
+    assert.ok(ins.startsWith(noHandbook) && ins.endsWith("(공통 규칙 문서는 그대로)"), ins);
+  }
+  assert.ok(knowledge(assistProgress("followup", { files: [], selected: 6 })).startsWith(noHandbook));
+  assert.ok(!knowledge(assistProgress("chat", { files: [], selected: 6 })).includes("지표 기준"), "질문은 그대로");
+  assert.ok(!knowledge(assistProgress("improve", { files: [], selected: 6, track: "경영관리" })).includes("지표 기준"), "경영관리(raw)는 그대로");
+  assert.ok(!knowledge(assistProgress("improve", { files: [] })).includes("지표 기준"), "선별 안 되면 그대로");
+  assert.ok(!draftProgress("outline", { files: [], prior: [], lens: 0, selected: 7 }).sources.some((x) => x.detail.includes("지표 기준")), "경평 초안은 그대로");
 });

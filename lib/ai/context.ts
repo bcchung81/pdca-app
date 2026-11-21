@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { BUNDLE_COLS, type BundleChunk, type BundlePurpose, type KnowledgeBundle, RULES_DIGEST_UNIT, buildBundle } from "../knowledge/bundle.ts";
+import { BUNDLE_COLS, type BundleChunk, type BundlePurpose, type KnowledgeBundle, type LayerId, RULES_DIGEST_UNIT, buildBundle } from "../knowledge/bundle.ts";
 import { cachedChunks, storeChunks } from "../knowledge/chunk-cache.ts";
 import { MGMT_COMMON_NARRATIVE_KEYS } from "../knowledge/common-narrative.ts";
 import { digestChunks, digestTarget } from "../knowledge/rules-digest.ts";
@@ -59,13 +59,16 @@ export async function loadCardConsult(supabase: SupabaseClient, cardId: string):
 /**
  * 과제원장 AI·경평 초안이 함께 쓰는 과제별 공통 지식 묶음(참고자료 설계 2단계 — 검색 상위 N건 대신 규칙 범위 전부, 거르지 않음).
  * 과제 대응표(자동·확정, card_knowledge_scope)와 관리계획 과제 목록의 이 과제 행은 목록표로만 알림. 대응표·과제 대응은 로그인 사용자 권한(RLS — 카드를 읽을 수 있는 사람)으로 읽음.
- * feature = card 용도 안의 기능(작성지원·질문·코멘트) — 선별 방식을 기능 단위로 켤 때(KNOWLEDGE_SELECT=chat 등). 안 넘기면 용도로만 판정
+ * feature = card 용도 안의 기능(작성지원·질문·코멘트) — 선별 방식을 기능 단위로 켤 때(KNOWLEDGE_SELECT=chat 등). 안 넘기면 용도로만 판정.
+ * opts.shape = 선별 전 통째로 넣기 묶음을 요청 종류에 맞게 줄이는 함수(작성지원 요청 종류별 자료 범위), opts.select = false면 선별 방식을 쓰지 않음,
+ * opts.keepRules = 선별 방식에서도 규칙 문서로 바꾸지 않고 원문으로 둘 기준류(applySelection keepRaw — 작성지원의 지표 기준류). 안 넘기면 예전과 같음
  */
 export async function loadCardBundle(
   supabase: SupabaseClient,
   card: { id: string; evalUnitId: string; knowledgeUnit?: string; data: LooseJson },
   purpose: BundlePurpose = "card",
   feature?: SelectFeature,
+  opts: { shape?: (b: KnowledgeBundle) => KnowledgeBundle; select?: boolean; keepRules?: (ref: { unitType: string }, layer: LayerId) => boolean } = {},
 ): Promise<KnowledgeBundle> {
   const [chunks, consult, linked, { data: task }] = await Promise.all([
     loadBundleChunks(supabase, trackSpecOfUnit(card.evalUnitId)),
@@ -74,20 +77,30 @@ export async function loadCardBundle(
     supabase.from("task_map").select("plan_task_key").eq("card_id", card.id).maybeSingle(),
   ]);
   // 이 카드에 대한 외부 컨설팅 의견은 공유 조각(캐시)과 따로 읽어 더함 — buildBundle이 카드별 덩이(consult)로 둠
-  const b = buildBundle([...chunks, ...consult], card, linked, task?.plan_task_key ?? null, purpose);
+  const built = buildBundle([...chunks, ...consult], card, linked, task?.plan_task_key ?? null, purpose);
+  const b = opts.shape ? opts.shape(built) : built;
+  if (opts.select === false) return b;
   const sel = await loadCardSelection(supabase, card, purpose, { chunks }, feature);
-  return sel ? applySelection(b, sel, rolesOf(chunks)) : b;
+  return sel ? applySelection(b, sel, rolesOf(chunks), opts.keepRules) : b;
 }
 
 /**
  * 카드 AI 진행 줄용: card 용도 기능 중 이 카드에 선별 방식이 실제로 적용되는 것 → 고른 원문 수(select.picked). 적용되지 않는 기능은 키가 없음(통째로 넣기).
- * 요청 때와 같은 loadCardBundle로 셈(꺼져 있으면 아무것도 읽지 않음). 카드 글은 선별 여부·고른 수에 영향이 없어 원장 카드로 셈
+ * 요청 때와 같은 loadCardBundle로 셈(꺼져 있으면 아무것도 읽지 않음). 카드 글은 선별 여부·고른 수에 영향이 없어 원장 카드로 셈.
+ * 트랙 설정(KNOWLEDGE_SELECT_TRACKS — 예: 경영관리:chat)이 기능마다 다를 수 있어 트랙 설정 판정이 같은 기능끼리 한 번씩 셈(판정이 같으면 묶음도 같음)
  */
 export async function cardSelectPreview(supabase: SupabaseClient, card: { id: string; evalUnitId: string; data: LooseJson }): Promise<Partial<Record<SelectFeature, number>>> {
   const on = SELECT_FEATURES.filter((f) => selectOn(process.env.KNOWLEDGE_SELECT, "card", f));
-  if (!on.length) return {};
-  const picked = (await loadCardBundle(supabase, card, "card", on[0])).select?.picked.length;
-  return picked === undefined ? {} : Object.fromEntries(on.map((f) => [f, picked]));
+  const track = trackSpecOfUnit(card.evalUnitId).id;
+  const counted = new Map<boolean, number | undefined>();
+  const out: Partial<Record<SelectFeature, number>> = {};
+  for (const f of on) {
+    const gate = selectTrackOn(process.env.KNOWLEDGE_SELECT_TRACKS, track, "card", f);
+    if (!counted.has(gate)) counted.set(gate, (await loadCardBundle(supabase, card, "card", f)).select?.picked.length);
+    const n = counted.get(gate);
+    if (n !== undefined) out[f] = n;
+  }
+  return out;
 }
 
 /**
@@ -102,8 +115,11 @@ export async function reportSelectPreview(supabase: SupabaseClient, card: { id: 
 // ---------------------------------------------------------------------------
 // 선별 방식(실험, 기본 꺼짐 — lib/knowledge/select.ts, 환경변수 KNOWLEDGE_SELECT)
 
-/** 카드 하나의 선별 결과를 주는 출처 — unit = 공통 지식 ③을 읽는 평가단위(경영관리는 지표 MG-n) */
-export type SelectionSource = (card: { id: string; evalUnitId: string; unit: string }) => Promise<CardSelection | null>;
+/**
+ * 카드 하나의 선별 결과를 주는 출처 — unit = 공통 지식 ③을 읽는 평가단위(경영관리는 지표 MG-n), req = 이 요청의 용도·card 용도의 기능(출처가 트랙 설정을 따를 때 씀).
+ * null = 이 카드는 통째로 넣기, undefined = 이 출처가 모르는 카드라 기본 DB 출처(dbSelection — 트랙 설정·최소 개수·규칙 문서 검사 그대로)로 넘김
+ */
+export type SelectionSource = (card: { id: string; evalUnitId: string; unit: string }, req: { purpose: BundlePurpose; feature?: SelectFeature }) => Promise<CardSelection | null | undefined>;
 
 let selectionSource: SelectionSource | null = null;
 
@@ -133,12 +149,30 @@ async function loadSelectKeys(supabase: SupabaseClient, cardId: string): Promise
 
 /**
  * 기본 출처(DB): 고른 키 = 선별 결과 표(card_knowledge_select, 순위 순 — 대응표 rejected는 뺌), 규칙 문서 = 같은 트랙의 rules_digest 조각(트랙 공통은 사업 없음, 평가단위는 사업 = unit).
- * 대응표 auto·confirmed는 applySelection이 늘 넣음. 다음이면 null(통째로 넣기): 트랙이 KNOWLEDGE_SELECT_TRACKS에 없음 · 규칙 문서가 하나도 없음 ·
- * 규칙 문서가 낡음(meta.sources가 지금 원문과 다르거나 원문 조각이 사라짐 — digestFresh) · 고른 키가 SELECT_MIN_KEYS개 미만
+ * 대응표 auto·confirmed는 applySelection이 늘 넣음. 다음이면 null(통째로 넣기): 이 트랙의 이 용도·기능이 KNOWLEDGE_SELECT_TRACKS에 없음(selectTrackOn) ·
+ * 규칙 문서가 없거나 낡음(freshDigest) · 고른 키가 SELECT_MIN_KEYS개 미만. 기준류를 원문 그대로 두는 트랙(TrackSpec.selectRules = raw — 경영관리)은 규칙 문서를 보지 않고 고른 키만 봄
  */
-async function dbSelection(supabase: SupabaseClient, chunks: BundleChunk[], card: { id: string; evalUnitId: string }, unit: string): Promise<CardSelection | null> {
-  const track = trackSpecOfUnit(card.evalUnitId).id;
-  if (!selectTrackOn(process.env.KNOWLEDGE_SELECT_TRACKS, track)) return null;
+async function dbSelection(
+  supabase: SupabaseClient,
+  chunks: BundleChunk[],
+  card: { id: string; evalUnitId: string },
+  unit: string,
+  purpose: BundlePurpose,
+  feature?: SelectFeature,
+): Promise<CardSelection | null> {
+  const spec = trackSpecOfUnit(card.evalUnitId);
+  if (!selectTrackOn(process.env.KNOWLEDGE_SELECT_TRACKS, spec.id, purpose, feature)) return null;
+  const digest = spec.selectRules === "raw" ? { track: "", unit: "" } : freshDigest(chunks, spec.id, unit);
+  if (!digest) return null;
+  const keys = await loadSelectKeys(supabase, card.id);
+  return keys.length >= SELECT_MIN_KEYS ? { keys, digest } : null;
+}
+
+/**
+ * 같은 트랙의 공통 규칙 문서 글(트랙 공통·평가단위) — 하나도 없거나 낡으면 null: meta.sources가 지금 원문과 다르거나 원문 조각이 사라짐(digestFresh) ·
+ * 범위에 새 기준류 조각이 들어왔거나 빠짐(digestScopeFresh)
+ */
+function freshDigest(chunks: BundleChunk[], track: TrackId, unit: string): CardSelection["digest"] | null {
   const digestsOf = (business: string | null) =>
     chunks.filter((c) => c.unit_type === RULES_DIGEST_UNIT && c.track === track && c.business === business).sort((a, b) => a.seq - b.seq || a.chunk_key.localeCompare(b.chunk_key));
   const own = { track: digestsOf(null), unit: digestsOf(unit) };
@@ -153,13 +187,12 @@ async function dbSelection(supabase: SupabaseClient, chunks: BundleChunk[], card
   } catch {
     return null;
   }
-  const keys = await loadSelectKeys(supabase, card.id);
-  return keys.length >= SELECT_MIN_KEYS ? { keys, digest } : null;
+  return digest;
 }
 
 /**
- * 이 요청을 선별 방식으로 할 때의 선별 결과(아니면 null — 통째로 넣기). 용도(또는 card 용도의 그 기능)가 KNOWLEDGE_SELECT에 들고, 출처(꽂힌 것 우선, 없으면 DB)가 결과를 주고,
- * 규칙 문서가 이 평가단위의 기준류 자리를 모두 대신할 때만(digestCovers — 반쪽 선별 안 함). pre = 이미 읽은 조각(다시 읽지 않게)
+ * 이 요청을 선별 방식으로 할 때의 선별 결과(아니면 null — 통째로 넣기). 용도(또는 card 용도의 그 기능)가 KNOWLEDGE_SELECT에 들고, 출처(꽂힌 것 우선 — 그 출처가 모르는 카드(undefined)면 DB)가
+ * 결과를 주고, 규칙 문서가 이 평가단위의 기준류 자리를 모두 대신할 때만(digestCovers — 반쪽 선별 안 함). pre = 이미 읽은 조각(다시 읽지 않게)
  */
 export async function loadCardSelection(
   supabase: SupabaseClient,
@@ -171,9 +204,8 @@ export async function loadCardSelection(
   if (!selectOn(process.env.KNOWLEDGE_SELECT, purpose, feature)) return null;
   const unit = card.knowledgeUnit ?? card.evalUnitId;
   const chunks = pre.chunks ?? (await loadBundleChunks(supabase, trackSpecOfUnit(card.evalUnitId)));
-  const sel = selectionSource
-    ? await selectionSource({ id: card.id, evalUnitId: card.evalUnitId, unit })
-    : await dbSelection(supabase, chunks, card, unit);
+  const plugged = selectionSource ? await selectionSource({ id: card.id, evalUnitId: card.evalUnitId, unit }, { purpose, feature }) : undefined;
+  const sel = plugged !== undefined ? plugged : await dbSelection(supabase, chunks, card, unit, purpose, feature);
   return sel && digestCovers(chunks, unit, purpose, sel) ? sel : null;
 }
 

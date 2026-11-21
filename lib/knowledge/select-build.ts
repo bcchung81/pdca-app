@@ -29,7 +29,9 @@ export interface KeepRule {
 
 /**
  * Jev 후보에서 빼고 늘 고른 키에 넣을 조각(트랙별). 주요사업은 없음 — 예전 동작 그대로.
- * 경영관리는 ③ 이 지표 층의 전년 보고서 장(prior — 같은 지표 2025 보고서)만. 근거(2026-10-29, 10-26 실험 산출물 + 정답지 3장 다시 채점):
+ * 경영관리는 ③ 이 지표 층의 전년 보고서 장(prior — 같은 지표 2025 보고서)과 지적(critique — '25 평가위원 의견·중간보고서 지적·지적 시정조치 계획, 2026-11-21).
+ * 지적을 더한 근거(2026-11-21): 작성지원 개선 제안의 첫째가 지적 환류(지침 08)라 이 지표의 지적은 빠지면 안 되고, 지표당 크기가 작음(MG-3 약 3.6천 자).
+ * 전년 보고서 장의 근거(2026-10-29, 10-26 실험 산출물 + 정답지 3장 다시 채점):
  * - 10-26에 빠진 정답지 yes는 주로 ③ 실사 답변이었음(3-1 5건 — 카드 지적과 같은 사안의 실사 질문·요청 자료, 선별 초안 심사가 그 사안의 사실을 섞은 지어냄을 지적).
  *   원인은 Jev에 보낸 카드 요약에 경영관리 지적 칸이 빠진 것(scripts/lib/jev-card.ts 고침). 고친 요약으로 다시 채점하니 같은 문턱·비슷한 크기에서
  *   3장 놓친 yes 9 → 3건, 3-1의 ③ 실사 답변 yes는 모두 p ≥ 0.24 — 실사 답변·지적은 Jev에 맡겨도 됨.
@@ -37,7 +39,7 @@ export interface KeepRule {
  *   Jev 질문은 「이 과제의 사안을 직접 다루는가」라 지표 단위 장(성과분석 및 환류 등)을 낮게 매김(4-2 정답지 yes가 고친 뒤에도 p 0.13).
  *   지표마다 장 수가 정해져 있고 작아서(10-26 카드당 1.4만~2.9만 자, 그중 Jev가 뺀 것 0.6만~1.2만 자) 늘 남겨도 크기 부담이 작음
  */
-export const ALWAYS_KEEP: Record<TrackId, readonly KeepRule[]> = { 주요사업: [], 경영관리: [{ layer: "business", roles: ["prior"] }] };
+export const ALWAYS_KEEP: Record<TrackId, readonly KeepRule[]> = { 주요사업: [], 경영관리: [{ layer: "business", roles: ["prior", "critique"] }] };
 
 /** 이 조각(층·성격)을 늘 남길지 — 층이 없으면(묶음 밖) 아님 */
 export const keptBy = (rules: readonly KeepRule[], layer: LayerId | null, role: ChunkRole): boolean => layer !== null && rules.some((r) => r.layer === layer && r.roles.includes(role));

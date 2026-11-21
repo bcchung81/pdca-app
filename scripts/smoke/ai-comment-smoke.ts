@@ -8,7 +8,8 @@ import { type CommentInput, type CommentRequest, commentPrompt, verifyComments }
 import { loadCardBundle } from "../../lib/ai/context.ts";
 import { bundleRefs, listText } from "../../lib/knowledge/bundle.ts";
 import { aiProvider, callComments, modelLabel } from "../../lib/ai/run.ts";
-import { commentPrompts } from "../../lib/prompts/sets.ts";
+import { commentPrompts, commentPromptsMg } from "../../lib/prompts/sets.ts";
+import { isMgmtCard } from "../../lib/cards/mgmt-card.ts";
 import { editTargets, valueAt } from "../../lib/cards/patch.ts";
 import { pathLabel } from "../../lib/cards/path-label.ts";
 import { currentPeriod } from "../../lib/cards/view.ts";
@@ -38,7 +39,9 @@ console.log(`대상 칸: c1=${pathLabel(pick1.path, card.data)} 「${quote(pick1
 const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "card", "comment");
 const period = currentPeriod();
 const req: CommentRequest = { periodLabel: `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`, comments, keeps: [] };
-const prompt = commentPrompt(commentPrompts().prompts, card.data, targets, listText(commentPrompts().prompts, kb), req);
+// 서버(lib/ai/run.ts callComments)와 같은 판정 — 경영관리 카드는 경영관리 프롬프트(컨설팅 의견 절 kb.consult가 있음)
+const prompts = (isMgmtCard(card.data) ? commentPromptsMg : commentPrompts)().prompts;
+const prompt = commentPrompt(prompts, card.data, targets, listText(prompts, kb), req);
 console.log(`provider ${aiProvider()} · 카드 ${id} · 편집 칸 ${targets.size}개 · 근거 ${bundleRefs(kb).length}건 · 요청 ${prompt.length}자`);
 
 const t0 = Date.now();

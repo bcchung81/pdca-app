@@ -21,6 +21,8 @@ test("주요사업 스펙은 예전에 코드에 흩어져 있던 값 그대로(
     unitParts: [],
     // 2026-10-29 칸 글 한도의 불릿 기준 길이(2025 주요사업 불릿 평균 중앙값 — 예전 리터럴이 아니라 새 값)
     reportBulletChars: 28,
+    // 2026-11-21 선별 방식의 기준류 넣는 법 — 주요사업은 예전 그대로 공통 규칙 문서
+    selectRules: "digest",
   });
   assert.equal(DEFAULT_TRACK, BIZ_TRACK);
   // 경평 초안 PDCA 대응표(2026-10-30)는 경영관리만 — 주요사업 카드에는 Plan·Check 칸이 있어 대응표를 두지 않음(주요사업 요청·점검 무변경)
@@ -41,6 +43,11 @@ test("크기 보호 단위: 주요사업은 사업 BZ-1~3, 경영관리는 지�
 test("카드 밖 부분 키(R5 — 두 트랙 공용 틀): 경영관리는 표지·지적·전년 대비·성과분석 순, 주요사업은 아직 없음", () => {
   assert.deepEqual(MGMT_TRACK.unitParts, ["cover", "findings", "prior", "outcome"]);
   assert.deepEqual(BIZ_TRACK.unitParts, []);
+});
+
+test("선별 방식의 기준류: 주요사업은 공통 규칙 문서(digest), 경영관리는 원문 그대로(raw — 규칙 문서 없이 사례류만 고름)", () => {
+  assert.equal(BIZ_TRACK.selectRules, "digest");
+  assert.equal(MGMT_TRACK.selectRules, "raw");
 });
 
 test("평가단위 → 트랙: 경영관리(MG-…)만 경영관리, BZ-1~4·모르는 값·빈 값은 주요사업", () => {

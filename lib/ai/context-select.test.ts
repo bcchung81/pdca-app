@@ -8,8 +8,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { type BundleChunk, RULES_DIGEST_UNIT, buildBundle } from "../knowledge/bundle.ts";
 import { clearChunkCache } from "../knowledge/chunk-cache.ts";
 import { chunkHash, digestChunks, digestTarget } from "../knowledge/rules-digest.ts";
+import { writerBundleOpts, writerScope } from "../knowledge/mode-profile.ts";
 import { SELECT_MIN_KEYS } from "../knowledge/select.ts";
-import { SYN_BIZ_CARD, SYN_CHUNKS } from "../knowledge/fixtures/bundle-synthetic.ts";
+import { BIZ_TRACK, MGMT_TRACK } from "../tracks/index.ts";
+import { SYN_BIZ_CARD, SYN_CHUNKS, SYN_MG_CARD } from "../knowledge/fixtures/bundle-synthetic.ts";
 
 type Resolve = (specifier: string, context: unknown) => unknown;
 const { registerHooks } = nodeModule as unknown as { registerHooks: (hooks: { resolve: (specifier: string, context: unknown, next: Resolve) => unknown }) => void };
@@ -208,6 +210,126 @@ test("DB 출처 트랙(KNOWLEDGE_SELECT_TRACKS): 목록에 없는 트랙은 규�
   assert.ok(await sel(), "꽂은 출처(실험)는 트랙 설정·최소 개수와 상관없이");
 });
 
+// ---- 경영관리(기준류 원문 그대로 — TrackSpec.selectRules = raw)·트랙별 기능 설정(2026-11-21)
+
+const mgQa = (n: number): BundleChunk => ({ chunk_key: `mg/qa/MG-3/${n}`, doc_id: "qa25-mg-03", seq: n, unit_type: "qa_pair", track: "경영관리", business: "MG-3", title: `지표3 실사 ${n}`, text: `지표3 실사 질의와 답 ${n}`, context_prefix: null, meta: null });
+/** 경영관리 합성 조각 + 지표3 실사 3건(사례류가 SELECT_MIN_KEYS개 이상이 되게) */
+const MG_CHUNKS = [...SYN_CHUNKS, mgQa(1), mgQa(2), mgQa(3)];
+const MG_CARD = { id: "card-mg", evalUnitId: "MG-3", data: SYN_MG_CARD.data };
+const MG_LINKED = ["mg/eval/MG-3/1"];
+const MG_SEL = ["mg/qa/MG-3/2", "rpt25-mg-03/1", "mg/eval/MG-3/1", "mg/qa/MG-3/1", "mg/qa/MG-3/3"];
+/** 두 카드(주요사업 card-1·경영관리 card-mg)의 대응표·선별 행 — 규칙 문서는 주요사업 것만 */
+const bothDb = (o: { mgSelect?: string[] } = {}) =>
+  fakeDb({
+    knowledge_chunks: [...MG_CHUNKS, ...DIGESTS] as unknown as Row[],
+    card_knowledge_scope: [...scope(LINKED), ...MG_LINKED.map((chunk_key, i) => ({ card_id: "card-mg", chunk_key, status: "auto", method: "ai", score: 1, rank: i + 1, basis: null }))],
+    card_knowledge_select: [...selectRows(SEL), ...(o.mgSelect ?? MG_SEL).map((chunk_key, i) => ({ card_id: "card-mg", chunk_key, rank: i + 1, score: 0.5, judge: "test" }))],
+    task_map: [],
+  });
+
+test("경영관리 DB 출처(raw): 규칙 문서 없이 고른 키만 — 기준류(서술·편람) 원문은 층에 남고 규칙 문서 글은 빔, 5건 미만이면 통째로 넣기", async () => {
+  withEnv("card");
+  withEnv("경영관리", "KNOWLEDGE_SELECT_TRACKS");
+  const b = await loadCardBundle(bothDb(), MG_CARD, "card", "writer");
+  assert.ok(b.select, "규칙 문서(rules_digest)가 없어도 선별");
+  assert.deepEqual(b.select.digest, { track: "", unit: "" });
+  assert.deepEqual(b.select.picked.map((r) => r.key), MG_SEL, "고른 키 순위 순(과제 연결 mg/eval/MG-3/1은 이미 들어 있음)");
+  assert.deepEqual(b.layers.map((l) => [l.id, l.refs.map((r) => r.key)]), [["institution", ["mg/plan/inst"]], ["common", []], ["business", ["mg/handbook/MG-3", "mg/core/MG-3"]]]);
+  assert.deepEqual(b.select.unpicked, [], "사례류는 모두 고름");
+  clearChunkCache();
+  assert.equal((await loadCardBundle(bothDb({ mgSelect: MG_SEL.slice(0, 4) }), MG_CARD, "card", "writer")).select, undefined, "4건 → 통째로 넣기");
+});
+
+test("경영관리 작성지원 실적 반영 선별(raw): 자가진단 체크리스트는 점검표가 없을 때만 원문으로 남고, 점검표가 있으면 빠짐", async () => {
+  withEnv("card");
+  withEnv("경영관리", "KNOWLEDGE_SELECT_TRACKS");
+  const checklist: BundleChunk = { chunk_key: "mg/checklist/MG-3", doc_id: "plan-2607", seq: 40, unit_type: "checklist_group", track: "경영관리", business: "MG-3", title: "자가진단 지표3", text: "자가진단 체크리스트 지표3", context_prefix: null, meta: null };
+  const mgDb = () =>
+    fakeDb({
+      knowledge_chunks: [...MG_CHUNKS, checklist, ...DIGESTS] as unknown as Row[],
+      card_knowledge_scope: MG_LINKED.map((chunk_key, i) => ({ card_id: "card-mg", chunk_key, status: "auto", method: "ai", score: 1, rank: i + 1, basis: null })),
+      card_knowledge_select: MG_SEL.map((chunk_key, i) => ({ card_id: "card-mg", chunk_key, rank: i + 1, score: 0.5, judge: "test" })),
+      task_map: [],
+    });
+  const keys = async (hasInspection: boolean) => {
+    clearChunkCache();
+    const b = await loadCardBundle(mgDb(), MG_CARD, "card", "writer", writerBundleOpts(writerScope("reflect", hasInspection, MGMT_TRACK)));
+    assert.ok(b.select, "경영관리 실적 반영은 선별을 따름");
+    return b.layers.flatMap((l) => l.refs.map((r) => r.key));
+  };
+  assert.ok((await keys(false)).includes("mg/checklist/MG-3"), "점검표 없음: 체크리스트 원문이 남음");
+  assert.ok(!(await keys(true)).includes("mg/checklist/MG-3"), "점검표 있음: 체크리스트 뺌");
+});
+
+test("운영 설정(report,chat + 주요사업): 경영관리 카드에 선별 행이 있어도 전부 통째로 넣기, 주요사업은 경평·질문만 — 지금 운영과 같음", async () => {
+  withEnv("report,chat");
+  withEnv("주요사업", "KNOWLEDGE_SELECT_TRACKS");
+  const picked = async (card: typeof CARD | typeof MG_CARD, purpose: "card" | "report", feature?: "writer" | "chat" | "comment") => {
+    clearChunkCache();
+    return (await loadCardBundle(bothDb(), card, purpose, feature)).select !== undefined;
+  };
+  const REQ = [["report", undefined], ["card", "writer"], ["card", "chat"], ["card", "comment"]] as const;
+  const biz = [];
+  const mg = [];
+  for (const [p, f] of REQ) {
+    biz.push(await picked(CARD, p, f));
+    mg.push(await picked(MG_CARD, p, f));
+  }
+  assert.deepEqual(biz, [true, false, true, false]);
+  assert.deepEqual(mg, [false, false, false, false]);
+  clearChunkCache();
+  assert.deepEqual(await cardSelectPreview(bothDb(), MG_CARD), {});
+  assert.equal(await reportSelectPreview(bothDb(), MG_CARD), null);
+});
+
+test("목표 설정(report,card + 주요사업,경영관리:card): 주요사업은 넷 다, 경영관리는 과제원장 AI만 선별하고 경평은 통째로 넣기 — 진행 줄 미리 보기도 같은 판정", async () => {
+  withEnv("report,card");
+  withEnv("주요사업,경영관리:card", "KNOWLEDGE_SELECT_TRACKS");
+  const REQ = [["report", undefined], ["card", "writer"], ["card", "chat"], ["card", "comment"]] as const;
+  for (const [card, expected] of [[CARD, [true, true, true, true]], [MG_CARD, [false, true, true, true]]] as const) {
+    const got = [];
+    for (const [p, f] of REQ) {
+      clearChunkCache();
+      got.push((await loadCardBundle(bothDb(), card, p, f)).select !== undefined);
+    }
+    assert.deepEqual(got, expected, card.id);
+  }
+  clearChunkCache();
+  const n = MG_SEL.length;
+  assert.deepEqual(await cardSelectPreview(bothDb(), MG_CARD), { writer: n, chat: n, comment: n });
+  assert.equal(await reportSelectPreview(bothDb(), MG_CARD), null, "경영관리 경평은 통째로 넣기");
+  assert.equal(await reportSelectPreview(bothDb(), CARD), SEL.length + LINKED.length);
+});
+
+test("진행 줄 미리 보기(cardSelectPreview): 트랙 설정이 기능마다 다르면(경영관리:chat) 켜진 기능만 고른 수", async () => {
+  withEnv("card");
+  withEnv("경영관리:chat", "KNOWLEDGE_SELECT_TRACKS");
+  assert.deepEqual(await cardSelectPreview(bothDb(), MG_CARD), { chat: MG_SEL.length });
+  clearChunkCache();
+  assert.deepEqual(await cardSelectPreview(bothDb(), CARD), {}, "목록에 없는 트랙(주요사업)");
+});
+
+test("꽂은 출처가 undefined(그 출처가 모르는 카드)를 주면 기본 DB 출처 — 트랙 설정·최소 개수·규칙 문서 검사 그대로, null이면 통째로 넣기", async () => {
+  withEnv("card,report");
+  withEnv("주요사업,경영관리:card", "KNOWLEDGE_SELECT_TRACKS");
+  // 경영관리만 아는 실험 출처(로컬 파일 흉내) — 주요사업 카드는 모름
+  setSelectionSource(async (card) => (card.evalUnitId.startsWith("MG-") ? { keys: ["mg/qa/MG-3/3"], digest: { track: "", unit: "" } } : undefined));
+  const biz = await loadCardBundle(bothDb(), CARD, "report");
+  assert.deepEqual(biz.select?.digest, { track: "트랙 공통 규칙 문서", unit: "BZ-1 규칙 문서" }, "주요사업은 DB 규칙 문서");
+  assert.deepEqual(biz.select?.picked.map((r) => r.key), [...SEL, ...LINKED], "주요사업은 DB 선별 행");
+  clearChunkCache();
+  assert.deepEqual((await loadCardBundle(bothDb(), MG_CARD, "report")).select?.picked.map((r) => r.key), ["mg/qa/MG-3/3", ...MG_LINKED], "꽂은 출처가 아는 카드는 꽂은 출처(트랙 설정을 안 씀)");
+  withEnv("경영관리", "KNOWLEDGE_SELECT_TRACKS");
+  clearChunkCache();
+  assert.equal((await loadCardBundle(bothDb(), CARD, "report")).select, undefined, "넘어간 DB 출처는 트랙 설정을 따름");
+  withEnv("", "KNOWLEDGE_SELECT_TRACKS");
+  clearChunkCache();
+  assert.equal((await loadCardBundle(db([...SYN_CHUNKS, ...DIGESTS], [], { select: SEL.slice(0, 4) }), CARD, "report")).select, undefined, "넘어간 DB 출처는 최소 개수를 따름");
+  setSelectionSource(async () => null);
+  clearChunkCache();
+  assert.equal((await loadCardBundle(bothDb(), CARD, "report")).select, undefined, "null이면 DB를 보지 않고 통째로 넣기");
+});
+
 test("꽂은 출처가 DB보다 앞서고, 출처가 null이면 통째로 넣기", async () => {
   withEnv("card");
   const calls: unknown[] = [];
@@ -241,4 +363,22 @@ test("평가 관점: 경평에 선별이 있으면 검색 순 대신 고른 지�
   withEnv("card");
   clearChunkCache();
   assert.deepEqual(await keys(), off, "경평이 선별 대상이 아니면 그대로");
+});
+
+test("작성지원 선별(주요사업, writerBundleOpts): 지표 기준류(중장기·Pool·③ 편람)는 원래 층에 원문, 질문은 예전처럼 규칙 문서로 — 점검표가 있으면 편람은 범위에서 먼저 빠짐", async () => {
+  withEnv("card");
+  const chunks = [...SYN_CHUNKS, ...DIGESTS];
+  const keysOf = (b: { layers: Array<{ id: string; refs: Array<{ key: string }> }> }) => Object.fromEntries(b.layers.map((l) => [l.id, l.refs.map((r) => r.key)]));
+  const chat = await loadCardBundle(db(chunks), CARD, "card", "chat");
+  assert.deepEqual(keysOf(chat), { institution: ["up-x/1"], common: [], business: [] }, "질문: 기준류는 규칙 문서로");
+  for (const mode of ["improve", "discover", "followup"] as const) {
+    const w = await loadCardBundle(db(chunks), CARD, "card", "writer", writerBundleOpts(writerScope(mode, false, BIZ_TRACK)));
+    const k = keysOf(w);
+    assert.ok(k.institution.includes("goal30-2605/1") && k.business.includes("pool25-biz/BZ-1/1"), `${mode}: 중장기·Pool 원문`);
+    assert.ok(!k.common.includes("plan-2607/handbook26/BZ-4") && !k.institution.includes("plan-2607/narr/I/1"), `${mode}: 공통지표 편람·서술은 규칙 문서로`);
+    assert.equal(k.business.includes("plan-2607/handbook26/BZ-1/k1"), mode !== "followup", `${mode}: ③ 편람(보완 점검은 점검표가 대신해 범위 밖)`);
+    assert.deepEqual(w.select?.digest, chat.select?.digest, `${mode}: 규칙 문서 글은 그대로`);
+  }
+  const ins = keysOf(await loadCardBundle(db(chunks), CARD, "card", "writer", writerBundleOpts(writerScope("improve", true, BIZ_TRACK))));
+  assert.ok(!ins.business.includes("plan-2607/handbook26/BZ-1/k1") && ins.business.includes("pool25-biz/BZ-1/1"), "점검표가 있으면 편람은 없음(shape가 먼저), Pool은 원문");
 });

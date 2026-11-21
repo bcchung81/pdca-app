@@ -3,6 +3,7 @@ import "server-only";
 // 경평 초안 「평가 기준·평가위원 관점」 근거 읽기 — 로그인 사용자 권한(공통 지식은 모두 읽음). 고르기 규칙은 lens.ts(순수)
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadBundleChunks, loadCardSelection } from "../ai/context.ts";
+import { bonusDrop } from "../knowledge/bonus-scope.ts";
 import { layerOf } from "../knowledge/bundle.ts";
 import { buildSearchQuery } from "../knowledge/search-query.ts";
 import { selectPurposes } from "../knowledge/select.ts";
@@ -14,15 +15,16 @@ const COLS = "chunk_key, title, unit_type, text, context_prefix, meta";
 
 /**
  * 공통 지식 선별 방식(실험, KNOWLEDGE_SELECT에 report)이 이 카드에 선별을 냈으면 고른 조각 중 지적·실사 조각(고른 순서) — 검색 순(searched)을 대신함.
- * 꺼져 있거나 선별이 없으면 null(검색 순 그대로)
+ * 꺼져 있거나 선별이 없으면 null(검색 순 그대로). AI 가점 실사는 공통 지식 묶음과 같은 판정으로 관련 카드에만(bonusDrop — 대응표 키는 유형으로 거르지 않은 전부)
  */
-async function selectedLensRows(supabase: SupabaseClient, card: { id: string; evalUnitId: string }): Promise<LensRow[] | null> {
+async function selectedLensRows(supabase: SupabaseClient, card: { id: string; evalUnitId: string; data: unknown }): Promise<LensRow[] | null> {
   if (!selectPurposes(process.env.KNOWLEDGE_SELECT).has("report")) return null;
   const chunks = await loadBundleChunks(supabase, trackSpecOfUnit(card.evalUnitId));
-  const sel = await loadCardSelection(supabase, card, "report", { chunks });
+  const [sel, linked] = await Promise.all([loadCardSelection(supabase, card, "report", { chunks }), loadScopeKeys(supabase, card.id)]);
   if (!sel) return null;
   const types: readonly string[] = [...CRITIQUE_TYPES, ...SURVEY_TYPES];
-  const byKey = new Map(chunks.filter((c) => types.includes(c.unit_type) && layerOf(c, card.evalUnitId, "report")).map((c) => [c.chunk_key, c]));
+  const drop = bonusDrop(chunks, { unit: card.evalUnitId, data: card.data, linked });
+  const byKey = new Map(chunks.filter((c) => types.includes(c.unit_type) && layerOf(c, card.evalUnitId, "report") && !drop(c)).map((c) => [c.chunk_key, c]));
   return sel.keys.flatMap((k) => byKey.get(k) ?? []);
 }
 

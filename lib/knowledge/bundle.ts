@@ -3,11 +3,13 @@
 // 과제 대응표(card_knowledge_scope)·닮은 정도는 거르는 데 쓰지 않고 카드별 목록표(「이 과제 해당」·「닮은 순」)로만 알립니다.
 // 공유 층(①②는 모든 과제, ③은 같은 사업)은 카드와 상관없는 고정 순서라 같은 사업 카드끼리 앞부분이 바이트까지 같아 캐시를 나눠 씁니다.
 // 외부 컨설팅 의견(consult_comment)은 카드마다 다르므로 공유 층에 넣지 않고 그 카드의 덩이(consult — 요청 글의 목록표 뒤, listText)로만 넣습니다(2026-11-20 사용자 결정).
+// AI 가점 실사(② 층의 사업 미지정 가점 실사)는 관련 카드(대응표 연결·주요사업 AI활용 칸·경영관리 지표 13)에만 넣습니다(bonus-scope.ts, 2026-11-21 사용자 결정) — 그래서 ②는 관련·무관 두 가지 글이 있습니다.
 
 import { type KnowledgeRef, knowledgeBlock } from "../ai/writer.ts";
 import { type PromptSet, fillFrom } from "../prompts/template.ts";
 import { SCOPE_UNIT_TYPES } from "../prep/scope.ts";
 import { rankSimilar } from "../reports/prior.ts";
+import { bonusDrop } from "./bonus-scope.ts";
 import { sharedBlock } from "./compact.ts";
 import { commonKpiOwner } from "./common-kpi-owner.ts";
 import { BUSINESSES } from "./dictionaries.ts";
@@ -154,9 +156,11 @@ export function buildBundle(chunks: BundleChunk[], card: { id?: string; evalUnit
   // ③ 이 평가단위 공통을 읽는 단위 — 주요사업은 카드의 평가단위(사업) 그대로, 경영관리는 카드 묶음(MG-G…)이 아니라 카드가 속한 지표(MG-n)를 호출하는 쪽이 knowledgeUnit으로 넘김
   const unit = card.knowledgeUnit ?? card.evalUnitId;
   const byLayer = new Map<LayerId, BundleChunk[]>(LAYER_ORDER.map((id) => [id, []]));
+  // AI 가점 실사는 관련 카드에만(bonus-scope.ts) — 층 판정(layerOf)은 그대로 두고 여기서만 뺌
+  const drop = bonusDrop(chunks, { unit, data: card.data, linked });
   for (const c of chunks) {
     const id = layerOf(c, unit, purpose);
-    if (id) byLayer.get(id)!.push(c);
+    if (id && !drop(c)) byLayer.get(id)!.push(c);
   }
   const sorted = (xs: BundleChunk[]) =>
     xs.sort((a, b) => docRank(a.doc_id) - docRank(b.doc_id) || a.doc_id.localeCompare(b.doc_id) || a.seq - b.seq || a.chunk_key.localeCompare(b.chunk_key)).map(chunkRef);

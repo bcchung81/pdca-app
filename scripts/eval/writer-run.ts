@@ -4,7 +4,8 @@
 //    안 읽었거나 판이 다른 자료는 서버라면 여기서 읽어 DB에 채우지만, 이 스크립트는 DB에 쓰지 않으려고 건너뛰고 기록(skipped)에 남김.
 //  - 요청 종류: improve·discover = 요청 글 없음 / reflect = 붙여 넣은 글 없이 카드 전용 자료만(자료가 없으면 서버처럼 부르지 않고 건너뜀)
 //    / followup = 최종 점검표(status ≠ draft, 점검월이 가장 늦은 1건) 미흡 행(점검표가 없으면 건너뜀, 미흡 0건이면 코드 결과 — AI 안 부름).
-//  - 공통 지식 = loadCardBundle(db, card, "card", "writer") — 선별 여부는 환경변수(KNOWLEDGE_SELECT)가 정함. 여기서 바꾸지 않음.
+//  - 공통 지식·점검표 요약 = 서버와 같은 lib/ai/writer-knowledge.ts(latestInspection + loadWriterKnowledge — 요청 종류 × 점검표 유무의 자료 범위, 요청 종류마다 묶음).
+//    선별 여부는 환경변수(KNOWLEDGE_SELECT)가 정함. 여기서 바꾸지 않음.
 // Claude는 로컬 CLI로만(AI_PROVIDER=cli, ANTHROPIC_API_KEY 비움). 운영 DB는 읽기만, ai_requests에도 쓰지 않음(기록 없는 callWriter).
 // 실행: node --conditions=react-server --env-file=.env.local scripts/eval/writer-run.ts --out <폴더> --cards <id,…> --modes improve,discover,reflect,followup [--label base] [--concurrency 2] [--dry]
 //  --no-materials: 카드 전용 자료(DB)를 넣지 않음 — 첨부 있음/없음 대조용
@@ -15,7 +16,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { basename, join, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { readAttachment } from "../../lib/ai/attachments.ts";
-import { loadCardBundle } from "../../lib/ai/context.ts";
+import { latestInspection, loadWriterKnowledge } from "../../lib/ai/writer-knowledge.ts";
 import { type FollowupBasis, followupBasis } from "../../lib/ai/followup.ts";
 import { MATERIAL_COLS, type MaterialDoc, type MaterialRow, fileRefs, materialState } from "../../lib/ai/material-text.ts";
 import { runPool } from "../../lib/ai/pool.ts";
@@ -24,7 +25,6 @@ import { WRITER_MODES, type WriterMode, noRequirementResult, userPrompt, verifyR
 import { isMgmtCard } from "../../lib/cards/mgmt-card.ts";
 import { currentPeriod } from "../../lib/cards/view.ts";
 import { type KnowledgeBundle, bundleRefs, listText, sharedTexts } from "../../lib/knowledge/bundle.ts";
-import { readResult } from "../../lib/inspections/model.ts";
 import { assistPrompts, assistPromptsMg } from "../../lib/prompts/sets.ts";
 import { trackSpecOfUnit } from "../../lib/tracks/index.ts";
 
@@ -74,10 +74,11 @@ interface CardRow {
   files: MaterialDoc[];
   skipped: string[];
   followup: FollowupBasis | null;
-  kb: KnowledgeBundle;
+  /** 요청 종류마다 공통 지식 묶음과 요청 글의 점검표 요약(서버와 같은 범위) */
+  kbs: Partial<Record<WriterMode, { kb: KnowledgeBundle; inspection: string | null }>>;
 }
 
-/** 카드 원장 + 카드 전용 자료(저장본 전체 글만 — DB에 쓰지 않음) + 최종 점검표 + 공통 지식 묶음 */
+/** 카드 원장 + 카드 전용 자료(저장본 전체 글만 — DB에 쓰지 않음) + 최종 점검표 + 요청 종류별 공통 지식 묶음 */
 async function loadCard(id: string): Promise<CardRow> {
   const { data: card, error } = await db.from("cards").select("id, uid, eval_unit_id, data, status").eq("id", id).single();
   if (error || !card) throw new Error(`카드를 읽지 못함 ${id}: ${error?.message}`);
@@ -88,11 +89,12 @@ async function loadCard(id: string): Promise<CardRow> {
   const files = rows.filter((r) => materialState(r) === "ready").map((r): MaterialDoc => ({ id: String(r.id), kind: "card", name: r.file_name, text: r.parsed_text ?? "" }));
   const skipped = rows.filter((r) => materialState(r) !== "ready").map((r) => `「${r.file_name}」(${materialState(r) === "failed" ? (r.parse_error ?? "읽기 실패") : "저장본 없음·판 다름 — 서버라면 이때 읽음"})`);
   // 서버와 같음: 보낸·확인한 것 중 점검월이 가장 늦은 1건(초안 제외)
-  const { data: ins } = await db.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
+  const ins = await latestInspection(db, card.id);
   for (const path of attachMap.get(id) ?? []) files.push(await readAttachment(new Uint8Array(readFileSync(path)), basename(path)));
-  const followup = followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
-  const kb = await loadCardBundle(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, "card", "writer");
-  return { id: card.id, uid: card.uid, evalUnitId: card.eval_unit_id, data: card.data, files, skipped, followup, kb };
+  const followup = followupBasis(ins);
+  const kbs: CardRow["kbs"] = {};
+  for (const mode of modes) kbs[mode] = await loadWriterKnowledge(db, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }, mode, ins);
+  return { id: card.id, uid: card.uid, evalUnitId: card.eval_unit_id, data: card.data, files, skipped, followup, kbs };
 }
 
 const period = currentPeriod();
@@ -100,7 +102,8 @@ const periodLabel = `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`;
 const promptFiles = (files: MaterialDoc[]) => files.map((d) => ({ name: d.name, text: d.text }));
 
 /** 서버와 같은 요청: reflect는 붙여 넣은 글 없음(자료만), 나머지는 요청 글 없음 */
-const reqOf = (c: CardRow, mode: WriterMode) => ({ mode, note: "", periodLabel, attachmentText: null, followup: mode === "followup" ? c.followup : null });
+const reqOf = (c: CardRow, mode: WriterMode) => ({ mode, note: "", periodLabel, attachmentText: null, followup: mode === "followup" ? c.followup : null, inspection: c.kbs[mode]!.inspection });
+const kbOf = (c: CardRow, mode: WriterMode) => c.kbs[mode]!.kb;
 
 /** 할 일 판정 — 서버 runCardAssist와 같은 순서 */
 type Plan = { kind: "call" } | { kind: "code"; reason: string } | { kind: "skip"; reason: string };
@@ -117,10 +120,11 @@ function planOf(c: CardRow, mode: WriterMode): Plan {
 function requestChars(c: CardRow, mode: WriterMode): { system: number; shared: number; list: number; prompt: number; total: number } {
   const mg = isMgmtCard(c.data);
   const p = (mg ? assistPromptsMg : assistPrompts)().prompts;
-  const system = (mg ? writerSystemMg : writerSystem)(trackSpecOfUnit(c.kb.unit)).length;
-  const kbList = listText(p, c.kb);
+  const kb = kbOf(c, mode);
+  const system = (mg ? writerSystemMg : writerSystem)(trackSpecOfUnit(kb.unit)).length;
+  const kbList = listText(p, kb);
   const prompt = userPrompt(p, c.data, kbList, { ...reqOf(c, mode), files: promptFiles(c.files) }).length;
-  const shared = sharedTexts(p, c.kb).reduce((n, t) => n + t.length, 0);
+  const shared = sharedTexts(p, kb).reduce((n, t) => n + t.length, 0);
   return { system, shared, list: kbList.length, prompt, total: system + shared + prompt };
 }
 
@@ -133,7 +137,7 @@ for (const c of loaded) if (c.skipped.length) console.warn(`경고: ${c.id} 카�
 interface Task { card: CardRow; mode: WriterMode; plan: Plan; file: string }
 const tasks: Task[] = loaded.flatMap((card) => modes.map((mode) => ({ card, mode, plan: planOf(card, mode), file: join(labelDir, card.uid, `${mode}.json`) })));
 const man = (n: number) => `${(n / 10_000).toFixed(1)}만`;
-const method = (c: CardRow) => (c.kb.select ? "선별" : "통째로");
+const method = (c: CardRow, mode: WriterMode) => (kbOf(c, mode).select ? "선별" : "통째로");
 
 if (dry) {
   console.log(`label=${label} · 기간 ${periodLabel} · 공통 지식 방식은 카드마다(환경변수 KNOWLEDGE_SELECT=${process.env.KNOWLEDGE_SELECT ?? ""})`);
@@ -142,7 +146,7 @@ if (dry) {
   for (const t of tasks) {
     const what = t.plan.kind === "call" ? "AI 호출" : t.plan.kind === "code" ? `코드 결과 — ${t.plan.reason}` : `건너뜀 — ${t.plan.reason}`;
     const size = t.plan.kind === "call" ? requestChars(t.card, t.mode) : null;
-    console.log(`| ${t.card.id} | ${t.mode} | ${what}${existsSync(t.file) ? " [있음]" : ""} | ${method(t.card)} | ${t.card.files.length} | ${size ? `${man(size.total)} (${man(size.system)}/${man(size.shared)}/${man(size.prompt)})` : "—"} |`);
+    console.log(`| ${t.card.id} | ${t.mode} | ${what}${existsSync(t.file) ? " [있음]" : ""} | ${method(t.card, t.mode)} | ${t.card.files.length} | ${size ? `${man(size.total)} (${man(size.system)}/${man(size.shared)}/${man(size.prompt)})` : "—"} |`);
   }
   process.exit(0);
 }
@@ -168,7 +172,7 @@ await runPool(tasks, concurrency, async (t, i) => {
   const n = `${i + 1}/${tasks.length}`;
   if (existsSync(t.file)) return progress(`${n} 건너뜀(있음) ${name}`);
   const c = t.card;
-  const base = { cardId: c.id, uid: c.uid, unit: c.evalUnitId, mode: t.mode, label, periodLabel, knowledge: method(c), materials: { used: c.files.map((f) => f.name), skipped: c.skipped } };
+  const base = { cardId: c.id, uid: c.uid, unit: c.evalUnitId, mode: t.mode, label, periodLabel, knowledge: method(c, t.mode), materials: { used: c.files.map((f) => f.name), skipped: c.skipped } };
   if (t.plan.kind === "skip") {
     save(t, { ...base, skipped: t.plan.reason });
     return progress(`${n} 건너뜀(${t.plan.reason}) ${name}`);
@@ -178,15 +182,15 @@ await runPool(tasks, concurrency, async (t, i) => {
     return progress(`${n} 코드 결과(${t.plan.reason}) ${name}`);
   }
   const requestSize = requestChars(c, t.mode);
-  progress(`${n} 시작 ${name} · 요청 약 ${requestSize.total}자 · ${method(c)}`);
+  progress(`${n} 시작 ${name} · 요청 약 ${requestSize.total}자 · ${method(c, t.mode)}`);
   const t0 = Date.now();
   try {
-    const call = await callWriter({ card: c.data, kb: c.kb, req: reqOf(c, t.mode), files: c.files });
+    const call = await callWriter({ card: c.data, kb: kbOf(c, t.mode), req: reqOf(c, t.mode), files: c.files });
     const sec = Math.round((Date.now() - t0) / 100) / 10;
     // 인용 대조: 공통 지식 조각(선별 방식이어도 선별 전 원문 전부 — bundleRefs) + 첨부 전체 글(file:N), 서버와 같음
     const followup = t.mode === "followup" ? c.followup : null;
-    const result = verifyResult(call.result, c.data, [...bundleRefs(c.kb), ...fileRefs(c.files)], followup);
-    const rec = { ...base, model: modelLabel(call), sec, usage: usage5(call.usage), sources: bundleRefs(c.kb).length + c.files.length, requestChars: requestSize.total, requestSize, followupBasis: followup, result };
+    const result = verifyResult(call.result, c.data, [...bundleRefs(kbOf(c, t.mode)), ...fileRefs(c.files)], followup);
+    const rec = { ...base, model: modelLabel(call), sec, usage: usage5(call.usage), sources: bundleRefs(kbOf(c, t.mode)).length + c.files.length, requestChars: requestSize.total, requestSize, followupBasis: followup, result };
     save(t, rec);
     progress(`${n} 끝 ${name} · ${sec}초 · 입력 ${rec.usage.input}+캐시 읽기 ${rec.usage.cacheRead}·쓰기 ${rec.usage.cacheWrite}/출력 ${rec.usage.output}`);
   } catch (e) {

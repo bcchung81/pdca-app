@@ -1,13 +1,15 @@
 // AI 요청을 기다리는 동안의 진행 줄(components/workspace/ai-progress.tsx)의 글과 셈(순수) — 과제원장 「AI 작성지원」·경평 초안 「AI 초안」이 함께 씀.
 // 서버가 단계를 알려 주지 않으므로 단계·진행률은 지어내지 않습니다: 경과 시간과 「보통 걸리는 시간」만 보이고, 넘기면 「조금 더 걸리고 있습니다」.
-// 「넣은 근거」는 서버 액션이 실제로 넣는 자료만 적습니다 — 과제원장은 app/(app)/cards/actions.ts(runCardAssist·runCardChat의 loadCardBundle — 규칙 범위 전부,
-// 선별 방식이 적용되는 기능은 getCardSelectPreview가 미리 알려 준 고른 수로 「공통 규칙 문서 + 고른 자료 + 제목 목록」),
+// 「넣은 근거」는 서버 액션이 실제로 넣는 자료만 적습니다 — 과제원장은 app/(app)/cards/actions.ts(runCardChat의 loadCardBundle — 규칙 범위 전부, runCardAssist는 요청 종류별 범위
+// lib/knowledge/mode-profile.ts writerScope + 최종 점검표, 선별 방식이 적용되는 요청은 getCardSelectPreview가 미리 알려 준 고른 수로 「공통 규칙 문서 + 고른 자료 + 제목 목록」),
 // 경평 초안은 app/(app)/reports/cards/draft-prepare.ts(prepareDraft — 고른 근거, 구성안대로 집필·자료 반영 고치기는 구성안에 저장된 근거 ∪ 지금 고른 첨부(lib/reports/draft-sources.ts mergeSources),
 // 선별 방식이면 getReportSelectPreview가 알려 준 고른 수). 자료 범위가 바뀌면 여기도 함께 고칩니다.
 import type { JobKind } from "./jobs.ts";
 import { MG_FILL } from "../reports/mg-fill-limits.ts";
 import { CHAT_LIMITS } from "./chat.ts";
 import { WRITER_MODES, type WriterMode } from "./writer.ts";
+import { DROP_LABEL, SOURCE_GROUPS, SOURCE_GROUP_IDS, type SourceGroup, type WriterScope, groupOf, writerScope } from "../knowledge/mode-profile.ts";
+import { DEFAULT_TRACK, type SelectRules, TRACK_SPECS, type TrackId, type TrackSpec } from "../tracks/index.ts";
 
 /** 근거 하나(짧은 이름) + 펼쳤을 때 설명 */
 export interface ProgressSource {
@@ -59,12 +61,28 @@ export const FOLLOWUP_EXPECT: ProgressExpect = { min: 60, max: 240 };
  * 카드 AI 작성지원 한 요청의 진행 줄.
  * files = 이 요청에 고른 카드 전용 자료 이름, history = 이 요청 전에 받은 답 수(질문만 — 서버는 최근 CHAT_LIMITS.turns 글, 곧 그 절반 차례까지 받음)
  */
-/** 규칙 범위(lib/knowledge/bundle.ts) 전부를 가리키는 공통 문구 — 요청 종류와 상관없이 늘 같음 */
-const KNOWLEDGE_SCOPE_DETAIL = "규칙 범위 전부 — 기관 공통(관리계획 서술·점검표·편람·중장기·기관장 지표·AX·붙임2 B+·B0) · 공통지표·사업 미지정 실사 · 이 사업의 지적·실사·Pool·편람·2025 보고서 절 (이 과제와 글이 닮은 순 앞 30건은 목록으로 함께 알림)";
+/** 규칙 범위(lib/knowledge/bundle.ts) 전부를 가리키는 공통 문구 — 질문·경평 초안은 늘 이것, 작성지원은 뺀 갈래가 없을 때만(writerKnowledgeDetail). AI 가점 실사는 관련 카드에만(lib/knowledge/bonus-scope.ts, 2026-11-21) */
+const KNOWLEDGE_SCOPE_DETAIL = "규칙 범위 전부 — 기관 공통(관리계획 서술·점검표·편람·중장기·기관장 지표·AX·붙임2 B+·B0) · 공통지표·사업 미지정 실사(AI 가점 실사는 AI활용 칸·과제 연결·경영관리 지표 13 과제만) · 이 사업의 지적·실사·Pool·편람·2025 보고서 절 (이 과제와 글이 닮은 순 앞 30건은 목록으로 함께 알림)";
 
-/** 선별 방식이 실제로 적용된 요청의 공통 지식(lib/knowledge/select.ts applySelection) — picked = 이 과제에 고른 사례류 원문 수(과제 연결 포함) */
-const selectedScopeDetail = (picked: number) =>
-  `선별 방식 — 공통 규칙 문서(트랙 공통·이 사업의 조항·기준을 정리한 글) + 이 과제에 고른 자료 ${picked}건(지적·실사·2025 보고서 절·사례 원문, 과제 연결 포함) + 나머지 지적·실사·보고서 절·사례는 제목 목록 · 그 밖의 범위(실적 근거 등)는 원문 그대로`;
+/**
+ * 선별 방식이 실제로 적용된 요청의 공통 지식(lib/knowledge/select.ts applySelection) — picked = 이 과제에 고른 사례류 원문 수(과제 연결 포함).
+ * rules = 그 트랙의 기준류 넣는 법(TrackSpec.selectRules): digest = 공통 규칙 문서(주요사업), raw = 기준 자료 원문 그대로(경영관리 — 규칙 문서 없음, ③ 지적·전년 보고서는 늘 고름).
+ * rulesKept = 요청에 기준 자료가 남는지(작성지원 요청 종류 범위가 점검표가 대신하는 자료를 빼면 false — raw는 그때 기준 자료를 적지 않음),
+ * indicators = digest에서 원문 그대로 두는 지표 기준 문구(작성지원만 — rawIndicators, 질문·경평 초안은 빈 글)
+ */
+const selectedScopeDetail = (picked: number, rules: SelectRules = "digest", rulesKept = true, indicators = "") =>
+  rules === "digest"
+    ? `선별 방식 — 공통 규칙 문서(트랙 공통·이 사업의 조항·기준을 정리한 글) + ${indicators}이 과제에 고른 자료 ${picked}건(지적·실사·2025 보고서 절·사례 원문, 과제 연결 포함) + 나머지 지적·실사·보고서 절·사례는 제목 목록 · 그 밖의 범위(실적 근거 등)는 원문 그대로`
+    : `선별 방식 — ${rulesKept ? "기준 자료(편람·관리계획 서술·자가진단 체크리스트)는 원문 그대로 + " : ""}이 과제에 고른 자료 ${picked}건(이 지표의 지적·2025 보고서 장과 고른 실사 원문, 과제 연결 포함) + 나머지 실사는 제목 목록 · 그 밖의 범위(핵심공통항목 등)는 원문 그대로`;
+
+/**
+ * 작성지원 선별 방식(digest)에서 규칙 문서로 바꾸지 않고 원문 그대로 두는 지표 기준(lib/knowledge/mode-profile.ts RAW_INDICATOR_RULES) — 이 요청 종류 범위에 드는 것만
+ * (점검표가 대신하는 자료를 빼면 편람도 빠짐). 없으면 빈 글
+ */
+function rawIndicators(scope: WriterScope): string {
+  const items = [scope.groups.includes("strategy") ? "Pool·중장기·기관장 지표" : "", scope.groups.includes("replaced") ? "이 사업 편람 지표" : ""].filter(Boolean);
+  return items.length ? `지표 기준(${items.join("·")})은 원문 그대로 + ` : "";
+}
 
 /**
  * 이 카드에 대한 외부 컨설팅 의견(서버 getCardConsultTitles — 그 카드 요청에 실제로 넣는 조각의 제목, lib/ai/context.ts loadCardConsult와 같은 조회). 없으면 줄 없음.
@@ -74,13 +92,50 @@ function consultSources(titles: string[] | undefined): ProgressSource[] {
   return titles?.length ? [{ label: `컨설팅 의견 ${titles.length}건`, detail: `${titles.join(" · ")} — 외부 컨설팅이 이 카드에 남긴 보완 의견(이 카드 것만). 빈 곳을 짚는 점검 관점으로만 씀(사실·숫자 근거 아님)` }] : [];
 }
 
-/** selected = 이 요청에 선별 방식이 실제로 적용될 때 고른 원문 수(서버 getCardSelectPreview — 없으면 통째로 넣기), consult = 이 카드 외부 컨설팅 의견 제목(consultSources) */
-export function assistProgress(mode: WriterMode | "chat", o: { files: string[]; history?: number; selected?: number; consult?: string[] }): ProgressSpec {
+/**
+ * 작성지원 요청 종류의 공통 지식(서버 runCardAssist — lib/knowledge/mode-profile.ts writerScope와 같은 표). 뺀 갈래가 없으면 질문과 같은 문구,
+ * 점검표 규칙 밖으로도 갈래를 정한 범위(실적 반영)는 넣는 갈래만, 나머지는 규칙 범위에서 뺀 자료를 적음. 선별 방식이면 고르기 전에 뺀 자료 —
+ * 공통 규칙 문서를 쓰는 트랙(selectRules digest)만 「공통 규칙 문서는 그대로」
+ */
+function writerKnowledgeDetail(mode: WriterMode, inspection: boolean, track: TrackSpec, selected?: number): string {
+  const scope = writerScope(mode, inspection, track);
+  const out = SOURCE_GROUP_IDS.filter((g) => !scope.groups.includes(g));
+  const drops = scope.dropUnits.filter((u) => scope.groups.includes(groupOf(u)));
+  const rules = track.selectRules;
+  const rulesKept = scope.groups.includes("replaced");
+  const indicators = rawIndicators(scope);
+  if (!out.length && !drops.length) return selected === undefined ? KNOWLEDGE_SCOPE_DETAIL : selectedScopeDetail(selected, rules, true, indicators);
+  const group = (g: SourceGroup) => `${SOURCE_GROUPS[g].name}(${SOURCE_GROUPS[g].items})`;
+  const tail = rules === "digest" ? "(공통 규칙 문서는 그대로)" : rulesKept ? "(기준 자료는 원문 그대로)" : "";
+  const picked = (n: number) => selectedScopeDetail(n, rules, rulesKept, indicators);
+  if (out.some((g) => g !== "replaced")) {
+    // 점검표가 없는 실적 반영은 자가진단 체크리스트를 더 넣음(점검 대비 귀띔의 기준 — extraUnits)
+    const extra = scope.extraUnits.length ? ` · 자가진단 체크리스트(점검 대비 귀띔용 — 최근 점검표가 없어서)` : "";
+    const only = `요청 종류 범위 — ${scope.groups.map(group).join(" · ")}${extra}만`;
+    if (!scope.select) return `${only} 원문 그대로(선별 방식 안 씀)`;
+    return selected === undefined ? `${only} 원문 그대로` : `${picked(selected)} · ${only}${tail}`;
+  }
+  const dropped = [...out.map((g) => `${group(g)}${g === "replaced" ? ` — 최종 점검표가 대신함` : ""}`), ...drops.map((u) => DROP_LABEL[u] ?? u)].join(" · ");
+  return selected === undefined
+    ? `규칙 범위에서 이 요청 종류가 쓰지 않는 자료를 뺀 나머지 — 뺀 자료: ${dropped} · 규칙 범위: ${KNOWLEDGE_SCOPE_DETAIL.replace(/^규칙 범위 전부 — /, "")}`
+    : `${picked(selected)} · 고르기 전에 뺀 자료: ${dropped}${tail}`;
+}
+
+/**
+ * selected = 이 요청에 선별 방식이 실제로 적용될 때 고른 원문 수(서버 getCardSelectPreview — 없으면 통째로 넣기), consult = 이 카드 외부 컨설팅 의견 제목(consultSources),
+ * inspection = 최종 점검표가 있음(서버 getCardSelectPreview — 작성지원 자료 범위와 「최근 점검표」 줄, 보완 점검은 늘 있음), track = 카드의 트랙(같은 미리보기 — 실적 반영 범위와
+ * 선별 방식의 기준류 넣는 법 TrackSpec.selectRules가 트랙마다 다름, 없으면 기본 트랙). 경평 초안 진행 줄은 경영관리가 선별 대상이 아니라 digest 문구 그대로
+ */
+export function assistProgress(mode: WriterMode | "chat", o: { files: string[]; history?: number; selected?: number; consult?: string[]; inspection?: boolean; track?: TrackId }): ProgressSpec {
   const sources: ProgressSource[] = [{ label: "카드", detail: "편집기에 지금 보이는 카드(부서 담당자는 이달 작성본)" }];
   if (o.files.length) sources.push({ label: `첨부 ${o.files.length}건`, detail: o.files.join(" · ") });
-  sources.push({ label: "공통 지식", detail: o.selected === undefined ? KNOWLEDGE_SCOPE_DETAIL : selectedScopeDetail(o.selected) });
-  sources.push(...consultSources(o.consult));
+  const inspection = mode === "followup" || Boolean(o.inspection);
+  const track = o.track ? TRACK_SPECS[o.track] : DEFAULT_TRACK;
+  const scope = mode === "chat" ? null : writerScope(mode, inspection, track);
+  sources.push({ label: "공통 지식", detail: mode === "chat" ? (o.selected === undefined ? KNOWLEDGE_SCOPE_DETAIL : selectedScopeDetail(o.selected, track.selectRules)) : writerKnowledgeDetail(mode, inspection, track, o.selected) });
+  if (!scope || scope.groups.includes("consult")) sources.push(...consultSources(o.consult));
   if (mode === "followup") sources.push({ label: "최종 점검표", detail: "부서에 보낸·확인한 점검 중 점검월이 가장 늦은 1건의 미흡 항목(없으면 AI 없이 안내)" });
+  else if (scope?.inspection) sources.push({ label: "최종 점검표", detail: "부서에 보낸·확인한 점검 중 점검월이 가장 늦은 1건의 요약(총평·미흡 항목 보완방안·★사례제안) — 판정·문장은 바꾸지 않고 씀" });
   if (mode === "chat") {
     const turns = Math.min(o.history ?? 0, CHAT_LIMITS.turns / 2);
     sources.push({ label: "최종 점검표", detail: "부서에 보낸·확인한 점검 중 점검월이 가장 늦은 1건(없으면 없음)" });
