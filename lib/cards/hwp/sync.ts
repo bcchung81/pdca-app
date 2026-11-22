@@ -54,7 +54,7 @@ export interface BlockDiff {
   risk: string | null;
   /** 원장의 고정 영역이 확정돼 반영할 수 없음 */
   locked: boolean;
-  /** 원장에 있고 파일에 없는 것(블록 전체·월별 기간·붙임). 기본은 보존 */
+  /** 원장에 있고 파일에 없는 것(블록 전체·월별 기간·붙임)과 파일이 비운 월별 상자. 기본은 보존 */
   missing: string[];
   /** 줄 비교(바뀐 곳 주변만) */
   lines: LineOp[];
@@ -325,6 +325,17 @@ function pairMonthly(L: LooseJson[], P: LooseJson[]): (number | null)[] {
   L.forEach((m, i) => free.set(periodKey(m.period), [...(free.get(periodKey(m.period)) ?? []), i]));
   return P.map((m) => free.get(periodKey(m.period))?.shift() ?? null);
 }
+/** 짝지은 월별 상자가 다르게 보이나(그림 자리·줄 끝 공백은 비교용으로 맞추고, 수식만 빠진 것은 같음). 짝이 없으면 새 상자 */
+function boxChanged(old: LooseJson | null, m: LooseJson): boolean {
+  return !old || (renderMonthlyBox(forCompare(old)) !== renderMonthlyBox(forCompare(m)) && !onlyEquationsMissing(old, m, (x) => renderMonthlyBox(forCompare(x))));
+}
+/**
+ * 파일이 비운 상자: 원장 상자에 글·그림이 있는데 짝지은 파일 상자는 비었음. 다른 블록의 「⚠️삭제 예정」처럼 지우기를 승인할 때만 비우고
+ * 아니면 원장 상자 그대로 — 같은 블록의 다른 상자 수정·추가는 기본 반영(2026-11-22 사용자 결정 D1). 비교와 병합이 같이 씀
+ */
+function emptiedBox(old: LooseJson | null, m: LooseJson): boolean {
+  return Boolean(old) && boxChanged(old, m) && hasText(old.items) && !hasText(m.items);
+}
 const monthNums = (p: unknown) => (String(p ?? "").match(/\d{1,2}(?=\s*월)/g) ?? []).map(Number);
 
 function partHtml(card: LooseJson, part: CardPart | MgmtPart, strict = false): string {
@@ -467,18 +478,19 @@ export function planSync(ledger: LooseJson, parsedIn: LooseJson, opts: { locked?
       const P: LooseJson[] = parsed?.do?.monthly ?? [];
       const pair = pairMonthly(L, P);
       const matched = new Set(pair.filter((i) => i !== null));
-      missing = L.filter((_, i) => !matched.has(i)).map((m) => String(m.period));
-      const changed = P.map((m, j) => {
-        const old = pair[j] === null ? null : L[pair[j]!];
-        return { m, old, changed: !old || (renderMonthlyBox(forCompare(old)) !== renderMonthlyBox(forCompare(m)) && !onlyEquationsMissing(old, m, (x) => renderMonthlyBox(forCompare(x)))) };
-      }).filter((x) => x.changed);
-      status = changed.length ? (L.length ? "changed" : "added") : missing.length ? "removed" : "same";
-      if (missing.length) note = `파일에 없는 기간 ${missing.join(", ")}은(는) 그대로 둡니다(지우려면 따로 승인)`;
-      // 위험(다른 블록과 같은 뜻 — QA Q1-02): 상자가 줄거나, 바뀐 상자에서 원장 그림이 빠졌거나, 파일이 원장 상자 글을 비움
+      const changed = P.map((m, j) => ({ m, old: pair[j] === null ? null : L[pair[j]!] })).filter((x) => boxChanged(x.old, x.m));
+      // 파일이 비운 상자는 「삭제 예정」(missing — 지우기 승인 때만 비움, D1), 나머지 바뀐 상자만 [변경]·위험 판단에 씀
+      const emptied = changed.filter((x) => emptiedBox(x.old, x.m));
+      const edits = changed.filter((x) => !emptiedBox(x.old, x.m));
+      const gone = L.filter((_, i) => !matched.has(i)).map((m) => String(m.period));
+      missing = [...gone, ...emptied.map((x) => `비운 ${x.old!.period} 상자`)];
+      status = edits.length ? (L.length ? "changed" : "added") : missing.length ? "removed" : "same";
+      const keep = [gone.length ? `파일에 없는 기간 ${gone.join(", ")}` : "", emptied.length ? `파일에서 비운 상자 ${emptied.map((x) => String(x.old!.period)).join(", ")}` : ""].filter(Boolean);
+      if (keep.length) note = `${keep.join(" · ")}은(는) 그대로 둡니다(지우려면 따로 승인)`;
+      // 위험(다른 블록과 같은 뜻 — QA Q1-02): 상자가 줄거나, 바뀐 상자에서 원장 그림이 빠짐(비운 상자는 위험이 아니라 삭제 예정)
       const monthlyRisks = [
         P.length < L.length ? "월별 실적 누적행 감소" : null,
-        changed.some((x) => x.old && countImages(x.m) < countImages(x.old)) ? "파일에 없는 그림이 있음 — 반영하면 원장 그림이 빠집니다" : null,
-        changed.some((x) => x.old && hasText(x.old.items) && !hasText(x.m.items)) ? "파일에서 비운 월별 상자 — 반영하면 원장 글이 지워집니다" : null,
+        edits.some((x) => x.old && countImages(x.m) < countImages(x.old)) ? "파일에 없는 그림이 있음 — 반영하면 원장 그림이 빠집니다" : null,
       ].filter(Boolean);
       if (monthlyRisks.length) risk = monthlyRisks.join(" · ");
     } else if (key === "ax") {
@@ -554,7 +566,7 @@ export function planSync(ledger: LooseJson, parsedIn: LooseJson, opts: { locked?
 export interface SyncApproval {
   /** 반영할 블록(변경·추가) */
   blocks: BlockKey[];
-  /** 지우기까지 승인한 블록(파일에 없는 블록 전체·월별 기간·붙임) */
+  /** 지우기까지 승인한 블록(파일에 없는 블록 전체·월별 기간·파일이 비운 월별 상자·붙임) */
   removals: BlockKey[];
 }
 
@@ -564,7 +576,7 @@ const INDEX_KEYS = ["indexTitle", "tags", "targetBusiness", "executionTask", "ex
 /**
  * 원장 카드에 승인한 블록만 파일 카드 값으로 옮깁니다. 식별 칸(id·group·taskNo)은 늘 원장 값.
  * - 파일에 없다는 이유로 지우지 않음: removals에 있을 때만 지움(무손실 가드 1)
- * - 월별 실적: 파일에 있는 기간만 바꾸거나 더하고, 없는 기간은 둠(가드 2)
+ * - 월별 실적: 파일에 있는 기간만 바꾸거나 더하고, 없는 기간은 둠(가드 2). 파일이 비운 상자는 지우기를 승인할 때만 파일 값(빈 상자)으로(D1)
  * - AX 붙임: 번호 딱지는 같은 제목의 원장 붙임에서 이어 받음
  * - 고정 영역이 잠긴 카드는 그 영역(주요사업 Act·Plan·계량지표, 경영관리 전년도 환류·지적 및 개선방안·계량지표)을 옮기지 않음
  */
@@ -604,12 +616,16 @@ export function applySync(ledger: LooseJson, parsedIn: LooseJson, approval: Sync
         const L: LooseJson[] = card.do?.monthly ?? [];
         const pair = pairMonthly(L, P);
         const fileOf = new Map(pair.map((i, j) => [i, j]).filter(([i]) => i !== null) as [number, number][]);
+        // drop = 지우기 승인(파일에 없는 기간은 빼고 비운 상자는 파일 값으로), take = 바뀐 상자·새 상자 반영
+        const drop = w.includes("remove");
+        const take = w !== "remove";
         const kept: LooseJson[] = [];
         L.forEach((m, i) => {
-          if (fileOf.has(i)) kept.push(w === "remove" ? m : structuredClone(P[fileOf.get(i)!]));
-          else if (!w.includes("remove")) kept.push(m);
+          const f = fileOf.has(i) ? P[fileOf.get(i)!] : null;
+          if (f) kept.push((emptiedBox(m, f) ? drop : take) ? structuredClone(f) : m);
+          else if (!drop) kept.push(m);
         });
-        if (w !== "remove") P.forEach((m, j) => pair[j] === null && kept.push(structuredClone(m)));
+        if (take) P.forEach((m, j) => pair[j] === null && kept.push(structuredClone(m)));
         // 달 순서(첫 달 → 끝 달)로. 기간을 읽지 못하면 뒤에 둔 순서 그대로
         const order = (m: LooseJson) => {
           const ns = monthNums(m.period);

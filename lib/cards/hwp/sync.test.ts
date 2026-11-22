@@ -127,7 +127,7 @@ test("월별 실적: 같은 기간 상자가 둘이면 나온 차례끼리 짝�
   assert.ok(planSync(ledger(id), file(id)).unchanged);
 });
 
-test("월별 실적: 파일 상자에 원장 그림이 빠졌거나 파일이 상자 글을 비웠으면 위험 — 기본·일괄 반영에서 빠지고 사람이 고를 때만 반영(QA Q1-02)", { skip: NO_SEED_CARDS }, () => {
+test("월별 실적: 파일 상자에 원장 그림이 빠졌으면 위험 — 기본·일괄 반영에서 빠지고 사람이 고를 때만 반영(QA Q1-02)", { skip: NO_SEED_CARDS }, () => {
   const id = seed.cards.find((c: any) => (c.do.monthly ?? []).length >= 1).id;
   const img = { image: { src: "images/imp1/image_001.png", kordoc: "그림1.png" } };
   // ① 원장 상자에 그림이 있는데 파일 상자에는 없음(글은 같음)
@@ -139,20 +139,54 @@ test("월별 실적: 파일 상자에 원장 그림이 빠졌거나 파일이 �
   assert.match(String(mon.risk), /파일에 없는 그림/);
   assert.ok(!plan.defaults.includes("monthly"), "기본 반영 아님");
   assert.ok(plan.risks.some((r) => /파일에 없는 그림/.test(r)), "일괄 반영 보류(과제 위험)");
-  // 사람이 고르면 반영됨(지금 규칙 그대로 — 「삭제 예정」 모델은 사용자 결정 대기)
+  // 사람이 고르면 반영됨
   assert.ok(applySync(l, p, { blocks: ["monthly"], removals: [] }).applied.includes("monthly"));
-  // ② 파일이 같은 기간 상자 글을 비움
-  const e = file(id);
-  e.do.monthly[0] = { ...e.do.monthly[0], items: [] };
-  const plan2 = planSync(ledger(id), e);
-  assert.match(String(plan2.blocks.find((b) => b.key === "monthly")!.risk), /비운 월별 상자/);
-  assert.ok(!plan2.defaults.includes("monthly"));
   // 그림이 같고 글만 고친 상자는 예전처럼 기본 반영
   const ok = file(id);
   ok.do.monthly[0] = { ...ok.do.monthly[0], items: [...ok.do.monthly[0].items, "∙ 파일에서 더한 줄"] };
   const plan3 = planSync(ledger(id), ok);
   assert.equal(plan3.blocks.find((b) => b.key === "monthly")!.risk, null);
   assert.ok(plan3.defaults.includes("monthly"));
+});
+
+test("월별 실적: 파일이 비운 상자는 그 상자만 「삭제 예정」 — 지우기를 승인할 때만 비우고, 같은 블록의 다른 상자 수정은 기본 반영(2026-11-22 사용자 결정 D1)", { skip: NO_SEED_CARDS }, () => {
+  const id = seed.cards.find((c: any) => (c.do.monthly ?? []).length >= 1).id;
+  const box = (period: string, items: unknown[]) => ({ ...structuredClone(file(id).do.monthly[0]), period, periodTokens: [period], periodLines: [period], items });
+  const boxes = (c: any) => c.do.monthly.map((m: any) => [m.period, m.items]);
+  const l = ledger(id);
+  l.do.monthly = [box("10월", ["∙ 원장 10월 실적 A"]), box("11월", ["∙ 원장 11월 실적 B"])];
+  const p = file(id);
+  p.do.monthly = [box("10월", []), box("11월", ["∙ 파일 11월 실적 B(고침)"])];
+  const plan = planSync(l, p);
+  const mon = plan.blocks.find((b) => b.key === "monthly")!;
+  assert.equal(mon.status, "changed");
+  assert.equal(mon.risk, null, "비운 상자 때문에 블록째 위험이 붙지 않음");
+  assert.deepEqual(mon.missing, ["비운 10월 상자"], "10월 상자는 삭제 예정 목록에");
+  assert.ok(plan.defaults.includes("monthly"), "11월 수정은 기본 반영");
+  assert.ok(plan.risks.includes("⚠️삭제 예정 항목(기본은 보존)"), "다른 블록의 삭제 예정과 같이 과제는 일괄 반영에서 빠지고 건별 승인");
+  // 기본 반영(지우기 승인 없음): 11월은 파일 값, 10월은 원장 그대로
+  assert.deepEqual(boxes(applySync(l, p, { blocks: plan.defaults, removals: [] }).card), [["10월", ["∙ 원장 10월 실적 A"]], ["11월", ["∙ 파일 11월 실적 B(고침)"]]]);
+  // 지우기 승인: 10월 상자는 파일 값 — 기간은 두고 글만 빈 상자(다른 블록의 지우기 승인처럼 틀은 두고 글만 비움)
+  assert.deepEqual(boxes(applySync(l, p, { blocks: ["monthly"], removals: ["monthly"] }).card), [["10월", []], ["11월", ["∙ 파일 11월 실적 B(고침)"]]]);
+  // 비운 상자뿐이면 블록이 「⚠️삭제 예정」 — 기본 반영 아님, 승인하면 그 상자만 비움(다른 상자는 원장 그대로)
+  const only = file(id);
+  only.do.monthly = [box("10월", []), box("11월", ["∙ 원장 11월 실적 B"])];
+  const plan2 = planSync(l, only);
+  assert.equal(plan2.blocks.find((b) => b.key === "monthly")!.status, "removed");
+  assert.ok(!plan2.defaults.includes("monthly"));
+  assert.deepEqual(applySync(l, only, { blocks: plan2.defaults, removals: [] }).card.do.monthly, l.do.monthly);
+  assert.deepEqual(boxes(applySync(l, only, { blocks: [], removals: ["monthly"] }).card), [["10월", []], ["11월", ["∙ 원장 11월 실적 B"]]]);
+  // 그림만 있던 상자를 비워도 삭제 예정(그림 빠짐 위험이 아님), 글을 둔 채 그림만 빠진 상자는 여전히 위험
+  const img = { image: { src: "images/imp1/image_001.png", kordoc: "그림1.png" } };
+  const pic = ledger(id);
+  pic.do.monthly = [box("10월", [img]), box("11월", ["∙ 원장 11월 실적 B", img])];
+  const lost = file(id);
+  lost.do.monthly = [box("10월", []), box("11월", ["∙ 원장 11월 실적 B(고침)"])];
+  const plan3 = planSync(pic, lost);
+  const mon3 = plan3.blocks.find((b) => b.key === "monthly")!;
+  assert.deepEqual(mon3.missing, ["비운 10월 상자"]);
+  assert.match(String(mon3.risk), /파일에 없는 그림/);
+  assert.ok(!plan3.defaults.includes("monthly"));
 });
 
 test("파일에 없는 구역은 [삭제 예정]으로만 보이고 승인 없이는 지우지 않음", { skip: NO_SEED_CARDS }, () => {

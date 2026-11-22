@@ -3,6 +3,7 @@
 // ③ 칸 고치기(applyUnitPartEdits — 허용 경로만, ai·human 칸만, code 칸은 거절) ④ 저장된 spec 읽기(readUnitPart).
 // 서버 액션(app/(app)/reports/business/[unit]/parts/actions.ts)이 부르고, 저장은 버전 조건(lib/reports/draft-store.ts saveUnitPartRow).
 
+import { type AppRole, atLeast } from "../auth/access.ts";
 import { compactKey } from "../knowledge/normalize.ts";
 import type { UnitPartKey } from "../tracks/index.ts";
 import {
@@ -26,6 +27,10 @@ import type { LooseJson } from "../loose-json.ts";
 /** DB 가드 트리거(supabase/migrations/20261016100000_unit_report_parts.sql guard_unit_report_part)와 같은 문구 */
 export const UNIT_PART_CONFIRM_MSG = "지표 단위 부분 확정은 성과관리팀만 할 수 있습니다";
 export const UNIT_PART_KEY_MSG = "지표 단위 부분의 지표·연도·부분은 바꿀 수 없습니다";
+
+/** 카드 밖 부분 쓰기(재료로 채우기·칸 고치기·확정·AI)는 성과관리팀 이상만 — 주관 부서도 못 씀(2026-11-22 결정, DB private.can_write_unit_parts와 같은 판정 — 20261122130000) */
+export const canWriteUnitParts = (role: AppRole) => atLeast(role, "pmo");
+export const UNIT_PART_WRITE_MSG = "이 지표의 카드 밖 부분은 성과관리팀 이상만 고칩니다.";
 
 /** 화면 이름(경고·안내 글) */
 export const UNIT_PART_LABEL: Record<UnitPartKey, string> = { cover: "표지", findings: "지적사항 조치실적", prior: "전년 대비 주요 추진실적", outcome: "성과분석 및 환류" };

@@ -4,10 +4,10 @@
 // 트리거 문구 = 서버 문구(마이그레이션 글과 대조).
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
-import { applyUnitPartEdits, freshUnitPart, mergeUnitPart, readUnitPart, refreshOutcomeWarnings, UNIT_PART_CONFIRM_MSG, UNIT_PART_KEY_MSG } from "./unit-parts-edit.ts";
+import { applyUnitPartEdits, canWriteUnitParts, freshUnitPart, mergeUnitPart, readUnitPart, refreshOutcomeWarnings, UNIT_PART_CONFIRM_MSG, UNIT_PART_KEY_MSG, UNIT_PART_WRITE_MSG } from "./unit-parts-edit.ts";
 import type { FindingsPart, MgUnitMaterials, OutcomePart, PriorPart, UnitCard, UnitChunk } from "./unit-parts-mg.ts";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -226,6 +226,19 @@ test("트리거 문구 = 서버 문구(마이그레이션 글에 같은 문장)"
   const sql = readFileSync(resolve(import.meta.dirname, "../../supabase/migrations/20261016100000_unit_report_parts.sql"), "utf8");
   assert.ok(sql.includes(UNIT_PART_CONFIRM_MSG));
   assert.ok(sql.includes(UNIT_PART_KEY_MSG));
+});
+
+test("카드 밖 부분 쓰기는 성과관리팀 이상만(2026-11-22 결정): 부서 담당자는 주관 부서여도 못 씀 — 판정에 팀이 없고, DB 쓰기 함수도 성과관리팀·관리자만", () => {
+  assert.equal(canWriteUnitParts("dept_user"), false);
+  assert.equal(canWriteUnitParts("pmo"), true);
+  assert.equal(canWriteUnitParts("admin"), true);
+  assert.match(UNIT_PART_WRITE_MSG, /성과관리팀 이상만/);
+  // DB 판정(마지막으로 정의한 마이그레이션의 can_write_unit_parts 본문)이 같은 규칙인지 — 주관 부서(lead_team_id) 조건이 남아 있으면 실패
+  const dir = resolve(import.meta.dirname, "../../supabase/migrations");
+  const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  const last = files.map((f) => readFileSync(resolve(dir, f), "utf8")).filter((s) => /^create or replace function private\.can_write_unit_parts\(/m.test(s)).at(-1)!;
+  const body = last.slice(last.search(/^create or replace function private\.can_write_unit_parts\(/m)).split("$$")[1]; // 줄 첫머리만(주석 속 되돌리기 정의는 뺌)
+  assert.equal(body.trim(), "select private.is_staff()");
 });
 
 test("다시 채우기(계량): 옛 id(카드 id#순번)로 저장된 행도 같은 카드·같은 이름으로 짝지어 새 id로 바꿈", () => {

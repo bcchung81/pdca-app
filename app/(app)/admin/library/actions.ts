@@ -3,10 +3,11 @@
 import { createHash } from "node:crypto";
 import { parse } from "kordoc";
 import { revalidatePath } from "next/cache";
+import { loadBundleChunks } from "../../../../lib/ai/context.ts";
 import { requireAtLeast } from "../../../../lib/auth/dal.ts";
 import { PEER_DOC_ID, PEER_TITLE, peerCasesFromMarkdown, peerChunks, peerSummary } from "../../../../lib/knowledge/parsers/peer.ts";
 import { clearChunkCache } from "../../../../lib/knowledge/chunk-cache.ts";
-import { saveDocumentsAndChunks } from "../../../../lib/knowledge/save.ts";
+import { storePeerCases } from "../../../../lib/knowledge/peer-store.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
 
 export type PeerUploadState =
@@ -63,14 +64,12 @@ export async function uploadPeerCases(_prev: PeerUploadState, formData: FormData
     ],
     uploaded_by: me.id,
   };
-  // 문서·조각 쓰기는 시드·일반 문서 업로드와 같은 공유 함수(lib/knowledge/save.ts): 업서트 + 이번에 없는 옛 사례 삭제(다시 올리면 통째로 바뀜).
+  // 일반 문서 올리기와 같은 크기 보호(모든 트랙 조각을 캐시 없이 읽어 잼 — 넘으면 아무것도 안 씀) 뒤, 시드·일반 문서 업로드와 같은 공유 함수(lib/knowledge/save.ts)로
+  // 업서트 + 이번에 없는 옛 사례 삭제(다시 올리면 통째로 바뀜). 저장 중간 실패는 되돌리지 않고 다시 올리라고 안내(lib/knowledge/peer-store.ts, 2026-11-22 결정).
   // 예전의 「전부 지우고 넣기」는 조각 표를 지울 때 대응표 행도 연쇄 삭제했지만, 붙임2 사례는 대응표 대상이 아니라 지금은 같은 결과
-  try {
-    await saveDocumentsAndChunks(supabase, [doc], chunks as unknown as Array<Record<string, unknown>>, { prune: true });
-  } catch (e) {
-    console.error("uploadPeerCases", (e as Error).message);
-    return { status: "error", message: "붙임2를 적재하지 못했습니다. 다시 올려 주세요." };
-  }
+  const existing = await loadBundleChunks(supabase, "all", { fresh: true });
+  const saved = await storePeerCases(supabase, doc, chunks, existing);
+  if (!saved.ok) return { status: "error", message: saved.message };
   revalidatePath("/admin/library");
   revalidatePath("/inspections");
   revalidatePath("/knowledge");

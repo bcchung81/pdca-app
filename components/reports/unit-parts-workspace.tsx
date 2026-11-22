@@ -383,7 +383,7 @@ export function UnitPartsWorkspace(props: {
                     </span>
                   )}
                 </div>
-                {!editable && <p className="rounded-md bg-thead px-3 py-2 text-xs text-muted-2">읽기 전용입니다 — 성과관리팀·주관 부서가 고칩니다.</p>}
+                {!editable && <p className="rounded-md bg-thead px-3 py-2 text-xs text-muted-2">읽기 전용입니다 — 성과관리팀 이상만 고칩니다.</p>}
                 {current.changes.length > 0 && (
                   <details className="min-w-0 rounded-md border border-warn/50 bg-warn-bg px-3 py-2 text-xs text-ink">
                     <summary className="cursor-pointer font-semibold text-warn">재료가 바뀜 {current.changes.length}건 — 저장한 뒤 재료가 달라졌습니다. 「재료로 다시 채우기」로 맞춥니다.</summary>

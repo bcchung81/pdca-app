@@ -91,7 +91,7 @@ DB가 마지막 판정: `profiles_update` 정책(본인 · 관리자 · 성과�
 ### 2026-10-10 개선 계획 반영
 - **마지막 활성 관리자 DB 가드**: 역할 낮추기·사용 중지로 활성 관리자가 0명이 되는 것을 DB 트리거가 막음(서비스 키 포함, 트랜잭션 잠금, 마이그레이션 `20261010120000_card_version_ids_last_admin.sql`). 서버의 본인·마지막 관리자 검사와 별개로 API 직접 쓰기도 막음.
 - **보고서·추가자료·코멘트는 팀 단위(결정 D1)**: 접근 범위가 담당자 지정 기준인 것은 카드뿐이고, 보고서(사업 × 부서)·보고서 추가자료·검토 코멘트는 같은 팀 부서 담당자면 담당 지정과 상관없이 읽고 씀(`private.can_read_report`). 보고서가 사업 × 부서 제출물이라 일부러 둠 — 담당자 단위로 좁히려면 RLS·제출 흐름 전체를 다시 시험해야 함.
-- **경평 초안 지표 단위 부분(`eval_unit_report_parts`, R5b 2026-10-16 — 운영 미반영)**도 팀 단위: 읽기는 성과관리팀·관리자 + 그 지표·연도에 보고서 행이 있는 부서 + 주관 부서, 쓰기는 성과관리팀·관리자 + 주관 부서, 확정은 성과관리팀 이상(`private.can_read_unit_parts`·`can_write_unit_parts`·가드 `guard_unit_report_part` — `20261016100000`). 상세 `docs/design/report-draft.md` 「R5b 뒷단」.
+- **경평 초안 지표 단위 부분(`eval_unit_report_parts`, R5b 2026-10-16 — 운영 미반영)**도 팀 단위: 읽기는 성과관리팀·관리자 + 그 지표·연도에 보고서 행이 있는 부서 + 주관 부서, 쓰기는 성과관리팀·관리자만(2026-11-22 결정 — `20261122130000`, 주관 부서는 읽기만), 확정은 성과관리팀 이상(`private.can_read_unit_parts`·`can_write_unit_parts`·가드 `guard_unit_report_part` — `20261016100000`). 상세 `docs/design/report-draft.md` 「R5b 뒷단」.
 - **부서 화면 보기 쓰기 거절**: 서버 쓰기 액션(작성본·제출·점검 확인·카드 AI·첨부·작성본 채우기·경평 보고서 입력·추가자료·코멘트·과제별 초안 집필·블록 고치기·직접 고치기 등)이 요청을 보낸 화면 주소(Referer)가 부서 화면 보기(`/my…`·`/cards/<uid>`·`/reports/cards/<uid>`·`/reports/<숫자 id>` + `?team=` — 2026-10-15에 경평 상세 둘을 더함)면 성과관리팀·관리자의 요청을 거절함(`lib/auth/preview.ts` `previewWriteBlocked`, 주소 판정 `preview-url.ts` `isPreviewUrl`). Referer가 없으면 막지 않으며 권한 장치가 아니라 실수 방지용 이중 장치. 새 쓰기 액션도 맨 앞에서 부름(구조 시험 `lib/auth/preview-guard.test.ts` — 사용자 화면 액션은 관리 화면이라 이유를 적은 목록에 있음).
 
 ### 2026-10-15 역할별 화면 검토

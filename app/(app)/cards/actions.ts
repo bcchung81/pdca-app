@@ -25,7 +25,7 @@ import { mergeIntoLedger } from "../../../lib/cards/confirm.ts";
 import { editTargets } from "../../../lib/cards/patch.ts";
 import { openVersion } from "../../../lib/cards/versions.ts";
 import { renderCard } from "../../../lib/cards/render.ts";
-import { type InspectionResult, readResult } from "../../../lib/inspections/model.ts";
+import { type InspectionResult, forDept, readResult } from "../../../lib/inspections/model.ts";
 import { currentPeriod } from "../../../lib/cards/view.ts";
 import { signedImageUrls } from "../../../lib/cards/queries.ts";
 import { createClient } from "../../../lib/supabase/server.ts";
@@ -608,14 +608,15 @@ export interface CardInspection {
   updatedAt: string;
 }
 
-/** 카드 옆 창 「점검」: 이 과제의 최근 월간 점검(부서 담당자는 보낸 것만 — RLS) */
+/** 카드 옆 창 「점검」: 이 과제의 최근 월간 점검(부서 담당자는 보낸 것만 — RLS, 운영 알림·AI 정보는 빼고 줌 — forDept) */
 export async function getCardInspections(uid: string): Promise<{ ok: boolean; items: CardInspection[]; message?: string }> {
-  await requireUser("/cards");
+  const me = await requireUser("/cards");
   const supabase = await createClient();
   const { data: card } = await supabase.from("cards").select("id").eq("uid", uid).maybeSingle();
   if (!card) return { ok: false, items: [], message: "카드를 찾을 수 없습니다." };
   const { data } = await supabase.from("inspections").select("id, period, status, result, updated_at").eq("card_id", card.id).order("period", { ascending: false }).limit(6);
-  return { ok: true, items: (data ?? []).map((r) => ({ id: r.id, period: r.period, status: r.status, result: readResult(r.result), updatedAt: r.updated_at })) };
+  const shown = (raw: unknown) => (me.role === "dept_user" ? forDept(readResult(raw)) : readResult(raw));
+  return { ok: true, items: (data ?? []).map((r) => ({ id: r.id, period: r.period, status: r.status, result: shown(r.result), updatedAt: r.updated_at })) };
 }
 
 /** 고정 영역(주요사업 Act·Plan·계량지표, 경영관리 전년도 환류·지적 및 개선방안·계량지표) 확정·풀기 — 성과관리팀·관리자. uids를 비우면 머리띠에서 고른 트랙의 아직 확정하지 않은(풀기면 확정된) 과제 모두 */

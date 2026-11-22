@@ -400,6 +400,14 @@ export function cleanChecklist(input: unknown): ChecklistBlock {
   return { sub: checklistText(raw?.sub, 80), rows, others: Number.isFinite(Number(raw?.others)) ? Math.max(0, Math.min(500, Math.trunc(Number(raw?.others)))) : 0 };
 }
 
+/**
+ * 부서 담당자에게 내보낼 점검표: 운영 알림(notices)·AI 정보(ai)를 비운 사본 — 운영 알림은 성과관리팀 화면에만(2026-11-22 사용자 결정 D2).
+ * 서버가 부서 담당자 브라우저로 보내는 경로에서만 씀(DB·RLS는 그대로, 성과관리팀·관리자는 원본 그대로). 받은 객체는 바꾸지 않음
+ */
+export function forDept(res: InspectionResult): InspectionResult {
+  return { ...res, notices: [], ai: null };
+}
+
 /** 저장된 결과를 양식에 맞춰 읽기(주요사업 biz14·경영관리 mgmt13). 다른 양식(옛 자가진단 12문항 등)은 빈 점검표로 */
 export function readResult(input: unknown): InspectionResult {
   const raw = input as RawResult | null | undefined;

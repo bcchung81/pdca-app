@@ -93,7 +93,7 @@ export default async function OutlinePage() {
           if (!items.length) return null;
           const sum = items.filter((r) => r.included).reduce((n, r) => n + Number(r.pages), 0);
           const ref = refs.get(u.id);
-          // 경영관리: 카드가 대응하지 않는 평가내용(2025에 있던 자리 — 성과관리팀·주관 부서가 쓰는 부분)은 참고 줄로
+          // 경영관리: 카드가 대응하지 않는 평가내용(2025에 있던 자리 — 성과관리팀이 쓰는 부분)은 참고 줄로
           const orphan: MgEvalPages[] = mg && ref ? buildMgOutline(u.id, ref, items.map((r) => ({ id: r.card_id, taskNo: first(r.card)?.task_no ?? "" }))).orphan : [];
           const st = mg && ref ? mgBudgetState(sum, ref, orphan) : budgetState(sum);
           const sections = [...new Set(items.map((r) => r.section))];

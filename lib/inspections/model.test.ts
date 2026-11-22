@@ -31,6 +31,7 @@ import {
   emptyRow,
   finalInspection,
   finalInspectionView,
+  forDept,
   inspectionSummary,
   isVerdict,
   newResult,
@@ -100,6 +101,24 @@ test("읽기·정리: 다른 양식은 빈 점검표, 판단에 따라 칸 정�
   assert.deepEqual(r.coherence[0], { judgment: "해당 없음", question: "", fix: "", evidence: [], card: "", note: "계량지표 없음" });
   assert.equal(r.coherence[1].judgment, null);
   assert.equal("extra" in r, false);
+});
+
+test("부서에 줄 점검표(forDept, 2026-11-22 사용자 결정 D2): 운영 알림·AI 정보만 비우고 나머지 칸은 그대로, 받은 객체는 안 바뀜", () => {
+  const r = { ...filled(), notices: ["원문과 다른 인용 1개", "매핑표 확인 필요"], ai: { model: "heavy", at: "2026-11-22T00:00:00Z", sources: 12 } };
+  const before = structuredClone(r);
+  const d = forDept(r);
+  assert.deepEqual(d.notices, []);
+  assert.equal(d.ai, null);
+  assert.deepEqual({ ...d, notices: before.notices, ai: before.ai }, before, "판단·보완방안·총평·양식은 같음");
+  assert.deepEqual(r, before, "원본은 그대로(성과관리팀 화면·저장값에 영향 없음)");
+  assert.deepEqual(tally(d), tally(r), "점검 수치도 같음");
+  // 경영관리 양식: 체크리스트 대조도 그대로 남음
+  const mg = readResult({ form: MGMT_FORM_ID, notices: ["체크리스트 미답 2"], ai: { model: "heavy", at: "x", sources: 3 }, checklist: { sub: "지적", rows: [{ label: "지적 1", point: "요지", result: "예" }], others: 0 } });
+  assert.equal(mg.checklist?.rows.length, 1);
+  const md = forDept(mg);
+  assert.deepEqual([md.notices, md.ai], [[], null]);
+  assert.deepEqual(md.checklist, mg.checklist);
+  assert.equal(md.form, MGMT_FORM_ID);
 });
 
 test("집계: 충족 수·미흡 항목·보완 건수, 기준 미확인·해당 없음은 어디에도 안 셈", () => {

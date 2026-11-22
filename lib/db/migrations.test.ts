@@ -1255,14 +1255,22 @@ test("앱 서버 경유 표지 — 경평 초안 표 3개(20261117130000): 표�
     const before = await snapshot();
     for (const user of ["inspector", "pmo", "admin"] as const) {
       for (const bad of [null, "", "wrong"]) {
-        for (const w of writes) await rejects(() => as(user, () => db.query(w.sql, w.args), bad), /row-level security/);
+        for (const w of writes) {
+          // 부서는 지표 부분을 고칠 권한부터 없어(주관 부서여도 — 20261122130000) 갱신이 오류 없이 0행 — 아래 스냅숏이 아무것도 안 바뀐 것을 확인
+          if (user === "inspector" && w.name === "지표 부분 고치기") assert.equal((await as(user, () => db.query(w.sql, w.args), bad)).affectedRows ?? 0, 0, `${user} ${JSON.stringify(bad)} ${w.name}`);
+          else await rejects(() => as(user, () => db.query(w.sql, w.args), bad), /row-level security/);
+        }
         for (const d of deletes) assert.equal((await as(user, () => db.query(d.sql, d.args), bad)).affectedRows ?? 0, 0, `${user} ${JSON.stringify(bad)} ${d.name}`);
         for (const r of reads) assert.equal(await as(user, () => count(r), bad), await as(user, () => count(r)), `${user} 읽기는 표지와 무관: ${r}`);
       }
     }
     assert.equal(await snapshot(), before, "표지 없는 쓰기는 아무것도 바꾸지 못함");
-    // 맞는 표지: 행 판정은 예전 그대로(부서는 자기 카드·주관 지표, 지우기는 초안만 — 지표 부분 지우기는 성과관리팀)
-    for (const w of writes) await as("inspector", () => db.query(w.sql, w.args));
+    // 맞는 표지: 행 판정은 예전 그대로(부서는 자기 카드, 지우기는 초안만 — 지표 부분 지우기는 성과관리팀).
+    // 지표 부분 넣기·고치기는 성과관리팀 이상만(2026-11-22 결정 — 20261122130000): MG-92의 주관 부서(검사기획팀)도 거절
+    const unitWrites = writes.filter((w) => w.name.startsWith("지표 부분"));
+    for (const w of writes.filter((w) => !unitWrites.includes(w))) await as("inspector", () => db.query(w.sql, w.args));
+    await rejects(() => as("inspector", () => db.query(unitWrites[0].sql, unitWrites[0].args)), /row-level security/);
+    for (const w of unitWrites) await as("pmo", () => db.query(w.sql, w.args));
     assert.equal((await as("inspector", () => db.query(deletes[1].sql, deletes[1].args))).affectedRows ?? 0, 0, "부서는 지표 부분을 못 지움(예전과 같음)");
     assert.equal((await as("inspector", () => db.query(deletes[0].sql, deletes[0].args))).affectedRows, 1);
     assert.equal((await as("pmo", () => db.query(deletes[1].sql, deletes[1].args))).affectedRows, 2);
@@ -1915,7 +1923,7 @@ test("작업 대기열(3단계): 자기 이름으로 그 대상 권한이 있을
   });
 });
 
-test("지표 단위 부분(eval_unit_report_parts, R5b): 성과관리팀 쓰기·확정, 그 지표·연도에 보고서 행이 있는 부서는 읽기만, 다른 지표·연도는 못 읽음, 주관 부서는 쓰되 확정 못 함, 지표·연도·부분 불변, 부분 허용 목록", { skip: NO_SEED_CARDS }, async () => {
+test("지표 단위 부분(eval_unit_report_parts, R5b): 성과관리팀 쓰기·확정, 그 지표·연도에 보고서 행이 있는 부서는 읽기만, 다른 지표·연도는 못 읽음, 주관 부서는 읽기만(쓰기는 성과관리팀 이상 — 20261122130000), 지표·연도·부분 불변, 부분 허용 목록", { skip: NO_SEED_CARDS }, async () => {
   const team = async (name: string) => (await db.query<{ id: number }>("select id from public.teams where name = $1", [name])).rows[0].id;
   const insp = await team("검사기획팀");
   const lic = await team("자격기획팀");
@@ -1949,14 +1957,15 @@ test("지표 단위 부분(eval_unit_report_parts, R5b): 성과관리팀 쓰기�
     assert.equal((await as("inspector", () => db.query("update public.eval_unit_report_parts set spec = '{}' where eval_unit_id = 'MG-90'"))).affectedRows, 0, "부서는 고치지 못함");
     assert.equal((await as("pmo", () => db.query("delete from public.eval_unit_report_parts where eval_unit_id = 'MG-90' and year = 2027"))).affectedRows, 1, "성과관리팀은 지움");
 
-    // 주관 부서(자격기획팀 — MG-91): 보고서 행 없이도 읽고 쓰되, 확정(status)은 못 바꾸고 확정으로 넣지도 못하고 지우지도 못함
+    // 주관 부서(자격기획팀 — MG-91): 보고서 행 없이도 읽지만 쓰지 못함(2026-11-22 결정 — 20261122130000): 넣기는 RLS 오류, 고치기·확정은 0행, 지우기도 못함
     await db.query("update public.eval_units set lead_team_id = $1 where id = 'MG-91'", [lic]);
     assert.equal(await as("license", () => count("select 1 from public.eval_unit_report_parts")), 1);
-    await as("license", () => db.query(ins, ["MG-91", 2026, "outcome"]));
-    assert.equal((await stamp("MG-91", 2026, "outcome")).updated_by, users.license);
-    assert.equal((await as("license", () => db.query("update public.eval_unit_report_parts set spec = '{\"part\":\"z\"}' where eval_unit_id = 'MG-91' and part = 'findings'"))).affectedRows, 1);
-    await rejects(() => as("license", () => db.query("update public.eval_unit_report_parts set status = 'confirmed' where eval_unit_id = 'MG-91' and part = 'findings'")), /확정은 성과관리팀만/);
-    await rejects(() => as("license", () => db.query("insert into public.eval_unit_report_parts (eval_unit_id, year, part, spec, status) values ('MG-91', 2026, 'prior', '{}', 'confirmed')")), /확정은 성과관리팀만/);
+    await rejects(() => as("license", () => db.query(ins, ["MG-91", 2026, "outcome"])), /row-level security/);
+    assert.equal((await as("license", () => db.query("update public.eval_unit_report_parts set spec = '{\"part\":\"z\"}' where eval_unit_id = 'MG-91' and part = 'findings'"))).affectedRows, 0, "주관 부서는 고치지 못함");
+    assert.equal((await as("license", () => db.query("update public.eval_unit_report_parts set status = 'confirmed' where eval_unit_id = 'MG-91' and part = 'findings'"))).affectedRows, 0, "주관 부서는 확정하지 못함");
+    await rejects(() => as("license", () => db.query("insert into public.eval_unit_report_parts (eval_unit_id, year, part, spec, status) values ('MG-91', 2026, 'prior', '{}', 'confirmed')")), /확정은 성과관리팀만|row-level security/);
+    const kept = (await db.query<{ spec: unknown; status: string; updated_by: string }>("select spec, status, updated_by from public.eval_unit_report_parts where eval_unit_id = 'MG-91' and year = 2026")).rows;
+    assert.deepEqual(kept, [{ spec: { part: "x" }, status: "draft", updated_by: users.pmo }], "주관 부서의 쓰기 시도는 아무것도 바꾸지 못함");
     assert.equal((await as("license", () => db.query("delete from public.eval_unit_report_parts where eval_unit_id = 'MG-91'"))).affectedRows, 0, "주관 부서는 지우지 못함");
     await rejects(() => as("license", () => db.query(ins, ["MG-90", 2026, "outcome"])), /row-level security/);
     // 주관 부서 지정을 풀면 다시 못 읽음

@@ -7,7 +7,7 @@ import { TeamPicker } from "../../../../components/ui/team-picker";
 import { requireUser } from "../../../../lib/auth/dal.ts";
 import { deptScope } from "../../../../lib/auth/scope.ts";
 import { fmtDate, monthLabel, periodLabel } from "../../../../lib/format.ts";
-import { STATUS_LABEL, needsCount, readResult, tally } from "../../../../lib/inspections/model.ts";
+import { STATUS_LABEL, forDept, needsCount, readResult, tally } from "../../../../lib/inspections/model.ts";
 import { receivedInspections } from "../../../../lib/inspections/queries.ts";
 import { withReturn } from "../../../../lib/nav/return-to.ts";
 import { createClient } from "../../../../lib/supabase/server.ts";
@@ -74,7 +74,7 @@ export default async function MyInspectionsPage({ searchParams }: PageProps<"/my
               </>
             }
           >
-            <InspectionView result={readResult(peek.result)} date={peek.updatedAt} />
+            <InspectionView result={user.role === "dept_user" ? forDept(readResult(peek.result)) : readResult(peek.result)} date={peek.updatedAt} />
           </Peek>
         )
       }

@@ -2,7 +2,7 @@
 
 // 경평 초안 지표 단위 부분(경영관리 표지·지적사항 조치실적·전년 대비·성과분석 및 환류 — R5b 뒷단, 설계 docs/plan/경영관리-R5-지표단위-설계.md §3.3~§3.5).
 // 화면(/reports/business/<지표>/parts — 다음 작업)이 부름. 저장은 부분마다 행·버전 조건(saveUnitPartRow), 권한의 최종 판정은 RLS·가드 트리거(20261016100000).
-// 읽기 = 성과관리팀·관리자 + 그 지표·연도에 보고서 행이 있는 부서 + 주관 부서, 쓰기 = 성과관리팀·관리자 + 주관 부서, 확정 = 성과관리팀 이상.
+// 읽기 = 성과관리팀·관리자 + 그 지표·연도에 보고서 행이 있는 부서 + 주관 부서, 쓰기·확정 = 성과관리팀 이상(2026-11-22 결정 — 주관 부서는 읽기만).
 // 쓰기 액션은 맨 앞에서 부서 화면 보기 쓰기 막음(previewWriteBlocked) → 사용자 재확인 → 경영관리 지표·부분 확인. 연도는 서버가 정함(올해).
 // 「AI로 문장 채우기」(fillUnitPartsAi — R5c, 설계 §3.7)는 성과관리팀 이상만, 지표당 1회 호출로 고른 부분들의 ai 칸을 채우고 시작할 때의 버전으로 저장(그사이 바뀌었으면 덮지 않음).
 
@@ -12,11 +12,11 @@ import { aiErrorMessage, callReportUnitMg, modelLabel } from "../../../../../../
 import { reportUnitPromptsMg } from "../../../../../../lib/prompts/sets.ts";
 import { type UnitAiPart, applyUnitAiAnswer, isUnitAiPart, unitAiBudgetsOf, unitAiCells, unitAiKnownNumbers, unitAiPrompt, unitAiTargets, withAiWarnings } from "../../../../../../lib/reports/unit-parts-ai.ts";
 import { atLeast } from "../../../../../../lib/auth/access.ts";
-import { type CurrentUser, requireUser } from "../../../../../../lib/auth/dal.ts";
+import { requireUser } from "../../../../../../lib/auth/dal.ts";
 import { PREVIEW_WRITE_MSG, previewWriteBlocked } from "../../../../../../lib/auth/preview.ts";
 import { currentPeriod } from "../../../../../../lib/cards/view.ts";
 import { UNIT_PART_CONFLICT_MSG, saveUnitPartRow } from "../../../../../../lib/reports/draft-store.ts";
-import { UNIT_PART_CONFIRM_MSG, UNIT_PART_LABEL, applyUnitPartEdits, freshUnitPart, mergeUnitPart, readUnitPart, refreshOutcomeWarnings } from "../../../../../../lib/reports/unit-parts-edit.ts";
+import { UNIT_PART_CONFIRM_MSG, UNIT_PART_LABEL, UNIT_PART_WRITE_MSG, applyUnitPartEdits, canWriteUnitParts, freshUnitPart, mergeUnitPart, readUnitPart, refreshOutcomeWarnings } from "../../../../../../lib/reports/unit-parts-edit.ts";
 import { type UnitPart, type UnitPartsMg, mgUnitPartKeys, sourceChanges, unitPartsSource, unitWarnings } from "../../../../../../lib/reports/unit-parts-mg.ts";
 import { type StoredUnitPart, loadUnitAiExtras, loadUnitMaterials, loadUnitPartRows } from "../../../../../../lib/reports/unit-parts-queries.ts";
 import { createClient } from "../../../../../../lib/supabase/server.ts";
@@ -46,7 +46,7 @@ export type UnitPartsLoadResult =
       unit: string;
       indicator: string;
       year: number;
-      /** 칸 고치기·다시 채우기를 보일지(성과관리팀·관리자·주관 부서) */
+      /** 칸 고치기·다시 채우기를 보일지(성과관리팀 이상) */
       canWrite: boolean;
       /** 확정·확정 풀기를 보일지(성과관리팀 이상) */
       canConfirm: boolean;
@@ -80,9 +80,6 @@ async function unitRow(supabase: Awaited<ReturnType<typeof createClient>>, unit:
   return data && data.track === "경영관리" ? { name: String(data.name), leadTeamId: data.lead_team_id ?? null } : null;
 }
 
-/** 쓰기 권한(서버 안내용 — 최종 판정은 RLS private.can_write_unit_parts): 성과관리팀·관리자, 주관 부서 */
-const canWrite = (me: CurrentUser, leadTeamId: number | null) => atLeast(me.role, "pmo") || (leadTeamId !== null && me.team?.id === leadTeamId);
-
 /** 저장 오류 → 화면 글(가드 트리거 문구는 그대로, 그 밖은 일반 안내 — 자세한 것은 서버 기록) */
 function saveError(where: string, message: string, conflict: boolean): { ok: false; message: string; conflict?: boolean } {
   if (conflict) return { ok: false, conflict: true, message };
@@ -97,7 +94,8 @@ async function prepareWrite(unit: string, part?: UnitPartKey) {
   const u = await unitRow(supabase, unit);
   if (!u) return { ok: false as const, message: "경영관리 지표가 아닙니다." };
   if (part !== undefined && !mgUnitPartKeys(unit).includes(part)) return { ok: false as const, message: "이 지표에 없는 부분입니다." };
-  if (!canWrite(me, u.leadTeamId)) return { ok: false as const, message: "이 지표의 카드 밖 부분은 성과관리팀·주관 부서만 고칩니다." };
+  // 쓰기 권한(서버 안내용 — 최종 판정은 RLS private.can_write_unit_parts): 성과관리팀 이상만
+  if (!canWriteUnitParts(me.role)) return { ok: false as const, message: UNIT_PART_WRITE_MSG };
   return { ok: true as const, me, supabase, u, year: yearNow() };
 }
 
@@ -137,7 +135,7 @@ export async function loadUnitParts(unit: string): Promise<UnitPartsLoadResult> 
     unit,
     indicator: u.name,
     year,
-    canWrite: canWrite(me, u.leadTeamId),
+    canWrite: canWriteUnitParts(me.role),
     canConfirm: staff,
     parts,
     view: { unit, indicator: u.name, year, cover: pick("cover"), findings: pick("findings"), prior: pick("prior"), outcome: pick("outcome"), source: now },
