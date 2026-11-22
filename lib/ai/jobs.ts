@@ -28,8 +28,10 @@ export const jobsOfGroup = (g: JobGroup): JobKind[] => (Object.keys(JOB_KINDS) a
 
 /** 화면이 진행 상태를 읽는 창(머리띠·대화 — 이보다 오래된 작업은 목록에 안 옴. 가장 긴 작업 staleMs 20분보다 길게) */
 export const JOB_WINDOW_MS = 30 * 60_000;
-/** 화면이 진행 중 작업을 다시 읽는 간격(창이 보일 때만) */
+/** 화면이 진행 중 작업을 다시 읽는 간격(창이 보일 때) */
 export const JOB_POLL_MS = 4_000;
+/** 숨은 창의 읽기 간격(이 탭이 기다리는 작업이 있을 때만 — 일괄 점검이 숨은 창에서도 다음 과제를 이어서 시작, 2026-11-22 Q2-01) */
+export const JOB_POLL_HIDDEN_MS = 30_000;
 /** after 작업이 던졌을 때 사용자에게 보일 글(자세한 오류는 서버 로그) */
 export const JOB_CRASH_MSG = "AI 작업이 중간에 멈췄습니다. 잠시 뒤 다시 시도해 주세요.";
 /** 결과 행이 끝내 안 생긴 작업(함수가 시간 제한에서 끊김 추정) */
@@ -132,10 +134,15 @@ export function elapsedLabel(fromIso: string, now = Date.now()): string {
 }
 
 /**
- * 폴링 대상 판정(화면): 진행 중 작업이 있거나 아직 서버에서 못 본 시작한 작업(watch)이 있을 때만, 창이 보일 때만 다시 읽음
+ * 폴링 대상 판정(화면): 창이 보이면 진행 중 작업이 있거나 아직 서버에서 못 본 시작한 작업(watch)이 있을 때만 다시 읽음.
+ * 숨은 창은 이 탭이 기다리는 작업(watch — 시작·waitAiJob) 중 아직 안 끝난 것이 있을 때만(간격은 JOB_POLL_HIDDEN_MS), 다른 탭·PC에서 시작한 작업만 돌면 안 읽음
+ * (2026-11-22 Q2-01 사용자 결정 — 일괄 점검이 숨은 창에서도 끝을 받아 다음 과제를 이어서 시작)
  */
 export function shouldPoll(jobs: Array<Pick<AiJob, "id" | "state">>, watch: number[], visible: boolean): boolean {
-  if (!visible) return false;
+  if (!visible) {
+    const finished = new Set(jobs.filter((j) => j.state !== "running").map((j) => j.id));
+    return watch.some((id) => !finished.has(id));
+  }
   if (jobs.some((j) => j.state === "running")) return true;
   const seen = new Set(jobs.map((j) => j.id));
   return watch.some((id) => !seen.has(id));

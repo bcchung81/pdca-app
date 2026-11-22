@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { followupBasis } from "../../../../../lib/ai/followup.ts";
-import { readResult } from "../../../../../lib/inspections/model.ts";
+import { latestInspection } from "../../../../../lib/ai/writer-knowledge.ts";
 import { inspectionSourceLabel } from "../../../../../lib/reports/inspection-input.ts";
 import { loadLens } from "../../../../../lib/reports/lens-queries.ts";
 import { loadPriorSections } from "../../../../../lib/reports/prior-queries.ts";
@@ -91,7 +91,7 @@ export async function loadCard(supabase: SupabaseClient, uid: string): Promise<C
  */
 export async function loadReportCardData(supabase: SupabaseClient, card: CardRow, opts: { year: number; staff: boolean; staffView: boolean }) {
   const { year, staff, staffView } = opts;
-  const [{ data: draft }, { data: report }, { data: mats }, { data: sibs }, { data: outlineSort }, locked, priorSections, lens, { data: finalIns }, { data: edits }] = await Promise.all([
+  const [{ data: draft }, { data: report }, { data: mats }, { data: sibs }, { data: outlineSort }, locked, priorSections, lens, finalIns, { data: edits }] = await Promise.all([
     supabase.from("card_report_drafts").select("spec, warnings, unknown_numbers, model, source_rev, updated_at, outline, outline_status, outline_warnings, outline_model, outline_at, outline_approved_at").eq("card_id", card.id).eq("year", year).maybeSingle(),
     supabase.from("reports").select("id, status, inputs").eq("eval_unit_id", card.eval_unit_id).eq("team_id", card.team_id).eq("year", year).maybeSingle(),
     supabase.from("card_materials").select("id, file_name, bytes, storage_path, created_at, parse_status, parse_error, parsed_chars").eq("card_id", card.id).order("created_at", { ascending: false }),
@@ -105,11 +105,11 @@ export async function loadReportCardData(supabase: SupabaseClient, card: CardRow
     loadPriorSections(supabase, card.eval_unit_id),
     loadLens(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: card.data }),
     // 최종 점검표(보완 점검과 같은 규칙 — 보낸·확인한 것 중 점검월이 가장 늦은 1건) — 구성안 요청의 「월간 점검 보완 요청」과 진행 줄
-    supabase.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle(),
+    latestInspection(supabase, card.id),
     // 블록 고치기 이력(대화 차례 — 직접 고침은 lib/reports/draft-thread.ts가 뺌, 자동 저장마다 한 줄이라 넉넉히 읽음)
     supabase.from("report_draft_edits").select("id, block_index, kind, request, created_at, ref_id").eq("card_id", card.id).eq("year", year).order("created_at", { ascending: false }).limit(80),
   ]);
-  const inspectionLabel = inspectionSourceLabel(followupBasis(finalIns ? { period: finalIns.period, status: finalIns.status, result: readResult(finalIns.result) } : null));
+  const inspectionLabel = inspectionSourceLabel(followupBasis(finalIns));
   const matRows = (mats ?? []) as MaterialRowDb[];
   const reportRef = report as ReportRef | null;
   const [{ data: signed }, reportMats, comments] = await Promise.all([

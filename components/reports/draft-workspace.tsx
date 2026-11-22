@@ -20,6 +20,7 @@ import type { DraftThreadData } from "../../lib/reports/draft-thread.ts";
 import { DraftComposer, DraftHistory, DraftReviewNote, DraftSelectionBar, RESULT_AT, flashBlock, hoverBlock, useDraftReview } from "./draft-review";
 import { DraftSources, type SourceProps, useDraftSelection } from "./draft-workbench";
 import { type DraftPick, mergeSources, pickOf } from "../../lib/reports/draft-sources.ts";
+import { getReportSelectPreview } from "../../app/(app)/reports/cards/actions";
 import { approveReportOutline, saveReportOutline } from "../../app/(app)/reports/cards/outline-actions";
 import type { ToastSpec } from "../cards/review/use-card-review";
 import { AutosaveSwitch } from "../workspace/autosave";
@@ -158,7 +159,13 @@ export function DraftWorkspace(
   const [busy, setBusy] = useState<DraftBusy>(false);
   // 「다른 짜임 여러 안」 대화 창(짜임 고르기에서 시작 — 요청 칸·구성안 패널·경영관리 절 모두 여기 하나)
   const [alts, setAlts] = useState<AltsRequest | null>(null);
-  /** 여러 안 진행 줄 — 실제로 넣는 근거(서버 prepareDraft와 같음: 고른 첨부·전년 절, 구성안에서 시작하면 구성안에 저장된 근거) */
+  // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(서버가 요청 때와 같은 묶음으로 셈, null이면 통째로 넣기) — 요청 칸(DraftCompose)과 여러 안이 같은 값을 씀. 요청을 보낼 수 없으면 안 물음
+  const [selected, setSelected] = useState<number | null>(null);
+  useEffect(() => {
+    if (!props.canWrite) return;
+    void getReportSelectPreview(props.uid).then(setSelected);
+  }, [props.uid, props.canWrite]);
+  /** 여러 안 진행 줄 — 실제로 넣는 근거(서버 prepareDraft와 같음: 고른 첨부·전년 절, 구성안에서 시작하면 구성안에 저장된 근거, 선별 방식이면 고른 원문 수) */
   const altProgress = (n: number, src: { card: string[]; report: string[]; prior?: string[] } | null | undefined) =>
     draftProgress("alts", {
       files: src ? [...props.cardFiles.filter((f) => src.card.includes(f.id)).map((f) => f.fileName), ...(props.reportFiles ?? []).filter((f) => src.report.includes(f.id)).map((f) => f.fileName)] : [],
@@ -170,6 +177,7 @@ export function DraftWorkspace(
       inspection: props.inspection ?? null,
       mg: props.mg,
       alts: n,
+      selected: selected ?? undefined,
     });
   /** 여러 안 시작(누른 처리기에서 — 서버 호출은 startAlts가 한 번) */
   const openAlts = (cands: FrameChoice[], request: string, o: { sources?: { card: string[]; report: string[]; prior?: string[]; biz?: string[] }; part?: string; confirm: string | null }) =>
@@ -609,6 +617,7 @@ export function DraftWorkspace(
               <DraftCompose
                 uid={props.uid}
                 canWrite={props.canWrite}
+                selected={selected}
                 hasSpec={props.hasSpec}
                 hasOutline={Boolean(outline)}
                 draftFromOutline={props.thread.turns.some((t) => t.kind === "draft" && t.plan)}

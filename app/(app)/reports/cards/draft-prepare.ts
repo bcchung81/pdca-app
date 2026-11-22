@@ -34,7 +34,7 @@ import { type BizMaterials, bizMaterials, bizMissing } from "../../../../lib/rep
 import { readDraftSpec } from "../../../../lib/reports/draft-recount.ts";
 import { MGMT_INDICATORS } from "../../../../lib/tracks/mgmt-units.ts";
 import { type FollowupBasis, followupBasis } from "../../../../lib/ai/followup.ts";
-import { readResult } from "../../../../lib/inspections/model.ts";
+import { latestInspection } from "../../../../lib/ai/writer-knowledge.ts";
 import type { SplitSibling } from "../../../../lib/reports/split-axes.ts";
 
 /** requestId = 백그라운드로 시작한 AI 작업(화면이 GET /api/ai/requests로 끝을 기다림 — message는 시작 알림, 끝맺음 글은 작업 결과) */
@@ -119,8 +119,7 @@ export const mgAiFiles = (p: Pick<Prepared, "files" | "biz">): DraftFile[] => (p
  * 구성안 요청에만 넣음(평가 논점 참고 — 근거 원문 대조·숫자 근거에는 안 씀)
  */
 export async function loadInspectionBasis(supabase: Prepared["supabase"], cardId: string): Promise<FollowupBasis | null> {
-  const { data: ins } = await supabase.from("inspections").select("period, status, result").eq("card_id", cardId).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
-  return followupBasis(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null);
+  return followupBasis(await latestInspection(supabase, cardId));
 }
 
 /**

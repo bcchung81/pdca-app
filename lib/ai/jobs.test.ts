@@ -39,11 +39,15 @@ test("busyJobMessage: 같은 카드에서 같은 묶음(경평 초안끼리·작
   assert.equal(busyJobMessage([], "outline", NOW), null);
 });
 
-test("shouldPoll: 창이 보일 때만, 진행 중 작업이 있거나 시작한 작업을 아직 서버에서 못 봤을 때만", () => {
+test("shouldPoll: 창이 보이면 진행 중 작업이 있거나 시작한 작업을 아직 서버에서 못 봤을 때만, 숨은 창은 이 탭이 기다리는 작업(watch)이 아직 안 끝났을 때만(2026-11-22 Q2-01)", () => {
   const run = { id: 1, state: "running" as const };
   const done = { id: 2, state: "ok" as const };
   assert.equal(shouldPoll([run], [], true), true);
-  assert.equal(shouldPoll([run], [], false), false, "창이 숨으면 멈춤");
+  assert.equal(shouldPoll([run], [], false), false, "숨은 창 + 기다리는 작업 없음(다른 탭·PC에서 시작한 작업만) → 멈춤");
+  assert.equal(shouldPoll([run], [1], false), true, "숨은 창 + 기다리는 작업이 진행 중 → 읽음(일괄 점검이 다음 과제를 이어서 시작)");
+  assert.equal(shouldPoll([done], [3], false), true, "숨은 창 + 막 시작해 아직 목록에 없음 → 읽음");
+  assert.equal(shouldPoll([done], [2], false), false, "숨은 창 + 기다리던 작업이 이미 끝남 → 멈춤");
+  assert.equal(shouldPoll([], [], false), false);
   assert.equal(shouldPoll([done], [], true), false, "끝나면 멈춤");
   assert.equal(shouldPoll([done], [3], true), true, "막 시작해 아직 목록에 없음");
   assert.equal(shouldPoll([done], [2], true), false);

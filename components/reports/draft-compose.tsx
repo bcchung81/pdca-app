@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { finishCardMaterialUpload, startCardMaterialUpload } from "../../app/(app)/cards/materials-actions";
 import { getCardConsultTitles } from "../../app/(app)/cards/actions";
-import { getReportSelectPreview, runReportSectionDraft } from "../../app/(app)/reports/cards/actions";
+import { runReportSectionDraft } from "../../app/(app)/reports/cards/actions";
 import { runReportOutline } from "../../app/(app)/reports/cards/outline-actions";
 import { type DraftRunKind, draftExpect, draftProgress, rangeText, remoteDraftProgress } from "../../lib/ai/progress.ts";
 import { type AiJob, JOB_KINDS, type JobKind } from "../../lib/ai/jobs.ts";
@@ -78,6 +78,8 @@ interface Live {
 export function DraftCompose(props: {
   uid: string;
   canWrite: boolean;
+  /** 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(DraftWorkspace가 getReportSelectPreview로 한 번 읽음 — 여러 안 진행 줄과 같은 값), null이면 통째로 넣기 */
+  selected: number | null;
   hasSpec: boolean;
   hasOutline: boolean;
   /** 지금 초안이 구성안대로 쓰였음(spec.plan) — 기본 요청 종류가 「고치기」 */
@@ -236,16 +238,14 @@ export function DraftCompose(props: {
   const addedFiles = [...namesOf(props.cardFiles, merged.added.card), ...namesOf(props.reportFiles ?? [], merged.added.report)];
   // 이번 요청에 요청 글을 보냈는지(진행 줄 「담당자 요청」 — 보낼 때 정함)
   const [sentRequest, setSentRequest] = useState(false);
-  // 진행 줄의 「공통 지식」: 이 카드에 선별 방식이 적용되면 고른 원문 수(서버가 요청 때와 같은 묶음으로 셈, null이면 통째로 넣기). 요청을 보낼 수 없으면 안 물음
-  const [selected, setSelected] = useState<number | null>(null);
   // 진행 줄의 「컨설팅 의견」: 이 카드 요청에 넣는 외부 컨설팅 의견 제목(경영관리 카드에만)
   const [consult, setConsult] = useState<string[]>([]);
   useEffect(() => {
     if (!props.canWrite) return;
-    void getReportSelectPreview(props.uid).then(setSelected);
     if (props.mg) void getCardConsultTitles(props.uid).then(setConsult);
   }, [props.uid, props.canWrite, props.mg]);
-  const picked = selected ?? undefined;
+  // 진행 줄의 「공통 지식」(선별 방식이면 고른 원문 수 — props.selected, 여러 안 진행 줄과 같은 값)
+  const picked = props.selected ?? undefined;
   const spec =
     running &&
     draftProgress(

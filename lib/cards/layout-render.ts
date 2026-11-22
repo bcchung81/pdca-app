@@ -13,6 +13,7 @@ import { PAGES_CSS, pagesHtml } from "../hwp/pages.ts";
 import type { Cell, Inline, Para, Shape, Table } from "../hwp/model.ts";
 import { type Anchor, type BoundPara, type Target, isSym, isWs, keyOf, paraSegments, targetsOf } from "./layout-bind.ts";
 import { esc, lineClass, lineHead, renderAxEditable } from "./render.ts";
+import { valueAt } from "./patch.ts";
 import type { LooseJson } from "../loose-json.ts";
 
 type Json = LooseJson;
@@ -28,6 +29,8 @@ export interface LayoutRenderOptions {
   /** 원본 문서 첫머리 묶음 제목 표(layout.lead)도 맨 위에 그림(renderLayoutCard) — 「한글(화면 그대로)」 숨은 사본: 한글 내려받기(layout-hwpx.ts)처럼
    *  다시 올리면 묶음을 알아보게. 없으면 그리지 않음(카드 화면) */
   lead?: boolean;
+  /** 편집 모드에서 글이 섞인 칸을 고르기만으로 돌리지 않은 HTML(돌리기 전) — 돌릴 칸 목록을 시험이 고정 목록과 대조할 때만(mixedEditPaths, edit-text.test.ts). 화면은 쓰지 않음 */
+  keepMixed?: boolean;
 }
 
 // ───────────────────────── 배치 훑기(고칠 수 있게 부모·칸·표까지)
@@ -505,6 +508,56 @@ interface Marks {
 
 const isLocked = (m: Marks, path: string) => m.locked.some((p) => path === p || path.startsWith(`${p}.`));
 
+const EDITABLE = ' contenteditable="plaintext-only" spellcheck="false"';
+const unescHtml = (s: string) => s.replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
+const noWs = (s: string) => s.replace(/\s+/g, "");
+
+/**
+ * 고칠 수 있는 칸 중 칸 안 글(태그를 걷은 글 — CSS로만 그리는 원본 모양 글자는 글이 아님, 공백 무시)이 카드 JSON 값과 다른 칸(QA Q1-04) — 여는 태그 자리와 경로.
+ * 편집기는 고칠 때 칸의 innerText 전체를 그 경로에 씀(card-editor.tsx commit) — 딱지 표·고정 글(「(과제번호 : …)」)이 칸 안에 끼면 그 글이 JSON에 섞이므로.
+ * 칸마다 손 처리하지 않는 일반 규칙. 머리 칸은 JSON이 비면 양식 기본 이름을 보이는 것이 정상(render.ts와 같음)이라 그대로 둠
+ */
+function mixedEdits(card: Json, html: string): { at: number; path: string }[] {
+  const out: { at: number; path: string }[] = [];
+  for (const m of html.matchAll(/<([a-z]+)\b([^>]*)>/g)) {
+    if (!m[2].includes(EDITABLE)) continue;
+    const path = /\sdata-p="([^"]+)"/.exec(m[2])?.[1];
+    if (!path) continue;
+    const tag = m[1];
+    const start = m.index! + m[0].length;
+    const re = new RegExp(`<(/?)${tag}\\b[^>]*>`, "g");
+    re.lastIndex = start;
+    let depth = 1;
+    let end = html.length;
+    let e: RegExpExecArray | null;
+    while (depth && (e = re.exec(html))) {
+      depth += e[1] ? -1 : 1;
+      end = e.index;
+    }
+    const p = unescHtml(path);
+    const v = valueAt(card, p);
+    if (v !== null && typeof v === "object") continue;
+    if (/\.headers\./.test(p) && (v === undefined || v === null || v === "")) continue;
+    if (noWs(unescHtml(html.slice(start, end).replace(/<[^>]+>/g, ""))) !== noWs(String(v ?? ""))) out.push({ at: m.index!, path: p });
+  }
+  return out;
+}
+
+/** 편집 모드 HTML(돌리기 전 — renderLayoutCard keepMixed)에서 고르기만으로 돌릴 칸 경로(나온 차례) — 돌린 칸 목록을 시험이 고정 목록과 대조(edit-text.test.ts) */
+export function mixedEditPaths(card: Json, html: string): string[] {
+  return mixedEdits(card, html).map((x) => x.path);
+}
+
+/** 글이 섞인 칸(mixedEdits)은 고르기만으로: contenteditable을 떼고 tabindex="0" */
+function selectOnlyMixed(card: Json, html: string): string {
+  let out = html;
+  for (const { at } of mixedEdits(card, html).reverse()) {
+    const close = out.indexOf(">", at);
+    out = out.slice(0, at) + out.slice(at, close).replace(EDITABLE, ' tabindex="0"') + out.slice(close);
+  }
+  return out;
+}
+
 /** render.ts Ctx.ed와 같은 뜻의 편집 속성 */
 function edAttrs(m: Marks, t: Target, opts: { editable?: boolean } = {}): string {
   if (!m.editable && !m.selectable) return "";
@@ -512,7 +565,7 @@ function edAttrs(m: Marks, t: Target, opts: { editable?: boolean } = {}): string
   const empty = t.empty ? ' data-empty="1"' : "";
   if (m.selectable || opts.editable === false) return `${p} tabindex="0"${empty}`;
   if (isLocked(m, t.path)) return `${p} tabindex="0" data-locked="1"${empty}`;
-  return `${p} contenteditable="plaintext-only" spellcheck="false"${empty}`;
+  return `${p}${EDITABLE}${empty}`;
 }
 
 // ───────────────────────── 그리기
@@ -846,7 +899,9 @@ export function renderLayoutCard(card: Json, layout: CardLayout, opts: LayoutRen
     }
   });
   const extra = extraAx.map((i) => renderAxEditable(card, i, { editable: opts.editable, selectable: opts.selectable, locked: opts.locked })).join("");
-  return `<div class="kca-card kca-hwp" data-card-id="${esc(card.id)}" lang="ko"><div class="hw-doc">${html.join("")}</div>${extra}</div>\n`;
+  const raw = html.join("");
+  const body = opts.editable && !opts.keepMixed ? selectOnlyMixed(card, raw) : raw;
+  return `<div class="kca-card kca-hwp" data-card-id="${esc(card.id)}" lang="ko"><div class="hw-doc">${body}</div>${extra}</div>\n`;
 }
 
 /**

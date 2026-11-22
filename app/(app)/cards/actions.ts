@@ -281,17 +281,17 @@ export async function runCardChat(uid: string, question: string, history: unknow
   } else if (me.role === "dept_user") {
     working = (await openVersion(supabase, card.id))?.data ?? card.data;
   }
-  const [kb, { data: ins }] = await Promise.all([
+  const [kb, ins] = await Promise.all([
     loadCardBundle(supabase, { id: card.id, evalUnitId: card.eval_unit_id, data: working }, "card", "chat"),
-    // 최종 점검표: 보낸·확인한 것 중 점검월이 가장 늦은 1건(초안은 최종이 아님)
-    supabase.from("inspections").select("period, status, result").eq("card_id", card.id).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle(),
+    // 최종 점검표: 작성지원·보완 점검과 같은 고르기(lib/ai/writer-knowledge.ts latestInspection — 보낸·확인한 것 중 점검월이 가장 늦은 1건, 초안은 최종이 아님)
+    latestInspection(supabase, card.id),
   ]);
   const period = currentPeriod();
   const req = {
     question: q,
     history: cleanHistory(history),
     periodLabel: `${period.slice(0, 4)}년 ${Number(period.slice(5))}월`,
-    inspection: inspectionBrief(ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null),
+    inspection: inspectionBrief(ins),
   };
   // 남용 방지·호출 기록: 같은 카드 대화 중복 막기 + AI 작성지원·코멘트·점검과 합산(lib/ai/request-log.ts)
   const job = await startAiJob({ userId: me.id, cardId: card.id, kind: "chat", mode: req.history.length ? `turn:${Math.floor(req.history.length / 2) + 1}` : "turn:1" });

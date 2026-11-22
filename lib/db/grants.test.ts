@@ -261,6 +261,28 @@ test("비로그인은 공개 표를 읽지도 못하고 private 스키마도 못
   assert.equal((await rows<{ u: boolean }>("select has_schema_privilege('anon', 'private', 'USAGE') as u"))[0].u, false);
 });
 
+// 금기 2(모든 테이블에 RLS)와 security definer 함수의 search_path 고정(QA Q4-01, 2026-11-22). 위 쓰기 목록은 읽기 권한을 안 보므로
+// 읽기만 준 표에 RLS를 잊으면 거기서는 안 잡힘 — 여기서 표·함수 전부를 봄.
+test("공개 스키마의 모든 표(일반·분할)는 RLS가 켜져 있다 — 금기 2", async () => {
+  const all = await rows<{ t: string; rls: boolean }>(
+    "select c.relname as t, c.relrowsecurity as rls from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p') order by 1",
+  );
+  assert.ok(all.length > 0, "공개 표를 하나도 못 찾음");
+  assert.deepEqual(all.filter((x) => !x.rls).map((x) => x.t), [], "RLS 없는 공개 표");
+});
+
+test("public·private 스키마의 security definer 함수는 모두 search_path를 빈 값으로 고정한다(set search_path = '')", async () => {
+  const fns = await rows<{ f: string; fixed: boolean }>(
+    `select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as f,
+            coalesce('search_path=""' = any(p.proconfig), false) as fixed
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('public', 'private') and p.prosecdef
+      order by 1`,
+  );
+  assert.ok(fns.length > 0, "security definer 함수를 하나도 못 찾음");
+  assert.deepEqual(fns.filter((x) => !x.fixed).map((x) => x.f), [], "search_path를 고정하지 않은 security definer 함수");
+});
+
 test("앞으로 만드는 공개 표·시퀀스·함수는 기본으로 닫힘(마이그레이션이 명시적으로 grant 해야 함), private 판정 함수는 로그인 사용자가 실행", async () => {
   await db.exec(`
     create table public.zz_new (id bigint generated always as identity primary key, v text);

@@ -157,9 +157,9 @@ Node 24가 TypeScript를 빌드 없이 바로 실행합니다(`"type": "module"`
 
 성과관리팀이 부서의 한글 파일을 `/cards/import`에 올리면 kordoc으로 카드 JSON으로 바꿔 원장과 맞추고, 검토 화면에서 구역마다 사람이 골라 반영합니다. 한글 내려받기(`/cards/<uid>/hwpx`)는 원본 배치가 있으면 원본 모양, 없으면 9.16 서식.
 - 내려받은 한글 파일을 다시 올리면 같은 카드로 읽혀야 함(59장 왕복 테스트). AI는 원장을 자동으로 덮어쓰지 않고, 부서 담당자의 「한글 파일로 작성본 채우기」는 작성본에만 반영
-- 카드 삭제는 항상 보관(`cards.status = retired`), 완전 삭제는 관리자만 + 과제번호 확인. 월별 실적은 기간별로 합쳐 잃지 않음(빈 상자도)
+- 카드 삭제는 항상 보관(`cards.status = retired`), 완전 삭제는 관리자만 + 과제번호 확인(DB 정책도 관리자·보관 카드만). 월별 실적은 기간별로 합쳐 잃지 않음(빈 상자도)
 - 비교 관용: 줄 끝 공백은 같은 글, 수식(`$…$`)만·그림만 빠진 블록은 [유지]. 렌더러가 던지면 「비교 불가」(`BlockStatus` `unknown`) — 기본 유지, 일괄 반영 제외. `next.config.ts`의 `serverExternalPackages: ["kordoc"]`·`outputFileTracingExcludes`를 지우지 않음
-- 경영관리 카드(`경영관리N/N-M`, `MG-1`~`MG-14`): 파서 `lib/cards/hwp/parse-mgmt.ts`, 렌더러 `render-mgmt.ts`(`isMgmtCard`), 올리기 `pnpm db:cards-mg [--dry-run|--write]`. 계량지표 부칸 글은 `kpi.rows[].sub`. 고정 영역(환류·지적 및 개선방안·계량지표)은 `fixedSectionsOf`·`fixedLabelOf`(`lib/cards/fixed.ts`) + DB 트리거 `guard_card_version`이 같이 잠금. 주요사업 현행화는 경영관리 파일을 거절(`looksLikeMgmtFile`). 지적/환류 행 추가·삭제는 원장 편집(성과관리팀 이상)만 — `edit.ts insertPairRow`·`deletePairRow`, 원본 배치는 행을 글로 맞춰 복제·뺌(`layout-render.ts`, 한글 내려받기와 같은 함수 — 43장 왕복 같은 행 수)
+- 경영관리 카드(`경영관리N/N-M`, `MG-1`~`MG-14`): 파서 `lib/cards/hwp/parse-mgmt.ts`, 렌더러 `render-mgmt.ts`(`isMgmtCard`), 올리기 `pnpm db:cards-mg [--dry-run|--write]`. 계량지표 부칸 글은 `kpi.rows[].sub`. 고정 영역(환류·지적 및 개선방안·계량지표)은 `fixedSectionsOf`·`fixedLabelOf`(`lib/cards/fixed.ts`) + DB 트리거 `guard_card_version`이 같이 잠금. 현행화 화면은 두 트랙 파일을 받음(`looksLikeMgmtFile`이면 경영관리 파서). 지적/환류 행 추가·삭제는 원장 편집(성과관리팀 이상)만 — `edit.ts insertPairRow`·`deletePairRow`, 원본 배치는 행을 글로 맞춰 복제·뺌(`layout-render.ts`, 한글 내려받기와 같은 함수 — 43장 왕복 같은 행 수)
 - 원장 되돌리기는 카드 내용만(고정 영역 내용 포함, 잠금 여부·배치·팀·판은 그대로), 현행화 앞 시점·등록 전·보관은 막음(`lib/cards/revert.ts`). 이력은 합치지 않는 새 행(`historyMergeable`)
 
 ### 과제관리카드는 원본 그대로(한글 원본 배치)

@@ -3,9 +3,9 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import type { Block } from "./blocks.ts";
+import { BLOCK_KINDS, type Block, VARIANTS } from "./blocks.ts";
 import type { MgPart } from "./mg-types.ts";
-import type { Diagram, LadderRow, ReportSectionSpec } from "./section.ts";
+import { type Diagram, type LadderRow, type ReportSectionSpec, readSection } from "./section.ts";
 import { REPORT_CSS } from "./section-css.ts";
 import { REPORT_DOC_CSP, REPORT_DOC_CSP_META } from "./doc-csp.ts";
 import { REPORT_DOC_SCRIPT, blockHtml, blocksSampleHtml, markRoots, miniChartHtml, sectionBodyHtml, sectionDocument, sectionHtml } from "./section-html.ts";
@@ -434,4 +434,87 @@ test("저장형 XSS: 내려받기 문서에는 스크립트가 하나뿐(넣은 
   assert.doesNotMatch(REPORT_DOC_CSP, /default-src/, "글꼴·그림·스타일을 깨지 않게 default-src는 두지 않음");
   assert.equal(REPORT_DOC_CSP_META, `<meta http-equiv="Content-Security-Policy" content="${REPORT_DOC_CSP}">`);
   assert.ok(!REPORT_DOC_CSP.includes('"'), "meta content 속성 안에 들어감");
+});
+
+// 저장형 XSS 전수(2026-11-22 완성도 점검 Q3-02): 위 시험은 칸 몇 개만 봐서, 다른 칸(실행과제명 — 카드 원장 글, 블록 라벨 등)의 이스케이프를 빼도 아무 시험도 실패하지 않았음.
+// 모든 블록 종류 × 모양의 글 칸 + 소항목·추진성과·경영관리 절 머리의 글에 태그를 넣고, 어떤 그리기 경로(편집 표지·블록 표지·되풀이 표시·추진성과 표지 켬/끔,
+// 저장값 읽기 readSection, 내려받기 문서, 견본)에도 그 태그가 살아 나오지 않는지 봄. 글은 이스케이프된 모양으로는 남아야 함(빈 시험이 아님)
+const FZ_TAG = '<i data-fz="1">X&Y</i>';
+const FZ_ATTR = '"><i data-fz-q>';
+const fz = (k: string) => k + FZ_TAG;
+const fzCell = (i: number) => ({ head: fz(`h${i}`), tag: fz(`t${i}`), note: fz(`n${i}`), bullets: [fz(`b${i}a`), fz(`b${i}b`)] });
+const fzBlock = (kind: Block["kind"], variant: string): Block => ({
+  kind,
+  label: fz("L"),
+  title: fz("T"),
+  variant,
+  text: fz("x"),
+  items: [`${fz("i0")} | ${fz("i0b")}`, fz("i1"), fz("i2"), fz("i3")],
+  cells: [fzCell(0), fzCell(1), fzCell(2), fzCell(3)],
+  rows: [
+    { key: fz("k0"), before: [fz("bf0")], after: [fz("af0")] },
+    { key: fz("k1"), before: [fz("bf1")], after: [fz("af1")] },
+  ],
+  series: [
+    { label: fz("s0"), value: `10${FZ_ATTR}` },
+    { label: fz("s1"), value: "20" },
+  ],
+  badge: fz("bd"),
+  figures: [{ kind: "photo", desc: fz("fd"), pos: "left", size: "M" }],
+});
+const fzBlocks: Block[] = BLOCK_KINDS.flatMap((k) => (VARIANTS[k] ?? [""]).map((va) => fzBlock(k, va)));
+const fzBiz = {
+  version: 3,
+  card: { id: fz("cid"), taskNo: fz("tn"), title: fz("ct") },
+  business: { no: fz("bno"), name: fz("bn") },
+  task: { no: fz("tkno"), title: fz("tkt"), bp: true },
+  sub: { mark: fz("m"), title: fz("st"), markers: ["AI", fz("mk")], chip: fz("chip") },
+  rows: [],
+  results: [fz("r0"), fz("r1")],
+  caption: fz("cap"),
+  resultCards: [
+    { tag: fz("rt0"), headline: fz("rh0"), figure: fz("rf0") },
+    { tag: fz("rt1"), headline: fz("rh1"), figure: fz("rf1") },
+  ],
+  resultChart: { title: fz("ctit"), series: [{ label: fz("cl"), value: `1${FZ_ATTR}` }], badge: fz("cb") },
+  resultBand: fz("band"),
+  blocks: fzBlocks,
+  story: fz("story"),
+  module: 1,
+  ground: { weak: [fz("w")], checked: 1 },
+} as unknown as ReportSectionSpec;
+const fzMg = {
+  ...fzBiz,
+  mg: {
+    indicator: fz("ind"),
+    parts: [{ key: "1.1.가", evalNo: fz("en"), evalTitle: fz("et"), themeNo: fz("thn"), themeTitle: fz("tt"), mark: fz("pm"), title: fz("pt"), story: "", why: fz("why"), chip: fz("pc") }],
+    at: fzBlocks.map(() => "1.1.가"),
+    finding: ["1.1.가"],
+  },
+} as unknown as ReportSectionSpec;
+/** 살아 나온 태그 수와 앞뒤 글(실패 메시지 — 어느 칸인지 보이게) */
+const fzLeaks = (html: string) => {
+  const at = [...html.matchAll(/<i data-fz/g)].map((m) => html.slice(Math.max(0, m.index - 120), m.index + 30));
+  return { n: at.length, where: at.slice(0, 3).join("\n---\n") };
+};
+const fzNoLeak = (html: string, what: string) => {
+  const l = fzLeaks(html);
+  assert.equal(l.n, 0, `${what}: 태그가 그대로 나옴\n${l.where}`);
+  assert.ok((html.match(/&lt;i data-fz/g) ?? []).length > fzBlocks.length, `${what}: 넣은 글이 (이스케이프된 모양으로) 그려지지 않음`);
+};
+
+test("저장형 XSS 전수: 모든 블록 종류·모양의 글 칸과 소항목·추진성과·경영관리 절 머리의 글은 어느 그리기 경로에서도 태그로 살아나지 않음", () => {
+  for (const [name, spec] of [["주요사업", fzBiz], ["경영관리", fzMg]] as const) {
+    for (const opts of [{}, { editMarks: true, blockMarks: true, repeats: true, resultMark: true }]) {
+      fzNoLeak(sectionBodyHtml(spec, ["10", "1"], opts), `${name} ${JSON.stringify(opts)}`);
+    }
+    const read = readSection(JSON.parse(JSON.stringify(spec)));
+    assert.ok(read, `${name}: readSection`);
+    fzNoLeak(sectionBodyHtml(read, [], { editMarks: true, blockMarks: true }), `${name} 저장값 읽기`);
+    fzNoLeak(sectionDocument(spec, ["10"], { year: 2026, generatedAt: fz("ga"), model: fz("model") }), `${name} 내려받기 문서`);
+  }
+  fzNoLeak(blocksSampleHtml(fzBlocks), "견본(모양 바꾸기 미리보기)");
+  // 주요사업 머리의 실행과제명·대상사업명은 이스케이프된 글로 남음(카드 원장 글)
+  const html = sectionBodyHtml(fzBiz);
+  assert.ok(html.includes("tkt&lt;i data-fz") && html.includes("bn&lt;i data-fz"));
 });

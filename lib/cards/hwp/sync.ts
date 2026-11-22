@@ -316,6 +316,15 @@ function onlyEquationsMissing(ledgerPart: LooseJson, parsedPart: LooseJson, rend
 }
 
 const periodKey = (p: unknown) => String(p ?? "").replace(/\s+/g, "").replace(/∼/g, "~");
+/**
+ * 월별 상자 짝: 파일 상자 j → 원장 상자 번호(없으면 null). 같은 기간 상자가 여럿이면 나온 차례끼리(k번째 ↔ k번째) —
+ * 기간만으로 짝지으면 같은 기간의 마지막 상자 하나가 나머지를 덮어 값을 잃음(QA Q1-01). 비교(planSync)와 병합(applySync)이 같이 씀
+ */
+function pairMonthly(L: LooseJson[], P: LooseJson[]): (number | null)[] {
+  const free = new Map<string, number[]>();
+  L.forEach((m, i) => free.set(periodKey(m.period), [...(free.get(periodKey(m.period)) ?? []), i]));
+  return P.map((m) => free.get(periodKey(m.period))?.shift() ?? null);
+}
 const monthNums = (p: unknown) => (String(p ?? "").match(/\d{1,2}(?=\s*월)/g) ?? []).map(Number);
 
 function partHtml(card: LooseJson, part: CardPart | MgmtPart, strict = false): string {
@@ -456,16 +465,22 @@ export function planSync(ledger: LooseJson, parsedIn: LooseJson, opts: { locked?
     if (key === "monthly") {
       const L: LooseJson[] = ledger?.do?.monthly ?? [];
       const P: LooseJson[] = parsed?.do?.monthly ?? [];
-      const inP = new Set(P.map((m) => periodKey(m.period)));
-      const inL = new Map(L.map((m) => [periodKey(m.period), m]));
-      missing = L.filter((m) => !inP.has(periodKey(m.period))).map((m) => String(m.period));
-      const changedP = P.filter((m) => {
-        const old = inL.get(periodKey(m.period));
-        return !old || (renderMonthlyBox(forCompare(old)) !== renderMonthlyBox(forCompare(m)) && !onlyEquationsMissing(old, m, (x) => renderMonthlyBox(forCompare(x))));
-      });
-      status = changedP.length ? (L.length ? "changed" : "added") : missing.length ? "removed" : "same";
+      const pair = pairMonthly(L, P);
+      const matched = new Set(pair.filter((i) => i !== null));
+      missing = L.filter((_, i) => !matched.has(i)).map((m) => String(m.period));
+      const changed = P.map((m, j) => {
+        const old = pair[j] === null ? null : L[pair[j]!];
+        return { m, old, changed: !old || (renderMonthlyBox(forCompare(old)) !== renderMonthlyBox(forCompare(m)) && !onlyEquationsMissing(old, m, (x) => renderMonthlyBox(forCompare(x)))) };
+      }).filter((x) => x.changed);
+      status = changed.length ? (L.length ? "changed" : "added") : missing.length ? "removed" : "same";
       if (missing.length) note = `파일에 없는 기간 ${missing.join(", ")}은(는) 그대로 둡니다(지우려면 따로 승인)`;
-      if (P.length < L.length) risk = "월별 실적 누적행 감소";
+      // 위험(다른 블록과 같은 뜻 — QA Q1-02): 상자가 줄거나, 바뀐 상자에서 원장 그림이 빠졌거나, 파일이 원장 상자 글을 비움
+      const monthlyRisks = [
+        P.length < L.length ? "월별 실적 누적행 감소" : null,
+        changed.some((x) => x.old && countImages(x.m) < countImages(x.old)) ? "파일에 없는 그림이 있음 — 반영하면 원장 그림이 빠집니다" : null,
+        changed.some((x) => x.old && hasText(x.old.items) && !hasText(x.m.items)) ? "파일에서 비운 월별 상자 — 반영하면 원장 글이 지워집니다" : null,
+      ].filter(Boolean);
+      if (monthlyRisks.length) risk = monthlyRisks.join(" · ");
     } else if (key === "ax") {
       const L: LooseJson[] = ledger?.axAttachments ?? [];
       const P: LooseJson[] = parsed?.axAttachments ?? [];
@@ -586,14 +601,15 @@ export function applySync(ledger: LooseJson, parsedIn: LooseJson, approval: Sync
         break;
       case "monthly": {
         const P: LooseJson[] = parsed?.do?.monthly ?? [];
-        const byP = new Map(P.map((m) => [periodKey(m.period), m]));
+        const L: LooseJson[] = card.do?.monthly ?? [];
+        const pair = pairMonthly(L, P);
+        const fileOf = new Map(pair.map((i, j) => [i, j]).filter(([i]) => i !== null) as [number, number][]);
         const kept: LooseJson[] = [];
-        for (const m of card.do?.monthly ?? []) {
-          const k = periodKey(m.period);
-          if (byP.has(k)) kept.push(w === "remove" ? m : structuredClone(byP.get(k)));
+        L.forEach((m, i) => {
+          if (fileOf.has(i)) kept.push(w === "remove" ? m : structuredClone(P[fileOf.get(i)!]));
           else if (!w.includes("remove")) kept.push(m);
-        }
-        if (w !== "remove") for (const m of P) if (!kept.some((x) => periodKey(x.period) === periodKey(m.period))) kept.push(structuredClone(m));
+        });
+        if (w !== "remove") P.forEach((m, j) => pair[j] === null && kept.push(structuredClone(m)));
         // 달 순서(첫 달 → 끝 달)로. 기간을 읽지 못하면 뒤에 둔 순서 그대로
         const order = (m: LooseJson) => {
           const ns = monthNums(m.period);

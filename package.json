@@ -14,7 +14,7 @@
     "knowledge:prune-images": "node --conditions=react-server --env-file-if-exists=.env.local scripts/knowledge/prune-images.ts",
     "storage:prune-orphans": "node --conditions=react-server --env-file-if-exists=.env.local scripts/storage/prune-orphans.ts",
     "knowledge:parse": "node --conditions=react-server scripts/knowledge/parse.ts",
-    "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./scripts/test/skip-summary.ts --test-reporter-destination=stdout \"lib/**/*.test.ts\" \"scripts/**/*.test.ts\"",
+    "test": "node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./scripts/test/skip-summary.ts --test-reporter-destination=stdout \"lib/**/*.test.ts\" \"scripts/**/*.test.ts\" \"app/**/*.test.ts\"",
     "harness:sync": "node scripts/harness/sync.ts",
     "reports:mg-renumber": "node --conditions=react-server --env-file-if-exists=.env.local scripts/reports/mg-renumber.ts",
     "db:seed": "node --env-file-if-exists=.env.local scripts/db/seed.ts",

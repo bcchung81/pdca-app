@@ -2,11 +2,12 @@
 
 // AI 백그라운드 작업 상태 저장소(브라우저 한 탭에 하나 — 머리띠 「AI 작업 N건」·과제원장 AI 작성지원·카드 리뷰어·경평 초안 대화가 함께 씀).
 // 진행 상태는 서버 액션이 아닌 GET /api/ai/requests로 읽음(서버 액션은 한 번에 하나씩 줄을 서서 자동 저장을 막음 — Next 07-mutating-data.md).
-// 진행 중 작업이 있거나 막 시작한 작업을 아직 서버에서 못 봤을 때만, 창이 보일 때만 JOB_POLL_MS마다 다시 읽고(lib/ai/jobs.ts shouldPoll), 끝나면 멈춤.
+// 창이 보이면 진행 중 작업이 있거나 막 시작한 작업을 아직 서버에서 못 봤을 때만 JOB_POLL_MS마다, 숨은 창은 이 탭이 기다리는 작업(watch)이 있을 때만 JOB_POLL_HIDDEN_MS마다
+// 다시 읽고(lib/ai/jobs.ts shouldPoll — 일괄 점검이 숨은 창에서도 다음 과제를 이어서 시작, 2026-11-22 Q2-01), 끝나면 멈춤.
 // 창이 다시 보이면 한 번 읽음(다른 탭·다른 PC에서 시작한 작업도 이때 잡힘).
 
 import { useEffect, useSyncExternalStore } from "react";
-import { type AiJob, JOB_KINDS, JOB_POLL_MS, type JobKind, type JobResultRow, finishedSince, shouldPoll } from "../../lib/ai/jobs.ts";
+import { type AiJob, JOB_KINDS, JOB_POLL_HIDDEN_MS, JOB_POLL_MS, type JobKind, type JobResultRow, finishedSince, shouldPoll } from "../../lib/ai/jobs.ts";
 
 const EMPTY: AiJob[] = [];
 let jobs: AiJob[] = EMPTY;
@@ -27,7 +28,8 @@ function schedule() {
   if (timer) clearTimeout(timer);
   timer = null;
   const unseen = [...watch].filter((id) => !jobs.some((j) => j.id === id && j.state !== "running"));
-  if (shouldPoll(jobs, unseen, visible())) timer = setTimeout(() => void refreshAiJobs(), JOB_POLL_MS);
+  const shown = visible();
+  if (shouldPoll(jobs, unseen, shown)) timer = setTimeout(() => void refreshAiJobs(), shown ? JOB_POLL_MS : JOB_POLL_HIDDEN_MS);
 }
 
 /** 서버에서 다시 읽음(겹쳐 부르면 진행 중인 읽기를 기다림). 끝난 작업은 끝 알림 구독자에게 */

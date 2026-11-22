@@ -38,7 +38,7 @@ import { dataText } from "./envelope.ts";
 import type { DescribeInput } from "./describe.ts";
 import { type MatchResult, matchPrompt, matchShared } from "./match.ts";
 import { API_TOTAL_MS, apiErrorKind, apiErrorMessage, deadlinePassed, remainingMs, shouldRetryApi, switchesKey } from "./api-errors.ts";
-import { canFixAgain, draftScore, fixDeadlineMs, shouldFix } from "./fix-policy.ts";
+import { canFixAgain, continueAfterFirst, draftScore, fixDeadlineMs, shouldFix } from "./fix-policy.ts";
 import { type AiFeature, type Effort, FEATURE_MAX_TOKENS, specForFeature } from "./models.ts";
 import { isMgmtCard } from "../cards/mgmt-card.ts";
 import { type LinkIndexRow, parseLinkIndex } from "../inspections/biz-links.ts";
@@ -711,7 +711,7 @@ export async function callReportSectionFitted(
   const decision = shouldFix({ need, year: year.length, compose: compose.length, prose: prose.length, title: title.length }, Date.now() - t0, firstMs, deadline);
   if (!decision.fix) trace.skipped = decision.reason;
   // 고치기 전에 1차 초안을 먼저 저장(끊겨도 남게) — 저장이 멈추라고 하면(충돌) 고치지 않음
-  const go = decision.fix && (opts.onFirst ? await opts.onFirst(best).catch((e) => (console.error("callReportSectionFitted onFirst", e), true)) : true);
+  const go = await continueAfterFirst(decision, opts.onFirst, best);
   if (decision.fix && !go) trace.skipped = "stopped";
   if (go) {
     const tFix = Date.now();

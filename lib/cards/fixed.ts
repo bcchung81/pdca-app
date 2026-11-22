@@ -17,6 +17,11 @@ export const fixedLabelOf = (card: LooseJson): string => (isMgmtCard(card) ? MGM
 /** 트랙별 고정 영역 이름(목록·현황처럼 카드 한 장이 손에 없는 곳) */
 export const fixedLabelOfTrack = (track: string): string => (track === "경영관리" ? MGMT_FIXED_LABEL : FIXED_LABEL);
 
+/** 고정 영역(주요사업 Act·Plan·계량지표, 경영관리 전년도 환류·지적 및 개선방안·계량지표)을 원장 값으로 맞춘 카드 JSON */
+export function withFixedFrom(data: LooseJson, ledger: LooseJson): LooseJson {
+  return { ...data, ...Object.fromEntries(fixedSectionsOf(ledger).map((k) => [k, ledger?.[k]])) };
+}
+
 /** 키 순서와 상관없는 JSON 글자(Postgres jsonb는 키 순서를 바꿔 저장하므로 비교에 씀) */
 export function canonicalJson(v: LooseJson): string {
   if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;

@@ -47,6 +47,22 @@ export function canFixAgain(elapsedMs: number, lastCallMs: number, deadlineMs = 
 }
 
 /**
+ * 1차 초안을 먼저 저장하고 고치기를 이어 갈지(lib/ai/run.ts callReportSectionFitted — 2026-10-10 B2a 「고치기 도중 끊겨도 1차 초안이 남게」).
+ * 고칠 것이 없으면(decision.fix false) false — onFirst를 부르지 않음(1차는 부르는 쪽의 최종 저장이 씀). onFirst가 없으면 true,
+ * 있으면 그 답(false = 저장 충돌 등 — 고치지 않고 멈춤). onFirst가 던지면 기록만 하고 true(1차 저장 실패가 고치기를 막지 않음 — 최종 저장이 다시 씀)
+ */
+export async function continueAfterFirst<T>(decision: FixDecision, onFirst: ((first: T) => Promise<boolean>) | undefined, first: T): Promise<boolean> {
+  if (!decision.fix) return false;
+  if (!onFirst) return true;
+  try {
+    return await onFirst(first);
+  } catch (e) {
+    console.error("callReportSectionFitted onFirst", e);
+    return true;
+  }
+}
+
+/**
  * 고친 판 고르기 점수(낮을수록 좋음) = 판면 점수 + 문제 하나마다 무게. 기준 사다리(근거 > 판면 > 올해 실적 > 짜임 > 문장)를 따라
  * 없는 숫자 하나 = 50(≈ 넘침 25mm — 2026-10-10 계획서 §10 E3: 예전에는 없는 숫자를 안 셈 — 고치기가 근거 없는 숫자를 새로 만들어도 그 판을 고를 수 있었음),
  * 올해 실적 문제 40(판면이 조금 나빠져도 올해 실적을 고친 쪽), 짜임 문제(이 과제만의 요소 없음) 20, 제목 폭(한 줄 넘침 — 2026-10-28) 20, 문장 문제 10

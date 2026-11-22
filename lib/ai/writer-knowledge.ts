@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadCardBundle } from "./context.ts";
 import { assistInspectionBrief } from "./writer-inspection.ts";
 import type { WriterMode } from "./writer.ts";
-import { type InspectionResult, readResult } from "../inspections/model.ts";
+import { type InspectionResult, finalInspection, readResult } from "../inspections/model.ts";
 import type { KnowledgeBundle } from "../knowledge/bundle.ts";
 import { writerBundleOpts, writerScope } from "../knowledge/mode-profile.ts";
 import { trackSpecOfUnit } from "../tracks/index.ts";
@@ -17,9 +17,16 @@ export interface LatestInspection {
   result: InspectionResult;
 }
 
-/** 이 과제의 최종 점검표 — 보낸·확인한 것 중 점검월이 가장 늦은 1건(초안 제외, 질문·보완 점검과 같은 규칙). 부르는 쪽 권한(RLS — 부서 담당자는 받은 것만) */
+/**
+ * 이 과제의 최종 점검표 — 보낸·확인한 것 중 점검월이 가장 늦은 1건(초안 제외, 질문·보완 점검·경평 구성안과 같은 규칙). 부르는 쪽 권한(RLS — 부서 담당자는 받은 것만).
+ * 고르기는 질의 조건이 아니라 순수 finalInspection(lib/inspections/model.ts) 하나로(2026-11-22 Q2-02): 점검월·상태만 읽어 고른 뒤 그 1건의 점검표를 읽음
+ * (그사이 보내기를 취소해 초안이 됐으면 없음으로)
+ */
 export async function latestInspection(supabase: SupabaseClient, cardId: string): Promise<LatestInspection | null> {
-  const { data: ins } = await supabase.from("inspections").select("period, status, result").eq("card_id", cardId).neq("status", "draft").order("period", { ascending: false }).limit(1).maybeSingle();
+  const { data: rows } = await supabase.from("inspections").select("id, period, status").eq("card_id", cardId);
+  const { final } = finalInspection((rows ?? []) as Array<{ id: number; period: string; status: string }>);
+  if (!final) return null;
+  const { data: ins } = await supabase.from("inspections").select("period, status, result").eq("id", final.id).neq("status", "draft").maybeSingle();
   return ins ? { period: ins.period, status: ins.status, result: readResult(ins.result) } : null;
 }
 

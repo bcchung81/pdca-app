@@ -436,6 +436,35 @@ test("카드 영구 삭제 기록(20261117170000): 카드 행이 지워지면 DB
   }
 });
 
+test("카드 영구 삭제 정책(20261122120000): 앱 서버 표지가 있어도 관리자의 보관 카드만 지워짐 — 성과관리팀(활성·보관)·관리자(활성)·부서 담당자·표지 없는 관리자는 0행", { skip: NO_SEED_CARDS }, async () => {
+  const src = await cardOf("검사기획팀");
+  const cases: Array<{ k: string; who: keyof typeof users; status: string; mark?: null }> = [
+    { k: "pmo_active", who: "pmo", status: "active" },
+    { k: "pmo_retired", who: "pmo", status: "retired" },
+    { k: "admin_active", who: "admin", status: "active" },
+    { k: "admin_retired", who: "admin", status: "retired" },
+    { k: "dept", who: "inspector", status: "active" }, // 자기 팀·지정된 활성 과제(읽을 수 있는 카드)
+    { k: "admin_nomark", who: "admin", status: "retired", mark: null }, // 표지 없음(앱 밖 직접 요청)
+  ];
+  const id = (k: string) => `시험/삭제정책-${k}`;
+  try {
+    for (const { k, status } of cases) {
+      await db.query(
+        "insert into public.cards (id, eval_unit_id, task_no, title, team_id, edition, data, status) select $2, eval_unit_id, $3, '삭제 정책 시험', team_id, edition, data, $4 from public.cards where id = $1",
+        [src, id(k), `삭제정책-${k}`, status],
+      );
+    }
+    await db.query("insert into public.card_assignees (card_id, user_id) values ($1, $2)", [id("dept"), users.inspector]);
+    const got: Record<string, number> = {};
+    for (const { k, who, mark } of cases) got[k] = (await as(who, () => db.query("delete from public.cards where id = $1", [id(k)]), mark)).affectedRows ?? 0;
+    assert.deepEqual(got, { pmo_active: 0, pmo_retired: 0, admin_active: 0, admin_retired: 1, dept: 0, admin_nomark: 0 });
+    assert.equal(await count("select 1 from public.cards where id like '시험/삭제정책-%'"), 5, "막힌 카드는 그대로 남음");
+  } finally {
+    await db.query("delete from public.cards where id like '시험/삭제정책-%'");
+    await db.query("delete from public.access_events where action = 'card_purged'");
+  }
+});
+
 test("본부 표기 정정(20260930120000): 방송콘텐츠진흥팀의 방송미디어부만 방송미디어본부로 바뀌고 여러 번 돌려도 같다", { skip: NO_SEED_CARDS }, async () => {
   const sql = readFileSync(join(MIGRATIONS, "20260930120000_users_assignees.sql"), "utf8");
   const fix = sql.split("\n").filter((l) => l.startsWith("update public.teams set hq")).join("\n");
@@ -2707,7 +2736,7 @@ test("앱 서버 경유 표지 — 남은 표 전부(20261117140000): 표지 없
   const team = own.team_id;
   // 고정 카드: F·F4(검사기획팀 담당자 지정 — 부서가 쓰는 표), F2·F3(같은 팀, 지정 안 함 — 담당 지정·목록표)
   const [F, F2, F3, F4, G, H] = ["표지시험/F", "표지시험/F2", "표지시험/F3", "표지시험/F4", "표지시험/G", "표지시험/H"].map(lit);
-  const newCard = (id: string, no: string) => `insert into public.cards (id, eval_unit_id, task_no, title, edition, data, team_id, status) values (${id}, ${unit}, '${no}', '표지 시험', 'e', '{}', ${team}, 'active')`;
+  const newCard = (id: string, no: string, status = "active") => `insert into public.cards (id, eval_unit_id, task_no, title, edition, data, team_id, status) values (${id}, ${unit}, '${no}', '표지 시험', 'e', '{}', ${team}, '${status}')`;
   const insp = lit(users.inspector);
   const pmo = lit(users.pmo);
   await db.exec(`
@@ -2725,8 +2754,14 @@ test("앱 서버 경유 표지 — 남은 표 전부(20261117140000): 표지 없
     {
       name: "카드 원장(성과관리팀 — FOR ALL을 나눔)", table: "cards", who: "pmo",
       setup: newCard(G, "표지-G"), insert: newCard(H, "표지-H"),
-      update: `update public.cards set title = title where id in (${G}, ${H})`, del: `delete from public.cards where id in (${G}, ${H})`,
+      update: `update public.cards set title = title where id in (${G}, ${H})`,
       cleanup: `delete from public.cards where id in (${G}, ${H})`,
+    },
+    {
+      // 지우기는 관리자의 보관 카드만(20261122120000)
+      name: "카드 원장(관리자 — 보관 카드 영구 삭제)", table: "cards", who: "admin",
+      setup: newCard(G, "표지-G", "retired"), del: `delete from public.cards where id = ${G}`,
+      cleanup: `delete from public.cards where id = ${G}`,
     },
     { name: "카드 원장(부서 내용 고치기)", table: "cards", who: "inspector", update: `update public.cards set updated_by = auth.uid() where id = ${F}`, cleanup: `update public.cards set updated_by = null where id = ${F}` },
     {

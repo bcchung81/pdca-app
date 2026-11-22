@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FIX_DEADLINE_MS, canFixAgain, draftScore, draftTimings, fixDeadlineMs, shouldFix } from "./fix-policy.ts";
+import { FIX_DEADLINE_MS, canFixAgain, continueAfterFirst, draftScore, draftTimings, fixDeadlineMs, shouldFix } from "./fix-policy.ts";
 
 const none = { need: null, year: 0, compose: 0, prose: 0 };
 
@@ -71,4 +71,28 @@ test("shouldFix·draftScore(2026-10-28): 소항목 제목 한 줄 폭 문제만 
   const base = { spec, unknownNumbers: [] as string[], yearIssues: [] as string[], composeIssues: [] as string[], proseIssues: [] as string[] };
   assert.equal(draftScore({ ...base, titleIssues: ["제목 폭: …"] }) - draftScore(base), 20);
   assert.equal(draftScore({ ...base, titleIssues: [] }), draftScore(base));
+});
+
+test("continueAfterFirst: 고칠 것이 없으면 1차 저장(onFirst)을 부르지 않고 멈춤, onFirst가 없으면 이어 감", async () => {
+  let calls = 0;
+  const onFirst = async () => (calls++, true);
+  assert.equal(await continueAfterFirst({ fix: false, reason: "none" }, onFirst, "1차"), false);
+  assert.equal(await continueAfterFirst({ fix: false, reason: "prose-only" }, onFirst, "1차"), false);
+  assert.equal(await continueAfterFirst({ fix: false, reason: "time" }, onFirst, "1차"), false);
+  assert.equal(calls, 0, "고치지 않으면 1차 저장을 따로 부르지 않음(최종 저장이 씀)");
+  assert.equal(await continueAfterFirst({ fix: true }, undefined, "1차"), true);
+});
+
+test("continueAfterFirst: 고치기 전에 1차 초안을 넘겨 먼저 저장 — 저장이 true면 이어 감, false(저장 충돌)면 고치지 않고 멈춤", async () => {
+  const seen: string[] = [];
+  assert.equal(await continueAfterFirst({ fix: true }, async (f: string) => (seen.push(f), true), "1차 초안"), true);
+  assert.equal(await continueAfterFirst({ fix: true }, async (f: string) => (seen.push(f), false), "1차 초안"), false);
+  assert.deepEqual(seen, ["1차 초안", "1차 초안"], "1차 초안을 그대로 한 번씩 넘김");
+});
+
+test("continueAfterFirst: 1차 저장이 던지면 기록만 하고 이어 감(1차 저장 실패가 고치기를 막지 않음)", async (t) => {
+  const err = t.mock.method(console, "error", () => {});
+  assert.equal(await continueAfterFirst({ fix: true }, async () => { throw new Error("연결 끊김"); }, "1차"), true);
+  assert.equal(await continueAfterFirst({ fix: true }, () => { throw new Error("동기 오류"); }, "1차"), true);
+  assert.equal(err.mock.callCount(), 2);
 });

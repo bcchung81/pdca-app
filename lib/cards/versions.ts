@@ -5,7 +5,7 @@ import type { CurrentUser } from "../auth/dal.ts";
 import { monthLabel, shiftPeriod } from "../format.ts";
 import { createClient } from "../supabase/server.ts";
 import { type CardChange, diffCards } from "./diff.ts";
-import { fixedSectionsOf } from "./fixed.ts";
+import { fixedSectionsOf, withFixedFrom } from "./fixed.ts";
 import { conflictLabels, mergeDraft } from "./merge.ts";
 import { getCardForEdit, signedImageUrls } from "./queries.ts";
 import { renderCard } from "./render.ts";
@@ -198,7 +198,5 @@ export async function workspaceData(user: CurrentUser, uid: string, opts: { prev
   return { card, initial, draft, review: card.retired ? undefined : review, locked, otherTeam, openVersionId, rev, mountKey, notice, readOnly: card.retired || opts.preview || otherTeam || (!staff && draft?.status === "submitted") };
 }
 
-/** 고정 영역(주요사업 Act·Plan·계량지표, 경영관리 전년도 환류·지적 및 개선방안·계량지표)을 원장 값으로 맞춘 카드 JSON */
-export function withFixedFrom(data: LooseJson, ledger: LooseJson): LooseJson {
-  return { ...data, ...Object.fromEntries(fixedSectionsOf(ledger).map((k) => [k, ledger?.[k]])) };
-}
+// 고정 영역 맞추기는 순수 함수라 fixed.ts에 둠(시험 — server-only 밖). 부르는 곳(작성본 저장·현행화·확정)은 여기서 그대로 가져감
+export { withFixedFrom };
